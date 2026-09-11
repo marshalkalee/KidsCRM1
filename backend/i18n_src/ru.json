@@ -1,0 +1,7 @@
+{
+  "nav.brand": "KidsCRM",
+  "nav.lang_placeholder": "RU",
+  "home.title": "Скелет поднят",
+  "home.hint": "Экраны доменов — в templates/<домен>/, статика — в static/site/.",
+  "home.ping_button": "Проверить jQuery"
+}
