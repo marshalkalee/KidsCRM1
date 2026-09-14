@@ -11,6 +11,9 @@ from django.contrib import admin
 from django.urls import include, path
 
 api_v1_patterns = [
+    # Organization (только текущая, /organization/), Branch, Room.
+    path("", include("domains.platform.tenants.urls")),
+    path("users/", include("domains.platform.users.urls")),
     path("clients/", include("domains.people.clients.urls")),
     path("schedule/", include("domains.scheduling.schedule.urls")),
     path("attendance/", include("domains.scheduling.attendance.urls")),
