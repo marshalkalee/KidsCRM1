@@ -7,3 +7,4 @@ celery==5.4.0
 redis==5.2.1
 whitenoise==6.8.2
 djangorestframework-simplejwt==5.3.1
+pytz==2024.1
