@@ -16,6 +16,9 @@ API зафиксированы в [ADR-002](docs/adr/); доменное дел�
 - nginx перед backend (`infra/nginx/nginx.conf`) — единая точка входа, тот
   же путь запроса локально и в проде. Статику отдаёт сам Django через
   whitenoise, nginx её не подхватывает отдельно — см. ADR-002.
+- `worker` — Celery worker на той же кодовой базе, что и `backend`, слушает
+  Redis. Реальных фоновых задач пока нет (см. `backend/config/celery.py`) —
+  сервис поднят, чтобы окружение у всех троих было одинаковым с первого дня.
 
 ## Быстрый старт с нуля
 
@@ -31,8 +34,8 @@ venv, зависимости ставятся прямо в образ. Нужн
    ```bash
    cp backend/.env.example backend/.env
    ```
-3. Поднять всё: Postgres, Redis, backend, nginx (соберётся сам при первом
-   запуске).
+3. Поднять всё: Postgres, Redis, backend, worker, nginx (соберётся сам при
+   первом запуске).
    ```bash
    docker compose up -d --build
    ```
@@ -47,7 +50,7 @@ venv, зависимости ставятся прямо в образ. Нужн
    Основной вход — `http://localhost/` (через nginx, `infra/nginx/nginx.conf`
    — тот же путь запроса, что и в проде). `http://localhost:8000/` — тот же
    backend напрямую, без nginx, для отладки. API — `/api/v1/`, админка —
-   `/admin/`. Логи: `docker compose logs -f backend` / `nginx`.
+   `/admin/`. Логи: `docker compose logs -f backend` / `worker` / `nginx`.
 6. Установить pre-commit хуки (один раз после клонирования; сам pre-commit
    ставится на хост, не в контейнер — он вызывается git-хуком при `git commit`).
    ```bash

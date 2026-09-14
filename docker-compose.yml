@@ -40,6 +40,21 @@ services:
       redis:
         condition: service_started
 
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    command: celery -A config.celery worker --loglevel=info
+    env_file:
+      - backend/.env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   nginx:
     image: nginx:1.27-alpine
     volumes:
