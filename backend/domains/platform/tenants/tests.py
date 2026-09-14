@@ -103,4 +103,4 @@ class TenantScopedAPITests(APITestCase):
     def test_anonymous_request_is_rejected(self):
         response = self.client.get("/api/v1/branches/")
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
