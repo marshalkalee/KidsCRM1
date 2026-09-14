@@ -1,10 +1,8 @@
-from django.test import TestCase, RequestFactory
+from django.test import RequestFactory, TestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from domains.platform.core.middleware import TenantMiddleware
-from domains.platform.tenants.models import Organization, Branch
+from domains.platform.tenants.models import Branch, Organization
 from domains.platform.users.models import User
-
 
 def get_response(request):
     return None
