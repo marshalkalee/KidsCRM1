@@ -29,6 +29,9 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # Нужен для TrigramExtension (baseline-миграция) и TrigramSimilarity —
+    # быстрый частичный/нечувствительный к регистру поиск (ТЗ п. 4.1).
+    "django.contrib.postgres",
 ]
 
 THIRD_PARTY_APPS = [
