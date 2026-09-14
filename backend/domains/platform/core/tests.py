@@ -2,7 +2,6 @@ from django.test import TestCase, RequestFactory
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from domains.platform.core.middleware import TenantMiddleware
-from domains.platform.core.mixins import TenantCreateMixin
 from domains.platform.tenants.models import Organization, Branch
 from domains.platform.users.models import User
 
