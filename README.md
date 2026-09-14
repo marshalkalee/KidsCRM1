@@ -89,6 +89,35 @@ docker compose exec backend ruff format --check .
 docker compose exec backend djlint templates --profile django --check
 ```
 
+## CI
+
+Пайплайн — `.github/workflows/ci.yml`, запускается на каждый PR (в `main`
+и `develop`) и на пуш в них. Четыре независимых job'а, идут параллельно:
+
+| Job | Что делает |
+|---|---|
+| `lint` | `ruff check`/`ruff format --check`/`djlint` — аннотации ruff видны прямо на диффе PR (`--output-format=github`), не только в логе. |
+| `test` | Поднимает Postgres+Redis (`services:` GitHub Actions, не наш `docker-compose.yml` — так же, как CI в других продуктах AEM Solutions: `pip install` прямо на раннере, без Docker), гоняет `migrate` на пустой БД + тесты + `coverage report`. Отчёт о покрытии — без порога, но виден в Summary прогона, не только в логе. |
+| `tenant-isolation` | Отдельный **блокирующий** job: `python manage.py test --tag=tenant_isolation`. Конвенция — любой тест на изоляцию тенантов помечается `@tag("tenant_isolation")` (`django.test.tag`). Пока в репозитории нет бизнес-моделей с `organization_id` — тестов с этим тегом нет, job проходит на 0 тестах. Это не подделка проверки: как только появится первая такая модель, тест на её изоляцию обязан получить тег — иначе он не покрыт этим job'ом. |
+| `build` | Собирает `backend/Dockerfile` (прод-образ). Отдельной frontend-сборки нет — веб внутри backend (ADR-002). |
+
+Все команды локально проверены (venv + реальный Postgres/Redis, без
+Docker для самого прогона — как и будет в CI).
+
+**Обязательно вручную, я не могу это сделать сама**: включить branch
+protection в GitHub, чтобы PR нельзя было влить с красным пайплайном —
+это настройка репозитория, не файл в коде.
+
+1. GitHub → Settings → Branches → Add rule (для `main`, повторить для `develop`).
+2. Включить **Require status checks to pass before merging**.
+3. Выбрать все четыре job'а (`lint`, `test`, `tenant-isolation`, `build`) —
+   появятся в списке только после первого прогона пайплайна на любом PR.
+4. Включить **Require branches to be up to date before merging**.
+
+*До этого шага критерий «PR нельзя влить с красным пайплайном» не
+выполнен — пайплайн будет показывать красный/зелёный статус, но
+физически смержить можно будет в любом случае.*
+
 ## Миграции
 
 Инструмент — встроенные миграции Django, ничего дополнительного не
@@ -148,10 +177,8 @@ python manage.py makemigrations <app> --name <короткое_описание>
 *Статус: предложено, финальное согласование — на созвоне троих (как и
 другие процессные решения в этом репозитории).*
 
-**CI**: прогонять `migrate` на чистой БД должен CI-пайплайн — это отдельная
-задача (workflow ещё не заведён в этом репозитории). Команда для CI, когда
-он появится: `docker compose run --rm backend python manage.py migrate`
-против пустого volume.
+**CI**: миграции на чистой БД прогоняются в пайплайне на каждый PR — см.
+раздел «CI» ниже.
 
 ## Дальше
 
