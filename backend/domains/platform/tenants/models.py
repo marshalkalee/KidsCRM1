@@ -41,7 +41,6 @@ class Organization(TimestampedSoftDeleteModel):
 
 
 class Branch(TenantModel):
-
     name = models.CharField(max_length=255)
     address = models.TextField(blank=True)
     phone = models.CharField(max_length=20, blank=True)
