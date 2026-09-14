@@ -1,0 +1,7 @@
+{
+  "nav.brand": "KidsCRM",
+  "nav.lang_placeholder": "EN",
+  "home.title": "Skeleton is up",
+  "home.hint": "Domain screens live under templates/<domain>/, assets under static/site/.",
+  "home.ping_button": "Check jQuery"
+}
