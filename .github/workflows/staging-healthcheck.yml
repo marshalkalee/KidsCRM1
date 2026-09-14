@@ -1,0 +1,23 @@
+name: Staging health check
+
+# Простой внешний мониторинг доступности — без стороннего сервиса.
+# Красный прогон = GitHub уведомит того, кто следит за Actions в этом
+# репозитории. Это база "пока не построили что-то серьёзнее" — не замена
+# полноценному мониторингу (алерты в Slack/PagerDuty и т.п.), если/когда
+# понадобится.
+#
+# Требует секрет STAGING_DOMAIN (тот же, что у deploy-staging.yml). Без
+# него job будет падать всегда — это ожидаемо до выбора хостинга.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Проверить /healthz/
+    runs-on: ubuntu-latest
+    steps:
+      - name: curl /healthz/
+        run: curl -fsS "https://${{ secrets.STAGING_DOMAIN }}/healthz/"
