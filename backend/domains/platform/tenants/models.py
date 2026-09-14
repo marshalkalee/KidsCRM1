@@ -41,14 +41,12 @@ class Organization(TimestampedSoftDeleteModel):
 
 
 class Branch(TenantModel):
-    """Филиал. Мультифилиальность — с первого дня: N филиалов на организацию (ТЗ п. 1.2.3)."""
 
     name = models.CharField(max_length=255)
     address = models.TextField(blank=True)
     phone = models.CharField(max_length=20, blank=True)
-    # Структурированные часы работы по дням недели (db-schema-v1: jsonb),
-    # а не свободный текст.
     working_hours = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["name"]
