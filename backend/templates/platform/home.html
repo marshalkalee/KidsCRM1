@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — главная
+{% endblock title %}
+{% block content %}
+  <h1 data-i18n="home.title">Главная страница</h1>
+  <p data-i18n="home.hint">Экраны доменов — в templates/&lt;домен&gt;/, статика — в static/site/.</p>
+  <button type="button" class="kc-btn kc-btn--primary" id="js-ping">
+    <span data-i18n="home.ping_button">Проверить jQuery</span>
+  </button>
+{% endblock content %}
