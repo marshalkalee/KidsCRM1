@@ -13,9 +13,12 @@
          layout.css (каркас) + kc.css (компоненты), см. domains/README.md -->
     <link rel="stylesheet"
           href="{% static 'site/css/vendor/bootstrap.min.css' %}" />
+    <link rel="stylesheet"
+          href="{% static 'site/css/vendor/select2.min.css' %}" />
     <link rel="stylesheet" href="{% static 'site/css/tokens.css' %}" />
     <link rel="stylesheet" href="{% static 'site/css/layout.css' %}" />
     <link rel="stylesheet" href="{% static 'site/css/kc.css' %}" />
+    <link rel="stylesheet" href="{% static 'site/css/components.css' %}" />
     {% block extra_css %}
     {% endblock extra_css %}
   </head>
@@ -33,10 +36,18 @@
     <!-- Вендорные плагины без сборщика — см. static/site/js/vendor/README.md -->
     <script src="{% static 'site/js/vendor/jquery.min.js' %}"></script>
     <script src="{% static 'site/js/vendor/bootstrap.bundle.min.js' %}"></script>
+    <script src="{% static 'site/js/vendor/select2.min.js' %}"></script>
     <!-- Своя i18n-система: бандл собран backend/scripts/build_i18n_bundle.py -->
     <script src="{% static 'site/js/i18n-bundle.js' %}"></script>
     <script src="{% static 'site/js/i18n.js' %}"></script>
     <script src="{% static 'site/js/layout.js' %}"></script>
+    <!-- Библиотека компонентов — см. domains/README.md -->
+    <script src="{% static 'site/js/components/toast.js' %}"></script>
+    <script src="{% static 'site/js/components/modal.js' %}"></script>
+    <script src="{% static 'site/js/components/form.js' %}"></script>
+    <script src="{% static 'site/js/components/search-input.js' %}"></script>
+    <script src="{% static 'site/js/components/table.js' %}"></script>
+    <script src="{% static 'site/js/components/picker.js' %}"></script>
     <script src="{% static 'site/js/app.js' %}"></script>
     {% block extra_js %}
     {% endblock extra_js %}

@@ -9,4 +9,5 @@ urlpatterns = [
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
     path("switch-branch/", views.switch_branch, name="switch-branch"),
+    path("dev/components/", views.components_demo, name="components-demo"),
 ]
