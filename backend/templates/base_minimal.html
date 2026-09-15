@@ -9,8 +9,6 @@
         KidsCRM
       {% endblock title %}
     </title>
-    <!-- Design-система: static/site/css/tokens.css (переменные) +
-         layout.css (каркас) + kc.css (компоненты), см. domains/README.md -->
     <link rel="stylesheet"
           href="{% static 'site/css/vendor/bootstrap.min.css' %}" />
     <link rel="stylesheet" href="{% static 'site/css/tokens.css' %}" />
@@ -20,24 +18,12 @@
     {% endblock extra_css %}
   </head>
   <body>
-    <div class="kc-shell">
-      {% include "includes/sidebar.html" %}
-      <div class="kc-shell__main">
-        {% include "includes/header.html" %}
-        <main class="kc-page-content">
-          {% block content %}
-          {% endblock content %}
-        </main>
-      </div>
-    </div>
-    <!-- Вендорные плагины без сборщика — см. static/site/js/vendor/README.md -->
+    {% block content %}
+    {% endblock content %}
     <script src="{% static 'site/js/vendor/jquery.min.js' %}"></script>
     <script src="{% static 'site/js/vendor/bootstrap.bundle.min.js' %}"></script>
-    <!-- Своя i18n-система: бандл собран backend/scripts/build_i18n_bundle.py -->
     <script src="{% static 'site/js/i18n-bundle.js' %}"></script>
     <script src="{% static 'site/js/i18n.js' %}"></script>
-    <script src="{% static 'site/js/layout.js' %}"></script>
-    <script src="{% static 'site/js/app.js' %}"></script>
     {% block extra_js %}
     {% endblock extra_js %}
   </body>

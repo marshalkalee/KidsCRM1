@@ -43,6 +43,12 @@ jobs:
         working-directory: backend
         run: djlint templates --profile django --check
 
+      # Захардкоженные строки интерфейса — ТЗ п. 10.1, критерий приёмки
+      # тикета UI-каркаса: строка без data-i18n должна ловиться линтером.
+      - name: Захардкоженные строки (i18n)
+        working-directory: backend
+        run: python scripts/check_hardcoded_strings.py
+
   test:
     name: Tests + coverage (Postgres, Redis)
     runs-on: ubuntu-latest
