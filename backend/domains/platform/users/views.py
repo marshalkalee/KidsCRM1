@@ -8,6 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from domains.platform.core.permissions import IsStaffOfOrganization
+from domains.platform.core.role_permissions import get_user_permissions
 from domains.platform.users.serializers import (
     ChangePasswordSerializer,
     CustomTokenObtainSerializer,
@@ -102,3 +103,21 @@ class ChangePasswordView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({"detail": "Пароль изменён."})
+
+
+class MeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        return Response(
+            {
+                "id": str(user.id),
+                "full_name": user.full_name,
+                "phone": user.phone,
+                "role": user.role,
+                "organization_id": str(user.organization_id) if user.organization_id else None,
+                "branches": [str(b.id) for b in user.branches.all()],
+                "permissions": get_user_permissions(user),
+            }
+        )
