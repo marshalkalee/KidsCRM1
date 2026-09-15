@@ -1,0 +1,53 @@
+/*
+ * Design-system KidsCRM. Переиспользуемые классы вместо инлайновых стилей —
+ * .kc-<блок>[--модификатор][__элемент], по образцу существующего в другом
+ * продукте AEM Solutions паттерна (там — .hr-*, здесь — .kc-*, чтобы не
+ * путать с чужим продуктом).
+ */
+
+.kc-navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #1f2d3d;
+  color: #fff;
+}
+
+.kc-navbar__brand {
+  font-weight: 600;
+}
+
+.kc-page-content {
+  padding: 20px;
+}
+
+.kc-form-input {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ccd0d5;
+  border-radius: 4px;
+}
+
+.kc-btn {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.kc-btn--primary {
+  background: #2f6fed;
+  color: #fff;
+}
+
+.kc-registry-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.kc-registry-row {
+  border-bottom: 1px solid #e5e7eb;
+}
