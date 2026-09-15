@@ -58,10 +58,18 @@ class TenantScopedAPITests(APITestCase):
         self.branch_b = Branch.objects.create(organization=self.org_b, name="Филиал B")
 
         self.user_a = User.objects.create_user(
-            phone="+77010000001", full_name="Owner A", password="pass12345", organization=self.org_a
+            phone="+77010000001",
+            full_name="Owner A",
+            password="pass12345",
+            organization=self.org_a,
+            role=User.Role.OWNER,
         )
         self.user_b = User.objects.create_user(
-            phone="+77010000002", full_name="Owner B", password="pass12345", organization=self.org_b
+            phone="+77010000002",
+            full_name="Owner B",
+            password="pass12345",
+            organization=self.org_b,
+            role=User.Role.OWNER,
         )
 
     def test_branch_list_is_scoped_to_own_organization(self):
