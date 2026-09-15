@@ -4,7 +4,6 @@
 {% endblock title %}
 {% block content %}
   <h1 data-i18n="dev.components.title">Библиотека компонентов</h1>
-
   <section class="kc-field">
     <h2 data-i18n="dev.components.toast_section">Тосты и уведомления</h2>
     <button type="button" class="kc-btn kc-btn--primary" id="js-toast-success">
@@ -20,7 +19,6 @@
       <span data-i18n="dev.components.toast_info">Показать инфо</span>
     </button>
   </section>
-
   <section class="kc-field">
     <h2 data-i18n="dev.components.modal_section">Модалка и подтверждение опасных действий</h2>
     <button type="button" class="kc-btn kc-btn--danger" id="js-modal-confirm">
@@ -31,19 +29,33 @@
       <strong id="js-modal-result">—</strong>
     </p>
   </section>
-
   <section class="kc-field">
     <h2 data-i18n="dev.components.form_section">Форма</h2>
-    <p data-i18n="dev.components.form_hint">Измените поле и попробуйте закрыть вкладку — появится предупреждение о несохранённых изменениях. Отправка без интернета покажет ошибки сервера ниже полей.</p>
+    <p data-i18n="dev.components.form_hint">
+      Измените поле и попробуйте закрыть вкладку — появится предупреждение о несохранённых изменениях. Отправка без интернета покажет ошибки сервера ниже полей.
+    </p>
     <form id="js-demo-form" novalidate>
       <div class="kc-field">
-        <label class="kc-field__label kc-field__label--required" for="js-demo-name" data-i18n="dev.components.form_name_label">Имя</label>
-        <input class="kc-form-input" type="text" id="js-demo-name" name="name" required />
+        <label class="kc-field__label kc-field__label--required"
+               for="js-demo-name"
+               data-i18n="dev.components.form_name_label">Имя</label>
+        <input class="kc-form-input"
+               type="text"
+               id="js-demo-name"
+               name="name"
+               required />
         <div class="kc-field__error"></div>
       </div>
       <div class="kc-field">
-        <label class="kc-field__label kc-field__label--required" for="js-demo-phone" data-i18n="dev.components.form_phone_label">Телефон</label>
-        <input class="kc-form-input" type="tel" id="js-demo-phone" name="phone" pattern="^\+?[0-9]{10,15}$" required />
+        <label class="kc-field__label kc-field__label--required"
+               for="js-demo-phone"
+               data-i18n="dev.components.form_phone_label">Телефон</label>
+        <input class="kc-form-input"
+               type="tel"
+               id="js-demo-phone"
+               name="phone"
+               pattern="^\+?[0-9]{10,15}$"
+               required />
         <div class="kc-field__error"></div>
       </div>
       <button type="submit" class="kc-btn kc-btn--primary">
@@ -51,7 +63,6 @@
       </button>
     </form>
   </section>
-
   <section class="kc-field">
     <h2 data-i18n="dev.components.search_section">Поле поиска с задержкой ввода</h2>
     <div class="kc-search-input">
@@ -62,7 +73,6 @@
       <span class="kc-spinner kc-search-input__spinner"></span>
     </div>
   </section>
-
   <section class="kc-field">
     <h2 data-i18n="dev.components.table_section">Таблица</h2>
     <div class="kc-table-toolbar">
@@ -74,16 +84,19 @@
       <strong id="js-demo-table-selected">0</strong>
     </p>
   </section>
-
   <section class="kc-field">
     <h2 data-i18n="dev.components.picker_section">Выбор ребёнка и родителя</h2>
     <p data-i18n="dev.components.picker_note">Данные-заглушки — модели ребёнка/родителя появятся в другом тикете.</p>
     <div class="kc-field">
-      <label class="kc-field__label" for="js-demo-child" data-i18n="dev.components.picker_child_label">Ребёнок</label>
+      <label class="kc-field__label"
+             for="js-demo-child"
+             data-i18n="dev.components.picker_child_label">Ребёнок</label>
       <select id="js-demo-child" class="kc-form-input"></select>
     </div>
     <div class="kc-field">
-      <label class="kc-field__label" for="js-demo-parent" data-i18n="dev.components.picker_parent_label">Родитель</label>
+      <label class="kc-field__label"
+             for="js-demo-parent"
+             data-i18n="dev.components.picker_parent_label">Родитель</label>
       <select id="js-demo-parent" class="kc-form-input"></select>
     </div>
   </section>
