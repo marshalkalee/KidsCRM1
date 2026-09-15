@@ -1,0 +1,10 @@
+<aside class="kc-sidebar" id="kc-sidebar">
+  <div class="kc-sidebar__brand" data-i18n="nav.brand">KidsCRM</div>
+  <nav class="kc-sidebar__nav">
+    <a href="{% url 'core:home' %}"
+       class="kc-sidebar__link"
+       data-i18n="nav.home">Главная</a>
+    {# Домены добавляют свои пункты сюда по мере появления реальных экранов — #}
+    {# не заводить ссылку заранее, если страницы за ней ещё нет (dead link). #}
+  </nav>
+</aside>
