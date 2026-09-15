@@ -1,0 +1,7 @@
+{
+  "nav.brand": "KidsCRM",
+  "nav.lang_placeholder": "KK",
+  "home.title": "Қаңқа көтерілді",
+  "home.hint": "Домен беттері — templates/<домен>/, статика — static/site/.",
+  "home.ping_button": "jQuery тексеру"
+}
