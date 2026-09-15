@@ -3,6 +3,7 @@
 всё отсюда и переопределяют только то, что отличается по окружению.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -37,6 +38,7 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     "rest_framework",
     "drf_spectacular",
+    "rest_framework_simplejwt.token_blacklist",
 ]
 
 DOMAIN_APPS = [
@@ -147,6 +149,20 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "REST API платформы KidsCRM (см. ADR-002 — версионирование через /api/v1/).",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+}
+
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+]
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "TOKEN_OBTAIN_SERIALIZER": "domains.platform.users.serializers.CustomTokenObtainSerializer",
 }
 
 # Celery — фоновые задачи (генерация занятий, автозадачи, пересчёты), ADR-002.

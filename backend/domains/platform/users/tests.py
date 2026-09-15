@@ -1,6 +1,7 @@
-from django.test import tag
+from django.test import TestCase, tag
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from domains.platform.tenants.models import Branch, Organization
 
@@ -113,3 +114,98 @@ class UserAPITests(APITestCase):
 
         phones = [u["phone"] for u in response.data["results"]]
         self.assertEqual(phones, ["+77010000001"])
+
+
+class AuthTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.org = Organization.objects.create(name="Балет Астана", slug="ballet-astana")
+        self.owner = User.objects.create_user(
+            phone="77001234567",
+            password="StrongPass123!",
+            full_name="Владелец",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+
+    def test_register_organization(self):
+        response = self.client.post(
+            "/api/v1/users/auth/register/",
+            {
+                "org_name": "Новая школа",
+                "org_slug": "new-school",
+                "full_name": "Директор",
+                "phone": "77009999999",
+                "password": "StrongPass123!",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+
+    def test_login_returns_tokens(self):
+        response = self.client.post(
+            "/api/v1/users/auth/login/",
+            {"phone": "77001234567", "password": "StrongPass123!"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+
+    def test_login_wrong_password_does_not_reveal_user_existence(self):
+        response = self.client.post(
+            "/api/v1/users/auth/login/",
+            {"phone": "77001234567", "password": "WrongPass"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn("77001234567", str(response.data))
+
+    def test_logout_blacklists_token(self):
+        refresh = RefreshToken.for_user(self.owner)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {str(refresh.access_token)}")
+        response = self.client.post(
+            "/api/v1/users/auth/logout/",
+            {"refresh": str(refresh)},
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_invite_staff(self):
+        refresh = RefreshToken.for_user(self.owner)
+        refresh["organization_id"] = str(self.org.id)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {str(refresh.access_token)}")
+        response = self.client.post(
+            "/api/v1/users/auth/invite/",
+            {
+                "full_name": "Администратор",
+                "phone": "77007777777",
+                "role": "admin",
+                "password": "StrongPass123!",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["role"], "admin")
+
+    def test_change_password(self):
+        refresh = RefreshToken.for_user(self.owner)
+        refresh["organization_id"] = str(self.org.id)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {str(refresh.access_token)}")
+        response = self.client.post(
+            "/api/v1/users/auth/change-password/",
+            {
+                "old_password": "StrongPass123!",
+                "new_password": "NewStrongPass456!",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_password_not_stored_in_plain_text(self):
+        self.assertNotEqual(self.owner.password, "StrongPass123!")
+        self.assertTrue(self.owner.password.startswith("argon2"))
+
+    def test_rate_limit_on_login(self):
+        for _ in range(6):
+            response = self.client.post(
+                "/api/v1/users/auth/login/",
+                {"phone": "77001234567", "password": "WrongPass"},
+            )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
