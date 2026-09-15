@@ -1,0 +1,19 @@
+{
+  "nav.brand": "KidsCRM",
+  "nav.lang_placeholder": "RU",
+  "nav.home": "Главная",
+  "nav.logout": "Выйти",
+  "login.phone": "Телефон",
+  "login.password": "Пароль",
+  "login.submit": "Войти",
+  "login.error": "Неверный телефон или пароль.",
+  "home.title": "Главная страница",
+  "home.hint": "Экраны доменов — в templates/<домен>/, статика — в static/site/.",
+  "home.ping_button": "Проверить jQuery",
+  "home.active_branch": "Активный филиал:",
+  "home.now_label": "Сейчас по времени организации:",
+  "home.money_example": "Пример суммы:",
+  "state.loading": "Загрузка...",
+  "state.empty": "Пусто",
+  "state.error": "Ошибка"
+}

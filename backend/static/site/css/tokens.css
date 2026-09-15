@@ -1,0 +1,47 @@
+/*
+ * Design-токены — единственное место с "магическими числами" (цвета,
+ * отступы, шрифты). Остальной CSS должен ссылаться на var(--kc-*), а не
+ * на литералы, чтобы поменять тему/масштаб можно было в одном файле.
+ */
+
+:root {
+  /* Цвета */
+  --kc-color-bg: #f5f6f8;
+  --kc-color-surface: #ffffff;
+  --kc-color-border: #e2e5ea;
+  --kc-color-text: #1f2d3d;
+  --kc-color-text-muted: #6b7280;
+  --kc-color-primary: #2f6fed;
+  --kc-color-primary-contrast: #ffffff;
+  --kc-color-danger: #e5484d;
+  --kc-color-success: #2f9e44;
+  --kc-color-warning: #f0a020;
+
+  /* Типографика */
+  --kc-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --kc-font-size-sm: 13px;
+  --kc-font-size-base: 15px;
+  --kc-font-size-lg: 18px;
+  --kc-font-weight-normal: 400;
+  --kc-font-weight-bold: 600;
+
+  /* Отступы — шкала 4px */
+  --kc-space-1: 4px;
+  --kc-space-2: 8px;
+  --kc-space-3: 12px;
+  --kc-space-4: 16px;
+  --kc-space-5: 24px;
+  --kc-space-6: 32px;
+
+  /* Радиусы */
+  --kc-radius-sm: 4px;
+  --kc-radius-md: 8px;
+
+  /* Размеры каркаса */
+  --kc-sidebar-width: 240px;
+  --kc-header-height: 56px;
+
+  /* Мобильный брейкпоинт (ТЗ п. 10.4) — тот же порог используется в
+     layout.js для JS-логики (открыть/закрыть sidebar). */
+  --kc-breakpoint-mobile: 768px;
+}

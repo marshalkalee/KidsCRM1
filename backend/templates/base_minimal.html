@@ -1,0 +1,30 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>
+      {% block title %}
+        KidsCRM
+      {% endblock title %}
+    </title>
+    <link rel="stylesheet"
+          href="{% static 'site/css/vendor/bootstrap.min.css' %}" />
+    <link rel="stylesheet" href="{% static 'site/css/tokens.css' %}" />
+    <link rel="stylesheet" href="{% static 'site/css/layout.css' %}" />
+    <link rel="stylesheet" href="{% static 'site/css/kc.css' %}" />
+    {% block extra_css %}
+    {% endblock extra_css %}
+  </head>
+  <body>
+    {% block content %}
+    {% endblock content %}
+    <script src="{% static 'site/js/vendor/jquery.min.js' %}"></script>
+    <script src="{% static 'site/js/vendor/bootstrap.bundle.min.js' %}"></script>
+    <script src="{% static 'site/js/i18n-bundle.js' %}"></script>
+    <script src="{% static 'site/js/i18n.js' %}"></script>
+    {% block extra_js %}
+    {% endblock extra_js %}
+  </body>
+</html>

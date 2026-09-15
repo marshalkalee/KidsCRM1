@@ -1,0 +1,33 @@
+{% extends "base_minimal.html" %}
+{% block title %}
+  KidsCRM — вход
+{% endblock title %}
+{% block content %}
+  <div class="kc-auth-page">
+    <form method="post" class="kc-auth-card">
+      {% csrf_token %}
+      <div class="kc-auth-card__brand" data-i18n="nav.brand">KidsCRM</div>
+      {% if error %}<p class="kc-error-state" data-i18n="{{ error }}">Неверный телефон или пароль.</p>{% endif %}
+      <label class="kc-auth-card__label" for="id_phone" data-i18n="login.phone">Телефон</label>
+      <input class="kc-form-input"
+             type="tel"
+             name="phone"
+             id="id_phone"
+             autocomplete="tel"
+             required />
+      <label class="kc-auth-card__label"
+             for="id_password"
+             data-i18n="login.password">Пароль</label>
+      <input class="kc-form-input"
+             type="password"
+             name="password"
+             id="id_password"
+             autocomplete="current-password"
+             required />
+      <input type="hidden" name="next" value="{{ next }}" />
+      <button type="submit"
+              class="kc-btn kc-btn--primary kc-auth-card__submit"
+              data-i18n="login.submit">Войти</button>
+    </form>
+  </div>
+{% endblock content %}
