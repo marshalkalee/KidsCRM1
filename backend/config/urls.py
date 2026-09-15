@@ -22,6 +22,7 @@ api_v1_patterns = [
     path("notifications/", include("domains.platform.notifications.urls")),
     path("tasks/", include("domains.platform.tasks.urls")),
     path("leads/", include("domains.platform.leads.urls")),
+    path("audit/", include("domains.platform.core.audit_urls")),
 ]
 
 urlpatterns = [
