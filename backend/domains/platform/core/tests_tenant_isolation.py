@@ -57,7 +57,6 @@ class TenantIsolationTest(TestCase):
         self.client_a.credentials(HTTP_AUTHORIZATION=f"Bearer {make_token(self.user_a)}")
         self.client_b.credentials(HTTP_AUTHORIZATION=f"Bearer {make_token(self.user_b)}")
 
-
     def test_org_a_cannot_read_branches_of_org_b(self):
         response = self.client_a.get("/api/v1/branches/")
         self.assertEqual(response.status_code, 200)
@@ -74,7 +73,6 @@ class TenantIsolationTest(TestCase):
         self.assertEqual(response.status_code, 200)
         names = [r["name"] for r in response.data["results"]]
         self.assertNotIn("Зал Б", names)
-
 
     def test_org_a_cannot_update_branch_of_org_b(self):
         response = self.client_a.patch(
@@ -100,7 +98,6 @@ class TenantIsolationTest(TestCase):
             created_id = response.data["id"]
             branch = Branch.objects.get(id=created_id)
             self.assertEqual(branch.organization, self.org_a)
-
 
     def test_error_message_does_not_leak_foreign_data(self):
         response = self.client_a.get(f"/api/v1/branches/{self.branch_b.id}/")
