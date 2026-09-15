@@ -24,7 +24,7 @@ class TenantIsolationTest(TestCase):
             password="pass",
             full_name="Админ А",
             organization=self.org_a,
-            role=User.Role.ADMIN,
+            role=User.Role.OWNER,
         )
         self.branch_a = Branch.objects.create(
             name="Филиал А",
@@ -42,7 +42,7 @@ class TenantIsolationTest(TestCase):
             password="pass",
             full_name="Админ Б",
             organization=self.org_b,
-            role=User.Role.ADMIN,
+            role=User.Role.OWNER,
         )
         self.branch_b = Branch.objects.create(
             name="Филиал Б",
