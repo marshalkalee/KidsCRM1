@@ -1,3 +1,4 @@
+from django.core.validators import RegexValidator
 from django.db import models
 
 from domains.platform.core.models import SoftDeleteManager, TenantModel, TimestampedSoftDeleteModel
@@ -72,3 +73,31 @@ class Room(TenantModel):
 
     def __str__(self) -> str:
         return f"{self.name} @ {self.branch_id}"
+
+
+class Direction(TenantModel):
+    """
+    Направление (балет, гимнастика, английский) — справочник, на который
+    ссылаются группы (домен Дарьи), типы абонементов (домен Bekzat'а),
+    заявки и аналитика (ТЗ п. 3.1). Принадлежит организации целиком, а не
+    филиалу — сеть с одним "балетом" на всю сеть не должна заводить его
+    в каждом филиале заново, только отметить, где он доступен (см.
+    `branches` — M2M, не ForeignKey).
+    """
+
+    HEX_COLOR_VALIDATOR = RegexValidator(r"^#[0-9A-Fa-f]{6}$", "Цвет — HEX-код вида #7C6FF7.")
+
+    name = models.CharField(max_length=255)
+    # Дефолт — акцентный цвет из дизайн-системы (tokens.css), чтобы новое
+    # направление не заводилось без цвета "просто чёрным" в календаре.
+    color = models.CharField(max_length=7, default="#7C6FF7", validators=[HEX_COLOR_VALIDATOR])
+    age_min = models.PositiveSmallIntegerField(null=True, blank=True)
+    age_max = models.PositiveSmallIntegerField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    branches = models.ManyToManyField(Branch, related_name="directions", blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name

@@ -40,6 +40,11 @@ BRANCH_MANAGE_ROLES = {
     User.Role.MANAGER,
 }
 
+DIRECTION_MANAGE_ROLES = {
+    User.Role.OWNER,
+    User.Role.MANAGER,
+}
+
 
 PHONE_VIEW_ROLES = {
     User.Role.OWNER,
@@ -73,6 +78,10 @@ def can_manage_branches(user) -> bool:
     return user.role in BRANCH_MANAGE_ROLES
 
 
+def can_manage_directions(user) -> bool:
+    return user.role in DIRECTION_MANAGE_ROLES
+
+
 def can_view_phone(user) -> bool:
     return user.role in PHONE_VIEW_ROLES
 
@@ -85,5 +94,6 @@ def get_user_permissions(user) -> dict:
         "can_view_org_summary": can_view_org_summary(user),
         "can_manage_org_settings": can_manage_org_settings(user),
         "can_manage_branches": can_manage_branches(user),
+        "can_manage_directions": can_manage_directions(user),
         "can_view_phone": can_view_phone(user),
     }

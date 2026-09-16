@@ -185,6 +185,26 @@
   margin-bottom: var(--kc-space-3);
 }
 
+/* Множественный выбор чекбоксами (например, филиалы у направления) —
+   Django рисует его как обычный <ul>, без класса, стилизуем по тегу
+   внутри .kc-field, чтобы не переопределять виджет в Python-коде. */
+.kc-field ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kc-space-3);
+}
+
+.kc-field ul li label {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-1);
+  font-size: var(--kc-font-size-sm);
+  cursor: pointer;
+}
+
 .kc-field__label {
   display: block;
   margin-bottom: var(--kc-space-1);

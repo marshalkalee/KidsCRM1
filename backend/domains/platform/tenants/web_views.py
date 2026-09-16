@@ -12,8 +12,13 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from domains.platform.core.decorators import role_required
-from domains.platform.tenants.forms import BranchForm, OrganizationSettingsForm, RoomForm
-from domains.platform.tenants.models import Branch, Room
+from domains.platform.tenants.forms import (
+    BranchForm,
+    DirectionForm,
+    OrganizationSettingsForm,
+    RoomForm,
+)
+from domains.platform.tenants.models import Branch, Direction, Room
 from domains.platform.tenants.org_settings import DEFAULT_ORG_SETTINGS
 
 OWNER = "owner"
@@ -26,6 +31,9 @@ BRANCH_MANAGE_ROLES = (OWNER, MANAGER)
 # то же правило, повторённое явно для веб-страниц (page-уровня predicate у
 # role_required нет, он принимает только список ролей).
 ROOM_MANAGE_ROLES = (OWNER, MANAGER, ADMIN, TEACHER)
+# Направления — тот же уровень, что и филиалы: справочник, влияющий на
+# расписание/абонементы у всей организации, не рядовая операционная правка.
+DIRECTION_MANAGE_ROLES = (OWNER, MANAGER)
 
 
 def _is_ajax(request):
@@ -227,3 +235,100 @@ def room_delete(request, branch_pk, pk):
     room.delete()  # мягкое удаление — TimestampedSoftDeleteModel.delete()
     messages.success(request, "Зал удалён.")
     return redirect("tenants_web:room-list", branch_pk=branch.pk)
+
+
+@role_required()
+def direction_list(request):
+    directions = (
+        Direction.objects.for_tenant(request.user.organization)
+        .prefetch_related("branches")
+        .order_by("-is_active", "name")
+    )
+    rows = [
+        {
+            "id": str(direction.id),
+            "name": direction.name,
+            "color": direction.color,
+            "age_min": direction.age_min,
+            "age_max": direction.age_max,
+            "branch_names": ", ".join(b.name for b in direction.branches.all()),
+            "is_active": direction.is_active,
+            "edit_url": reverse("tenants_web:direction-edit", args=[direction.pk]),
+            "archive_url": reverse("tenants_web:direction-archive", args=[direction.pk]),
+        }
+        for direction in directions
+    ]
+    return render(request, "tenants/direction_list.html", {"rows": rows})
+
+
+@role_required(*DIRECTION_MANAGE_ROLES)
+@require_http_methods(["GET", "POST"])
+def direction_create(request):
+    organization = request.user.organization
+    if request.method == "POST":
+        form = DirectionForm(request.POST, organization=organization)
+        if form.is_valid():
+            direction = form.save(commit=False)
+            direction.organization = organization
+            direction.save()
+            form.save_m2m()
+            messages.success(request, "Направление создано.")
+            if _is_ajax(request):
+                return JsonResponse({"success": True})
+            return redirect("tenants_web:direction-list")
+        if _is_ajax(request):
+            return render(
+                request, "tenants/_direction_form_fields.html", {"form": form}, status=400
+            )
+    else:
+        form = DirectionForm(organization=organization)
+    if _is_ajax(request):
+        return render(request, "tenants/_direction_form_fields.html", {"form": form})
+    return render(request, "tenants/direction_form.html", {"form": form, "is_create": True})
+
+
+@role_required(*DIRECTION_MANAGE_ROLES)
+@require_http_methods(["GET", "POST"])
+def direction_edit(request, pk):
+    direction = get_object_or_404(Direction.objects.for_tenant(request.user.organization), pk=pk)
+    if request.method == "POST":
+        form = DirectionForm(request.POST, instance=direction, organization=direction.organization)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Направление обновлено.")
+            if _is_ajax(request):
+                return JsonResponse({"success": True})
+            return redirect("tenants_web:direction-list")
+        if _is_ajax(request):
+            return render(
+                request, "tenants/_direction_form_fields.html", {"form": form}, status=400
+            )
+    else:
+        form = DirectionForm(instance=direction, organization=direction.organization)
+    if _is_ajax(request):
+        return render(request, "tenants/_direction_form_fields.html", {"form": form})
+    return render(
+        request,
+        "tenants/direction_form.html",
+        {"form": form, "is_create": False, "direction": direction},
+    )
+
+
+@role_required(*DIRECTION_MANAGE_ROLES)
+@require_http_methods(["POST"])
+def direction_archive(request, pk):
+    """
+    Архивация — is_active=False, не удаление (та же логика, что у
+    branch_archive). get_selectable_directions() (directions.py) фильтрует
+    is_active=True — архивированное направление перестаёт предлагаться при
+    создании новой группы/абонемента, но уже существующие продолжают на
+    него ссылаться (их Direction никуда не делась, просто is_active=False).
+    """
+    direction = get_object_or_404(Direction.objects.for_tenant(request.user.organization), pk=pk)
+    direction.is_active = not direction.is_active
+    direction.save(update_fields=["is_active", "updated_at"])
+    if direction.is_active:
+        messages.success(request, "Направление восстановлено.")
+    else:
+        messages.success(request, "Направление архивировано.")
+    return redirect("tenants_web:direction-list")

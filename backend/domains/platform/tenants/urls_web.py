@@ -32,4 +32,12 @@ urlpatterns = [
         web_views.room_delete,
         name="room-delete",
     ),
+    path("settings/directions/", web_views.direction_list, name="direction-list"),
+    path("settings/directions/create/", web_views.direction_create, name="direction-create"),
+    path("settings/directions/<uuid:pk>/edit/", web_views.direction_edit, name="direction-edit"),
+    path(
+        "settings/directions/<uuid:pk>/archive/",
+        web_views.direction_archive,
+        name="direction-archive",
+    ),
 ]

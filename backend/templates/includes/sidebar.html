@@ -24,7 +24,7 @@
       </li>
     </ul>
   </div>
-  {% if kc_permissions.can_manage_branches or kc_permissions.can_manage_org_settings %}
+  {% if kc_permissions.can_manage_branches or kc_permissions.can_manage_org_settings or kc_permissions.can_manage_directions %}
     <div class="kc-sidebar__section">
       <div class="kc-sidebar__section-label" data-i18n="nav.section_system">Система</div>
       <ul class="kc-sidebar__nav">
@@ -40,6 +40,18 @@
                 <path d="M9 9h1M9 13h1M14 9h1M14 13h1" />
               </svg>
               <span data-i18n="nav.branches">Филиалы</span>
+            </a>
+          </li>
+        {% endif %}
+        {% if kc_permissions.can_manage_directions %}
+          <li>
+            <a href="{% url 'tenants_web:direction-list' %}"
+               class="kc-sidebar__link">
+              <svg viewBox="0 0 24 24">
+                <path d="M20.59 13.41L11 3.83A2 2 0 0 0 9.59 3.17L4 3v5.59a2 2 0 0 0 .66 1.41l9.59 9.59a2 2 0 0 0 2.83 0l3.51-3.51a2 2 0 0 0 0-2.83z" />
+                <line x1="7" y1="7" x2="7.01" y2="7" />
+              </svg>
+              <span data-i18n="nav.directions">Направления</span>
             </a>
           </li>
         {% endif %}

@@ -6,7 +6,7 @@ import zoneinfo
 
 from django import forms
 
-from domains.platform.tenants.models import Branch, Room
+from domains.platform.tenants.models import Branch, Direction, Room
 from domains.platform.tenants.org_settings import (
     DEBT_OVERDUE_DAYS_THRESHOLD,
     GROUP_UNDERFILLED_PERCENT_THRESHOLD,
@@ -38,12 +38,20 @@ TIMEZONE_CHOICES = [
 
 class KcFormMixin:
     """Проставляет .kc-form-input каждому текстовому/числовому/select-полю —
-    иначе пришлось бы повторять attrs={"class": ...} на каждом поле формы."""
+    иначе пришлось бы повторять attrs={"class": ...} на каждом поле формы.
+
+    CheckboxSelectMultiple — тоже не текстовое поле, хоть и не CheckboxInput:
+    без этого исключения .kc-form-input (display:block; width:100%) попадал
+    на каждый чекбокс в списке (например, "Доступно в филиалах" у
+    направления), раздувая его на всю строку и роняя подпись под него."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
-            if isinstance(field.widget, forms.CheckboxInput | forms.HiddenInput):
+            if isinstance(
+                field.widget,
+                forms.CheckboxInput | forms.CheckboxSelectMultiple | forms.HiddenInput,
+            ):
                 continue
             existing = field.widget.attrs.get("class", "")
             field.widget.attrs["class"] = f"{existing} kc-form-input".strip()
@@ -172,3 +180,50 @@ class RoomForm(KcFormMixin, forms.ModelForm):
             "name": "Название зала",
             "capacity": "Вместимость",
         }
+
+
+class BranchMultipleChoiceField(forms.ModelMultipleChoiceField):
+    """Branch.__str__() включает organization_id (для админки/дебага) —
+    в чекбоксах формы это выглядело бы как "Филиал (uuid-...)", показываем
+    только название."""
+
+    def label_from_instance(self, obj):
+        return obj.name
+
+
+class DirectionForm(KcFormMixin, forms.ModelForm):
+    branches = BranchMultipleChoiceField(
+        queryset=Branch.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Доступно в филиалах",
+    )
+
+    class Meta:
+        model = Direction
+        fields = ["name", "color", "age_min", "age_max", "branches"]
+        labels = {
+            "name": "Название направления",
+            "color": "Цвет для календаря",
+            "age_min": "Возраст от",
+            "age_max": "Возраст до",
+        }
+        widgets = {
+            "color": forms.TextInput(attrs={"type": "color"}),
+        }
+
+    def __init__(self, *args, organization=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Иначе можно было бы отметить направление доступным в чужом
+        # филиале — organization обязателен, если только не bound на уже
+        # сохранённый инстанс (там он уже есть через self.instance).
+        org = organization or self.instance.organization
+        self.fields["branches"].queryset = Branch.objects.for_tenant(org).filter(is_active=True)
+
+    def clean(self):
+        cleaned = super().clean()
+        age_min = cleaned.get("age_min")
+        age_max = cleaned.get("age_max")
+        if age_min is not None and age_max is not None and age_max < age_min:
+            self.add_error("age_max", "Возраст «до» не может быть меньше возраста «от».")
+        return cleaned
