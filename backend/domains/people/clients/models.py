@@ -9,7 +9,7 @@
 данных (ТЗ п. 10.3): система не нуждается в нём для своей работы.
 """
 
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from domains.platform.core.models import TenantModel
@@ -127,3 +127,74 @@ class ContactPhone(TenantModel):
         self.organization_id = self.parent_contact.organization_id
         self.number = normalize_phone_number(self.number)
         super().save(*args, **kwargs)
+
+
+class ChildContact(TenantModel):
+    """
+    Связь ребёнок <-> родитель/контактное лицо — многие-ко-многим со своими
+    атрибутами (ТЗ п. 1.2.1, п. 3.1), не FK на Child: у ребёнка может быть
+    несколько контактов (мама, папа, бабушка), у контакта — несколько детей.
+
+    Правило про плательщика (согласовано с Bekzat — от него зависит расчёт
+    задолженности): у ребёнка не может быть больше ОДНОГО активного
+    плательщика одновременно. save() сам снимает флаг с предыдущего —
+    отдельного действия "назначить" не нужно, назначение — это просто
+    is_payer=True на нужной связи. UniqueConstraint ниже — тот же инвариант
+    на уровне БД (страховка от bulk_update/сырых запросов мимо save()).
+
+    Отвязка (detach) — мягкое удаление этой строки, не Child и не
+    ParentContact: будущие оплаты у Bekzat'а должны ссылаться на
+    ParentContact напрямую, а не на эту связь, — тогда отвязка контакта не
+    роняет историю платежей.
+    """
+
+    class Role(models.TextChoices):
+        MOTHER = "mother", "Мама"
+        FATHER = "father", "Папа"
+        GUARDIAN = "guardian", "Опекун"
+        GRANDMOTHER = "grandmother", "Бабушка"
+        OTHER = "other", "Другое"
+
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="contacts")
+    parent_contact = models.ForeignKey(
+        ParentContact, on_delete=models.CASCADE, related_name="child_links"
+    )
+    role = models.CharField(max_length=20, choices=Role.choices)
+    is_payer = models.BooleanField(default=False)
+    is_primary_contact = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["child_id", "-is_primary_contact", "role"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["child", "parent_contact"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_child_parent_contact",
+            ),
+            models.UniqueConstraint(
+                fields=["child"],
+                condition=models.Q(is_payer=True, deleted_at__isnull=True),
+                name="unique_active_payer_per_child",
+            ),
+            models.UniqueConstraint(
+                fields=["child"],
+                condition=models.Q(is_primary_contact=True, deleted_at__isnull=True),
+                name="unique_active_primary_contact_per_child",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.parent_contact_id} -> {self.child_id} ({self.role})"
+
+    def save(self, *args, **kwargs):
+        self.organization_id = self.child.organization_id
+        with transaction.atomic():
+            if self.is_payer:
+                type(self).objects.filter(child=self.child, is_payer=True).exclude(
+                    pk=self.pk
+                ).update(is_payer=False)
+            if self.is_primary_contact:
+                type(self).objects.filter(child=self.child, is_primary_contact=True).exclude(
+                    pk=self.pk
+                ).update(is_primary_contact=False)
+            super().save(*args, **kwargs)

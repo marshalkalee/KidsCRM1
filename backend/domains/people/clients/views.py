@@ -4,8 +4,8 @@ from rest_framework import viewsets
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOfOrganization
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 
-from .models import Child, ParentContact
-from .serializers import ChildSerializer, ParentContactSerializer
+from .models import Child, ChildContact, ParentContact
+from .serializers import ChildContactSerializer, ChildSerializer, ParentContactSerializer
 
 
 class ChildViewSet(viewsets.ModelViewSet):
@@ -65,3 +65,32 @@ class ParentContactViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(organization=self.request.user.organization)
+
+
+class ChildContactViewSet(viewsets.ModelViewSet):
+    """
+    Связь ребёнок <-> родитель/контактное лицо (ТЗ п. 1.2.1). Просмотр —
+    все сотрудники; привязать/отвязать/сменить роль или плательщика —
+    владелец, управляющий или администратор. organization на связи
+    выводится из child (ChildContact.save()) — здесь не задаётся.
+    """
+
+    serializer_class = ChildContactSerializer
+    permission_classes = [IsStaffOfOrganization]
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsOwnerOrManagerOrAdmin()]
+        return [IsStaffOfOrganization()]
+
+    def get_queryset(self):
+        qs = ChildContact.objects.for_tenant(self.request.user.organization).select_related(
+            "child", "parent_contact"
+        )
+        child_id = self.request.query_params.get("child")
+        if child_id:
+            qs = qs.filter(child_id=child_id)
+        parent_contact_id = self.request.query_params.get("parent_contact")
+        if parent_contact_id:
+            qs = qs.filter(parent_contact_id=parent_contact_id)
+        return qs
