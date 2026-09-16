@@ -1,0 +1,525 @@
+"""
+Ребёнок: модель, миграция, API (ТЗ п. 3.1, п. 10.3). Критерии приёмки:
+- создаётся, редактируется, переводится между статусами;
+- перевод в «ушёл» без причины отклоняется API, а не только формой;
+- возраст считается на лету и корректен в день рождения;
+- преподаватель видит ребёнка, но не административные поля (leave_reason,
+  consent_given) — стык с RBAC;
+- изоляция между организациями (тег tenant_isolation).
+"""
+
+import datetime
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase, tag
+from rest_framework import status
+from rest_framework.test import APITestCase
+
+from domains.platform.tenants.models import Direction, Organization
+
+from .models import Child, ContactPhone, ParentContact
+
+User = get_user_model()
+
+
+def _today_minus_years(years, day_offset=0):
+    today = datetime.date.today()
+    try:
+        return today.replace(year=today.year - years) + datetime.timedelta(days=day_offset)
+    except ValueError:
+        # 29 февраля на невисокосный год.
+        return today.replace(year=today.year - years, day=28) + datetime.timedelta(days=day_offset)
+
+
+class ChildModelTests(TestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+
+    def test_age_is_computed_not_stored(self):
+        birth_date = _today_minus_years(7)
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Аружан",
+            birth_date=birth_date,
+            gender=Child.Gender.FEMALE,
+        )
+        self.assertEqual(child.age, 7)
+        self.assertNotIn("age", [f.name for f in Child._meta.get_fields()])
+
+    def test_age_is_correct_on_birthday_itself(self):
+        birth_date = _today_minus_years(10, day_offset=0)
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Данияр",
+            birth_date=birth_date,
+            gender=Child.Gender.MALE,
+        )
+        self.assertEqual(child.age, 10)
+
+    def test_age_not_yet_incremented_day_before_birthday(self):
+        birth_date = _today_minus_years(10, day_offset=1)
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Данияр",
+            birth_date=birth_date,
+            gender=Child.Gender.MALE,
+        )
+        self.assertEqual(child.age, 9)
+
+    def test_soft_delete_hides_from_default_manager_but_keeps_row(self):
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Аружан",
+            birth_date=_today_minus_years(7),
+            gender=Child.Gender.FEMALE,
+        )
+
+        child.delete()
+
+        self.assertFalse(Child.objects.filter(pk=child.pk).exists())
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT deleted_at FROM clients_child WHERE id = %s", [str(child.pk)])
+            row = cursor.fetchone()
+        self.assertIsNotNone(row[0])
+
+
+class ChildAPITests(APITestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.direction = Direction.objects.create(organization=self.org, name="Балет")
+        self.owner = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.teacher = User.objects.create_user(
+            phone="+77010000002",
+            full_name="Teacher",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+
+    def test_owner_creates_child(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/clients/children/",
+            {
+                "full_name": "Аружан Касымова",
+                "birth_date": str(_today_minus_years(7)),
+                "gender": Child.Gender.FEMALE,
+                "directions": [str(self.direction.id)],
+                "consent_given": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        child = Child.objects.get(pk=response.data["id"])
+        self.assertEqual(child.organization_id, self.org.id)
+        self.assertEqual(response.data["age"], 7)
+
+    def test_birth_date_in_future_is_rejected(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/clients/children/",
+            {
+                "full_name": "Аружан",
+                "birth_date": str(datetime.date.today() + datetime.timedelta(days=1)),
+                "gender": Child.Gender.FEMALE,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("birth_date", response.data)
+
+    def test_transition_to_left_without_reason_is_rejected(self):
+        self.client.force_authenticate(self.owner)
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Аружан",
+            birth_date=_today_minus_years(7),
+            gender=Child.Gender.FEMALE,
+        )
+
+        response = self.client.patch(
+            f"/api/v1/clients/children/{child.id}/", {"status": "left"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("leave_reason", response.data)
+        child.refresh_from_db()
+        self.assertEqual(child.status, Child.Status.ACTIVE)
+
+    def test_transition_to_left_with_reason_is_accepted(self):
+        self.client.force_authenticate(self.owner)
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Аружан",
+            birth_date=_today_minus_years(7),
+            gender=Child.Gender.FEMALE,
+        )
+
+        response = self.client.patch(
+            f"/api/v1/clients/children/{child.id}/",
+            {"status": "left", "leave_reason": "Переезд в другой город"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        child.refresh_from_db()
+        self.assertEqual(child.status, Child.Status.LEFT)
+
+    def test_disallowed_status_transition_is_rejected(self):
+        self.client.force_authenticate(self.owner)
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Аружан",
+            birth_date=_today_minus_years(7),
+            gender=Child.Gender.FEMALE,
+            status=Child.Status.LEFT,
+            leave_reason="Переезд",
+        )
+
+        # LEFT -> PAUSED не входит в допустимые переходы.
+        response = self.client.patch(
+            f"/api/v1/clients/children/{child.id}/", {"status": "paused"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data)
+
+    def test_teacher_can_view_child_but_not_sensitive_fields(self):
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Аружан",
+            birth_date=_today_minus_years(7),
+            gender=Child.Gender.FEMALE,
+            status=Child.Status.LEFT,
+            leave_reason="Переезд",
+            consent_given=True,
+        )
+        self.client.force_authenticate(self.teacher)
+
+        response = self.client.get(f"/api/v1/clients/children/{child.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["full_name"], "Аружан")
+        self.assertNotIn("leave_reason", response.data)
+        self.assertNotIn("consent_given", response.data)
+
+    def test_owner_sees_sensitive_fields(self):
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Аружан",
+            birth_date=_today_minus_years(7),
+            gender=Child.Gender.FEMALE,
+            status=Child.Status.LEFT,
+            leave_reason="Переезд",
+        )
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.get(f"/api/v1/clients/children/{child.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["leave_reason"], "Переезд")
+
+    def test_teacher_cannot_create_child(self):
+        self.client.force_authenticate(self.teacher)
+
+        response = self.client.post(
+            "/api/v1/clients/children/",
+            {
+                "full_name": "Аружан",
+                "birth_date": str(_today_minus_years(7)),
+                "gender": Child.Gender.FEMALE,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_no_iin_field_on_child(self):
+        field_names = [f.name for f in Child._meta.get_fields()]
+        self.assertNotIn("iin", field_names)
+
+
+@tag("tenant_isolation")
+class ChildTenantIsolationTests(APITestCase):
+    def setUp(self):
+        self.org_a = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.org_b = Organization.objects.create(name="Другая студия", slug="another-studio")
+        self.direction_b = Direction.objects.create(organization=self.org_b, name="Балет Б")
+        self.child_b = Child.objects.create(
+            organization=self.org_b,
+            full_name="Чужой ребёнок",
+            birth_date=_today_minus_years(6),
+            gender=Child.Gender.MALE,
+        )
+        self.owner_a = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner A",
+            password="pass12345",
+            organization=self.org_a,
+            role=User.Role.OWNER,
+        )
+        self.client.force_authenticate(self.owner_a)
+
+    def test_child_list_is_scoped_to_own_organization(self):
+        response = self.client.get("/api/v1/clients/children/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = [c["full_name"] for c in response.data["results"]]
+        self.assertEqual(names, [])
+
+    def test_cannot_retrieve_another_organizations_child(self):
+        response = self.client.get(f"/api/v1/clients/children/{self.child_b.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_attach_child_to_another_organizations_direction(self):
+        response = self.client.post(
+            "/api/v1/clients/children/",
+            {
+                "full_name": "Новый ребёнок",
+                "birth_date": str(_today_minus_years(7)),
+                "gender": Child.Gender.FEMALE,
+                "directions": [str(self.direction_b.id)],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("directions", response.data)
+
+
+class ParentContactModelTests(TestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+
+    def test_phone_number_is_stored_normalized(self):
+        parent = ParentContact.objects.create(organization=self.org, full_name="Айгуль")
+        phone = ContactPhone.objects.create(
+            organization=self.org, parent_contact=parent, number="+7 701 123-45-67"
+        )
+        self.assertEqual(phone.number, "+77011234567")
+
+    def test_whatsapp_is_stored_normalized(self):
+        parent = ParentContact.objects.create(
+            organization=self.org, full_name="Айгуль", whatsapp="87011234567"
+        )
+        self.assertEqual(parent.whatsapp, "+77011234567")
+
+    def test_phone_organization_is_derived_from_parent_contact(self):
+        parent = ParentContact.objects.create(organization=self.org, full_name="Айгуль")
+        phone = ContactPhone.objects.create(
+            organization=self.org, parent_contact=parent, number="77011234567"
+        )
+        self.assertEqual(phone.organization_id, self.org.id)
+
+    def test_soft_delete_hides_from_default_manager_but_keeps_row(self):
+        parent = ParentContact.objects.create(organization=self.org, full_name="Айгуль")
+
+        parent.delete()
+
+        self.assertFalse(ParentContact.objects.filter(pk=parent.pk).exists())
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT deleted_at FROM clients_parentcontact WHERE id = %s", [str(parent.pk)]
+            )
+            row = cursor.fetchone()
+        self.assertIsNotNone(row[0])
+
+
+class ParentContactAPITests(APITestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.owner = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.teacher = User.objects.create_user(
+            phone="+77010000002",
+            full_name="Teacher",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+
+    def test_owner_creates_parent_with_two_phones(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/clients/parents/",
+            {
+                "full_name": "Айгуль Касымова",
+                "phones": [
+                    {"number": "+7 701 123-45-67", "phone_type": "mobile"},
+                    {"number": "8 (727) 222-33-44", "phone_type": "work"},
+                ],
+                "email": "aigul@example.com",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        parent = ParentContact.objects.get(pk=response.data["id"])
+        numbers = sorted(parent.phones.values_list("number", flat=True))
+        self.assertEqual(numbers, ["+77011234567", "+77272223344"])
+
+    def test_creating_parent_without_phones_is_rejected(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/clients/parents/", {"full_name": "Айгуль", "phones": []}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("phones", response.data)
+
+    def test_invalid_phone_number_is_rejected(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/clients/parents/",
+            {"full_name": "Айгуль", "phones": [{"number": "123"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_search_finds_parent_by_either_of_two_phones(self):
+        self.client.force_authenticate(self.owner)
+        self.client.post(
+            "/api/v1/clients/parents/",
+            {
+                "full_name": "Айгуль Касымова",
+                "phones": [
+                    {"number": "+77011234567", "phone_type": "mobile"},
+                    {"number": "+77272223344", "phone_type": "work"},
+                ],
+            },
+            format="json",
+        )
+
+        # Разное написание того же второго номера — поиск всё равно находит.
+        response = self.client.get("/api/v1/clients/parents/?phone=8+(727)+222-33-44")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = [p["full_name"] for p in response.data["results"]]
+        self.assertEqual(names, ["Айгуль Касымова"])
+
+    def test_updating_phones_replaces_old_ones(self):
+        self.client.force_authenticate(self.owner)
+        create_response = self.client.post(
+            "/api/v1/clients/parents/",
+            {"full_name": "Айгуль", "phones": [{"number": "+77011234567"}]},
+            format="json",
+        )
+        parent_id = create_response.data["id"]
+
+        response = self.client.patch(
+            f"/api/v1/clients/parents/{parent_id}/",
+            {"phones": [{"number": "+77019999999"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        parent = ParentContact.objects.get(pk=parent_id)
+        self.assertEqual(list(parent.phones.values_list("number", flat=True)), ["+77019999999"])
+
+    def test_teacher_does_not_see_phones(self):
+        self.client.force_authenticate(self.owner)
+        create_response = self.client.post(
+            "/api/v1/clients/parents/",
+            {
+                "full_name": "Айгуль",
+                "phones": [{"number": "+77011234567"}],
+                "whatsapp": "+77011234567",
+            },
+            format="json",
+        )
+        parent_id = create_response.data["id"]
+
+        self.client.force_authenticate(self.teacher)
+        response = self.client.get(f"/api/v1/clients/parents/{parent_id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["full_name"], "Айгуль")
+        self.assertNotIn("phones", response.data)
+        self.assertNotIn("whatsapp", response.data)
+
+    def test_owner_sees_phones(self):
+        self.client.force_authenticate(self.owner)
+        create_response = self.client.post(
+            "/api/v1/clients/parents/",
+            {"full_name": "Айгуль", "phones": [{"number": "+77011234567"}]},
+            format="json",
+        )
+
+        response = self.client.get(f"/api/v1/clients/parents/{create_response.data['id']}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["phones"]), 1)
+
+    def test_teacher_cannot_create_parent(self):
+        self.client.force_authenticate(self.teacher)
+
+        response = self.client.post(
+            "/api/v1/clients/parents/",
+            {"full_name": "Айгуль", "phones": [{"number": "+77011234567"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+@tag("tenant_isolation")
+class ParentContactTenantIsolationTests(APITestCase):
+    def setUp(self):
+        self.org_a = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.org_b = Organization.objects.create(name="Другая студия", slug="another-studio")
+        self.parent_b = ParentContact.objects.create(
+            organization=self.org_b, full_name="Чужая мама"
+        )
+        ContactPhone.objects.create(
+            organization=self.org_b, parent_contact=self.parent_b, number="+77011110000"
+        )
+        self.owner_a = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner A",
+            password="pass12345",
+            organization=self.org_a,
+            role=User.Role.OWNER,
+        )
+        self.client.force_authenticate(self.owner_a)
+
+    def test_parent_list_is_scoped_to_own_organization(self):
+        response = self.client.get("/api/v1/clients/parents/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = [p["full_name"] for p in response.data["results"]]
+        self.assertEqual(names, [])
+
+    def test_cannot_retrieve_another_organizations_parent(self):
+        response = self.client.get(f"/api/v1/clients/parents/{self.parent_b.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_phone_search_does_not_leak_another_organizations_parent(self):
+        response = self.client.get("/api/v1/clients/parents/?phone=+77011110000")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["results"], [])
