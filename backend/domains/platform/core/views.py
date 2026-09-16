@@ -62,7 +62,13 @@ def switch_branch(request):
     """
     if request.user.is_authenticated and request.user.organization_id:
         branch_id = request.POST.get("branch_id")
-        if Branch.objects.for_tenant(request.user.organization).filter(pk=branch_id).exists():
+        # is_active=True — иначе можно было бы выбрать активным архивированный
+        # филиал напрямую POST'ом, минуя то, что его убрали из списка выбора.
+        if (
+            Branch.objects.for_tenant(request.user.organization)
+            .filter(pk=branch_id, is_active=True)
+            .exists()
+        ):
             request.session["active_branch_id"] = branch_id
     next_url = request.POST.get("next") or "core:home"
     return redirect(next_url)

@@ -1,10 +1,80 @@
+{% load kc_format %}
 <aside class="kc-sidebar" id="kc-sidebar">
-  <div class="kc-sidebar__brand" data-i18n="nav.brand">KidsCRM</div>
-  <nav class="kc-sidebar__nav">
-    <a href="{% url 'core:home' %}"
-       class="kc-sidebar__link"
-       data-i18n="nav.home">Главная</a>
-    {# Домены добавляют свои пункты сюда по мере появления реальных экранов — #}
-    {# не заводить ссылку заранее, если страницы за ней ещё нет (dead link). #}
-  </nav>
+  <div class="kc-sidebar__brand">
+    <span class="kc-logo">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+      </svg>
+    </span>
+    <span class="kc-sidebar__brand-text" data-i18n="nav.brand">KidsCRM</span>
+  </div>
+  <div class="kc-sidebar__section">
+    <div class="kc-sidebar__section-label" data-i18n="nav.section_overview">Обзор</div>
+    <ul class="kc-sidebar__nav">
+      <li>
+        <a href="{% url 'core:home' %}" class="kc-sidebar__link">
+          <svg viewBox="0 0 24 24">
+            <rect x="3" y="3" width="7" height="7" />
+            <rect x="14" y="3" width="7" height="7" />
+            <rect x="14" y="14" width="7" height="7" />
+            <rect x="3" y="14" width="7" height="7" />
+          </svg>
+          <span data-i18n="nav.home">Главная</span>
+        </a>
+      </li>
+    </ul>
+  </div>
+  {% if kc_permissions.can_manage_branches or kc_permissions.can_manage_org_settings %}
+    <div class="kc-sidebar__section">
+      <div class="kc-sidebar__section-label" data-i18n="nav.section_system">Система</div>
+      <ul class="kc-sidebar__nav">
+        {# Домены добавляют свои пункты сюда (в свою секцию или новую) по мере #}
+        {# появления реальных экранов — не заводить ссылку заранее, если #}
+        {# страницы за ней ещё нет (dead link). #}
+        {% if kc_permissions.can_manage_branches %}
+          <li>
+            <a href="{% url 'tenants_web:branch-list' %}" class="kc-sidebar__link">
+              <svg viewBox="0 0 24 24">
+                <path d="M3 21h18" />
+                <path d="M5 21V7l7-4 7 4v14" />
+                <path d="M9 9h1M9 13h1M14 9h1M14 13h1" />
+              </svg>
+              <span data-i18n="nav.branches">Филиалы</span>
+            </a>
+          </li>
+        {% endif %}
+        {% if kc_permissions.can_manage_org_settings %}
+          <li>
+            <a href="{% url 'tenants_web:organization-settings' %}"
+               class="kc-sidebar__link">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              <span data-i18n="nav.org_settings">Настройки организации</span>
+            </a>
+          </li>
+        {% endif %}
+      </ul>
+    </div>
+  {% endif %}
+  {% if request.user.is_authenticated %}
+    <div class="kc-sidebar__footer">
+      <div class="kc-user-chip">
+        <div class="kc-avatar kc-avatar--md">{{ request.user.full_name|kc_initials }}</div>
+        <div class="kc-user-chip__info">
+          <div class="kc-user-chip__name">{{ request.user.full_name }}</div>
+          <div class="kc-user-chip__role">{{ request.user.get_role_display }}</div>
+        </div>
+      </div>
+      <form method="post"
+            action="{% url 'core:logout' %}"
+            class="kc-inline-form kc-sidebar__logout-form">
+        {% csrf_token %}
+        <button type="submit"
+                class="kc-btn kc-btn--secondary kc-btn--sm"
+                data-i18n="nav.logout">Выйти</button>
+      </form>
+    </div>
+  {% endif %}
 </aside>

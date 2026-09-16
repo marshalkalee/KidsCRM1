@@ -42,13 +42,20 @@
   }
 
   /**
-   * options: { title, bodyHtml|bodyText, buttons: [{ text, variant, value }] }
+   * options: { title, bodyHtml|bodyText, size, buttons: [{ text, variant, value, onClick }] }
+   * bodyEl — .modal-body передаётся в onClick(bodyEl), чтобы кнопка могла
+   * прочитать/подменить содержимое (AJAX-формы, см. branch_list.html).
+   * onClick может вернуть false (или промис, резолвящийся в false) — тогда
+   * модалка не закрывается (например, сервер вернул ошибки валидации).
+   * Без onClick кнопка ведёт себя как раньше — сразу закрывает модалку.
    * Возвращает Promise, который резолвится значением нажатой кнопки
    * (или undefined, если закрыли крестиком/Esc/фоном).
    */
   function open(options) {
     var el = getModalEl();
     el.querySelector(".modal-title").textContent = options.title || "";
+    el.querySelector(".modal-dialog").className =
+      "modal-dialog" + (options.size ? " modal-" + options.size : "");
 
     var body = el.querySelector(".modal-body");
     if (options.bodyHtml) {
@@ -79,7 +86,25 @@
         btn.className = "kc-btn " + (btnDef.variant ? "kc-btn--" + btnDef.variant : "kc-btn--secondary");
         btn.textContent = btnDef.text;
         btn.addEventListener("click", function () {
-          finish(btnDef.value);
+          if (!btnDef.onClick) {
+            finish(btnDef.value);
+            return;
+          }
+          var originalText = btn.textContent;
+          btn.disabled = true;
+          Promise.resolve(btnDef.onClick(body)).then(
+            function (shouldClose) {
+              btn.disabled = false;
+              btn.textContent = originalText;
+              if (shouldClose !== false) {
+                finish(btnDef.value);
+              }
+            },
+            function () {
+              btn.disabled = false;
+              btn.textContent = originalText;
+            }
+          );
         });
         footer.appendChild(btn);
       });

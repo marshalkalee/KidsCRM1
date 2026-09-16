@@ -1,6 +1,11 @@
 /*
  * Каркас: sidebar + header + адаптивная сетка + единообразные состояния
  * загрузки/пустого/ошибки. Использует токены из tokens.css.
+ *
+ * Светлый сайдбар с группировкой пунктов и "чипом" пользователя в подвале —
+ * по образцу макета Дарьи (feature/frontend-prototype). Мобильная
+ * адаптивность (открыть/закрыть сайдбар бургером, ТЗ п. 10.4) — наша, в
+ * макете её нет (десктопный прототип).
  */
 
 * {
@@ -19,6 +24,36 @@ body {
   overflow-x: hidden;
 }
 
+/* Типографика заголовков — иначе дефолт браузера (огромный h1, случайные
+   отступы) не вяжется с компактным масштабом макета Дарьи. */
+h1,
+h2,
+h3 {
+  font-family: var(--kc-font-family);
+  color: var(--kc-color-text);
+  font-weight: var(--kc-font-weight-bold);
+  line-height: 1.25;
+  margin: 0 0 var(--kc-space-4);
+}
+
+h1 {
+  font-size: 22px;
+}
+
+h2 {
+  font-size: var(--kc-font-size-lg);
+  margin-top: var(--kc-space-5);
+}
+
+h3 {
+  font-size: var(--kc-font-size-base);
+}
+
+p {
+  margin: 0 0 var(--kc-space-3);
+  color: var(--kc-color-text-muted);
+}
+
 .kc-shell {
   display: flex;
   min-height: 100vh;
@@ -26,8 +61,9 @@ body {
 
 .kc-sidebar {
   width: var(--kc-sidebar-width);
-  background: var(--kc-color-text);
-  color: #fff;
+  background: var(--kc-color-surface);
+  color: var(--kc-color-text);
+  border-right: 1px solid var(--kc-color-border);
   flex-shrink: 0;
   position: fixed;
   top: 0;
@@ -36,29 +72,121 @@ body {
   overflow-y: auto;
   transition: transform 0.2s ease;
   z-index: 100;
+  display: flex;
+  flex-direction: column;
 }
 
 .kc-sidebar__brand {
   padding: var(--kc-space-4);
+  border-bottom: 1px solid var(--kc-color-border);
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+}
+
+.kc-sidebar__brand-text {
   font-weight: var(--kc-font-weight-bold);
   font-size: var(--kc-font-size-lg);
+}
+
+.kc-sidebar__section {
+  padding: var(--kc-space-3) var(--kc-space-2) var(--kc-space-1);
+}
+
+.kc-sidebar__section-label {
+  font-size: 10px;
+  font-weight: var(--kc-font-weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kc-color-text-muted);
+  padding: 0 var(--kc-space-2);
+  margin-bottom: 2px;
 }
 
 .kc-sidebar__nav {
   display: flex;
   flex-direction: column;
+  list-style: none;
 }
 
 .kc-sidebar__link {
-  padding: var(--kc-space-3) var(--kc-space-4);
-  color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-2);
+  border-radius: var(--kc-radius-sm);
+  color: var(--kc-color-text-muted);
   text-decoration: none;
+  font-size: var(--kc-font-size-sm);
+  font-weight: 500;
+  transition: all 0.15s;
 }
 
-.kc-sidebar__link:hover,
+.kc-sidebar__link svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.kc-sidebar__link:hover {
+  background: #f5f5fd;
+  color: var(--kc-color-text);
+}
+
 .kc-sidebar__link--active {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: #eef0fd;
+  color: var(--kc-color-accent);
+  font-weight: var(--kc-font-weight-bold);
+}
+
+.kc-sidebar__footer {
+  margin-top: auto;
+  padding: var(--kc-space-3) var(--kc-space-2);
+  border-top: 1px solid var(--kc-color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--kc-space-2);
+}
+
+.kc-sidebar__footer .kc-sidebar__logout-form {
+  display: block;
+}
+
+.kc-sidebar__footer .kc-sidebar__logout-form .kc-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.kc-user-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-2);
+  border-radius: var(--kc-radius-sm);
+  background: var(--kc-color-bg);
+}
+
+.kc-user-chip__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.kc-user-chip__name {
+  font-size: 12px;
+  font-weight: var(--kc-font-weight-bold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kc-user-chip__role {
+  font-size: 11px;
+  color: var(--kc-color-text-muted);
 }
 
 .kc-shell__main {
@@ -84,14 +212,52 @@ body {
   z-index: 50;
 }
 
+/* На мобильном — открывает/закрывает выезжающий сайдбар (см. медиа-запрос
+   ниже). На десктопе — тем же кликом сворачивает/разворачивает сайдбар
+   в бок (см. .kc-shell--sidebar-collapsed), поэтому кнопка видна всегда,
+   не только на мобильном. */
 .kc-header__burger {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
   color: var(--kc-color-text);
+  border-radius: var(--kc-radius-sm);
+  padding: var(--kc-space-1) var(--kc-space-2);
+}
+
+.kc-header__burger:hover {
+  background: var(--kc-color-bg);
+}
+
+@media (min-width: 769px) {
+  .kc-shell--sidebar-collapsed .kc-sidebar {
+    transform: translateX(-100%);
+  }
+
+  .kc-shell--sidebar-collapsed .kc-shell__main {
+    margin-left: 0;
+  }
+}
+
+/* Заголовок страницы — в шапке, слева, компактным шрифтом (как
+   .topbar-title в макете), а не отдельным крупным <h1> в контенте
+   каждой страницы — единообразно для всех экранов, см. base.html:
+   {% block page_title %}. flex:1 занимает всё свободное место и тем
+   самым прижимает переключатель филиала направо без отдельного правила. */
+.kc-header__title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--kc-font-size-lg);
+  font-weight: var(--kc-font-weight-bold);
+  color: var(--kc-color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kc-branch-switcher select {
@@ -100,14 +266,15 @@ body {
   border-radius: var(--kc-radius-sm);
   font-size: var(--kc-font-size-sm);
   max-width: 40vw;
+  background: var(--kc-color-bg);
+  color: var(--kc-color-text);
+  font-family: var(--kc-font-family);
 }
 
-.kc-header__user {
-  margin-left: auto;
-  font-size: var(--kc-font-size-sm);
-  color: var(--kc-color-text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
+.kc-branch-switcher select:focus {
+  outline: none;
+  border-color: var(--kc-color-accent);
+  background: var(--kc-color-surface);
 }
 
 .kc-inline-form {
@@ -146,12 +313,6 @@ body {
     max-width: 40vw;
   }
 
-  /* Имени пользователя нет места рядом с переключателем на узком экране —
-     кнопка "Выйти" важнее и должна оставаться видимой и нажимаемой. */
-  .kc-header__user-name {
-    display: none;
-  }
-
   .kc-page-content {
     padding: var(--kc-space-3);
   }
@@ -171,7 +332,7 @@ body {
   width: 18px;
   height: 18px;
   border: 2px solid var(--kc-color-border);
-  border-top-color: var(--kc-color-primary);
+  border-top-color: var(--kc-color-accent);
   border-radius: 50%;
   animation: kc-spin 0.6s linear infinite;
 }
