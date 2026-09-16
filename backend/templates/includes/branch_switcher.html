@@ -1,0 +1,16 @@
+{% if kc_branches %}
+  <form class="kc-branch-switcher"
+        method="post"
+        action="{% url 'core:switch-branch' %}">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.path }}" />
+    <select name="branch_id" onchange="this.form.submit()">
+      {% for branch in kc_branches %}
+        <option value="{{ branch.id }}"
+                {% if kc_active_branch and branch.id == kc_active_branch.id %}selected{% endif %}>
+          {{ branch.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </form>
+{% endif %}
