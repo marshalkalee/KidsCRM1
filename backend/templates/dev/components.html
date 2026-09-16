@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — библиотека компонентов
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="dev.components.title">Библиотека компонентов</span>
+{% endblock page_title %}
+{% block content %}
+  <section class="kc-field">
+    <h2 data-i18n="dev.components.toast_section">Тосты и уведомления</h2>
+    <button type="button" class="kc-btn kc-btn--primary" id="js-toast-success">
+      <span data-i18n="dev.components.toast_success">Показать успех</span>
+    </button>
+    <button type="button" class="kc-btn kc-btn--danger" id="js-toast-error">
+      <span data-i18n="dev.components.toast_error">Показать ошибку</span>
+    </button>
+    <button type="button" class="kc-btn kc-btn--secondary" id="js-toast-warning">
+      <span data-i18n="dev.components.toast_warning">Показать предупреждение</span>
+    </button>
+    <button type="button" class="kc-btn kc-btn--secondary" id="js-toast-info">
+      <span data-i18n="dev.components.toast_info">Показать инфо</span>
+    </button>
+  </section>
+  <section class="kc-field">
+    <h2 data-i18n="dev.components.modal_section">Модалка и подтверждение опасных действий</h2>
+    <button type="button" class="kc-btn kc-btn--danger" id="js-modal-confirm">
+      <span data-i18n="dev.components.modal_open_confirm">Открыть подтверждение удаления</span>
+    </button>
+    <p>
+      <span data-i18n="dev.components.modal_result">Результат последнего подтверждения:</span>
+      <strong id="js-modal-result">—</strong>
+    </p>
+  </section>
+  <section class="kc-field">
+    <h2 data-i18n="dev.components.form_section">Форма</h2>
+    <p data-i18n="dev.components.form_hint">
+      Измените поле и попробуйте закрыть вкладку — появится предупреждение о несохранённых изменениях. Отправка без интернета покажет ошибки сервера ниже полей.
+    </p>
+    <form id="js-demo-form" novalidate>
+      <div class="kc-field">
+        <label class="kc-field__label kc-field__label--required"
+               for="js-demo-name"
+               data-i18n="dev.components.form_name_label">Имя</label>
+        <input class="kc-form-input"
+               type="text"
+               id="js-demo-name"
+               name="name"
+               required />
+        <div class="kc-field__error"></div>
+      </div>
+      <div class="kc-field">
+        <label class="kc-field__label kc-field__label--required"
+               for="js-demo-phone"
+               data-i18n="dev.components.form_phone_label">Телефон</label>
+        <input class="kc-form-input"
+               type="tel"
+               id="js-demo-phone"
+               name="phone"
+               pattern="^\+?[0-9]{10,15}$"
+               required />
+        <div class="kc-field__error"></div>
+      </div>
+      <button type="submit" class="kc-btn kc-btn--primary">
+        <span data-i18n="dev.components.form_submit">Сохранить</span>
+      </button>
+    </form>
+  </section>
+  <section class="kc-field">
+    <h2 data-i18n="dev.components.search_section">Поле поиска с задержкой ввода</h2>
+    <div class="kc-search-input">
+      <input class="kc-form-input"
+             type="search"
+             id="js-demo-search"
+             placeholder="Поиск по имени..." />
+      <span class="kc-spinner kc-search-input__spinner"></span>
+    </div>
+  </section>
+  <section class="kc-field">
+    <h2 data-i18n="dev.components.table_section">Таблица</h2>
+    <div class="kc-table-toolbar">
+      <div class="kc-table-toolbar__filters"></div>
+    </div>
+    <div id="js-demo-table"></div>
+    <p>
+      <span data-i18n="dev.components.table_selected">Выбрано строк:</span>
+      <strong id="js-demo-table-selected">0</strong>
+    </p>
+  </section>
+  <section class="kc-field">
+    <h2 data-i18n="dev.components.picker_section">Выбор ребёнка и родителя</h2>
+    <p data-i18n="dev.components.picker_note">Данные-заглушки — модели ребёнка/родителя появятся в другом тикете.</p>
+    <div class="kc-field">
+      <label class="kc-field__label"
+             for="js-demo-child"
+             data-i18n="dev.components.picker_child_label">Ребёнок</label>
+      <select id="js-demo-child" class="kc-form-input"></select>
+    </div>
+    <div class="kc-field">
+      <label class="kc-field__label"
+             for="js-demo-parent"
+             data-i18n="dev.components.picker_parent_label">Родитель</label>
+      <select id="js-demo-parent" class="kc-form-input"></select>
+    </div>
+  </section>
+{% endblock content %}
+{% block extra_js %}
+  <script>
+    (function ($) {
+      "use strict";
+      var t = window.KidsCRM.t;
+
+      document.getElementById("js-toast-success").addEventListener("click", function () {
+        window.KidsCRM.toast.success(t("dev.components.form_saved"));
+      });
+      document.getElementById("js-toast-error").addEventListener("click", function () {
+        window.KidsCRM.toast.error(t("form.error_invalid"));
+      });
+      document.getElementById("js-toast-warning").addEventListener("click", function () {
+        window.KidsCRM.toast.warning(t("form.error_required"));
+      });
+      document.getElementById("js-toast-info").addEventListener("click", function () {
+        window.KidsCRM.toast.info(t("state.loading"));
+      });
+
+      document.getElementById("js-modal-confirm").addEventListener("click", function () {
+        window.KidsCRM.modal
+          .confirmDanger({
+            title: t("dev.components.modal_open_confirm"),
+            message: t("dev.components.picker_note"),
+          })
+          .then(function (confirmed) {
+            document.getElementById("js-modal-result").textContent = confirmed ? "true" : "false";
+          });
+      });
+
+      window.KidsCRM.form.init("#js-demo-form", {
+        onSubmit: function (data, helpers) {
+          window.setTimeout(function () {
+            helpers.markClean();
+            helpers.done();
+            window.KidsCRM.toast.success(t("dev.components.form_saved"));
+          }, 400);
+        },
+      });
+
+      var DEMO_ROWS = [
+        { id: 1, name: "Иванов Алихан", phone: "+77011112233", status: "Активна" },
+        { id: 2, name: "Смагулова Айым", phone: "+77022223344", status: "Заморожена" },
+        { id: 3, name: "Петров Тимур", phone: "+77033334455", status: "Активна" },
+        { id: 4, name: "Ахметова Дана", phone: "+77044445566", status: "Активна" },
+        { id: 5, name: "Ким Эдуард", phone: "+77055556677", status: "Отменена" },
+        { id: 6, name: "Сергеева Мила", phone: "+77066667788", status: "Активна" },
+        { id: 7, name: "Нурланов Бек", phone: "+77077778899", status: "Заморожена" },
+      ];
+
+      var table = window.KidsCRM.table.init("#js-demo-table", {
+        columns: [
+          { key: "name", label: t("dev.components.table_col_name"), sortable: true },
+          { key: "phone", label: t("dev.components.table_col_phone") },
+          { key: "status", label: t("dev.components.table_col_status"), sortable: true },
+        ],
+        pageSize: 3,
+        selectable: true,
+        rowKey: function (row) {
+          return row.id;
+        },
+      });
+      table.on("selectionchange", function (selected) {
+        document.getElementById("js-demo-table-selected").textContent = String(selected.length);
+      });
+      table.setData(DEMO_ROWS);
+
+      window.KidsCRM.searchInput.init("#js-demo-search", {
+        onSearch: function (value) {
+          table.setTextFilter(value, ["name", "phone"]);
+        },
+      });
+
+      window.KidsCRM.picker.initChildPicker("#js-demo-child");
+      window.KidsCRM.picker.initParentPicker("#js-demo-parent");
+    })(window.jQuery);
+  </script>
+{% endblock extra_js %}
