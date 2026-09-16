@@ -154,7 +154,7 @@ document.getElementById('phone').addEventListener('input',function(){
 });
 async function handleLogin(e){
   e.preventDefault();
-  const phone=document.getElementById('phone').value.replace(/\D/g,'');
+  const phone=document.getElementById('phone').value.trim();
   const password=document.getElementById('password').value;
   const btn=document.getElementById('login-btn');
   const spinner=document.getElementById('spinner');

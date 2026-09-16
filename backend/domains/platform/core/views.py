@@ -44,7 +44,7 @@ def login_view(request):
         error = "login.error"
 
     context = {"error": error, "next": request.GET.get("next", "")}
-    return render(request, "platform/login.html", context)
+    return render(request, "auth/login.html", context)
 
 
 @require_http_methods(["POST"])
