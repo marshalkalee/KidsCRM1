@@ -1,7 +1,19 @@
 {
   "nav.brand": "KidsCRM",
   "nav.lang_placeholder": "EN",
-  "home.title": "Skeleton is up",
+  "nav.home": "Home",
+  "nav.logout": "Log out",
+  "login.phone": "Phone",
+  "login.password": "Password",
+  "login.submit": "Log in",
+  "login.error": "Invalid phone or password.",
+  "home.title": "Home page",
   "home.hint": "Domain screens live under templates/<domain>/, assets under static/site/.",
-  "home.ping_button": "Check jQuery"
+  "home.ping_button": "Check jQuery",
+  "home.active_branch": "Active branch:",
+  "home.now_label": "Current time (organization timezone):",
+  "home.money_example": "Amount example:",
+  "state.loading": "Loading...",
+  "state.empty": "Empty",
+  "state.error": "Error"
 }

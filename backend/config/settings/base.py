@@ -88,6 +88,10 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                # Каркас: филиалы для переключателя + права для скрытия
+                # пунктов меню — доступны во всех шаблонах.
+                "domains.platform.core.context_processors.branches",
+                "domains.platform.core.context_processors.user_permissions",
             ],
         },
     },
@@ -128,6 +132,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Кастомная модель пользователя заведена до первой миграции — переезжать
 # с auth.User задним числом на реальных данных было бы намного дороже.
 AUTH_USER_MODEL = "users.User"
+
+# Сессия для страниц (не JWT — тот только для API, см.
+# domains/platform/core/decorators.py).
+LOGIN_URL = "core:login"
+LOGIN_REDIRECT_URL = "core:home"
+LOGOUT_REDIRECT_URL = "core:login"
 
 REST_FRAMEWORK = {
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.URLPathVersioning",

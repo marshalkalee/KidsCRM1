@@ -46,7 +46,15 @@
   window.KidsCRM.t = t;
   window.KidsCRM.applyI18n = applyToDom;
 
-  document.addEventListener("DOMContentLoaded", function () {
+  // Скрипт подключён в конце <body> — DOMContentLoaded к этому моменту
+  // иногда уже успевает отработать (см. layout.js), и повторно он не
+  // сработает. Для ru это незаметно (applyToDom — no-op выше), но сломает
+  // переключение на kk/en, когда оно появится. Проверяем readyState.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      applyToDom(document);
+    });
+  } else {
     applyToDom(document);
-  });
+  }
 })(window, document);

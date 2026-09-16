@@ -1,0 +1,198 @@
+/*
+ * Каркас: sidebar + header + адаптивная сетка + единообразные состояния
+ * загрузки/пустого/ошибки. Использует токены из tokens.css.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  font-family: var(--kc-font-family);
+  font-size: var(--kc-font-size-base);
+  color: var(--kc-color-text);
+  background: var(--kc-color-bg);
+  /* Критично для мобильной адаптивности (ТЗ п. 10.4, критерий №9) —
+     ни один блок не должен создавать горизонтальный скролл страницы. */
+  overflow-x: hidden;
+}
+
+.kc-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.kc-sidebar {
+  width: var(--kc-sidebar-width);
+  background: var(--kc-color-text);
+  color: #fff;
+  flex-shrink: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  overflow-y: auto;
+  transition: transform 0.2s ease;
+  z-index: 100;
+}
+
+.kc-sidebar__brand {
+  padding: var(--kc-space-4);
+  font-weight: var(--kc-font-weight-bold);
+  font-size: var(--kc-font-size-lg);
+}
+
+.kc-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.kc-sidebar__link {
+  padding: var(--kc-space-3) var(--kc-space-4);
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+}
+
+.kc-sidebar__link:hover,
+.kc-sidebar__link--active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.kc-shell__main {
+  flex: 1;
+  margin-left: var(--kc-sidebar-width);
+  display: flex;
+  flex-direction: column;
+  /* min-width: 0 — иначе flex-дочерний элемент не сжимается меньше своего
+     контента и создаёт горизонтальный скролл на узких экранах. */
+  min-width: 0;
+}
+
+.kc-header {
+  height: var(--kc-header-height);
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-3);
+  padding: 0 var(--kc-space-4);
+  background: var(--kc-color-surface);
+  border-bottom: 1px solid var(--kc-color-border);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.kc-header__burger {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--kc-color-text);
+}
+
+.kc-branch-switcher select {
+  padding: var(--kc-space-2);
+  border: 1px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-sm);
+  font-size: var(--kc-font-size-sm);
+  max-width: 40vw;
+}
+
+.kc-header__user {
+  margin-left: auto;
+  font-size: var(--kc-font-size-sm);
+  color: var(--kc-color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.kc-inline-form {
+  display: inline;
+}
+
+.kc-page-content {
+  padding: var(--kc-space-5);
+  min-width: 0;
+}
+
+/* Широкие таблицы/диаграммы скроллятся сами, а не весь body. */
+.kc-scroll-x {
+  overflow-x: auto;
+}
+
+/* --- Мобильный брейкпоинт (ТЗ п. 10.4) --- */
+@media (max-width: 768px) {
+  .kc-sidebar {
+    transform: translateX(-100%);
+  }
+
+  .kc-sidebar--open {
+    transform: translateX(0);
+  }
+
+  .kc-shell__main {
+    margin-left: 0;
+  }
+
+  .kc-header__burger {
+    display: inline-block;
+  }
+
+  .kc-branch-switcher select {
+    max-width: 40vw;
+  }
+
+  /* Имени пользователя нет места рядом с переключателем на узком экране —
+     кнопка "Выйти" важнее и должна оставаться видимой и нажимаемой. */
+  .kc-header__user-name {
+    display: none;
+  }
+
+  .kc-page-content {
+    padding: var(--kc-space-3);
+  }
+}
+
+/* --- Состояния загрузки/пустое/ошибка — единообразно на всех экранах --- */
+
+.kc-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-5);
+  color: var(--kc-color-text-muted);
+}
+
+.kc-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--kc-color-border);
+  border-top-color: var(--kc-color-primary);
+  border-radius: 50%;
+  animation: kc-spin 0.6s linear infinite;
+}
+
+@keyframes kc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.kc-empty-state,
+.kc-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-6);
+  text-align: center;
+  color: var(--kc-color-text-muted);
+}
+
+.kc-error-state {
+  color: var(--kc-color-danger);
+}

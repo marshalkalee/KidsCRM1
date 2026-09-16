@@ -51,3 +51,39 @@
 .kc-registry-row {
   border-bottom: 1px solid #e5e7eb;
 }
+
+.kc-auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--kc-space-4);
+  background: var(--kc-color-bg);
+}
+
+.kc-auth-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--kc-color-surface);
+  border: 1px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-md);
+  padding: var(--kc-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--kc-space-2);
+}
+
+.kc-auth-card__brand {
+  font-weight: var(--kc-font-weight-bold);
+  font-size: var(--kc-font-size-lg);
+  margin-bottom: var(--kc-space-3);
+}
+
+.kc-auth-card__label {
+  font-size: var(--kc-font-size-sm);
+  color: var(--kc-color-text-muted);
+}
+
+.kc-auth-card__submit {
+  margin-top: var(--kc-space-3);
+}

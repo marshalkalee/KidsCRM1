@@ -1,7 +1,19 @@
 {
   "nav.brand": "KidsCRM",
   "nav.lang_placeholder": "KK",
-  "home.title": "Қаңқа көтерілді",
+  "nav.home": "Басты бет",
+  "nav.logout": "Шығу",
+  "login.phone": "Телефон",
+  "login.password": "Құпия сөз",
+  "login.submit": "Кіру",
+  "login.error": "Телефон немесе құпия сөз қате.",
+  "home.title": "Басты бет",
   "home.hint": "Домен беттері — templates/<домен>/, статика — static/site/.",
-  "home.ping_button": "jQuery тексеру"
+  "home.ping_button": "jQuery тексеру",
+  "home.active_branch": "Белсенді филиал:",
+  "home.now_label": "Ұйым уақыты бойынша қазір:",
+  "home.money_example": "Сома мысалы:",
+  "state.loading": "Жүктелуде...",
+  "state.empty": "Бос",
+  "state.error": "Қате"
 }
