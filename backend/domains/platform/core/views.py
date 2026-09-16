@@ -12,6 +12,17 @@ def home(request):
     return render(request, "platform/home.html", {"now": timezone.now()})
 
 
+@role_required()
+def components_demo(request):
+    """
+    Витрина библиотеки компонентов (таблица/форма/модалка/тосты/поиск/
+    пикер) с примерами использования — см. static/site/js/components/.
+    Не доменный экран, поэтому не в сайдбаре (см. комментарий в
+    includes/sidebar.html): открывается прямой ссылкой при разработке/QA.
+    """
+    return render(request, "dev/components.html")
+
+
 @require_http_methods(["GET", "POST"])
 def login_view(request):
     """
