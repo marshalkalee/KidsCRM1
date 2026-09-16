@@ -47,3 +47,12 @@ def kc_money(value):
     if value is None:
         return ""
     return format_tenge(value)
+
+
+@register.filter
+def kc_initials(full_name):
+    """Первые буквы первых двух слов ФИО — для .kc-avatar (чип пользователя
+    в сайдбаре и т.п.), по образцу ini() в макете Дарьи (prototype.html)."""
+    if not full_name:
+        return ""
+    return "".join(word[0] for word in full_name.split()[:2]).upper()

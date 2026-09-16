@@ -2,26 +2,44 @@
  * Design-токены — единственное место с "магическими числами" (цвета,
  * отступы, шрифты). Остальной CSS должен ссылаться на var(--kc-*), а не
  * на литералы, чтобы поменять тему/масштаб можно было в одном файле.
+ *
+ * Палитра/типографика/радиусы взяты из макета Дарьи
+ * (feature/frontend-prototype, backend/static/site/prototype.html) —
+ * это визуальный референс, не код: у нас своя вёрстка/JS, здесь только
+ * цвета/шрифт/радиусы/тени переносятся 1:1.
  */
 
 :root {
   /* Цвета */
-  --kc-color-bg: #f5f6f8;
+  --kc-color-bg: #f0f2f8;
   --kc-color-surface: #ffffff;
-  --kc-color-border: #e2e5ea;
-  --kc-color-text: #1f2d3d;
-  --kc-color-text-muted: #6b7280;
-  --kc-color-primary: #2f6fed;
-  --kc-color-primary-contrast: #ffffff;
-  --kc-color-danger: #e5484d;
-  --kc-color-success: #2f9e44;
-  --kc-color-warning: #f0a020;
+  --kc-color-border: #e4e6f0;
+  --kc-color-text: #1a1d2e;
+  --kc-color-text-muted: #7b7f9e;
 
-  /* Типографика */
-  --kc-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* "primary" — тёмная основная кнопка (как .btn-primary в макете:
+     "Сохранить"/"Добавить"). "accent" — акцентный фиолетовый градиент
+     для более "яркого" CTA (как .btn-accent: "Новая заявка" и т.п.) —
+     используются по смыслу, не взаимозаменяемо. */
+  --kc-color-primary: #1a1d2e;
+  --kc-color-primary-contrast: #ffffff;
+  --kc-color-accent: #7c6ff7;
+  --kc-color-accent-contrast: #ffffff;
+  --kc-gradient-accent: linear-gradient(135deg, #7c6ff7, #a78bfa);
+
+  --kc-color-danger: #dc2626;
+  --kc-color-success: #059669;
+  --kc-color-warning: #d97706;
+  --kc-color-info: #3b82f6;
+
+  /* Типографика — Manrope/JetBrains Mono подключены гуглфонтом в
+     base.html/base_minimal.html; системный стек — фолбэк, пока шрифт
+     не загрузился или офлайн. */
+  --kc-font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --kc-font-family-mono: "JetBrains Mono", ui-monospace, monospace;
   --kc-font-size-sm: 13px;
-  --kc-font-size-base: 15px;
-  --kc-font-size-lg: 18px;
+  --kc-font-size-base: 14px;
+  --kc-font-size-lg: 16px;
   --kc-font-weight-normal: 400;
   --kc-font-weight-bold: 600;
 
@@ -34,14 +52,20 @@
   --kc-space-6: 32px;
 
   /* Радиусы */
-  --kc-radius-sm: 4px;
+  --kc-radius-sm: 5px;
   --kc-radius-md: 8px;
+  --kc-radius-lg: 10px;
+
+  /* Тени */
+  --kc-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --kc-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
 
   /* Размеры каркаса */
-  --kc-sidebar-width: 240px;
+  --kc-sidebar-width: 248px;
   --kc-header-height: 56px;
 
   /* Мобильный брейкпоинт (ТЗ п. 10.4) — тот же порог используется в
-     layout.js для JS-логики (открыть/закрыть sidebar). */
+     layout.js для JS-логики (открыть/закрыть sidebar). В макете Дарьи
+     мобильной раскладки нет (десктопный прототип), это — наше решение. */
   --kc-breakpoint-mobile: 768px;
 }

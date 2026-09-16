@@ -53,6 +53,14 @@
     var listeners = {};
 
     root.classList.add("kc-table-wrap");
+    // Пагинация — сверху, не снизу: внизу страницы её перекрывает плавающая
+    // кнопка создания (.kc-fab, см. branch_list.html/room_list.html), а
+    // ссылку/цифру страницы под ней нажать нельзя.
+    var footer = document.createElement("div");
+    footer.className = "kc-table-footer";
+    footer.innerHTML =
+      '<span class="kc-table-footer__info"></span><div class="kc-pagination"></div>';
+    root.appendChild(footer);
     var table = document.createElement("table");
     table.className = "kc-table kc-table--cards";
     var thead = document.createElement("thead");
@@ -60,11 +68,6 @@
     table.appendChild(thead);
     table.appendChild(tbody);
     root.appendChild(table);
-    var footer = document.createElement("div");
-    footer.className = "kc-table-footer";
-    footer.innerHTML =
-      '<span class="kc-table-footer__info"></span><div class="kc-pagination"></div>';
-    root.appendChild(footer);
 
     function emit(event, payload) {
       (listeners[event] || []).forEach(function (cb) {

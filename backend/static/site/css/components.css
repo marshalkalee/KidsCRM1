@@ -44,6 +44,14 @@
   white-space: nowrap;
 }
 
+.kc-table thead th {
+  font-size: 11px;
+  font-weight: var(--kc-font-weight-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--kc-color-text-muted);
+}
+
 .kc-table tbody tr:last-child td {
   border-bottom: none;
 }
@@ -87,7 +95,7 @@
   justify-content: space-between;
   gap: var(--kc-space-3);
   padding: var(--kc-space-3) var(--kc-space-4);
-  border-top: 1px solid var(--kc-color-border);
+  border-bottom: 1px solid var(--kc-color-border);
 }
 
 .kc-table-footer__info {
@@ -115,9 +123,9 @@
 }
 
 .kc-pagination button.kc-pagination__page--active {
-  background: var(--kc-color-primary);
-  color: var(--kc-color-primary-contrast);
-  border-color: var(--kc-color-primary);
+  background: var(--kc-color-accent);
+  color: var(--kc-color-accent-contrast);
+  border-color: var(--kc-color-accent);
 }
 
 /* Карточное представление на мобильном — вместо горизонтального скролла
@@ -174,14 +182,35 @@
 /* ---------------------------------------------------------------------- */
 
 .kc-field {
-  margin-bottom: var(--kc-space-4);
+  margin-bottom: var(--kc-space-3);
+}
+
+/* Множественный выбор чекбоксами (например, филиалы у направления) —
+   Django рисует его как обычный <ul>, без класса, стилизуем по тегу
+   внутри .kc-field, чтобы не переопределять виджет в Python-коде. */
+.kc-field ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kc-space-3);
+}
+
+.kc-field ul li label {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-1);
+  font-size: var(--kc-font-size-sm);
+  cursor: pointer;
 }
 
 .kc-field__label {
   display: block;
   margin-bottom: var(--kc-space-1);
-  font-size: var(--kc-font-size-sm);
-  color: var(--kc-color-text-muted);
+  font-size: 12px;
+  font-weight: var(--kc-font-weight-bold);
+  color: var(--kc-color-text);
 }
 
 .kc-field__label--required::after {
@@ -207,33 +236,12 @@
 .kc-form-input:focus-visible,
 .kc-btn:focus-visible,
 .kc-table th[data-sortable]:focus-visible {
-  outline: 2px solid var(--kc-color-primary);
+  outline: 2px solid var(--kc-color-accent);
   outline-offset: 1px;
 }
 
-.kc-btn[disabled] {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.kc-btn--secondary {
-  background: var(--kc-color-surface);
-  color: var(--kc-color-text);
-  border-color: var(--kc-color-border);
-}
-
-.kc-btn--danger {
-  background: var(--kc-color-danger);
-  color: #fff;
-}
-
-.kc-btn .kc-spinner {
-  width: 14px;
-  height: 14px;
-  margin-right: var(--kc-space-2);
-  border-width: 2px;
-  vertical-align: -2px;
-}
+/* .kc-btn--secondary/--danger, [disabled] и .kc-spinner в кнопке — общие
+   для всех кнопок, не только компонентных, см. kc.css. */
 
 /* ---------------------------------------------------------------------- */
 /* Тосты                                                                   */
@@ -241,7 +249,7 @@
 
 .kc-toast-container {
   position: fixed;
-  top: var(--kc-space-4);
+  bottom: var(--kc-space-5);
   right: var(--kc-space-4);
   z-index: 1080;
   display: flex;
@@ -252,14 +260,16 @@
 
 .kc-toast {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--kc-space-2);
-  padding: var(--kc-space-3) var(--kc-space-4);
-  border-radius: var(--kc-radius-md);
-  border-left: 4px solid var(--kc-color-primary);
-  background: var(--kc-color-surface);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 10px 18px;
+  border-radius: var(--kc-radius-sm);
+  border-left: 3px solid var(--kc-color-accent);
+  background: var(--kc-color-text);
+  color: #fff;
+  box-shadow: var(--kc-shadow-md);
   font-size: var(--kc-font-size-sm);
+  font-weight: 500;
 }
 
 .kc-toast--success {
@@ -282,17 +292,21 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--kc-color-text-muted);
+  color: rgba(255, 255, 255, 0.6);
   font-size: var(--kc-font-size-base);
   line-height: 1;
   padding: 0;
+}
+
+.kc-toast__close:hover {
+  color: #fff;
 }
 
 @media (max-width: 768px) {
   .kc-toast-container {
     left: var(--kc-space-3);
     right: var(--kc-space-3);
-    top: var(--kc-space-3);
+    bottom: var(--kc-space-3);
     max-width: none;
   }
 }
@@ -326,6 +340,12 @@
 /* ---------------------------------------------------------------------- */
 /* Модалка                                                                 */
 /* ---------------------------------------------------------------------- */
+
+.kc-modal .modal-content {
+  border-radius: var(--kc-radius-lg);
+  border-color: var(--kc-color-border);
+  box-shadow: var(--kc-shadow-md);
+}
 
 .kc-modal .modal-header,
 .kc-modal .modal-footer {

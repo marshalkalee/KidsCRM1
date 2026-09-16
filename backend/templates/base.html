@@ -9,6 +9,12 @@
         KidsCRM
       {% endblock title %}
     </title>
+    <!-- Manrope/JetBrains Mono — шрифты из макета Дарьи
+         (feature/frontend-prototype), см. tokens.css. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+          rel="stylesheet" />
     <!-- Design-система: static/site/css/tokens.css (переменные) +
          layout.css (каркас) + kc.css (компоненты), см. domains/README.md -->
     <link rel="stylesheet"
@@ -26,7 +32,19 @@
     <div class="kc-shell">
       {% include "includes/sidebar.html" %}
       <div class="kc-shell__main">
-        {% include "includes/header.html" %}
+        <header class="kc-header">
+          <button type="button"
+                  class="kc-header__burger"
+                  id="kc-burger"
+                  aria-label="Меню">☰</button>
+          <h1 class="kc-header__title">
+            {% block page_title %}
+            {% endblock page_title %}
+          </h1>
+          {% include "includes/branch_switcher.html" %}
+          {# Имя пользователя/выход — в подвале сайдбара (includes/sidebar.html), #}
+          {# чтобы на мобильном не пришлось прятать имя рядом с переключателем. #}
+        </header>
         <main class="kc-page-content">
           {% block content %}
           {% endblock content %}
@@ -44,11 +62,32 @@
     <!-- Библиотека компонентов — см. domains/README.md -->
     <script src="{% static 'site/js/components/toast.js' %}"></script>
     <script src="{% static 'site/js/components/modal.js' %}"></script>
+    <script src="{% static 'site/js/components/form-modal.js' %}"></script>
     <script src="{% static 'site/js/components/form.js' %}"></script>
     <script src="{% static 'site/js/components/search-input.js' %}"></script>
     <script src="{% static 'site/js/components/table.js' %}"></script>
     <script src="{% static 'site/js/components/picker.js' %}"></script>
     <script src="{% static 'site/js/app.js' %}"></script>
+    {% if messages %}
+      <script>
+        (function () {
+          var messages = [
+            {% for message in messages %}
+              { text: "{{ message.message|escapejs }}", tags: "{{ message.tags }}" },
+            {% endfor %}
+          ];
+          messages.forEach(function (m) {
+            if (m.tags.indexOf("error") !== -1) {
+              window.KidsCRM.toast.error(m.text);
+            } else if (m.tags.indexOf("warning") !== -1) {
+              window.KidsCRM.toast.warning(m.text);
+            } else {
+              window.KidsCRM.toast.success(m.text);
+            }
+          });
+        })();
+      </script>
+    {% endif %}
     {% block extra_js %}
     {% endblock extra_js %}
   </body>

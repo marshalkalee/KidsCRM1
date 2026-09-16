@@ -19,7 +19,13 @@ def branches(request):
 
     from domains.platform.tenants.models import Branch
 
-    available = list(Branch.objects.for_tenant(user.organization).order_by("name"))
+    # Архивированный филиал (is_active=False) пропадает из выбора (ТЗ,
+    # критерий приёмки тикета "Настройки организации, филиалы и залы"), но
+    # его исторические данные остаются доступны через обычный for_tenant()
+    # везде, где фильтр по is_active не применяется явно.
+    available = list(
+        Branch.objects.for_tenant(user.organization).filter(is_active=True).order_by("name")
+    )
     active_id = request.session.get("active_branch_id")
     active = None
     if active_id:

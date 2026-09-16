@@ -32,4 +32,5 @@ urlpatterns = [
     # у остальных доменов свои веб-маршруты добавляются по мере надобности,
     # не заводятся заранее пустыми.
     path("", include("domains.platform.core.urls")),
+    path("", include("domains.platform.tenants.urls_web")),
 ]
