@@ -1,4 +1,3 @@
-from django.db import models  # noqa: F401
 """
 Тип абонемента — справочник организации (ТЗ п. 3.1, TRU-57).
 
@@ -12,6 +11,8 @@ Subscription (TRU-58) обязан ссылаться на SubscriptionTypeVersi
 поведение уже проданных абонементов (критерий приёмки TRU-57).
 """
 
+from django.db import models
+
 from domains.platform.core.models import TenantModel
 from domains.platform.tenants.models import Branch, Direction
 
@@ -19,9 +20,9 @@ RULES_SCHEMA_VERSION = 1
 # Отсутствующий ключ = правило ещё не решено с Дарьей/True Ballet — UI
 # обязан допускать любое значение до ответа (Discovery, вопрос №1).
 RULES_KEYS = {
-    "expire_on_miss",      # bool | None — сгорает ли пропущенное занятие
+    "expire_on_miss",  # bool | None — сгорает ли пропущенное занятие
     "makeup_window_days",  # int | None — срок отработки, дней
-    "freezes_per_year",    # int | None — сколько заморозок разрешено в год
+    "freezes_per_year",  # int | None — сколько заморозок разрешено в год
 }
 
 
@@ -60,7 +61,9 @@ class SubscriptionTypeVersion(TenantModel):
     никогда не редактируется после создания."""
 
     subscription_type = models.ForeignKey(
-        SubscriptionType, on_delete=models.PROTECT, related_name="versions",
+        SubscriptionType,
+        on_delete=models.PROTECT,
+        related_name="versions",
     )
     schema_version = models.PositiveSmallIntegerField(default=RULES_SCHEMA_VERSION)
 
