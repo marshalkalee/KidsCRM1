@@ -69,6 +69,7 @@
     <script src="{% static 'site/js/components/picker.js' %}"></script>
     <script src="{% static 'site/js/components/formset.js' %}"></script>
     <script src="{% static 'site/js/app.js' %}"></script>
+    {# djlint:off #}
     {% if messages %}
       <script>
         (function () {
@@ -87,8 +88,9 @@
             }
           });
         })();
-      </script>
+</script>
     {% endif %}
+    {# djlint:on #}
     {% block extra_js %}
     {% endblock extra_js %}
   </body>

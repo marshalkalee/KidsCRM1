@@ -16,6 +16,7 @@ api_v1_patterns = [
     path("users/", include("domains.platform.users.urls")),
     path("clients/", include("domains.people.clients.urls")),
     path("schedule/", include("domains.scheduling.schedule.urls")),
+    path("groups/", include("domains.scheduling.groups.urls")),
     path("attendance/", include("domains.scheduling.attendance.urls")),
     path("subscriptions/", include("domains.money.subscriptions.urls")),
     path("payments/", include("domains.money.payments.urls")),
