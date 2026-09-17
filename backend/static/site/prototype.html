@@ -521,7 +521,7 @@ function pgDash(){
 
   <div>
     <div class="sect-title">Задачи</div>
-    <div class="card" style="overflow:hidden;margin-bottom:14px">
+    <div class="card" style="overflow:hidden;margin-bottom:14px" id="tasks-wrap">
       ${tasks.map((t,i)=>`
       <div style="padding:11px 14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;${t.done?'opacity:.5':''}">
         <div style="width:16px;height:16px;border-radius:3px;border:1.5px solid var(--border);flex-shrink:0;margin-top:2px;cursor:pointer;background:${t.done?'var(--green)':'transparent'};border-color:${t.done?'var(--green)':'var(--border)'};display:flex;align-items:center;justify-content:center" onclick="tasks[${i}].done=!tasks[${i}].done;pgDash()">

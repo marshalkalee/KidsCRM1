@@ -5,7 +5,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Вход — KidsCRM</title>
+<title data-i18n="login.title">Вход — KidsCRM</title>
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -83,17 +83,17 @@ body{font-family:'Rubik',sans-serif;min-height:100vh;display:grid;grid-template-
           <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
         </div>
         <div>
-          <div class="logo-text">KidsCRM</div>
+          <div class="logo-text" data-i18n="brand.name">KidsCRM</div>
         </div>
       </div>
 
-      <div class="left-title">Управляйте<br>центром<br>в одном месте</div>
-      <p class="left-desc">Замените WhatsApp и Excel. Дети, расписание, абонементы и оплаты — всё под контролем.</p>
+      <div class="left-title" data-i18n="login.left_title">Управляйте<br>центром<br>в одном месте</div>
+      <p class="left-desc" data-i18n="login.left_desc">Замените WhatsApp и Excel. Дети, расписание, абонементы и оплаты — всё под контролем.</p>
       <div class="features">
-        <div class="feature"><div class="feature-dot"></div>База учеников и родителей</div>
-        <div class="feature"><div class="feature-dot"></div>Расписание и посещаемость</div>
-        <div class="feature"><div class="feature-dot"></div>Абонементы и оплаты</div>
-        <div class="feature"><div class="feature-dot"></div>Аналитика и отчёты</div>
+        <div class="feature"><div class="feature-dot"></div><span data-i18n="login.feature_1">База учеников и родителей</span></div>
+        <div class="feature"><div class="feature-dot"></div><span data-i18n="login.feature_2">Расписание и посещаемость</span></div>
+        <div class="feature"><div class="feature-dot"></div><span data-i18n="login.feature_3">Абонементы и оплаты</span></div>
+        <div class="feature"><div class="feature-dot"></div><span data-i18n="login.feature_4">Аналитика и отчёты</span></div>
       </div>
 
       <img src="{% static 'site/images/балерина1.png' %}" style="position:absolute;top:50%;right:60px;transform:translateY(-50%);height:95%;width:auto;pointer-events:none;z-index:0;mix-blend-mode:multiply;filter:sepia(1) saturate(0.5) hue-rotate(320deg);opacity:0.25"/>
@@ -112,19 +112,19 @@ body{font-family:'Rubik',sans-serif;min-height:100vh;display:grid;grid-template-
     <path d="M200,100 C300,0 450,100 400,250 C350,400 150,350 200,200 C250,50 450,0 500,150" fill="none" stroke="#fff" stroke-width="1.5"/>
   </svg>
   <div class="right-content">
-    <h2>Вход в систему</h2>
-    <p class="right-sub">Введите телефон и пароль. Если у вас нет доступа — обратитесь к администратору.</p>
+    <h2 data-i18n="login.form_title">Вход в систему</h2>
+    <p class="right-sub" data-i18n="login.form_sub">Введите телефон и пароль. Если у вас нет доступа — обратитесь к администратору.</p>
 
     <form id="login-form" onsubmit="handleLogin(event)">
       <div class="fg">
-        <label class="lbl" for="phone">Телефон</label>
+        <label class="lbl" for="phone" data-i18n="login.phone_label">Телефон</label>
         <div class="inp-wrap">
           <svg class="icon" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.77a16 16 0 0 0 6.32 6.32l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
           <input class="inp" type="tel" id="phone" name="phone" placeholder="+7 701 234 56 78" autocomplete="tel" required/>
         </div>
       </div>
       <div class="fg">
-        <label class="lbl" for="password">Пароль</label>
+        <label class="lbl" for="password" data-i18n="login.password_label">Пароль</label>
         <div class="inp-wrap">
           <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           <input class="inp inp-pw" type="password" id="password" name="password" placeholder="Введите пароль" autocomplete="current-password" required/>
@@ -133,14 +133,14 @@ body{font-family:'Rubik',sans-serif;min-height:100vh;display:grid;grid-template-
           </button>
         </div>
       </div>
-      <div class="error-msg" id="general-error">Неверный телефон или пароль</div>
+      <div class="error-msg" id="general-error" data-i18n="login.error">Неверный телефон или пароль</div>
       <button type="submit" class="btn-login" id="login-btn">
         <div class="spinner" id="spinner"></div>
-        <span id="btn-text">Войти</span>
+        <span id="btn-text" data-i18n="login.submit_btn">Войти</span>
         <svg id="btn-arrow" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
       </button>
     </form>
-    <div class="right-footer">© 2026 KidsCRM. Все права защищены.</div>
+    <div class="right-footer" data-i18n="login.footer">© 2026 KidsCRM. Все права защищены.</div>
   </div>
 </div>
 
