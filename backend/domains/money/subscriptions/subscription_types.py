@@ -33,6 +33,24 @@ def update_rules(subscription_type: SubscriptionType, **changes) -> Subscription
         **{f: getattr(subscription_type, f) for f in VERSIONED_FIELDS},
     )
 
+def create_type(organization, *, name, price, is_unlimited=False, quota_sessions=None,
+                 duration_days, rules=None, directions=(), branches=()) -> "SubscriptionType":
+    """Создаёт тип и сразу его первую версию — без этого Subscription
+    не на что сослаться (найдено при проектировании TRU-58)."""
+    st = SubscriptionType.objects.create(
+        organization=organization, name=name, price=price, is_unlimited=is_unlimited,
+        quota_sessions=quota_sessions, duration_days=duration_days, rules=rules or {},
+    )
+    if directions:
+        st.directions.set(directions)
+    if branches:
+        st.branches.set(branches)
+    SubscriptionTypeVersion.objects.create(
+        organization=organization, subscription_type=st, schema_version=RULES_SCHEMA_VERSION,
+        name=st.name, price=st.price, is_unlimited=st.is_unlimited,
+        quota_sessions=st.quota_sessions, duration_days=st.duration_days, rules=st.rules,
+    )
+    return st
 
 def get_selectable_subscription_types(organization, branch=None):
     """См. tenants.directions.get_selectable_directions — тот же принцип:
