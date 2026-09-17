@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — направление
+{% endblock title %}
+{% block page_title %}
+  {% if is_create %}
+    <span data-i18n="direction_form.title_create">Новое направление</span>
+  {% else %}
+    <span data-i18n="direction_form.title_edit">Редактирование направления</span>
+  {% endif %}
+{% endblock page_title %}
+{% block content %}
+  <form method="post">
+    {% include "tenants/_direction_form_fields.html" %}
+    <button type="submit"
+            class="kc-btn kc-btn--primary"
+            data-i18n="direction_form.save">Сохранить</button>
+    <a href="{% url 'tenants_web:direction-list' %}"
+       class="kc-btn kc-btn--secondary"
+       data-i18n="direction_form.cancel">Отмена</a>
+  </form>
+{% endblock content %}

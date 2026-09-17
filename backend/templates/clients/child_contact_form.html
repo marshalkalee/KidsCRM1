@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — контакт ребёнка
+{% endblock title %}
+{% block page_title %}
+  {% if is_create %}
+    <span data-i18n="child_contact_form.title_create">Новый контакт</span>
+  {% else %}
+    <span data-i18n="child_contact_form.title_edit">Редактирование контакта</span>
+  {% endif %}
+{% endblock page_title %}
+{% block content %}
+  <form method="post">
+    {% include "clients/_child_contact_form_fields.html" %}
+    <button type="submit"
+            class="kc-btn kc-btn--primary"
+            data-i18n="child_contact_form.save">Сохранить</button>
+    <a href="{% url 'clients_web:child-card' child.pk %}"
+       class="kc-btn kc-btn--secondary"
+       data-i18n="child_contact_form.cancel">Отмена</a>
+  </form>
+{% endblock content %}

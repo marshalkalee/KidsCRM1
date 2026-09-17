@@ -1,0 +1,89 @@
+{% csrf_token %}
+<div class="kc-card">
+  <div class="kc-field{% if form.name.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label kc-field__label--required"
+           for="{{ form.name.id_for_label }}"
+           data-i18n="branch_form.name">{{ form.name.label }}</label>
+    {{ form.name }}
+    <div class="kc-field__error">{{ form.name.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.address.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.address.id_for_label }}"
+           data-i18n="branch_form.address">{{ form.address.label }}</label>
+    {{ form.address }}
+    <div class="kc-field__error">{{ form.address.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.phone.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.phone.id_for_label }}"
+           data-i18n="branch_form.phone">{{ form.phone.label }}</label>
+    {{ form.phone }}
+    <div class="kc-field__error">{{ form.phone.errors|first }}</div>
+  </div>
+</div>
+<div class="kc-card">
+  <h2 data-i18n="branch_form.working_hours_title">Часы работы</h2>
+  <div class="kc-table-wrap kc-scroll-x">
+    <table class="kc-table">
+      <thead>
+        <tr>
+          <th data-i18n="branch_form.weekday">День</th>
+          <th data-i18n="branch_form.closed">Выходной</th>
+          <th data-i18n="branch_form.open">Открытие</th>
+          <th data-i18n="branch_form.close">Закрытие</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td data-i18n="org_settings.weekday_mon">Понедельник</td>
+          <td>{{ form.mon_closed }}</td>
+          <td>{{ form.mon_open }}</td>
+          <td>{{ form.mon_close }}</td>
+        </tr>
+        <tr>
+          <td data-i18n="org_settings.weekday_tue">Вторник</td>
+          <td>{{ form.tue_closed }}</td>
+          <td>{{ form.tue_open }}</td>
+          <td>{{ form.tue_close }}</td>
+        </tr>
+        <tr>
+          <td data-i18n="org_settings.weekday_wed">Среда</td>
+          <td>{{ form.wed_closed }}</td>
+          <td>{{ form.wed_open }}</td>
+          <td>{{ form.wed_close }}</td>
+        </tr>
+        <tr>
+          <td data-i18n="org_settings.weekday_thu">Четверг</td>
+          <td>{{ form.thu_closed }}</td>
+          <td>{{ form.thu_open }}</td>
+          <td>{{ form.thu_close }}</td>
+        </tr>
+        <tr>
+          <td data-i18n="org_settings.weekday_fri">Пятница</td>
+          <td>{{ form.fri_closed }}</td>
+          <td>{{ form.fri_open }}</td>
+          <td>{{ form.fri_close }}</td>
+        </tr>
+        <tr>
+          <td data-i18n="org_settings.weekday_sat">Суббота</td>
+          <td>{{ form.sat_closed }}</td>
+          <td>{{ form.sat_open }}</td>
+          <td>{{ form.sat_close }}</td>
+        </tr>
+        <tr>
+          <td data-i18n="org_settings.weekday_sun">Воскресенье</td>
+          <td>{{ form.sun_closed }}</td>
+          <td>{{ form.sun_open }}</td>
+          <td>{{ form.sun_close }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% for field in form %}
+    {% if field.errors and field.html_name|slice:"-6:" == "_close" %}
+      <p class="kc-field__error">{{ field.errors|first }}</p>
+    {% endif %}
+  {% endfor %}
+  {% if form.non_field_errors %}<p class="kc-field__error">{{ form.non_field_errors|first }}</p>{% endif %}
+</div>

@@ -1,0 +1,95 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>
+      {% block title %}
+        KidsCRM
+      {% endblock title %}
+    </title>
+    <!-- Manrope/JetBrains Mono — шрифты из макета Дарьи
+         (feature/frontend-prototype), см. tokens.css. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+          rel="stylesheet" />
+    <!-- Design-система: static/site/css/tokens.css (переменные) +
+         layout.css (каркас) + kc.css (компоненты), см. domains/README.md -->
+    <link rel="stylesheet"
+          href="{% static 'site/css/vendor/bootstrap.min.css' %}" />
+    <link rel="stylesheet"
+          href="{% static 'site/css/vendor/select2.min.css' %}" />
+    <link rel="stylesheet" href="{% static 'site/css/tokens.css' %}" />
+    <link rel="stylesheet" href="{% static 'site/css/layout.css' %}" />
+    <link rel="stylesheet" href="{% static 'site/css/kc.css' %}" />
+    <link rel="stylesheet" href="{% static 'site/css/components.css' %}" />
+    {% block extra_css %}
+    {% endblock extra_css %}
+  </head>
+  <body>
+    <div class="kc-shell">
+      {% include "includes/sidebar.html" %}
+      <div class="kc-shell__main">
+        <header class="kc-header">
+          <button type="button"
+                  class="kc-header__burger"
+                  id="kc-burger"
+                  aria-label="Меню">☰</button>
+          <h1 class="kc-header__title">
+            {% block page_title %}
+            {% endblock page_title %}
+          </h1>
+          {% include "includes/branch_switcher.html" %}
+          {# Имя пользователя/выход — в подвале сайдбара (includes/sidebar.html), #}
+          {# чтобы на мобильном не пришлось прятать имя рядом с переключателем. #}
+        </header>
+        <main class="kc-page-content">
+          {% block content %}
+          {% endblock content %}
+        </main>
+      </div>
+    </div>
+    <!-- Вендорные плагины без сборщика — см. static/site/js/vendor/README.md -->
+    <script src="{% static 'site/js/vendor/jquery.min.js' %}"></script>
+    <script src="{% static 'site/js/vendor/bootstrap.bundle.min.js' %}"></script>
+    <script src="{% static 'site/js/vendor/select2.min.js' %}"></script>
+    <!-- Своя i18n-система: бандл собран backend/scripts/build_i18n_bundle.py -->
+    <script src="{% static 'site/js/i18n-bundle.js' %}"></script>
+    <script src="{% static 'site/js/i18n.js' %}"></script>
+    <script src="{% static 'site/js/layout.js' %}"></script>
+    <!-- Библиотека компонентов — см. domains/README.md -->
+    <script src="{% static 'site/js/components/toast.js' %}"></script>
+    <script src="{% static 'site/js/components/modal.js' %}"></script>
+    <script src="{% static 'site/js/components/form-modal.js' %}"></script>
+    <script src="{% static 'site/js/components/form.js' %}"></script>
+    <script src="{% static 'site/js/components/search-input.js' %}"></script>
+    <script src="{% static 'site/js/components/table.js' %}"></script>
+    <script src="{% static 'site/js/components/picker.js' %}"></script>
+    <script src="{% static 'site/js/components/formset.js' %}"></script>
+    <script src="{% static 'site/js/app.js' %}"></script>
+    {% if messages %}
+      <script>
+        (function () {
+          var messages = [
+            {% for message in messages %}
+              { text: "{{ message.message|escapejs }}", tags: "{{ message.tags }}" },
+            {% endfor %}
+          ];
+          messages.forEach(function (m) {
+            if (m.tags.indexOf("error") !== -1) {
+              window.KidsCRM.toast.error(m.text);
+            } else if (m.tags.indexOf("warning") !== -1) {
+              window.KidsCRM.toast.warning(m.text);
+            } else {
+              window.KidsCRM.toast.success(m.text);
+            }
+          });
+        })();
+      </script>
+    {% endif %}
+    {% block extra_js %}
+    {% endblock extra_js %}
+  </body>
+</html>

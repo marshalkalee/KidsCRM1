@@ -1,0 +1,38 @@
+{% csrf_token %}
+<div class="kc-card">
+  <div class="kc-field{% if form.name.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label kc-field__label--required"
+           for="{{ form.name.id_for_label }}"
+           data-i18n="direction_form.name">{{ form.name.label }}</label>
+    {{ form.name }}
+    <div class="kc-field__error">{{ form.name.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.color.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.color.id_for_label }}"
+           data-i18n="direction_form.color">{{ form.color.label }}</label>
+    {{ form.color }}
+    <div class="kc-field__error">{{ form.color.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.age_min.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.age_min.id_for_label }}"
+           data-i18n="direction_form.age_min">{{ form.age_min.label }}</label>
+    {{ form.age_min }}
+    <div class="kc-field__error">{{ form.age_min.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.age_max.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.age_max.id_for_label }}"
+           data-i18n="direction_form.age_max">{{ form.age_max.label }}</label>
+    {{ form.age_max }}
+    <div class="kc-field__error">{{ form.age_max.errors|first }}</div>
+  </div>
+</div>
+<div class="kc-card">
+  <div class="kc-field{% if form.branches.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label" data-i18n="direction_form.branches">{{ form.branches.label }}</label>
+    {{ form.branches }}
+    <div class="kc-field__error">{{ form.branches.errors|first }}</div>
+  </div>
+</div>
