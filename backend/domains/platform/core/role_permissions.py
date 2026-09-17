@@ -53,6 +53,15 @@ PHONE_VIEW_ROLES = {
     User.Role.ACCOUNTANT,
 }
 
+# Причина ухода и согласие на обработку данных — административные/
+# аналитические поля карточки ребёнка, не нужны преподавателю в работе.
+CHILD_SENSITIVE_FIELDS_ROLES = {
+    User.Role.OWNER,
+    User.Role.MANAGER,
+    User.Role.ADMIN,
+    User.Role.ACCOUNTANT,
+}
+
 
 def can_view_financials(user) -> bool:
     return user.role in FINANCE_ROLES
@@ -86,6 +95,10 @@ def can_view_phone(user) -> bool:
     return user.role in PHONE_VIEW_ROLES
 
 
+def can_view_child_sensitive_fields(user) -> bool:
+    return user.role in CHILD_SENSITIVE_FIELDS_ROLES
+
+
 def get_user_permissions(user) -> dict:
     return {
         "can_view_financials": can_view_financials(user),
@@ -96,4 +109,5 @@ def get_user_permissions(user) -> dict:
         "can_manage_branches": can_manage_branches(user),
         "can_manage_directions": can_manage_directions(user),
         "can_view_phone": can_view_phone(user),
+        "can_view_child_sensitive_fields": can_view_child_sensitive_fields(user),
     }
