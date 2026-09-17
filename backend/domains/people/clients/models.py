@@ -9,6 +9,7 @@
 данных (ТЗ п. 10.3): система не нуждается в нём для своей работы.
 """
 
+from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -198,3 +199,52 @@ class ChildContact(TenantModel):
                     pk=self.pk
                 ).update(is_primary_contact=False)
             super().save(*args, **kwargs)
+
+
+class CommunicationLog(TenantModel):
+    """
+    История контактов с родителем — вкладка «Коммуникации» карточки
+    ребёнка (ТЗ п. 3.1, п. 4.1). На старте (M1) записи заводятся вручную:
+    администратор фиксирует звонок/WhatsApp/комментарий после факта, поэтому
+    полей здесь минимум — быстрый ввод важнее полноты (см. web_views.py:
+    критерий приёмки "за пару кликов, иначе вкладка останется пустой").
+
+    parent_contact — опционален: не всегда звонок был конкретному контакту
+    (иногда это просто внутренняя заметка о ребёнке), но когда известен,
+    даёт "историю по родителю", а не только по ребёнку.
+
+    Append-only: записи не редактируются и не удаляются (это лог, а не
+    черновик) — отдельного UI для этого нет и не планируется здесь.
+    """
+
+    class Channel(models.TextChoices):
+        CALL = "call", "Звонок"
+        WHATSAPP = "whatsapp", "WhatsApp"
+        COMMENT = "comment", "Комментарий"
+
+    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="communication_logs")
+    parent_contact = models.ForeignKey(
+        ParentContact,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="communication_logs",
+    )
+    channel = models.CharField(max_length=10, choices=Channel.choices)
+    note = models.TextField()
+    # PROTECT — лог не должен потерять автора молча (нужен для аудита);
+    # пользователи и так мягко удаляются (User.delete()), так что PROTECT
+    # здесь не мешает обычному увольнению сотрудника.
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="communication_logs"
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        self.organization_id = self.child.organization_id
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.get_channel_display()} — {self.child_id} ({self.created_at:%Y-%m-%d})"

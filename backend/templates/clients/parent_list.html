@@ -1,32 +1,32 @@
 {% extends "base.html" %}
 {% block title %}
-  KidsCRM — контакты ребёнка
+  KidsCRM — родители
 {% endblock title %}
 {% block page_title %}
-  <span data-i18n="child_contacts.title">Контакты ребёнка</span> — {{ child.full_name }}
+  <span data-i18n="parent_list.title">Родители и контакты</span>
 {% endblock page_title %}
 {% block content %}
-  <div id="js-child-contacts-table"></div>
+  <div id="js-parents-table"></div>
   {% if can_manage %}
     <button type="button"
-            id="js-create-child-contact"
+            id="js-create-parent"
             class="kc-btn kc-btn--accent kc-fab">
       <svg viewBox="0 0 24 24">
         <line x1="12" y1="5" x2="12" y2="19" />
         <line x1="5" y1="12" x2="19" y2="12" />
       </svg>
-      <span data-i18n="child_contacts.add">Добавить контакт</span>
+      <span data-i18n="parent_list.create">Добавить родителя</span>
     </button>
   {% endif %}
   {% for row in rows %}
     <form method="post"
-          action="{{ row.detach_url }}"
-          id="js-detach-form-{{ row.id }}"
+          action="{{ row.delete_url }}"
+          id="js-delete-form-{{ row.id }}"
           hidden>
       {% csrf_token %}
     </form>
   {% endfor %}
-  {{ rows|json_script:"child-contacts-data" }}
+  {{ rows|json_script:"parents-data" }}
 {% endblock content %}
 {% block extra_js %}
   <script>
@@ -34,14 +34,14 @@
       "use strict";
       var t = window.KidsCRM.t;
       var canManage = {{ can_manage|yesno:"true,false" }};
-      var createUrl = "{% url 'clients_web:child-contact-create' child.pk %}";
-      var rows = JSON.parse(document.getElementById("child-contacts-data").textContent);
+      var createUrl = "{% url 'clients_web:parent-create' %}";
+      var rows = JSON.parse(document.getElementById("parents-data").textContent);
 
-      var createBtn = document.getElementById("js-create-child-contact");
+      var createBtn = document.getElementById("js-create-parent");
       if (createBtn) {
         createBtn.addEventListener("click", function () {
           window.KidsCRM.formModal
-            .open({ url: createUrl, title: t("child_contact_form.title_create") })
+            .open({ url: createUrl, title: t("parent_form.title_create") })
             .then(function (saved) {
               if (saved) {
                 window.location.reload();
@@ -50,45 +50,34 @@
         });
       }
 
-      function badge(active, textOn) {
-        var span = document.createElement("span");
-        if (!active) {
-          return span;
-        }
-        span.className = "kc-badge kc-badge--green";
-        span.textContent = textOn;
-        return span;
-      }
-
       var columns = [
-        { key: "full_name", label: t("child_contacts.col_name"), sortable: true },
-        { key: "role", label: t("child_contacts.col_role") },
+        { key: "full_name", label: t("parent_list.col_name"), sortable: true },
         {
-          key: "is_payer",
-          label: t("child_contacts.col_payer"),
+          key: "phones",
+          label: t("parent_list.col_phones"),
           render: function (row) {
-            return badge(row.is_payer, t("child_contacts.payer"));
+            return row.phones || "—";
           },
         },
         {
-          key: "is_primary_contact",
-          label: t("child_contacts.col_primary"),
+          key: "whatsapp",
+          label: t("parent_list.col_whatsapp"),
           render: function (row) {
-            return badge(row.is_primary_contact, t("child_contacts.primary"));
+            return row.whatsapp || "—";
           },
         },
         {
-          key: "phone",
-          label: t("child_contacts.col_phone"),
+          key: "email",
+          label: t("parent_list.col_email"),
           render: function (row) {
-            return row.phone || "—";
+            return row.email || "—";
           },
         },
       ];
 
       var ICONS = {
         edit: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />',
-        detach: '<line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />',
+        delete: '<polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" />',
       };
 
       function iconButton(icon, label, extraClass, onClick) {
@@ -105,13 +94,13 @@
       if (canManage) {
         columns.push({
           key: "actions",
-          label: t("child_contacts.col_actions"),
+          label: t("parent_list.col_actions"),
           render: function (row) {
             var wrap = document.createElement("div");
             wrap.appendChild(
-              iconButton(ICONS.edit, t("child_contacts.edit"), "kc-btn--secondary", function () {
+              iconButton(ICONS.edit, t("parent_list.edit"), "kc-btn--secondary", function () {
                 window.KidsCRM.formModal
-                  .open({ url: row.edit_url, title: t("child_contact_form.title_edit") })
+                  .open({ url: row.edit_url, title: t("parent_form.title_edit") })
                   .then(function (saved) {
                     if (saved) {
                       window.location.reload();
@@ -120,16 +109,16 @@
               })
             );
             wrap.appendChild(
-              iconButton(ICONS.detach, t("child_contacts.detach"), "kc-btn--danger", function () {
+              iconButton(ICONS.delete, t("parent_list.delete"), "kc-btn--danger", function () {
                 window.KidsCRM.modal
                   .confirmDanger({
-                    title: t("child_contacts.confirm_detach_title"),
+                    title: t("parent_list.confirm_delete_title"),
                     message: row.full_name,
-                    confirmText: t("child_contacts.detach"),
+                    confirmText: t("parent_list.delete"),
                   })
                   .then(function (confirmed) {
                     if (confirmed) {
-                      document.getElementById("js-detach-form-" + row.id).submit();
+                      document.getElementById("js-delete-form-" + row.id).submit();
                     }
                   });
               })
@@ -139,13 +128,13 @@
         });
       }
 
-      var table = window.KidsCRM.table.init("#js-child-contacts-table", {
+      var table = window.KidsCRM.table.init("#js-parents-table", {
         columns: columns,
         pageSize: 10,
         rowKey: function (row) {
           return row.id;
         },
-        emptyTextKey: "child_contacts.empty",
+        emptyTextKey: "parent_list.empty",
       });
       table.setData(rows);
     })();

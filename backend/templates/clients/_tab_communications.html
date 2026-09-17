@@ -1,0 +1,51 @@
+<!-- Фрагмент вкладки «Коммуникации» — без <script>, см. _tab_contacts.html. -->
+{% if can_manage and form %}
+  <form method="post"
+        action="{% url 'clients_web:child-communication-create' child.pk %}"
+        id="js-communication-form"
+        class="kc-card kc-communication-form">
+    {% csrf_token %}
+    <div class="kc-field{% if form.channel.errors %} kc-field--invalid{% endif %}">
+      <div class="kc-segmented">
+        {% for radio in form.channel %}
+          <label class="kc-segmented__option">
+            {{ radio.tag }}
+            <span>{{ radio.choice_label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <div class="kc-field__error">{{ form.channel.errors|first }}</div>
+    </div>
+    <div class="kc-field{% if form.parent_contact.errors %} kc-field--invalid{% endif %}">
+      <label class="kc-field__label"
+             for="{{ form.parent_contact.id_for_label }}"
+             data-i18n="communications.parent_contact">{{ form.parent_contact.label }}</label>
+      {{ form.parent_contact }}
+      <div class="kc-field__error">{{ form.parent_contact.errors|first }}</div>
+    </div>
+    <div class="kc-field{% if form.note.errors %} kc-field--invalid{% endif %}">
+      <label class="kc-field__label kc-field__label--required"
+             for="{{ form.note.id_for_label }}"
+             data-i18n="communications.note">{{ form.note.label }}</label>
+      {{ form.note }}
+      <div class="kc-field__error">{{ form.note.errors|first }}</div>
+    </div>
+    <button type="submit"
+            class="kc-btn kc-btn--primary"
+            data-i18n="communications.add">Добавить запись</button>
+  </form>
+{% endif %}
+<div class="kc-timeline">
+  {% for log in logs %}
+    <div class="kc-timeline__item">
+      <span class="kc-badge kc-badge--blue">{{ log.get_channel_display }}</span>
+      <p class="kc-timeline__note">{{ log.note }}</p>
+      <div class="kc-timeline__meta">
+        {{ log.author.full_name }} · {{ log.created_at|date:"d.m.Y H:i" }}
+        {% if log.parent_contact %}· {{ log.parent_contact.full_name }}{% endif %}
+      </div>
+    </div>
+  {% empty %}
+    <p class="kc-empty-state" data-i18n="communications.empty">Записей пока нет</p>
+  {% endfor %}
+</div>
