@@ -7,9 +7,9 @@ RULES_SCHEMA_VERSION = 1
 # Отсутствующий ключ = правило ещё не решено с Дарьей/True Ballet — UI
 # обязан допускать любое значение до ответа (Discovery, вопрос №1).
 RULES_KEYS = {
-    "expire_on_miss",      # bool | None — сгорает ли пропущенное занятие
+    "expire_on_miss",  # bool | None — сгорает ли пропущенное занятие
     "makeup_window_days",  # int | None — срок отработки, дней
-    "freezes_per_year",    # int | None — сколько заморозок разрешено в год
+    "freezes_per_year",  # int | None — сколько заморозок разрешено в год
 }
 
 
@@ -45,7 +45,9 @@ class SubscriptionType(TenantModel):
 
 class SubscriptionTypeVersion(TenantModel):
     subscription_type = models.ForeignKey(
-        SubscriptionType, on_delete=models.PROTECT, related_name="versions",
+        SubscriptionType,
+        on_delete=models.PROTECT,
+        related_name="versions",
     )
     schema_version = models.PositiveSmallIntegerField(default=RULES_SCHEMA_VERSION)
 
@@ -87,11 +89,17 @@ class Subscription(TenantModel):
         Status.EXHAUSTED: set(),
     }
 
-    child = models.ForeignKey("clients.Child", on_delete=models.PROTECT, related_name="subscriptions")
-    subscription_type_version = models.ForeignKey(
-        SubscriptionTypeVersion, on_delete=models.PROTECT, related_name="subscriptions",
+    child = models.ForeignKey(
+        "clients.Child", on_delete=models.PROTECT, related_name="subscriptions"
     )
-    direction = models.ForeignKey("tenants.Direction", on_delete=models.PROTECT, related_name="subscriptions")
+    subscription_type_version = models.ForeignKey(
+        SubscriptionTypeVersion,
+        on_delete=models.PROTECT,
+        related_name="subscriptions",
+    )
+    direction = models.ForeignKey(
+        "tenants.Direction", on_delete=models.PROTECT, related_name="subscriptions"
+    )
 
     starts_on = models.DateField()
     ends_on = models.DateField()
@@ -129,7 +137,9 @@ class SubscriptionLedgerEntry(TenantModel):
         MANUAL_ADJUSTMENT = "manual_adjustment", "Ручная корректировка"
         EXTENSION = "extension", "Продление"
 
-    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="ledger_entries")
+    subscription = models.ForeignKey(
+        Subscription, on_delete=models.CASCADE, related_name="ledger_entries"
+    )
     kind = models.CharField(max_length=20, choices=Kind.choices)
     delta = models.SmallIntegerField()
     comment = models.CharField(max_length=255, blank=True)
@@ -150,15 +160,22 @@ class SubscriptionFreeze(TenantModel):
     class Meta:
         ordering = ["-starts_on"]
 
+
 class LessonConsumption(TenantModel):
     """Идемпотентность consume()/revert() (TRU-8, контракт №1). lesson_id —
     обычный UUID, не FK: Lesson ещё не существует (TRU-50 не сделан), сервис
     подписок не должен зависеть от домена расписания."""
 
-    child = models.ForeignKey("clients.Child", on_delete=models.PROTECT, related_name="lesson_consumptions")
+    child = models.ForeignKey(
+        "clients.Child", on_delete=models.PROTECT, related_name="lesson_consumptions"
+    )
     lesson_id = models.UUIDField()
-    subscription = models.ForeignKey(Subscription, on_delete=models.PROTECT, related_name="lesson_consumptions")
-    ledger_entry = models.ForeignKey(SubscriptionLedgerEntry, on_delete=models.PROTECT, related_name="+")
+    subscription = models.ForeignKey(
+        Subscription, on_delete=models.PROTECT, related_name="lesson_consumptions"
+    )
+    ledger_entry = models.ForeignKey(
+        SubscriptionLedgerEntry, on_delete=models.PROTECT, related_name="+"
+    )
     reverted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
