@@ -1,8 +1,9 @@
 """
-Веб-экран "Контакты ребёнка" (серверный рендеринг, сессия — см.
-web_views.py). Часть тикета "Связь родитель <-> ребёнок: роли и
-плательщик" — "Экран управления контактами в карточке ребёнка: список
-контактов, добавление, назначение плательщика".
+Веб-экран контактов ребёнка (серверный рендеринг, сессия — см.
+web_views.py). Изначально был отдельной страницей (тикет "Связь родитель
+<-> ребёнок"), теперь — фрагмент вкладки «Контакты» карточки ребёнка
+(child-tab-contacts), встроенной в тикет "Карточка ребёнка: каркас и
+вкладки" — сама карточка покрыта в tests_child_card.py.
 """
 
 import datetime
@@ -52,9 +53,10 @@ class ChildContactsWebViewTests(TestCase):
         )
         self.client.force_login(self.owner)
 
-        response = self.client.get(reverse("clients_web:child-contacts", args=[self.child.pk]))
+        response = self.client.get(reverse("clients_web:child-tab-contacts", args=[self.child.pk]))
 
         self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b"<html", response.content)  # чистый фрагмент вкладки
         # Список рендерится на клиенте из json_script — проверяем, что
         # строка связи попала в данные, а не литеральный текст имени в HTML.
         self.assertContains(response, str(link.pk))
@@ -90,7 +92,7 @@ class ChildContactsWebViewTests(TestCase):
     def test_teacher_can_view_contacts_list(self):
         self.client.force_login(self.teacher)
 
-        response = self.client.get(reverse("clients_web:child-contacts", args=[self.child.pk]))
+        response = self.client.get(reverse("clients_web:child-tab-contacts", args=[self.child.pk]))
 
         self.assertEqual(response.status_code, 200)
 
