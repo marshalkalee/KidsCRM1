@@ -1,0 +1,182 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  lint:
+    name: Lint (ruff, djlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements/local.txt
+
+      - run: pip install -r requirements/local.txt
+        working-directory: backend
+
+      # --output-format=github даёт аннотации прямо на диффе PR, не только
+      # в логе job'а — см. критерий "падение видно без раскапывания логов".
+      - name: ruff check
+        working-directory: backend
+        run: ruff check --output-format=github .
+
+      - name: ruff format --check
+        working-directory: backend
+        run: ruff format --check .
+
+      - name: djlint (шаблоны)
+        working-directory: backend
+        run: djlint templates --profile django --check
+
+      # Захардкоженные строки интерфейса — ТЗ п. 10.1, критерий приёмки
+      # тикета UI-каркаса: строка без data-i18n должна ловиться линтером.
+      - name: Захардкоженные строки (i18n)
+        working-directory: backend
+        run: python scripts/check_hardcoded_strings.py
+
+  test:
+    name: Tests + coverage (Postgres, Redis)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kidscrm
+          POSTGRES_PASSWORD: kidscrm
+          POSTGRES_DB: kidscrm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kidscrm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      DJANGO_SECRET_KEY: ci-secret-key-not-for-production
+      DATABASE_URL: postgres://kidscrm:kidscrm@localhost:5432/kidscrm
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements/local.txt
+
+      - run: pip install -r requirements/local.txt
+        working-directory: backend
+
+      # Postgres из services поднимается пустым на каждый прогон — это и
+      # есть "прогон миграций на чистой БД" из критериев приёмки, отдельный
+      # шаг под то же не нужен.
+      - name: Migrate clean DB
+        working-directory: backend
+        run: python manage.py migrate
+
+      - name: Tests with coverage
+        working-directory: backend
+        run: |
+          coverage run manage.py test
+          coverage report
+
+      # Без жёсткого порога (ещё нет задачи, откуда его брать) — просто
+      # цифра на виду в Summary вкладки прогона, не только в логе.
+      - name: Coverage summary
+        if: always()
+        working-directory: backend
+        run: |
+          {
+            echo '### Покрытие тестами'
+            echo '```'
+            coverage report
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  tenant-isolation:
+    name: Тесты изоляции тенантов (блокирующий)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kidscrm
+          POSTGRES_PASSWORD: kidscrm
+          POSTGRES_DB: kidscrm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kidscrm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      DJANGO_SECRET_KEY: ci-secret-key-not-for-production
+      DATABASE_URL: postgres://kidscrm:kidscrm@localhost:5432/kidscrm
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements/local.txt
+
+      - run: pip install -r requirements/local.txt
+        working-directory: backend
+
+      - run: python manage.py migrate
+        working-directory: backend
+
+      # Отдельный блокирующий джоб по требованию ТЗ (кросс-тенантный доступ
+      # покрыт автотестом — ADR-001). Конвенция: любой тест на изоляцию
+      # тенантов помечается @tag("tenant_isolation") (django.test.tag).
+      # Пока в репозитории нет бизнес-моделей — тестов с этим тегом нет, и
+      # джоб проходит на 0 тестах. Он не подделывает проверку — как только
+      # появится первая модель с organization_id, тест на её изоляцию
+      # обязан получить этот тег, иначе это не покрыто джобом.
+      - name: Tenant isolation tests
+        working-directory: backend
+        run: python manage.py test --tag=tenant_isolation
+
+  build:
+    name: Build backend (нет отдельного frontend — веб внутри backend, ADR-002)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

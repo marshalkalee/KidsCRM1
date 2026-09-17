@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — родитель
+{% endblock title %}
+{% block page_title %}
+  {% if is_create %}
+    <span data-i18n="parent_form.title_create">Новый родитель</span>
+  {% else %}
+    <span data-i18n="parent_form.title_edit">Редактирование родителя</span>
+  {% endif %}
+{% endblock page_title %}
+{% block content %}
+  <form method="post">
+    {% include "clients/_parent_form_fields.html" %}
+    <button type="submit"
+            class="kc-btn kc-btn--primary"
+            data-i18n="parent_form.save">Сохранить</button>
+    <a href="{% url 'clients_web:parent-list' %}"
+       class="kc-btn kc-btn--secondary"
+       data-i18n="parent_form.cancel">Отмена</a>
+  </form>
+{% endblock content %}

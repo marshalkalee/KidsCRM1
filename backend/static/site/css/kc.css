@@ -1,0 +1,404 @@
+/*
+ * Design-system KidsCRM. Переиспользуемые классы вместо инлайновых стилей —
+ * .kc-<блок>[--модификатор][__элемент], по образцу существующего в другом
+ * продукте AEM Solutions паттерна (там — .hr-*, здесь — .kc-*, чтобы не
+ * путать с чужим продуктом).
+ *
+ * Цвета/радиусы — из макета Дарьи (feature/frontend-prototype), см.
+ * tokens.css.
+ */
+
+.kc-navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #1f2d3d;
+  color: #fff;
+}
+
+.kc-navbar__brand {
+  font-weight: 600;
+}
+
+.kc-page-content {
+  padding: 20px;
+}
+
+/* Плавающая кнопка создания (FAB) — по образцу Gmail/Notion/Linear:
+   закреплена в правом нижнем углу видимой области, остаётся на месте при
+   скролле страницы (в отличие от .kc-header, который "плавает" только
+   относительно верха — FAB не привязан к потоку документа вообще).
+   Акцентный градиент — тот же сигнал "главное действие", что и у
+   .kc-btn--accent, просто закреплённый, а не в потоке страницы. */
+.kc-fab {
+  position: fixed;
+  right: var(--kc-space-5);
+  bottom: var(--kc-space-5);
+  z-index: 90;
+  border-radius: 999px;
+  padding: 14px 22px;
+  box-shadow: var(--kc-shadow-md);
+}
+
+.kc-fab svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.kc-fab:hover {
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16), 0 4px 8px rgba(0, 0, 0, 0.06);
+}
+
+@media (max-width: 768px) {
+  .kc-fab {
+    right: var(--kc-space-4);
+    bottom: var(--kc-space-4);
+  }
+}
+
+/* Карточка — белая подложка под группу полей/контента. Без неё формы на
+   фоне страницы (тот же --kc-color-bg, что и у .kc-form-input) сливаются
+   и нечитаемы — см. макет Дарьи, там все поля всегда внутри .card. */
+.kc-card {
+  background: var(--kc-color-surface);
+  border: 1px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-md);
+  box-shadow: var(--kc-shadow-sm);
+  padding: var(--kc-space-5);
+  margin-bottom: var(--kc-space-4);
+}
+
+.kc-card > h2:first-child,
+.kc-card > h3:first-child {
+  margin-top: 0;
+}
+
+/* В модалке (см. form-modal.js) тот же шаблон формы используется без
+   классов ".modal-content" — рендерится прямо в белом теле модалки. Своя
+   белая подложка там даёт "рамку в рамке", которой нет в макете (там
+   поля в модалке лежат просто на теле модалки, без вложенной карточки) —
+   убираем оформление карточки, оставляем только отступ между секциями. */
+.modal-body .kc-card {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: var(--kc-space-5);
+}
+
+.kc-form-input {
+  display: block;
+  width: 100%;
+  padding: var(--kc-space-2) var(--kc-space-3);
+  background: var(--kc-color-bg);
+  border: 1.5px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-sm);
+  font-family: var(--kc-font-family);
+  font-size: var(--kc-font-size-sm);
+  color: var(--kc-color-text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.kc-form-input:focus {
+  border-color: var(--kc-color-accent);
+  background: var(--kc-color-surface);
+}
+
+.kc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kc-space-1);
+  padding: 7px 14px;
+  border-radius: var(--kc-radius-sm);
+  border: 1.5px solid transparent;
+  font-family: var(--kc-font-family);
+  font-size: var(--kc-font-size-sm);
+  font-weight: var(--kc-font-weight-bold);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  text-decoration: none;
+  background: none;
+  color: var(--kc-color-text);
+}
+
+/* "primary" — тёмная основная кнопка (сохранить/создать), "accent" —
+   акцентный градиент для более "яркого" CTA. Разные роли — см. tokens.css. */
+.kc-btn--primary {
+  background: var(--kc-color-primary);
+  color: var(--kc-color-primary-contrast);
+  border-color: var(--kc-color-primary);
+}
+
+.kc-btn--primary:hover {
+  opacity: 0.88;
+}
+
+.kc-btn--accent {
+  background: var(--kc-gradient-accent);
+  color: var(--kc-color-accent-contrast);
+  border: none;
+}
+
+.kc-btn--accent:hover {
+  opacity: 0.9;
+}
+
+.kc-btn--secondary {
+  background: var(--kc-color-surface);
+  color: var(--kc-color-text);
+  border-color: var(--kc-color-border);
+}
+
+.kc-btn--secondary:hover {
+  background: var(--kc-color-bg);
+}
+
+.kc-btn--danger {
+  background: var(--kc-color-danger);
+  color: #fff;
+}
+
+.kc-btn--sm {
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 5px;
+}
+
+/* Кнопка-иконка без текста (действия в таблицах: редактировать/архивировать
+   и т.п.) — "тихая", без рамки/фона, приглушённая иконка, как пункты
+   сайдбара (.kc-sidebar__link), а не заливка кнопки. aria-label —
+   единственная текстовая подпись, которая у неё есть.
+   .kc-btn--secondary/--danger обычно дают рамку/сплошную заливку — здесь
+   переопределяем именно для .kc-btn--icon (специфичность двух классов
+   выше одного — работает независимо от порядка правил в файле). */
+.kc-btn--icon {
+  padding: 7px;
+  gap: 0;
+  background: none;
+  border-color: transparent;
+  color: var(--kc-color-text-muted);
+}
+
+.kc-btn--icon.kc-btn--secondary,
+.kc-btn--icon.kc-btn--danger {
+  background: none;
+  border-color: transparent;
+}
+
+.kc-btn--icon.kc-btn--secondary:hover {
+  background: var(--kc-color-bg);
+  color: var(--kc-color-text);
+}
+
+.kc-btn--icon.kc-btn--danger {
+  color: var(--kc-color-danger);
+}
+
+.kc-btn--icon.kc-btn--danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.kc-btn--icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.kc-btn[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.kc-btn .kc-spinner {
+  width: 14px;
+  height: 14px;
+  margin-right: var(--kc-space-2);
+  border-width: 2px;
+  vertical-align: -2px;
+}
+
+/* Ссылка "назад" (← Все филиалы) — раньше был обычный <a> без стилей,
+   браузер рисовал его синим подчёркнутым по умолчанию, что смотрелось
+   чужеродно на фоне остального интерфейса. Приглушённый цвет + иконка —
+   тот же язык, что у пунктов сайдбара, а не текстовая ссылка. */
+.kc-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kc-space-1);
+  margin-bottom: var(--kc-space-4);
+  color: var(--kc-color-text-muted);
+  text-decoration: none;
+  font-size: var(--kc-font-size-sm);
+  font-weight: 500;
+}
+
+.kc-back-link:hover {
+  color: var(--kc-color-text);
+}
+
+.kc-back-link svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- Значки статусов --- */
+.kc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: var(--kc-font-weight-bold);
+}
+
+.kc-badge--green {
+  background: rgba(5, 150, 105, 0.1);
+  color: #047857;
+}
+
+.kc-badge--amber {
+  background: rgba(217, 119, 6, 0.1);
+  color: #b45309;
+}
+
+.kc-badge--red {
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+}
+
+.kc-badge--blue {
+  background: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+}
+
+.kc-badge--purple {
+  background: rgba(124, 111, 247, 0.1);
+  color: #6d28d9;
+}
+
+.kc-badge--muted {
+  background: rgba(123, 127, 158, 0.1);
+  color: var(--kc-color-text-muted);
+}
+
+/* --- Логотип-плитка (сайдбар, экран входа) --- */
+.kc-logo {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--kc-radius-sm);
+  background: var(--kc-gradient-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kc-logo svg {
+  width: 16px;
+  height: 16px;
+  fill: #fff;
+}
+
+/* --- Аватар с инициалами --- */
+.kc-avatar {
+  border-radius: var(--kc-radius-sm);
+  background: var(--kc-gradient-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--kc-font-weight-bold);
+  flex-shrink: 0;
+}
+
+.kc-avatar--sm {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+  border-radius: 4px;
+}
+
+.kc-avatar--md {
+  width: 32px;
+  height: 32px;
+  font-size: 12px;
+}
+
+.kc-avatar--photo {
+  object-fit: cover;
+  background: var(--kc-color-border);
+}
+
+.kc-avatar--lg {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
+  border-radius: var(--kc-radius-md);
+}
+
+.kc-registry-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.kc-registry-row {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.kc-auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--kc-space-4);
+  background: var(--kc-color-bg);
+}
+
+.kc-auth-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--kc-color-surface);
+  border: 1px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-md);
+  padding: var(--kc-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--kc-space-2);
+  box-shadow: var(--kc-shadow-sm);
+}
+
+.kc-auth-card__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  font-weight: var(--kc-font-weight-bold);
+  font-size: var(--kc-font-size-lg);
+  margin-bottom: var(--kc-space-3);
+}
+
+.kc-auth-card__label {
+  font-size: var(--kc-font-size-sm);
+  color: var(--kc-color-text-muted);
+}
+
+.kc-auth-card__submit {
+  margin-top: var(--kc-space-3);
+}

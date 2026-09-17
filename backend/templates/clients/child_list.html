@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — дети
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="child_list.title">Дети</span>
+{% endblock page_title %}
+{% block content %}
+  <div id="js-children-table"></div>
+  {% if can_manage %}
+    <button type="button"
+            id="js-create-child"
+            class="kc-btn kc-btn--accent kc-fab">
+      <svg viewBox="0 0 24 24">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+      </svg>
+      <span data-i18n="child_list.create">Добавить ребёнка</span>
+    </button>
+  {% endif %}
+  {{ rows|json_script:"children-data" }}
+{% endblock content %}
+{% block extra_js %}
+  <script>
+    (function () {
+      "use strict";
+      var t = window.KidsCRM.t;
+      var createUrl = "{% url 'clients_web:child-create' %}";
+      var rows = JSON.parse(document.getElementById("children-data").textContent);
+
+      var createBtn = document.getElementById("js-create-child");
+      if (createBtn) {
+        createBtn.addEventListener("click", function () {
+          window.KidsCRM.formModal
+            .open({ url: createUrl, title: t("child_form.title_create"), size: "lg" })
+            .then(function (saved) {
+              if (saved) {
+                window.location.reload();
+              }
+            });
+        });
+      }
+
+      var STATUS = {
+        active: { badge: "kc-badge--green", labelKey: "child_list.status_active" },
+        paused: { badge: "kc-badge--amber", labelKey: "child_list.status_paused" },
+        left: { badge: "kc-badge--muted", labelKey: "child_list.status_left" },
+      };
+
+      var columns = [
+        {
+          key: "full_name",
+          label: t("child_list.col_name"),
+          sortable: true,
+          render: function (row) {
+            var link = document.createElement("a");
+            link.href = row.card_url;
+            link.textContent = row.full_name;
+            return link;
+          },
+        },
+        { key: "age", label: t("child_list.col_age") },
+        {
+          key: "status",
+          label: t("child_list.col_status"),
+          render: function (row) {
+            var meta = STATUS[row.status] || STATUS.left;
+            var badge = document.createElement("span");
+            badge.className = "kc-badge " + meta.badge;
+            badge.textContent = t(meta.labelKey);
+            return badge;
+          },
+        },
+        { key: "branch_names", label: t("child_list.col_branch") },
+        {
+          key: "actions",
+          label: t("child_list.col_actions"),
+          render: function (row) {
+            var link = document.createElement("a");
+            link.href = row.card_url;
+            link.className = "kc-btn kc-btn--secondary kc-btn--sm";
+            link.textContent = t("child_list.open_card");
+            return link;
+          },
+        },
+      ];
+
+      var table = window.KidsCRM.table.init("#js-children-table", {
+        columns: columns,
+        pageSize: 10,
+        rowKey: function (row) {
+          return row.id;
+        },
+        emptyTextKey: "child_list.empty",
+      });
+      table.setData(rows);
+    })();
+  </script>
+{% endblock extra_js %}
