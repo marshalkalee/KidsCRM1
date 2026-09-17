@@ -77,7 +77,12 @@ def _contacts_tab_context(request, child):
         {
             "id": str(link.id),
             "full_name": link.parent_contact.full_name,
+            # role_code — сырое значение (например "father"), нужно JS
+            # (child_card.html) для перевода через choices.child_contact_role.*
+            # (i18n.js); role — русский текст как HTML-фолбэк по умолчанию,
+            # тот же принцип, что у всех остальных строк на сайте.
             "role": link.get_role_display(),
+            "role_code": link.role,
             "is_payer": link.is_payer,
             "is_primary_contact": link.is_primary_contact,
             "phone": _first_phone(link) if show_phones else None,

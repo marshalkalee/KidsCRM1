@@ -103,7 +103,8 @@
         <div class="kc-avatar kc-avatar--md">{{ request.user.full_name|kc_initials }}</div>
         <div class="kc-user-chip__info">
           <div class="kc-user-chip__name">{{ request.user.full_name }}</div>
-          <div class="kc-user-chip__role">{{ request.user.get_role_display }}</div>
+          <div class="kc-user-chip__role"
+               data-i18n="choices.user_role.{{ request.user.role }}">{{ request.user.get_role_display }}</div>
         </div>
       </div>
       <form method="post"

@@ -24,6 +24,10 @@ class ChildContactForm(KcFormMixin, forms.ModelForm):
             "is_payer": "Плательщик",
             "is_primary_contact": "Основной контакт",
         }
+        widgets = {
+            # data-i18n-choices — см. комментарий у ChildForm.Meta.widgets.
+            "role": forms.Select(attrs={"data-i18n-choices": "child_contact_role"}),
+        }
 
     def __init__(self, *args, child=None, organization=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -114,9 +118,20 @@ class ChildForm(KcFormMixin, forms.ModelForm):
             # Заполняется JS после загрузки файла в Dropzone
             # (form-enhance.js) — сам инпут не виден, см. _child_form_fields.html.
             "photo_url": forms.HiddenInput,
+            # data-i18n-choices — <option> у TextChoices рендерится Django
+            # сразу на русском (см. Gender/Status в models.py), data-i18n на
+            # сам текст тут не навесить (это не статичная разметка шаблона,
+            # а вывод виджета); i18n.js по этому атрибуту переводит option
+            # по паре группа+value, см. applyToDom().
+            "gender": forms.Select(attrs={"data-i18n-choices": "child_gender"}),
             # Триггер для initConditionalFields (form-enhance.js) — поле
             # "Причина ухода" видно только при этом статусе, см. шаблон.
-            "status": forms.Select(attrs={"data-conditional-trigger": "child_status"}),
+            "status": forms.Select(
+                attrs={
+                    "data-conditional-trigger": "child_status",
+                    "data-i18n-choices": "child_status",
+                }
+            ),
         }
 
     def __init__(self, *args, organization=None, **kwargs):
@@ -210,6 +225,10 @@ class ContactPhoneForm(KcFormMixin, forms.ModelForm):
         labels = {
             "number": "Номер",
             "phone_type": "Тип",
+        }
+        widgets = {
+            # data-i18n-choices — см. комментарий у ChildForm.Meta.widgets.
+            "phone_type": forms.Select(attrs={"data-i18n-choices": "phone_type"}),
         }
 
     def clean_number(self):
