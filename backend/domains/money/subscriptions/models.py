@@ -1,16 +1,4 @@
-from django.db import models  # noqa: F401
-"""
-Тип абонемента — справочник организации (ТЗ п. 3.1, TRU-57).
-
-Правила (сгорание пропусков, заморозки, отработки) — JSON-блок `rules` со
-`schema_version`, не фиксированные булевы поля: реальные правила True
-Ballet не выяснены (Discovery, открытый вопрос №1, ТЗ п. 13.1), жёсткая
-схема колонок потребовала бы миграции на первый нестандартный случай.
-
-Subscription (TRU-58) обязан ссылаться на SubscriptionTypeVersion, а не
-на "живой" SubscriptionType — иначе правка типа задним числом изменит
-поведение уже проданных абонементов (критерий приёмки TRU-57).
-"""
+from django.db import models
 
 from domains.platform.core.models import TenantModel
 from domains.platform.tenants.models import Branch, Direction
@@ -27,7 +15,7 @@ RULES_KEYS = {
 
 class SubscriptionType(TenantModel):
     name = models.CharField(max_length=255)
-    price = models.DecimalField(max_digits=12, decimal_places=0)  # тенге, ТЗ п. 3.2 — не float
+    price = models.DecimalField(max_digits=12, decimal_places=0)
 
     is_unlimited = models.BooleanField(default=False)
     quota_sessions = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -37,7 +25,7 @@ class SubscriptionType(TenantModel):
     directions = models.ManyToManyField(Direction, related_name="subscription_types", blank=True)
     branches = models.ManyToManyField(Branch, related_name="subscription_types", blank=True)
 
-    is_active = models.BooleanField(default=True)  # архивация — не soft delete (deleted_at)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["name"]
@@ -56,9 +44,6 @@ class SubscriptionType(TenantModel):
 
 
 class SubscriptionTypeVersion(TenantModel):
-    """Неизменяемый снимок — создаётся только через subscription_types.update_rules(),
-    никогда не редактируется после создания."""
-
     subscription_type = models.ForeignKey(
         SubscriptionType, on_delete=models.PROTECT, related_name="versions",
     )
@@ -86,6 +71,13 @@ class Subscription(TenantModel):
         FROZEN = "frozen", "Заморожен"
         EXHAUSTED = "exhausted", "Исчерпан"
 
+    class DiscountReason(models.TextChoices):
+        LARGE_FAMILY = "large_family", "Многодетная семья"
+        SECOND_CHILD = "second_child", "Второй ребёнок"
+        PROMOTION = "promotion", "Акция"
+        STAFF = "staff", "Сотрудник"
+        OTHER = "other", "Другое"
+
     # Как у Child.ALLOWED_STATUS_TRANSITIONS (domains.people.clients) — единый
     # источник правды. EXPIRED/EXHAUSTED терминальны: продление — новая покупка.
     ALLOWED_STATUS_TRANSITIONS = {
@@ -108,8 +100,20 @@ class Subscription(TenantModel):
     # Кэш, не источник правды (ТЗ п. 3.2) — источник: SubscriptionLedgerEntry.
     sessions_remaining_cache = models.SmallIntegerField(null=True, blank=True)
 
+    list_price = models.DecimalField(max_digits=12, decimal_places=0)
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=0, default=0)
+    discount_reason = models.CharField(max_length=20, choices=DiscountReason.choices, blank=True)
+    discount_comment = models.CharField(max_length=255, blank=True)
+    price = models.DecimalField(max_digits=12, decimal_places=0)  # = list_price - discount_amount
+
     class Meta:
         ordering = ["-starts_on"]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(discount_amount=0) | ~models.Q(discount_reason=""),
+                name="subscription_discount_requires_reason",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.child} — {self.subscription_type_version.name} ({self.get_status_display()})"
@@ -119,9 +123,6 @@ class Subscription(TenantModel):
 
 
 class SubscriptionLedgerEntry(TenantModel):
-    """Журнал — единственный источник правды для остатка (ТЗ п. 3.2).
-    CONSUMPTION-записи появятся вместе с Attendance (её ещё нет ни у кого)."""
-
     class Kind(models.TextChoices):
         INITIAL_GRANT = "initial_grant", "Начисление при продаже"
         CONSUMPTION = "consumption", "Списание за посещение"
@@ -141,9 +142,6 @@ class SubscriptionLedgerEntry(TenantModel):
 
 
 class SubscriptionFreeze(TenantModel):
-    """История заморозок (ТЗ п. 3.1). Применение заморозки (сдвиг ends_on,
-    лимит из rules.freezes_per_year) — отдельная задача поверх этой записи."""
-
     subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="freezes")
     starts_on = models.DateField()
     ends_on = models.DateField(null=True, blank=True)
