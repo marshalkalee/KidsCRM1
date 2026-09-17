@@ -134,12 +134,14 @@ p {
 }
 
 .kc-sidebar__link:hover {
-  background: #f5f5fd;
+  /* color-mix от accent, не литерал — иначе при следующей смене бренда
+     (другой заказчик) эти два места снова разошлись бы с tokens.css. */
+  background: color-mix(in srgb, var(--kc-color-accent) 6%, white);
   color: var(--kc-color-text);
 }
 
 .kc-sidebar__link--active {
-  background: #eef0fd;
+  background: color-mix(in srgb, var(--kc-color-accent) 12%, white);
   color: var(--kc-color-accent);
   font-weight: var(--kc-font-weight-bold);
 }

@@ -6,6 +6,8 @@
         class="kc-card kc-communication-form">
     {% csrf_token %}
     <div class="kc-field{% if form.channel.errors %} kc-field--invalid{% endif %}">
+      <label class="kc-field__label kc-field__label--required"
+             data-i18n="communications.channel">{{ form.channel.label }}</label>
       <div class="kc-segmented">
         {% for radio in form.channel %}
           <label class="kc-segmented__option">
@@ -35,6 +37,7 @@
             data-i18n="communications.add">Добавить запись</button>
   </form>
 {% endif %}
+<h3 data-i18n="communications.history_title">История</h3>
 <div class="kc-timeline">
   {% for log in logs %}
     <div class="kc-timeline__item">

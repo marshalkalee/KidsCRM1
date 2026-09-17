@@ -60,6 +60,13 @@
     var body = el.querySelector(".modal-body");
     if (options.bodyHtml) {
       body.innerHTML = options.bodyHtml;
+      // Фрагмент с сервера всегда на русском (см. i18n.js — язык-фолбэк
+      // прямо в HTML), applyI18n не идёт по DOMContentLoaded для того, что
+      // вставлено через innerHTML уже после него — без явного вызова здесь
+      // подписи полей в модалке остаются русскими на любом другом языке.
+      if (window.KidsCRM.applyI18n) {
+        window.KidsCRM.applyI18n(body);
+      }
     } else {
       body.textContent = options.bodyText || "";
     }
@@ -71,6 +78,22 @@
     return new Promise(function (resolve) {
       var resolved = false;
       var bsModal = window.bootstrap.Modal.getOrCreateInstance(el);
+
+      if (options.bodyHtml && window.KidsCRM.enhanceForms) {
+        // На shown.bs.modal, не сразу после innerHTML — bootstrap-datepicker
+        // считает позицию поля через getBoundingClientRect(), а модалка в
+        // этот момент ещё скрыта/анимируется (Bootstrap-модалка открывается
+        // через CSS transform), так что расчёт получал бы мусор и календарь
+        // молча не строился.
+        el.addEventListener(
+          "shown.bs.modal",
+          function onShown() {
+            el.removeEventListener("shown.bs.modal", onShown);
+            window.KidsCRM.enhanceForms(body);
+          },
+          { once: true }
+        );
+      }
 
       function finish(value) {
         if (!resolved) {

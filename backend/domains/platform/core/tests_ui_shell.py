@@ -149,6 +149,36 @@ class BranchSwitcherTests(TestCase):
         self.assertNotEqual(self.client.session.get("active_branch_id"), str(self.branch_b.id))
 
 
+class LanguageSwitcherTests(TestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.user = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.client.force_login(self.user)
+
+    def test_switch_to_known_language_updates_session(self):
+        self.client.post(reverse("core:switch-language"), {"lang": "kk"})
+        self.assertEqual(self.client.session.get("lang"), "kk")
+
+    def test_unknown_language_is_ignored(self):
+        self.client.post(reverse("core:switch-language"), {"lang": "fr"})
+        self.assertNotIn("lang", self.client.session)
+
+    def test_default_language_is_russian_in_html_lang_attribute(self):
+        response = self.client.get(reverse("core:home"))
+        self.assertContains(response, '<html lang="ru">')
+
+    def test_switched_language_reflected_in_html_lang_attribute(self):
+        self.client.post(reverse("core:switch-language"), {"lang": "en"})
+        response = self.client.get(reverse("core:home"))
+        self.assertContains(response, '<html lang="en">')
+
+
 class FormatFiltersTests(TestCase):
     def test_kc_money_delegates_to_format_tenge(self):
         self.assertEqual(kc_money(Decimal("12500")), "12 500 ₸")

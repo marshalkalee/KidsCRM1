@@ -230,7 +230,11 @@ class CommunicationLog(TenantModel):
         blank=True,
         related_name="communication_logs",
     )
-    channel = models.CharField(max_length=10, choices=Channel.choices)
+    # default — иначе Django добавляет в выбор канала пустой "---------"
+    # вариант (для required-поля без default), и он же на быстрой форме
+    # оказывался выбран по умолчанию: невозможно "добавить запись", ничего
+    # не выбрав, что путает интерфейс.
+    channel = models.CharField(max_length=10, choices=Channel.choices, default=Channel.CALL)
     note = models.TextField()
     # PROTECT — лог не должен потерять автора молча (нужен для аудита);
     # пользователи и так мягко удаляются (User.delete()), так что PROTECT

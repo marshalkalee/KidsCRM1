@@ -32,7 +32,7 @@
       if (createBtn) {
         createBtn.addEventListener("click", function () {
           window.KidsCRM.formModal
-            .open({ url: createUrl, title: t("child_form.title_create") })
+            .open({ url: createUrl, title: t("child_form.title_create"), size: "lg" })
             .then(function (saved) {
               if (saved) {
                 window.location.reload();

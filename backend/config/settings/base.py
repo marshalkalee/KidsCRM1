@@ -92,6 +92,7 @@ TEMPLATES = [
                 # пунктов меню — доступны во всех шаблонах.
                 "domains.platform.core.context_processors.branches",
                 "domains.platform.core.context_processors.user_permissions",
+                "domains.platform.core.context_processors.language",
             ],
         },
     },
@@ -122,10 +123,27 @@ STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
+    # Django требует явный "default" в STORAGES, если этот словарь вообще
+    # переопределён (иначе default_storage/FileField падают с
+    # InvalidStorageError) — раньше здесь был только "staticfiles", потому
+    # что до фото ребёнка загрузки файлов в проекте не было.
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+# Загружаемые пользователями файлы (фото ребёнка и т.п.) — локальный диск,
+# не облачное хранилище: backend/media уже в .gitignore и живёт в том же
+# bind-mount volume, что и код (docker-compose.yml: ./backend:/app), поэтому
+# сохраняется между перезапусками контейнера без отдельного volume. Если
+# понадобится S3-совместимое хранилище (несколько инстансов backend без
+# общего диска) — единственное, что меняется, это STORAGES["default"], сама
+# модель/форма не завязаны на способ хранения.
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

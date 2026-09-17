@@ -342,6 +342,11 @@
   font-size: 12px;
 }
 
+.kc-avatar--photo {
+  object-fit: cover;
+  background: var(--kc-color-border);
+}
+
 .kc-avatar--lg {
   width: 40px;
   height: 40px;
