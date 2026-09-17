@@ -1,0 +1,31 @@
+{% csrf_token %}
+<div class="kc-card">
+  <div class="kc-field{% if form.parent_contact.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label kc-field__label--required"
+           for="{{ form.parent_contact.id_for_label }}"
+           data-i18n="child_contact_form.parent_contact">{{ form.parent_contact.label }}</label>
+    {{ form.parent_contact }}
+    <div class="kc-field__error">{{ form.parent_contact.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.role.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label kc-field__label--required"
+           for="{{ form.role.id_for_label }}"
+           data-i18n="child_contact_form.role">{{ form.role.label }}</label>
+    {{ form.role }}
+    <div class="kc-field__error">{{ form.role.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.is_payer.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label">
+      {{ form.is_payer }}
+      <span data-i18n="child_contact_form.is_payer">{{ form.is_payer.label }}</span>
+    </label>
+    <div class="kc-field__error">{{ form.is_payer.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.is_primary_contact.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label">
+      {{ form.is_primary_contact }}
+      <span data-i18n="child_contact_form.is_primary_contact">{{ form.is_primary_contact.label }}</span>
+    </label>
+    <div class="kc-field__error">{{ form.is_primary_contact.errors|first }}</div>
+  </div>
+</div>

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — настройки организации
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="org_settings.title">Настройки организации</span>
+{% endblock page_title %}
+{% block content %}
+  <form method="post" class="kc-org-settings-form">
+    {% csrf_token %}
+    <div class="kc-card">
+      <h2 data-i18n="org_settings.section_organization">Организация</h2>
+      <div class="kc-field{% if form.name.errors %} kc-field--invalid{% endif %}">
+        <label class="kc-field__label"
+               for="{{ form.name.id_for_label }}"
+               data-i18n="org_settings.name">{{ form.name.label }}</label>
+        {{ form.name }}
+        <div class="kc-field__error">{{ form.name.errors|first }}</div>
+      </div>
+      <div class="kc-field{% if form.timezone.errors %} kc-field--invalid{% endif %}">
+        <label class="kc-field__label"
+               for="{{ form.timezone.id_for_label }}"
+               data-i18n="org_settings.timezone">{{ form.timezone.label }}</label>
+        {{ form.timezone }}
+        <div class="kc-field__error">{{ form.timezone.errors|first }}</div>
+      </div>
+    </div>
+    <div class="kc-card">
+      <h2 data-i18n="org_settings.thresholds_title">Пороги автостатусов</h2>
+      <p data-i18n="org_settings.thresholds_hint">
+        Эти пороги использует аналитика и экраны продлений/задолженностей — меняются здесь, не в коде.
+      </p>
+      <div class="kc-field{% if form.subscription_ending_lessons_threshold.errors %} kc-field--invalid{% endif %}">
+        <label class="kc-field__label"
+               for="{{ form.subscription_ending_lessons_threshold.id_for_label }}"
+               data-i18n="org_settings.threshold_lessons">
+          {{ form.subscription_ending_lessons_threshold.label }}
+        </label>
+        {{ form.subscription_ending_lessons_threshold }}
+        <div class="kc-field__error">{{ form.subscription_ending_lessons_threshold.errors|first }}</div>
+      </div>
+      <div class="kc-field{% if form.subscription_ending_days_threshold.errors %} kc-field--invalid{% endif %}">
+        <label class="kc-field__label"
+               for="{{ form.subscription_ending_days_threshold.id_for_label }}"
+               data-i18n="org_settings.threshold_days">{{ form.subscription_ending_days_threshold.label }}</label>
+        {{ form.subscription_ending_days_threshold }}
+        <div class="kc-field__error">{{ form.subscription_ending_days_threshold.errors|first }}</div>
+      </div>
+      <div class="kc-field{% if form.debt_overdue_days_threshold.errors %} kc-field--invalid{% endif %}">
+        <label class="kc-field__label"
+               for="{{ form.debt_overdue_days_threshold.id_for_label }}"
+               data-i18n="org_settings.threshold_debt_days">{{ form.debt_overdue_days_threshold.label }}</label>
+        {{ form.debt_overdue_days_threshold }}
+        <div class="kc-field__error">{{ form.debt_overdue_days_threshold.errors|first }}</div>
+      </div>
+      <div class="kc-field{% if form.group_underfilled_percent_threshold.errors %} kc-field--invalid{% endif %}">
+        <label class="kc-field__label"
+               for="{{ form.group_underfilled_percent_threshold.id_for_label }}"
+               data-i18n="org_settings.threshold_group_percent">
+          {{ form.group_underfilled_percent_threshold.label }}
+        </label>
+        {{ form.group_underfilled_percent_threshold }}
+        <div class="kc-field__error">{{ form.group_underfilled_percent_threshold.errors|first }}</div>
+      </div>
+      <button type="submit"
+              class="kc-btn kc-btn--primary"
+              data-i18n="org_settings.save">Сохранить</button>
+    </div>
+  </form>
+{% endblock content %}
