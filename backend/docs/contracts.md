@@ -25,25 +25,40 @@
 
 ## Сводка
 
-| # | Контракт | Владелец | Потребитель(и) | Код |
-|---|---|---|---|---|
-| 1 | Расписание → Деньги: `SubscriptionService.consume` | Bekzat | Дарья (посещаемость) | [`backend/apps/subscriptions/services.py`](../apps/subscriptions/services.py) |
-| 2 | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` | Анель | импорт Excel, конвертация заявки | [`backend/apps/clients/services.py`](../apps/clients/services.py) |
-| 3 | Расписание → всем: `LessonService.enroll` | Дарья | отработки (M1), пробные (M2) | [`backend/apps/schedule/services.py`](../apps/schedule/services.py) |
-| 4 | Деньги → всем: `AuditLog.record` | Bekzat | все домены | [`backend/apps/core/audit.py`](../apps/core/audit.py) |
+
+| #   | Контракт                                                                       | Владелец | Потребитель(и)                   | Код                                                                                                                                         |
+| --- | ------------------------------------------------------------------------------ | -------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Расписание → Деньги: `SubscriptionService.consume`                             | Bekzat   | Дарья (посещаемость)             | `backend/domains/money/subscriptions/subscription_service.py`](../domains/money/subscriptions/subscription_[service.py](http://service.py)) |
+| 2   | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` | Анель    | импорт Excel, конвертация заявки | `[backend/apps/clients/services.py](../apps/clients/services.py)`                                                                           |
+| 3   | Расписание → всем: `LessonService.enroll`                                      | Дарья    | отработки (M1), пробные (M2)     | `[backend/apps/schedule/services.py](../apps/schedule/services.py)`                                                                         |
+| 4   | Деньги → всем: `AuditLog.record`                                               | Bekzat   | все домены                       | `[backend/apps/core/audit.py](../apps/core/audit.py)`                                                                                       |
+
+
+
 
 ## 1. Расписание → Деньги
 
-```python
-SubscriptionService.consume(child_id: int, lesson_id: int) -> ConsumeResult
-```
+​```python
+
+SubscriptionService.consume(child_id: UUID, lesson_id: UUID, direction_id: UUID) -> ConsumeResult
+
+​```
 
 Вызывается при отметке посещения «пришёл» — списывает занятие с активного
-абонемента ребёнка. `ConsumeResult.status` различает четыре исхода:
-`CONSUMED`, `NO_ACTIVE_SUBSCRIPTION`, `SUBSCRIPTION_EXHAUSTED`,
-`RULE_FORBIDS_CONSUMPTION`. Все четыре — ожидаемые бизнес-исходы, не
-исключения; что делать с `NO_ACTIVE_SUBSCRIPTION` (визуальный флаг + задача
-администратору, ТЗ п. 4.3) решает потребитель, а не сервис.
+
+абонемента ребёнка. `direction_id` добавлен намеренно: при нескольких
+
+активных абонементах ребёнка (разные направления) без него нет способа
+
+выбрать правильный (см. TRU-58/59, Subscription.direction). Обновлено до
+
+появления первого вызывающего кода (TRU-50) — без обратной несовместимости.
+
+`ConsumeResult.outcome` различает пять исходов: `CONSUMED`,
+
+`NO_ACTIVE_SUBSCRIPTION`, `SUBSCRIPTION_EXHAUSTED`, `SUBSCRIPTION_FROZEN`,
+
+`RULE_FORBIDS`. Все пять — ожидаемые бизнес-исходы, не исключения.
 
 Владелец: **Bekzat**. Потребитель: **Дарья**.
 

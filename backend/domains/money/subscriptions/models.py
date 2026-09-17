@@ -149,3 +149,23 @@ class SubscriptionFreeze(TenantModel):
 
     class Meta:
         ordering = ["-starts_on"]
+
+class LessonConsumption(TenantModel):
+    """Идемпотентность consume()/revert() (TRU-8, контракт №1). lesson_id —
+    обычный UUID, не FK: Lesson ещё не существует (TRU-50 не сделан), сервис
+    подписок не должен зависеть от домена расписания."""
+
+    child = models.ForeignKey("clients.Child", on_delete=models.PROTECT, related_name="lesson_consumptions")
+    lesson_id = models.UUIDField()
+    subscription = models.ForeignKey(Subscription, on_delete=models.PROTECT, related_name="lesson_consumptions")
+    ledger_entry = models.ForeignKey(SubscriptionLedgerEntry, on_delete=models.PROTECT, related_name="+")
+    reverted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["child", "lesson_id"],
+                condition=models.Q(reverted_at__isnull=True),
+                name="unique_active_consumption_per_child_lesson",
+            ),
+        ]
