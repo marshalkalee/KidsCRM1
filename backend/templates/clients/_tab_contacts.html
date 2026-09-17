@@ -1,0 +1,23 @@
+<!-- Фрагмент вкладки «Контакты»: без <script>, инициализация — в child_card.html. -->
+<div id="js-contacts-table"></div>
+{% if can_manage %}
+  <button type="button"
+          id="js-create-child-contact"
+          class="kc-btn kc-btn--accent kc-fab"
+          data-create-url="{% url 'clients_web:child-contact-create' child.pk %}">
+    <svg viewBox="0 0 24 24">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+    <span data-i18n="child_contacts.add">Добавить контакт</span>
+  </button>
+{% endif %}
+{% for row in rows %}
+  <form method="post"
+        action="{{ row.detach_url }}"
+        id="js-detach-form-{{ row.id }}"
+        hidden>
+    {% csrf_token %}
+  </form>
+{% endfor %}
+{{ rows|json_script:"child-contacts-data" }}
