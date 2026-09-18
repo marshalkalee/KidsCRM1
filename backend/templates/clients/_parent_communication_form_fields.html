@@ -1,0 +1,28 @@
+{% csrf_token %}
+<div class="kc-field{% if form.child.errors %} kc-field--invalid{% endif %}">
+  <label class="kc-field__label kc-field__label--required"
+         for="{{ form.child.id_for_label }}"
+         data-i18n="parent_communication_form.child">{{ form.child.label }}</label>
+  {{ form.child }}
+  <div class="kc-field__error">{{ form.child.errors|first }}</div>
+</div>
+<div class="kc-field{% if form.channel.errors %} kc-field--invalid{% endif %}">
+  <label class="kc-field__label kc-field__label--required"
+         data-i18n="parent_communication_form.channel">{{ form.channel.label }}</label>
+  <div class="kc-segmented">
+    {% for radio in form.channel %}
+      <label class="kc-segmented__option">
+        {{ radio.tag }}
+        <span data-i18n="choices.communication_channel.{{ radio.data.value }}">{{ radio.choice_label }}</span>
+      </label>
+    {% endfor %}
+  </div>
+  <div class="kc-field__error">{{ form.channel.errors|first }}</div>
+</div>
+<div class="kc-field{% if form.note.errors %} kc-field--invalid{% endif %}">
+  <label class="kc-field__label kc-field__label--required"
+         for="{{ form.note.id_for_label }}"
+         data-i18n="parent_communication_form.note">{{ form.note.label }}</label>
+  {{ form.note }}
+  <div class="kc-field__error">{{ form.note.errors|first }}</div>
+</div>

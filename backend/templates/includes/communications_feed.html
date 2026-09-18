@@ -1,0 +1,28 @@
+<!-- Разметка ленты коммуникаций — оживляется communications-feed.js
+     (KidsCRM.communicationsFeed.init), общая для вкладки ребёнка и сводной
+     ленты на карточке родителя. Чистая разметка, без переменных шаблона —
+     поэтому подключается простым include-тегом без контекста. -->
+<div class="kc-communications-filter">
+  <div class="kc-field">
+    <label class="kc-field__label" data-i18n="communications_feed.date_from">Дата от</label>
+    <input type="text"
+           data-comm-date-from
+           class="kc-form-input"
+           data-datefield="true"
+           autocomplete="off" />
+  </div>
+  <div class="kc-field">
+    <label class="kc-field__label" data-i18n="communications_feed.date_to">Дата до</label>
+    <input type="text"
+           data-comm-date-to
+           class="kc-form-input"
+           data-datefield="true"
+           autocomplete="off" />
+  </div>
+  <button type="button"
+          data-comm-reset
+          class="kc-btn kc-btn--secondary kc-btn--sm"
+          data-i18n="communications_feed.date_reset">Сбросить</button>
+</div>
+<div class="kc-timeline" data-comm-feed></div>
+<button type="button" data-comm-toggle class="kc-btn kc-btn--secondary kc-btn--sm" hidden></button>

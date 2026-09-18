@@ -1,0 +1,361 @@
+/*
+ * Каркас: sidebar + header + адаптивная сетка + единообразные состояния
+ * загрузки/пустого/ошибки. Использует токены из tokens.css.
+ *
+ * Светлый сайдбар с группировкой пунктов и "чипом" пользователя в подвале —
+ * по образцу макета Дарьи (feature/frontend-prototype). Мобильная
+ * адаптивность (открыть/закрыть сайдбар бургером, ТЗ п. 10.4) — наша, в
+ * макете её нет (десктопный прототип).
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  font-family: var(--kc-font-family);
+  font-size: var(--kc-font-size-base);
+  color: var(--kc-color-text);
+  background: var(--kc-color-bg);
+  /* Критично для мобильной адаптивности (ТЗ п. 10.4, критерий №9) —
+     ни один блок не должен создавать горизонтальный скролл страницы. */
+  overflow-x: hidden;
+}
+
+/* Типографика заголовков — иначе дефолт браузера (огромный h1, случайные
+   отступы) не вяжется с компактным масштабом макета Дарьи. */
+h1,
+h2,
+h3 {
+  font-family: var(--kc-font-family);
+  color: var(--kc-color-text);
+  font-weight: var(--kc-font-weight-bold);
+  line-height: 1.25;
+  margin: 0 0 var(--kc-space-4);
+}
+
+h1 {
+  font-size: 22px;
+}
+
+h2 {
+  font-size: var(--kc-font-size-lg);
+  margin-top: var(--kc-space-5);
+}
+
+h3 {
+  font-size: var(--kc-font-size-base);
+}
+
+p {
+  margin: 0 0 var(--kc-space-3);
+  color: var(--kc-color-text-muted);
+}
+
+.kc-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.kc-sidebar {
+  width: var(--kc-sidebar-width);
+  background: var(--kc-color-surface);
+  color: var(--kc-color-text);
+  border-right: 1px solid var(--kc-color-border);
+  flex-shrink: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  overflow-y: auto;
+  transition: transform 0.2s ease;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.kc-sidebar__brand {
+  padding: var(--kc-space-4);
+  border-bottom: 1px solid var(--kc-color-border);
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+}
+
+.kc-sidebar__brand-text {
+  font-weight: var(--kc-font-weight-bold);
+  font-size: var(--kc-font-size-lg);
+}
+
+.kc-sidebar__section {
+  padding: var(--kc-space-3) var(--kc-space-2) var(--kc-space-1);
+}
+
+.kc-sidebar__section-label {
+  font-size: 10px;
+  font-weight: var(--kc-font-weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kc-color-text-muted);
+  padding: 0 var(--kc-space-2);
+  margin-bottom: 2px;
+}
+
+.kc-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+}
+
+.kc-sidebar__link {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-2);
+  border-radius: var(--kc-radius-sm);
+  color: var(--kc-color-text-muted);
+  text-decoration: none;
+  font-size: var(--kc-font-size-sm);
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.kc-sidebar__link svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.kc-sidebar__link:hover {
+  /* color-mix от accent, не литерал — иначе при следующей смене бренда
+     (другой заказчик) эти два места снова разошлись бы с tokens.css. */
+  background: color-mix(in srgb, var(--kc-color-accent) 6%, white);
+  color: var(--kc-color-text);
+}
+
+.kc-sidebar__link--active {
+  background: color-mix(in srgb, var(--kc-color-accent) 12%, white);
+  color: var(--kc-color-accent);
+  font-weight: var(--kc-font-weight-bold);
+}
+
+.kc-sidebar__footer {
+  margin-top: auto;
+  padding: var(--kc-space-3) var(--kc-space-2);
+  border-top: 1px solid var(--kc-color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--kc-space-2);
+}
+
+.kc-sidebar__footer .kc-sidebar__logout-form {
+  display: block;
+}
+
+.kc-sidebar__footer .kc-sidebar__logout-form .kc-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.kc-user-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-2);
+  border-radius: var(--kc-radius-sm);
+  background: var(--kc-color-bg);
+}
+
+.kc-user-chip__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.kc-user-chip__name {
+  font-size: 12px;
+  font-weight: var(--kc-font-weight-bold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kc-user-chip__role {
+  font-size: 11px;
+  color: var(--kc-color-text-muted);
+}
+
+.kc-shell__main {
+  flex: 1;
+  margin-left: var(--kc-sidebar-width);
+  display: flex;
+  flex-direction: column;
+  /* min-width: 0 — иначе flex-дочерний элемент не сжимается меньше своего
+     контента и создаёт горизонтальный скролл на узких экранах. */
+  min-width: 0;
+}
+
+.kc-header {
+  height: var(--kc-header-height);
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-3);
+  padding: 0 var(--kc-space-4);
+  background: var(--kc-color-surface);
+  border-bottom: 1px solid var(--kc-color-border);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+/* На мобильном — открывает/закрывает выезжающий сайдбар (см. медиа-запрос
+   ниже). На десктопе — тем же кликом сворачивает/разворачивает сайдбар
+   в бок (см. .kc-shell--sidebar-collapsed), поэтому кнопка видна всегда,
+   не только на мобильном. */
+.kc-header__burger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--kc-color-text);
+  border-radius: var(--kc-radius-sm);
+  padding: var(--kc-space-1) var(--kc-space-2);
+}
+
+.kc-header__burger:hover {
+  background: var(--kc-color-bg);
+}
+
+@media (min-width: 769px) {
+  .kc-shell--sidebar-collapsed .kc-sidebar {
+    transform: translateX(-100%);
+  }
+
+  .kc-shell--sidebar-collapsed .kc-shell__main {
+    margin-left: 0;
+  }
+}
+
+/* Заголовок страницы — в шапке, слева, компактным шрифтом (как
+   .topbar-title в макете), а не отдельным крупным <h1> в контенте
+   каждой страницы — единообразно для всех экранов, см. base.html:
+   {% block page_title %}. flex:1 занимает всё свободное место и тем
+   самым прижимает переключатель филиала направо без отдельного правила. */
+.kc-header__title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--kc-font-size-lg);
+  font-weight: var(--kc-font-weight-bold);
+  color: var(--kc-color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kc-branch-switcher select {
+  padding: var(--kc-space-2);
+  border: 1px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-sm);
+  font-size: var(--kc-font-size-sm);
+  max-width: 40vw;
+  background: var(--kc-color-bg);
+  color: var(--kc-color-text);
+  font-family: var(--kc-font-family);
+}
+
+.kc-branch-switcher select:focus {
+  outline: none;
+  border-color: var(--kc-color-accent);
+  background: var(--kc-color-surface);
+}
+
+.kc-inline-form {
+  display: inline;
+}
+
+.kc-page-content {
+  padding: var(--kc-space-5);
+  min-width: 0;
+}
+
+/* Широкие таблицы/диаграммы скроллятся сами, а не весь body. */
+.kc-scroll-x {
+  overflow-x: auto;
+}
+
+/* --- Мобильный брейкпоинт (ТЗ п. 10.4) --- */
+@media (max-width: 768px) {
+  .kc-sidebar {
+    transform: translateX(-100%);
+  }
+
+  .kc-sidebar--open {
+    transform: translateX(0);
+  }
+
+  .kc-shell__main {
+    margin-left: 0;
+  }
+
+  .kc-header__burger {
+    display: inline-block;
+  }
+
+  .kc-branch-switcher select {
+    max-width: 40vw;
+  }
+
+  .kc-page-content {
+    padding: var(--kc-space-3);
+  }
+}
+
+/* --- Состояния загрузки/пустое/ошибка — единообразно на всех экранах --- */
+
+.kc-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-5);
+  color: var(--kc-color-text-muted);
+}
+
+.kc-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--kc-color-border);
+  border-top-color: var(--kc-color-accent);
+  border-radius: 50%;
+  animation: kc-spin 0.6s linear infinite;
+}
+
+@keyframes kc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.kc-empty-state,
+.kc-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-6);
+  text-align: center;
+  color: var(--kc-color-text-muted);
+}
+
+.kc-error-state {
+  color: var(--kc-color-danger);
+}

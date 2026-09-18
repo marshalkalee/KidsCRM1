@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — филиалы
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="branch_list.title">Филиалы</span>
+{% endblock page_title %}
+{% block content %}
+  <div id="js-branches-table"></div>
+  {% if kc_permissions.can_manage_branches %}
+    <button type="button"
+            id="js-create-branch"
+            class="kc-btn kc-btn--accent kc-fab">
+      <svg viewBox="0 0 24 24">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+      </svg>
+      <span data-i18n="branch_list.create">Создать филиал</span>
+    </button>
+  {% endif %}
+  {% for branch in branches %}
+    <form method="post"
+          action="{% url 'tenants_web:branch-archive' branch.pk %}"
+          id="js-archive-form-{{ branch.id }}"
+          hidden>
+      {% csrf_token %}
+    </form>
+  {% endfor %}
+  {{ rows|json_script:"branches-data" }}
+{% endblock content %}
+{% block extra_js %}
+  <script>
+    (function () {
+      "use strict";
+      var t = window.KidsCRM.t;
+      var canManage = {{ kc_permissions.can_manage_branches|yesno:"true,false" }};
+      var createUrl = "{% url 'tenants_web:branch-create' %}";
+      var rows = JSON.parse(document.getElementById("branches-data").textContent);
+
+      var createBtn = document.getElementById("js-create-branch");
+      if (createBtn) {
+        createBtn.addEventListener("click", function () {
+          window.KidsCRM.formModal
+            .open({ url: createUrl, title: t("branch_form.title_create") })
+            .then(function (saved) {
+              if (saved) {
+                window.location.reload();
+              }
+            });
+        });
+      }
+
+      var columns = [
+        { key: "name", label: t("branch_list.col_name"), sortable: true },
+        { key: "address", label: t("branch_list.col_address") },
+        { key: "phone", label: t("branch_list.col_phone") },
+        {
+          key: "status",
+          label: t("branch_list.col_status"),
+          sortable: true,
+          render: function (row) {
+            var badge = document.createElement("span");
+            badge.className = "kc-badge " + (row.is_active ? "kc-badge--green" : "kc-badge--muted");
+            badge.textContent = row.is_active
+              ? t("branch_list.status_active")
+              : t("branch_list.status_archived");
+            return badge;
+          },
+        },
+      ];
+      rows.forEach(function (row) {
+        row.status = row.is_active ? 1 : 0;
+      });
+
+      var ICONS = {
+        rooms: '<path d="M3 21h18" /><path d="M5 21V7l7-4 7 4v14" /><path d="M9 9h1M9 13h1M14 9h1M14 13h1" />',
+        edit: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />',
+        archive: '<polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" />',
+        restore: '<polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />',
+      };
+
+      function iconLink(href, icon, label) {
+        var a = document.createElement("a");
+        a.href = href;
+        a.className = "kc-btn kc-btn--secondary kc-btn--icon";
+        a.setAttribute("aria-label", label);
+        a.title = label;
+        a.innerHTML = '<svg viewBox="0 0 24 24">' + icon + "</svg>";
+        return a;
+      }
+
+      function iconButton(icon, label, extraClass, onClick) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "kc-btn kc-btn--icon " + extraClass;
+        btn.setAttribute("aria-label", label);
+        btn.title = label;
+        btn.innerHTML = '<svg viewBox="0 0 24 24">' + icon + "</svg>";
+        btn.addEventListener("click", onClick);
+        return btn;
+      }
+
+      if (canManage) {
+        columns.push({
+          key: "actions",
+          label: t("branch_list.col_actions"),
+          render: function (row) {
+            var wrap = document.createElement("div");
+            wrap.appendChild(iconLink(row.rooms_url, ICONS.rooms, t("branch_list.rooms")));
+            wrap.appendChild(
+              iconButton(ICONS.edit, t("branch_list.edit"), "kc-btn--secondary", function () {
+                window.KidsCRM.formModal
+                  .open({ url: row.edit_url, title: t("branch_form.title_edit") })
+                  .then(function (saved) {
+                    if (saved) {
+                      window.location.reload();
+                    }
+                  });
+              })
+            );
+            wrap.appendChild(
+              iconButton(
+                row.is_active ? ICONS.archive : ICONS.restore,
+                row.is_active ? t("branch_list.archive") : t("branch_list.restore"),
+                row.is_active ? "kc-btn--danger" : "kc-btn--secondary",
+                function () {
+                  window.KidsCRM.modal
+                    .confirmDanger({
+                      title: row.is_active
+                        ? t("branch_list.confirm_archive_title")
+                        : t("branch_list.confirm_restore_title"),
+                      message: row.name,
+                      confirmText: row.is_active
+                        ? t("branch_list.archive")
+                        : t("branch_list.restore"),
+                    })
+                    .then(function (confirmed) {
+                      if (confirmed) {
+                        document.getElementById("js-archive-form-" + row.id).submit();
+                      }
+                    });
+                }
+              )
+            );
+            return wrap;
+          },
+        });
+      } else {
+        columns.push({
+          key: "actions",
+          label: t("branch_list.col_actions"),
+          render: function (row) {
+            return iconLink(row.rooms_url, ICONS.rooms, t("branch_list.rooms"));
+          },
+        });
+      }
+
+      var table = window.KidsCRM.table.init("#js-branches-table", {
+        columns: columns,
+        pageSize: 10,
+        rowKey: function (row) {
+          return row.id;
+        },
+        emptyTextKey: "branch_list.empty",
+      });
+      table.setData(rows);
+    })();
+  </script>
+{% endblock extra_js %}
