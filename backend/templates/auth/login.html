@@ -176,7 +176,7 @@ async function handleLogin(e){
     if(resp.ok){
       localStorage.setItem('access',data.access);
       localStorage.setItem('refresh',data.refresh);
-      window.location.href='/dashboard/';
+      window.location.href='/';
     } else {
       err.style.display='block';
       btn.disabled=false;

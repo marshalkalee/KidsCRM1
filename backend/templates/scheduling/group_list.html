@@ -1,0 +1,232 @@
+{# djlint:off #}
+{% extends "base.html" %}
+{% block title %}KidsCRM — группы{% endblock title %}
+{% block page_title %}
+  <span data-i18n="group_list.title">Группы</span>
+{% endblock page_title %}
+{% block content %}
+  <div id="js-filter-bar" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+    <select id="js-filter-status" class="kc-form-input" style="width:auto">
+        <option value="" data-i18n="group_list.filter_all_statuses">Все статусы</option>
+        <option value="active" data-i18n="group_list.filter_active">Активные</option>
+        <option value="paused" data-i18n="group_list.filter_paused">Приостановленные</option>
+        <option value="closed" data-i18n="group_list.filter_closed">Закрытые</option>
+      </select>
+      <select id="js-filter-branch" class="kc-form-input" style="width:auto">
+        <option value="" data-i18n="group_list.filter_all_branches">Все филиалы</option>
+        {% for b in branches %}
+          <option value="{{ b.id }}">{{ b.name }}</option>
+        {% endfor %}
+      </select>
+      <select id="js-filter-direction" class="kc-form-input" style="width:auto">
+        <option value="" data-i18n="group_list.filter_all_directions">Все направления</option>
+        {% for d in directions %}
+          <option value="{{ d.id }}">{{ d.name }}</option>
+        {% endfor %}
+    </select>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+      <input type="checkbox" id="js-filter-underfilled"/>
+      <span data-i18n="group_list.underfilled">Недозаполненные</span>
+    </label>
+  </div>
+  <div id="js-groups-table"></div>
+  {% if kc_permissions.can_manage_groups %}
+    <button type="button" id="js-create-group" class="kc-btn kc-btn--accent kc-fab">
+      <svg viewBox="0 0 24 24">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+      </svg>
+      <span data-i18n="group_list.create">Создать группу</span>
+    </button>
+  {% endif %}
+  {% for group in groups %}
+    <form method="post"
+          action="{% url 'scheduling_web:group-close' group.pk %}"
+          id="js-close-form-{{ group.id }}"
+          hidden>
+      {% csrf_token %}
+    </form>
+  {% endfor %}
+  {{ rows|json_script:"groups-data" }}
+  <span id="js-threshold" data-value="{{ threshold }}" hidden></span>
+{% endblock content %}
+{% block extra_js %}
+  <script>
+    (function () {
+      "use strict";
+      var t = window.KidsCRM.t;
+      var canManage = {{ kc_permissions.can_manage_groups|yesno:"true,false" }};
+      var createUrl = "{% url 'scheduling_web:group-create' %}";
+      var rows = JSON.parse(document.getElementById("groups-data").textContent);
+      var threshold = parseInt(document.getElementById("js-threshold").dataset.value, 10) || 70;
+
+      var createBtn = document.getElementById("js-create-group");
+      if (createBtn) {
+        createBtn.addEventListener("click", function () {
+          window.KidsCRM.formModal
+            .open({ url: createUrl, title: t("group_form.title_create") })
+            .then(function (saved) {
+              if (saved) window.location.reload();
+            });
+        });
+      }
+
+      function fillBadge(pct, isUnderfilled) {
+        var wrap = document.createElement("div");
+        wrap.style.display = "flex";
+        wrap.style.alignItems = "center";
+        wrap.style.gap = "8px";
+
+        var bar = document.createElement("div");
+        bar.style.width = "60px";
+        bar.style.height = "5px";
+        bar.style.background = "var(--kc-border, #e5e7eb)";
+        bar.style.borderRadius = "3px";
+        bar.style.overflow = "hidden";
+
+        var fill = document.createElement("div");
+        fill.style.width = pct + "%";
+        fill.style.height = "100%";
+        fill.style.borderRadius = "3px";
+        fill.style.background = pct >= 90 ? "var(--kc-wine, #9B5A6A)"
+          : isUnderfilled ? "var(--kc-amber, #D4A853)"
+          : "var(--kc-green, #7FAF8A)";
+        bar.appendChild(fill);
+
+        var label = document.createElement("span");
+        label.style.fontSize = "12px";
+        label.style.fontWeight = "600";
+        label.style.fontFamily = "var(--kc-mono, monospace)";
+        label.textContent = pct + "%";
+        if (isUnderfilled) label.style.color = "var(--kc-amber, #D4A853)";
+
+        wrap.appendChild(bar);
+        wrap.appendChild(label);
+        return wrap;
+      }
+
+      var columns = [
+        {
+          key: "name",
+          label: t("group_list.col_name"),
+          sortable: true,
+          render: function (row) {
+            var wrap = document.createElement("div");
+            wrap.style.display = "flex";
+            wrap.style.alignItems = "center";
+
+            var dot = document.createElement("span");
+            dot.style.display = "inline-block";
+            dot.style.width = "8px";
+            dot.style.height = "8px";
+            dot.style.borderRadius = "50%";
+            dot.style.background = row.direction_color || "#999";
+            dot.style.marginRight = "8px";
+            dot.style.flexShrink = "0";
+
+            var link = document.createElement("a");
+            link.href = row.detail_url;
+            link.textContent = row.name;
+            link.style.fontWeight = "600";
+            link.style.color = "var(--kc-truffle, #1E1B18)";
+            link.style.textDecoration = "none";
+
+            wrap.appendChild(dot);
+            wrap.appendChild(link);
+
+            if (row.is_underfilled) {
+              var badge = document.createElement("span");
+              badge.className = "kc-badge kc-badge--amber";
+              badge.textContent = t("group_list.underfilled");
+              badge.style.marginLeft = "8px";
+              wrap.appendChild(badge);
+            }
+            return wrap;
+          },
+        },
+        { key: "direction_name", label: t("group_list.col_direction") },
+        { key: "branch_name", label: t("group_list.col_branch") },
+        { key: "teacher_names", label: t("group_list.col_teachers") },
+        { key: "age_range", label: t("group_list.col_age") },
+        {
+          key: "fill_pct",
+          label: t("group_list.col_fill"),
+          sortable: true,
+          render: function (row) {
+            return fillBadge(row.fill_pct, row.is_underfilled);
+          },
+        },
+        {
+          key: "status",
+          label: t("group_list.col_status"),
+          sortable: true,
+          render: function (row) {
+            var badge = document.createElement("span");
+            var map = {
+              active: ["kc-badge--green", t("group_list.status_active")],
+              paused: ["kc-badge--amber", t("group_list.status_paused")],
+              closed: ["kc-badge--muted", t("group_list.status_closed")],
+            };
+            var cls = map[row.status] || ["kc-badge--muted", row.status];
+            badge.className = "kc-badge " + cls[0];
+            badge.textContent = cls[1];
+            return badge;
+          },
+        },
+      ];
+
+      var actions = [];
+      if (canManage) {
+        actions = [
+          {
+            label: t("common.edit"),
+            icon: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/>',
+            onClick: function (row) {
+              window.KidsCRM.formModal
+                .open({ url: row.edit_url, title: t("group_form.title_edit") })
+                .then(function (saved) {
+                  if (saved) window.location.reload();
+                });
+            },
+          },
+          {
+            label: t("group_list.action_close"),
+            icon: '<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>',
+            onClick: function (row) {
+              document.getElementById("js-close-form-" + row.id).submit();
+            },
+          },
+        ];
+      }
+
+      var allRows = rows.slice();
+      var table = window.KidsCRM.table.init("#js-groups-table", {
+        columns: columns,
+        actions: actions,
+        emptyText: t("group_list.empty"),
+      });
+      table.setData(rows);
+
+      function applyFilters() {
+        var status = document.getElementById("js-filter-status").value;
+        var branch = document.getElementById("js-filter-branch").value;
+        var direction = document.getElementById("js-filter-direction").value;
+        var underfilled = document.getElementById("js-filter-underfilled").checked;
+        var filtered = allRows.filter(function (row) {
+          if (status && row.status !== status) return false;
+          if (branch && row.branch_id !== branch) return false;
+          if (direction && row.direction_id !== direction) return false;
+          if (underfilled && !row.is_underfilled) return false;
+          return true;
+        });
+        table.setData(filtered);
+      }
+
+      document.getElementById("js-filter-status").addEventListener("change", applyFilters);
+      document.getElementById("js-filter-branch").addEventListener("change", applyFilters);
+      document.getElementById("js-filter-direction").addEventListener("change", applyFilters);
+      document.getElementById("js-filter-underfilled").addEventListener("change", applyFilters);
+
+    })();
+</script>
+{% endblock extra_js %}
