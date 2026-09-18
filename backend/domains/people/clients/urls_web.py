@@ -51,6 +51,12 @@ urlpatterns = [
     ),
     path("clients/parents/", web_views.parent_list, name="parent-list"),
     path("clients/parents/create/", web_views.parent_create, name="parent-create"),
+    path("clients/parents/<uuid:pk>/", web_views.parent_card, name="parent-card"),
     path("clients/parents/<uuid:pk>/edit/", web_views.parent_edit, name="parent-edit"),
     path("clients/parents/<uuid:pk>/delete/", web_views.parent_delete, name="parent-delete"),
+    path(
+        "clients/parents/<uuid:pk>/communications/create/",
+        web_views.parent_communication_create,
+        name="parent-communication-create",
+    ),
 ]

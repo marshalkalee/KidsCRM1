@@ -37,19 +37,8 @@
             data-i18n="communications.add">Добавить запись</button>
   </form>
 {% endif %}
-<h3 data-i18n="communications.history_title">История</h3>
-<div class="kc-timeline">
-  {% for log in logs %}
-    <div class="kc-timeline__item">
-      <span class="kc-badge kc-badge--blue"
-            data-i18n="choices.communication_channel.{{ log.channel }}">{{ log.get_channel_display }}</span>
-      <p class="kc-timeline__note">{{ log.note }}</p>
-      <div class="kc-timeline__meta">
-        {{ log.author.full_name }} · {{ log.created_at|date:"d.m.Y H:i" }}
-        {% if log.parent_contact %}· {{ log.parent_contact.full_name }}{% endif %}
-      </div>
-    </div>
-  {% empty %}
-    <p class="kc-empty-state" data-i18n="communications.empty">Записей пока нет</p>
-  {% endfor %}
+<div id="js-child-communications" class="kc-card">
+  <h3 data-i18n="communications.history_title">История</h3>
+  {% include "includes/communications_feed.html" %}
 </div>
+{{ logs|json_script:"child-communications-data" }}

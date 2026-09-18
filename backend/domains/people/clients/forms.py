@@ -198,6 +198,41 @@ class CommunicationLogForm(KcFormMixin, forms.ModelForm):
         return super().save(commit=commit)
 
 
+class ParentCommunicationLogForm(KcFormMixin, forms.ModelForm):
+    """Быстрое добавление записи в «Коммуникации» с карточки РОДИТЕЛЯ, не
+    ребёнка (ТЗ п. 4.1 — "Карточка родителя"). Зеркально CommunicationLogForm:
+    там фиксирован ребёнок и выбирается контакт, здесь фиксирован контакт и
+    выбирается ребёнок — CommunicationLog.child обязателен на уровне модели
+    (лог "звонок вообще, без привязки к ребёнку" не предусмотрен, поэтому
+    администратор указывает, о каком из детей звонок)."""
+
+    class Meta:
+        model = CommunicationLog
+        fields = ["child", "channel", "note"]
+        labels = {
+            "child": "Ребёнок",
+            "channel": "Канал",
+            "note": "Заметка",
+        }
+        widgets = {
+            "channel": forms.RadioSelect,
+            "note": forms.Textarea(attrs={"rows": 2}),
+        }
+
+    def __init__(self, *args, parent_contact=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parent_contact = parent_contact or self.instance.parent_contact
+        self.fields["child"].queryset = Child.objects.for_tenant(
+            self.parent_contact.organization
+        ).filter(contacts__parent_contact=self.parent_contact)
+
+    def save(self, commit=True, author=None):
+        self.instance.parent_contact = self.parent_contact
+        if author is not None:
+            self.instance.author = author
+        return super().save(commit=commit)
+
+
 class ParentContactForm(KcFormMixin, forms.ModelForm):
     class Meta:
         model = ParentContact

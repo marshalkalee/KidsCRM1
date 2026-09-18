@@ -31,7 +31,15 @@
         Array.from(el.selectedOptions).forEach(function (option) {
           formData.append(el.name, option.value);
         });
-      } else if (el.type === "checkbox") {
+      } else if (el.type === "checkbox" || el.type === "radio") {
+        // radio — та же логика, что checkbox (только checked), иначе
+        // сериализуются ВСЕ варианты группы (все name="channel" и т.п.),
+        // а сервер молча берёт последний по DOM-порядку как единственное
+        // значение — реальный баг, всплывший только на RadioSelect-поле
+        // (channel), которое до этого нигде не проходило через serialize()
+        // (единственная другая радиогруппа — на вкладке «Коммуникации»
+        // ребёнка — там форма шлётся через нативный FormData(form), не
+        // через этот сериализатор).
         if (el.checked) {
           formData.append(el.name, el.value || "on");
         }

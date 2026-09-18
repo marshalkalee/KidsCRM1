@@ -12,11 +12,13 @@
 import uuid
 from pathlib import Path
 
+import pytz
 from django.contrib import messages
 from django.core.files.storage import default_storage
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone as dj_timezone
 from django.views.decorators.http import require_http_methods
 
 from domains.platform.core.decorators import role_required
@@ -29,6 +31,7 @@ from .forms import (
     ChildPhotoUploadForm,
     CommunicationLogForm,
     ContactPhoneFormSet,
+    ParentCommunicationLogForm,
     ParentContactForm,
 )
 from .models import Child, ChildContact, CommunicationLog, ParentContact
@@ -98,6 +101,31 @@ def _contacts_tab_context(request, child):
     }
 
 
+def _serialize_communication_logs(logs, organization):
+    # Общий формат строк для communications-feed.js (схлопывание после N
+    # записей + фильтр по датам) — используется и на вкладке ребёнка, и на
+    # сводной ленте карточки родителя, чтобы не разойтись в двух местах.
+    tz_name = getattr(organization, "timezone", None)
+    org_tz = pytz.timezone(tz_name) if tz_name else dj_timezone.get_default_timezone()
+    rows = []
+    for log in logs:
+        local_dt = dj_timezone.localtime(log.created_at, org_tz)
+        rows.append(
+            {
+                "id": str(log.id),
+                "channel_code": log.channel,
+                "channel_display": log.get_channel_display(),
+                "note": log.note,
+                "author": log.author.full_name,
+                "child_name": log.child.full_name,
+                "contact_name": log.parent_contact.full_name if log.parent_contact else None,
+                "date": local_dt.strftime("%Y-%m-%d"),
+                "date_display": local_dt.strftime("%d.%m.%Y %H:%M"),
+            }
+        )
+    return rows
+
+
 def _communications_tab_context(request, child, form=None):
     logs = (
         CommunicationLog.objects.for_tenant(request.user.organization)
@@ -107,7 +135,7 @@ def _communications_tab_context(request, child, form=None):
     can_manage = request.user.role in COMMUNICATION_LOG_MANAGE_ROLES
     return {
         "child": child,
-        "logs": logs,
+        "logs": _serialize_communication_logs(logs, request.user.organization),
         "form": form or (CommunicationLogForm(child=child) if can_manage else None),
         "can_manage": can_manage,
     }
@@ -344,6 +372,7 @@ def parent_list(request):
             "phones": ", ".join(p.number for p in parent.phones.all()) if show_phones else None,
             "whatsapp": parent.whatsapp if show_phones else None,
             "email": parent.email,
+            "card_url": reverse("clients_web:parent-card", args=[parent.pk]),
             "edit_url": reverse("clients_web:parent-edit", args=[parent.pk]),
             "delete_url": reverse("clients_web:parent-delete", args=[parent.pk]),
         }
@@ -434,3 +463,107 @@ def parent_delete(request, pk):
     parent.delete()
     messages.success(request, "Родитель удалён.")
     return redirect("clients_web:parent-list")
+
+
+def _parent_children_rows(request, parent):
+    links = (
+        ChildContact.objects.for_tenant(request.user.organization)
+        .filter(parent_contact=parent)
+        .select_related("child")
+        .prefetch_related("child__directions__branches")
+    )
+    return [
+        {
+            "id": str(link.child.id),
+            "full_name": link.child.full_name,
+            "role": link.get_role_display(),
+            "role_code": link.role,
+            "branch_names": _branch_names(link.child) or "—",
+            "card_url": reverse("clients_web:child-card", args=[link.child.pk]),
+        }
+        for link in links
+    ]
+
+
+def _parent_communication_logs(request, parent):
+    # По ребёнку, не по CommunicationLog.parent_contact: тот необязателен
+    # (звонок не всегда привязан к конкретному контакту, см. docstring
+    # модели), а сводная лента родителя — это "всё по любому из его детей",
+    # а не только записи, где явно отмечен именно этот контакт.
+    child_ids = ChildContact.objects.filter(parent_contact=parent).values_list(
+        "child_id", flat=True
+    )
+    logs = (
+        CommunicationLog.objects.for_tenant(request.user.organization)
+        .filter(child_id__in=child_ids)
+        .select_related("child", "author")
+    )
+    return _serialize_communication_logs(logs, parent.organization)
+
+
+@role_required()
+def parent_card(request, pk):
+    parent = get_object_or_404(ParentContact.objects.for_tenant(request.user.organization), pk=pk)
+    show_phones = can_view_phone(request.user)
+    can_manage = request.user.role in PARENT_MANAGE_ROLES
+    phones = list(parent.phones.all()) if show_phones else []
+    # tel:/wa.me — тот же нормализованный "+7..." (см. phone.py), wa.me
+    # хочет только цифры без "+" (ТЗ п. 4.5 — deep-link). show_phones — та
+    # же проверка, что скрывает сам номер: иначе номер утекал бы через
+    # href кнопки WhatsApp тому, кому нельзя видеть его текстом.
+    call_url = f"tel:{phones[0].number}" if phones else None
+    whatsapp_url = (
+        f"https://wa.me/{parent.whatsapp.lstrip('+')}"
+        if show_phones and parent.whatsapp
+        else None
+    )
+    return render(
+        request,
+        "clients/parent_card.html",
+        {
+            "parent": parent,
+            "children_rows": _parent_children_rows(request, parent),
+            "communication_logs": _parent_communication_logs(request, parent),
+            "phones": phones if show_phones else None,
+            "whatsapp": parent.whatsapp if show_phones else None,
+            "call_url": call_url,
+            "whatsapp_url": whatsapp_url,
+            "can_manage": can_manage,
+            "edit_url": reverse("clients_web:parent-edit", args=[parent.pk]),
+            "communication_create_url": reverse(
+                "clients_web:parent-communication-create", args=[parent.pk]
+            ),
+        },
+    )
+
+
+@role_required(*COMMUNICATION_LOG_MANAGE_ROLES)
+@require_http_methods(["GET", "POST"])
+def parent_communication_create(request, pk):
+    parent = get_object_or_404(ParentContact.objects.for_tenant(request.user.organization), pk=pk)
+    if request.method == "POST":
+        form = ParentCommunicationLogForm(request.POST, parent_contact=parent)
+        if form.is_valid():
+            form.save(author=request.user)
+            messages.success(request, "Коммуникация записана.")
+            if _is_ajax(request):
+                return JsonResponse({"success": True})
+            return redirect("clients_web:parent-card", pk=parent.pk)
+        if _is_ajax(request):
+            return render(
+                request,
+                "clients/_parent_communication_form_fields.html",
+                {"form": form},
+                status=400,
+            )
+    else:
+        form = ParentCommunicationLogForm(parent_contact=parent)
+    if _is_ajax(request):
+        return render(
+            request, "clients/_parent_communication_form_fields.html", {"form": form}
+        )
+    return render(
+        request,
+        "clients/parent_communication_form.html",
+        {"form": form, "parent": parent},
+    )
