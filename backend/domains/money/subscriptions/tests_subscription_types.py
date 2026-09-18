@@ -1,4 +1,4 @@
-from django.db import IntegrityError
+from django.db.utils import IntegrityError
 from django.test import TestCase
 
 from domains.platform.tenants.models import Organization
