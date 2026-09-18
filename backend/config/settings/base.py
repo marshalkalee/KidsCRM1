@@ -46,6 +46,7 @@ DOMAIN_APPS = [
     "domains.people.clients",
     # Расписание — владелец домена: Дарья.
     "domains.scheduling.schedule",
+    "domains.scheduling.groups",
     "domains.scheduling.attendance",
     # Деньги — владелец домена: Bekzat.
     "domains.money.subscriptions",

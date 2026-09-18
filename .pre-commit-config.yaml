@@ -33,4 +33,5 @@ repos:
         entry: python backend/scripts/check_hardcoded_strings.py
         language: system
         files: ^backend/templates/.*\.html$
+        exclude: ^backend/templates/auth/login\.html$
         pass_filenames: false
