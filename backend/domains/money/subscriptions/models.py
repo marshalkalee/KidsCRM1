@@ -12,6 +12,7 @@ Subscription (TRU-58) обязан ссылаться на SubscriptionTypeVersi
 """
 
 from django.db import models
+
 from domains.platform.core.models import TenantModel
 from domains.platform.tenants.models import Branch, Direction
 

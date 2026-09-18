@@ -35,9 +35,14 @@ class SubscriptionTests(TestCase):
             directions=[self.ballet],
         )
         self.sub = Subscription.objects.create(
-        organization=self.org, child=self.child, subscription_type_version=st.versions.latest(),
-        direction=self.ballet, starts_on=date.today(), ends_on=date.today() + timedelta(days=30),
-        list_price=25000, price=25000,
+            organization=self.org,
+            child=self.child,
+            subscription_type_version=st.versions.latest(),
+            direction=self.ballet,
+            starts_on=date.today(),
+            ends_on=date.today() + timedelta(days=30),
+            list_price=25000,
+            price=25000,
         )
         add_ledger_entry(self.sub, kind=SubscriptionLedgerEntry.Kind.INITIAL_GRANT, delta=8)
 
@@ -63,15 +68,14 @@ class SubscriptionTests(TestCase):
             directions=[self.gym],
         )
         gym_sub = Subscription.objects.create(
-            organization=self.org, child=self.child, subscription_type_version=gym_type.versions.latest(),
-            direction=self.gym, starts_on=date.today(), ends_on=date.today() + timedelta(days=30),
-            list_price=20000, price=20000,
             organization=self.org,
             child=self.child,
             subscription_type_version=gym_type.versions.latest(),
             direction=self.gym,
             starts_on=date.today(),
             ends_on=date.today() + timedelta(days=30),
+            list_price=20000,
+            price=20000,
         )
         self.assertEqual(get_active_subscription_for_direction(self.child, self.ballet), self.sub)
         self.assertEqual(get_active_subscription_for_direction(self.child, self.gym), gym_sub)
