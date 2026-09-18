@@ -1,0 +1,56 @@
+{% csrf_token %}
+<div class="kc-card">
+  <div class="kc-field{% if form.full_name.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label kc-field__label--required"
+           for="{{ form.full_name.id_for_label }}"
+           data-i18n="parent_form.full_name">{{ form.full_name.label }}</label>
+    {{ form.full_name }}
+    <div class="kc-field__error">{{ form.full_name.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.whatsapp.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.whatsapp.id_for_label }}"
+           data-i18n="parent_form.whatsapp">{{ form.whatsapp.label }}</label>
+    {{ form.whatsapp }}
+    <div class="kc-field__error">{{ form.whatsapp.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.email.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.email.id_for_label }}"
+           data-i18n="parent_form.email">{{ form.email.label }}</label>
+    {{ form.email }}
+    <div class="kc-field__error">{{ form.email.errors|first }}</div>
+  </div>
+</div>
+<div class="kc-card" data-formset="phones">
+  {{ formset.management_form }}
+  <label class="kc-field__label kc-field__label--required"
+         data-i18n="parent_form.phones">Телефоны</label>
+  <div class="kc-field__error">{{ formset.non_form_errors|first }}</div>
+  <div data-formset-rows>
+    {% for phone_form in formset %}
+      <div class="kc-phone-row">
+        {{ phone_form.id }}
+        {{ phone_form.number }}
+        {{ phone_form.phone_type }}
+        {% if phone_form.is_saved %}
+          <label class="kc-phone-row__delete">
+            {{ phone_form.DELETE }}
+            <span data-i18n="parent_form.remove_phone">Удалить</span>
+          </label>
+        {% endif %}
+        <div class="kc-field__error">{{ phone_form.number.errors|first }}</div>
+      </div>
+    {% endfor %}
+  </div>
+  <button type="button"
+          class="kc-btn kc-btn--secondary kc-btn--sm"
+          data-formset-add
+          data-i18n="parent_form.add_phone">+ Добавить телефон</button>
+  <template data-formset-empty>
+    <div class="kc-phone-row">
+      {{ formset.empty_form.number }}
+      {{ formset.empty_form.phone_type }}
+    </div>
+  </template>
+</div>

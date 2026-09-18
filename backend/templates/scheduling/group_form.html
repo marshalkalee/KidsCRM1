@@ -1,0 +1,33 @@
+{# djlint:off #}
+{% extends "base.html" %}
+{% block title %}
+  {% if is_create %}
+    KidsCRM — новая группа
+  {% else %}
+    KidsCRM — редактировать группу
+  {% endif %}
+{% endblock title %}
+{% block page_title %}
+  {% if is_create %}
+    <span data-i18n="group_form.title_create">Новая группа</span>
+  {% else %}
+    <span data-i18n="group_form.title_edit">Редактировать группу</span>
+  {% endif %}
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-form-card">
+    <form method="post">
+      {% csrf_token %}
+      {% include "scheduling/_group_form_fields.html" %}
+      <div class="kc-form-actions">
+        <a href="{% url 'scheduling_web:group-list' %}"
+           class="kc-btn kc-btn--ghost">
+          <span data-i18n="common.cancel">Отмена</span>
+        </a>
+        <button type="submit" class="kc-btn kc-btn--accent">
+          <span data-i18n="common.save">Сохранить</span>
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock content %}

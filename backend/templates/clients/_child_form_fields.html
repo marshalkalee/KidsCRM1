@@ -1,0 +1,84 @@
+{% csrf_token %}
+<div class="kc-card">
+  <div class="kc-field-grid">
+    <div class="kc-field{% if form.full_name.errors %} kc-field--invalid{% endif %}">
+      <label class="kc-field__label kc-field__label--required"
+             for="{{ form.full_name.id_for_label }}"
+             data-i18n="child_form.full_name">{{ form.full_name.label }}</label>
+      {{ form.full_name }}
+      <div class="kc-field__error">{{ form.full_name.errors|first }}</div>
+    </div>
+    <div class="kc-field{% if form.birth_date.errors %} kc-field--invalid{% endif %}">
+      <label class="kc-field__label kc-field__label--required"
+             for="{{ form.birth_date.id_for_label }}"
+             data-i18n="child_form.birth_date">{{ form.birth_date.label }}</label>
+      {{ form.birth_date }}
+      <div class="kc-field__error">{{ form.birth_date.errors|first }}</div>
+    </div>
+    <div class="kc-field{% if form.gender.errors %} kc-field--invalid{% endif %}">
+      <label class="kc-field__label kc-field__label--required"
+             for="{{ form.gender.id_for_label }}"
+             data-i18n="child_form.gender">{{ form.gender.label }}</label>
+      {{ form.gender }}
+      <div class="kc-field__error">{{ form.gender.errors|first }}</div>
+    </div>
+    <div class="kc-field{% if form.status.errors %} kc-field--invalid{% endif %}">
+      <label class="kc-field__label kc-field__label--required"
+             for="{{ form.status.id_for_label }}"
+             data-i18n="child_form.status">{{ form.status.label }}</label>
+      {{ form.status }}
+      <div class="kc-field__error">{{ form.status.errors|first }}</div>
+    </div>
+  </div>
+  <!-- Показывается только при статусе "ушёл" (form-enhance.js: initConditionalFields). -->
+  <div class="kc-field{% if form.leave_reason.errors %} kc-field--invalid{% endif %}"
+       data-show-when="child_status=left">
+    <label class="kc-field__label"
+           for="{{ form.leave_reason.id_for_label }}"
+           data-i18n="child_form.leave_reason">{{ form.leave_reason.label }}</label>
+    {{ form.leave_reason }}
+    <div class="kc-field__error">{{ form.leave_reason.errors|first }}</div>
+  </div>
+</div>
+<div class="kc-card">
+  <div class="kc-field{% if form.directions.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label" data-i18n="child_form.directions">{{ form.directions.label }}</label>
+    {{ form.directions }}
+    <div class="kc-field__error">{{ form.directions.errors|first }}</div>
+  </div>
+</div>
+<div class="kc-card">
+  <div class="kc-field{% if form.medical_notes.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.medical_notes.id_for_label }}"
+           data-i18n="child_form.medical_notes">{{ form.medical_notes.label }}</label>
+    {{ form.medical_notes }}
+    <div class="kc-field__error">{{ form.medical_notes.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.photo_url.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label" data-i18n="child_form.photo_url">{{ form.photo_url.label }}</label>
+    <div class="kc-photo-upload">
+      <img id="js-photo-preview"
+           class="kc-photo-upload__preview"
+           alt=""
+           width="56"
+           height="56"
+           src="{{ form.instance.photo_url|default:'' }}"
+           {% if not form.instance.photo_url %}hidden{% endif %} />
+      <div class="dropzone kc-photo-upload__dropzone"
+           id="js-photo-dropzone"
+           data-upload-url="{% url 'clients_web:child-photo-upload' %}"
+           data-target="{{ form.photo_url.id_for_label }}"
+           data-preview="js-photo-preview"></div>
+    </div>
+    {{ form.photo_url }}
+    <div class="kc-field__error">{{ form.photo_url.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.consent_given.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label">
+      {{ form.consent_given }}
+      <span data-i18n="child_form.consent_given">{{ form.consent_given.label }}</span>
+    </label>
+    <div class="kc-field__error">{{ form.consent_given.errors|first }}</div>
+  </div>
+</div>

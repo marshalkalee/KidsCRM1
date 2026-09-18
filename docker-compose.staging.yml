@@ -1,0 +1,90 @@
+# Staging/прод топология. Отличия от docker-compose.yml (дев):
+# - backend/Dockerfile (gunicorn), не Dockerfile.dev (runserver) — нет
+#   volume-монтирования кода, образ иммутабельный.
+# - nginx слушает 80 и 443, TLS через certbot (Let's Encrypt).
+# - backend/.env на сервере создаётся вручную из .env.example при
+#   бутстрапе сервера — секреты в этом файле в репозиторий не попадают
+#   (см. README, раздел "Staging и деплой" — где лежат секреты).
+#
+# Запуск на сервере: docker compose -f docker-compose.staging.yml up -d --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kidscrm
+      POSTGRES_DB: kidscrm
+    # POSTGRES_PASSWORD — из backend/.env на сервере (секрет), не хардкод,
+    # как в дев-compose. Тот же .env, что читает Django (DATABASE_URL там
+    # должен использовать этот же пароль — их нужно держать согласованными
+    # вручную при бутстрапе сервера).
+    env_file:
+      - backend/.env
+    volumes:
+      - kidscrm_postgres_data:/var/lib/postgresql/data
+      - ./infra/backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kidscrm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A config.celery worker --loglevel=info
+    env_file:
+      - backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./infra/nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
+      - certbot_www:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Разовая выдача/продление сертификата — см. README "Staging и деплой"
+  # для команды первого запуска (нужен реальный домен, указывающий на сервер).
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    entrypoint: >
+      sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h; done"
+
+volumes:
+  kidscrm_postgres_data:
+  certbot_www:
+  certbot_certs:

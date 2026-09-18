@@ -1,0 +1,76 @@
+{# djlint:off #}
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — {{ group.name }}
+{% endblock title %}
+{% block page_title %}
+  {{ group.name }}
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-card" style="margin-bottom:16px;padding:20px">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+      <div>
+        <div class="kc-text-muted"
+             style="font-size:12px;
+                    margin-bottom:4px"
+             data-i18n="group_detail.direction">Направление</div>
+        <div style="font-weight:600">{{ group.direction.name }}</div>
+      </div>
+      <div>
+        <div class="kc-text-muted"
+             style="font-size:12px;
+                    margin-bottom:4px"
+             data-i18n="group_detail.branch">Филиал</div>
+        <div style="font-weight:600">{{ group.branch.name }}</div>
+      </div>
+      <div>
+        <div class="kc-text-muted"
+             style="font-size:12px;
+                    margin-bottom:4px"
+             data-i18n="group_detail.capacity">Вместимость</div>
+        <div style="font-weight:600">{{ group.members_count }} / {{ group.capacity }}</div>
+      </div>
+      <div>
+        <div class="kc-text-muted"
+             style="font-size:12px;
+                    margin-bottom:4px"
+             data-i18n="group_detail.status">Статус</div>
+        <div style="font-weight:600">{{ group.get_status_display }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="kc-card">
+    <div style="padding:16px;border-bottom:1px solid var(--kc-color-border)">
+      <h3 style="font-size:14px;
+                 font-weight:700"
+          data-i18n="group_detail.members">Состав группы ({{ active_memberships.count }})</h3>
+    </div>
+    {% if active_memberships %}
+      <table class="kc-registry-table">
+        <thead>
+          <tr>
+            <th data-i18n="group_detail.col_child">Ребёнок</th>
+            <th data-i18n="group_detail.col_birth_date">Дата рождения</th>
+            <th data-i18n="group_detail.col_joined_at">В группе с</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in active_memberships %}
+            <tr class="kc-registry-row">
+              <td>
+                <a href="{% url 'child-card' m.child.pk %}">{{ m.child.full_name }}</a>
+              </td>
+              <td>{{ m.child.birth_date }}</td>
+              <td>{{ m.joined_at }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div style="padding:32px;
+                  text-align:center;
+                  color:var(--kc-color-text-muted)"
+           data-i18n="group_detail.no_members">Детей в группе пока нет</div>
+    {% endif %}
+  </div>
+{% endblock content %}

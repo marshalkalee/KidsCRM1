@@ -1,0 +1,77 @@
+/*
+ * Design-токены — единственное место с "магическими числами" (цвета,
+ * отступы, шрифты). Остальной CSS должен ссылаться на var(--kc-*), а не
+ * на литералы, чтобы поменять тему/масштаб можно было в одном файле —
+ * это и произошло при переходе с фиолетового на цветотип заказчика.
+ *
+ * Палитра — под реального заказчика True Ballet Astana (instagram.com/
+ * trueballet_astana: коралл/терракота на визуале студии, такой же
+ * логотип-пуанты). Ветка feature/frontend-login (коллега) собрала под
+ * этот же бренд отдельный макет страницы входа — цвета взяты оттуда 1:1,
+ * сама разметка не переносилась (macет писан отдельным HTML, наша
+ * структура шаблонов/статики к моменту его создания сильно разошлась).
+ * Второй заказчик появится — новая палитра меняется здесь же, точечных
+ * hex по всему CSS больше не осталось (см. layout.css: цвета сайдбара
+ * теперь color-mix() от этого же accent, а не литералы).
+ */
+
+:root {
+  /* Цвета */
+  --kc-color-bg: #fdf6f0;
+  --kc-color-surface: #ffffff;
+  --kc-color-border: #f0e2dc;
+  --kc-color-text: #1a1d2e;
+  --kc-color-text-muted: #6b7280;
+
+  /* "primary" — тёмная основная кнопка (как .btn-primary в макете:
+     "Сохранить"/"Добавить"). "accent" — акцентный градиент бренда
+     для более "яркого" CTA (как .btn-accent: "Новая заявка" и т.п.) —
+     используются по смыслу, не взаимозаменяемо. */
+  --kc-color-primary: #1a1d2e;
+  --kc-color-primary-contrast: #ffffff;
+  --kc-color-accent: #e8998d;
+  --kc-color-accent-contrast: #ffffff;
+  --kc-gradient-accent: linear-gradient(135deg, #e8998d, #c97b6e);
+
+  --kc-color-danger: #dc2626;
+  --kc-color-success: #059669;
+  --kc-color-warning: #d97706;
+  --kc-color-info: #3b82f6;
+
+  /* Типографика — Manrope/JetBrains Mono подключены гуглфонтом в
+     base.html/base_minimal.html; системный стек — фолбэк, пока шрифт
+     не загрузился или офлайн. */
+  --kc-font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --kc-font-family-mono: "JetBrains Mono", ui-monospace, monospace;
+  --kc-font-size-sm: 13px;
+  --kc-font-size-base: 14px;
+  --kc-font-size-lg: 16px;
+  --kc-font-weight-normal: 400;
+  --kc-font-weight-bold: 600;
+
+  /* Отступы — шкала 4px */
+  --kc-space-1: 4px;
+  --kc-space-2: 8px;
+  --kc-space-3: 12px;
+  --kc-space-4: 16px;
+  --kc-space-5: 24px;
+  --kc-space-6: 32px;
+
+  /* Радиусы */
+  --kc-radius-sm: 5px;
+  --kc-radius-md: 8px;
+  --kc-radius-lg: 10px;
+
+  /* Тени */
+  --kc-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --kc-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+
+  /* Размеры каркаса */
+  --kc-sidebar-width: 248px;
+  --kc-header-height: 56px;
+
+  /* Мобильный брейкпоинт (ТЗ п. 10.4) — тот же порог используется в
+     layout.js для JS-логики (открыть/закрыть sidebar). В макете Дарьи
+     мобильной раскладки нет (десктопный прототип), это — наше решение. */
+  --kc-breakpoint-mobile: 768px;
+}

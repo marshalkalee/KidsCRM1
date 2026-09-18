@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — коммуникация
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="parent_communication_form.title">Новая коммуникация</span>
+{% endblock page_title %}
+{% block content %}
+  <form method="post">
+    {% include "clients/_parent_communication_form_fields.html" %}
+    <button type="submit"
+            class="kc-btn kc-btn--primary"
+            data-i18n="parent_communication_form.save">Сохранить</button>
+    <a href="{% url 'clients_web:parent-card' parent.pk %}"
+       class="kc-btn kc-btn--secondary"
+       data-i18n="parent_communication_form.cancel">Отмена</a>
+  </form>
+{% endblock content %}
