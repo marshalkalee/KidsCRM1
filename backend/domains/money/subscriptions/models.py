@@ -98,11 +98,17 @@ class Subscription(TenantModel):
         Status.EXHAUSTED: set(),
     }
 
-    child = models.ForeignKey("clients.Child", on_delete=models.PROTECT, related_name="subscriptions")
-    subscription_type_version = models.ForeignKey(
-        SubscriptionTypeVersion, on_delete=models.PROTECT, related_name="subscriptions",
+    child = models.ForeignKey(
+        "clients.Child", on_delete=models.PROTECT, related_name="subscriptions"
     )
-    direction = models.ForeignKey("tenants.Direction", on_delete=models.PROTECT, related_name="subscriptions")
+    subscription_type_version = models.ForeignKey(
+        SubscriptionTypeVersion,
+        on_delete=models.PROTECT,
+        related_name="subscriptions",
+    )
+    direction = models.ForeignKey(
+        "tenants.Direction", on_delete=models.PROTECT, related_name="subscriptions"
+    )
 
     starts_on = models.DateField()
     ends_on = models.DateField()
@@ -131,7 +137,9 @@ class SubscriptionLedgerEntry(TenantModel):
         MANUAL_ADJUSTMENT = "manual_adjustment", "Ручная корректировка"
         EXTENSION = "extension", "Продление"
 
-    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="ledger_entries")
+    subscription = models.ForeignKey(
+        Subscription, on_delete=models.CASCADE, related_name="ledger_entries"
+    )
     kind = models.CharField(max_length=20, choices=Kind.choices)
     delta = models.SmallIntegerField()
     comment = models.CharField(max_length=255, blank=True)
