@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — зал
+{% endblock title %}
+{% block page_title %}
+  {% if is_create %}
+    <span data-i18n="room_form.title_create">Новый зал</span>
+  {% else %}
+    <span data-i18n="room_form.title_edit">Редактирование зала</span>
+  {% endif %}
+  — {{ branch.name }}
+{% endblock page_title %}
+{% block content %}
+  <a href="{% url 'tenants_web:room-list' branch.pk %}"
+     class="kc-back-link">
+    <svg viewBox="0 0 24 24">
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+    <span data-i18n="room_form.back_to_rooms">Все залы</span>
+  </a>
+  <form method="post">
+    {% include "tenants/_room_form_fields.html" %}
+    <button type="submit"
+            class="kc-btn kc-btn--primary"
+            data-i18n="room_form.save">Сохранить</button>
+    <a href="{% url 'tenants_web:room-list' branch.pk %}"
+       class="kc-btn kc-btn--secondary"
+       data-i18n="room_form.cancel">Отмена</a>
+  </form>
+{% endblock content %}
