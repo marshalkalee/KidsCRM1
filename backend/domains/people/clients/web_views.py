@@ -10,17 +10,24 @@
 """
 
 import uuid
+from decimal import Decimal
 from pathlib import Path
 
+import pytz
 from django.contrib import messages
 from django.core.files.storage import default_storage
+from django.db.models import Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone as dj_timezone
 from django.views.decorators.http import require_http_methods
 
+from domains.money.payments.models import Payment
+from domains.money.subscriptions.models import Subscription
 from domains.platform.core.decorators import role_required
 from domains.platform.core.role_permissions import can_view_phone
+from domains.scheduling.groups.models import GroupMembership
 
 from .child_card_tabs import get_child_card_tabs
 from .forms import (
@@ -29,6 +36,7 @@ from .forms import (
     ChildPhotoUploadForm,
     CommunicationLogForm,
     ContactPhoneFormSet,
+    ParentCommunicationLogForm,
     ParentContactForm,
 )
 from .models import Child, ChildContact, CommunicationLog, ParentContact
@@ -56,6 +64,79 @@ def _branch_names(child):
         branch.name for direction in child.directions.all() for branch in direction.branches.all()
     }
     return ", ".join(sorted(branch_names)) if branch_names else None
+
+
+def _direction_names(child):
+    names = {direction.name for direction in child.directions.all()}
+    return ", ".join(sorted(names)) if names else None
+
+
+CHILD_SORT_FIELDS = {
+    "full_name": "full_name",
+    "age": "birth_date",
+    "status": "status",
+}
+
+
+def _sort_child_queryset(qs, sort, direction):
+    # Только скалярные поля Child — филиал/направление/группа/абонемент/
+    # долг многозначны (M2M/через другую таблицу) или требуют коррелирующих
+    # подзапросов, сортировка по ним сюда не входит в этой задаче (JS-колонки
+    # с этими ключами не помечены sortable, см. child_list.html).
+    field = CHILD_SORT_FIELDS.get(sort, "full_name")
+    descending = direction == "desc"
+    if sort == "age":
+        # Возраст не хранится (Child.age — вычисляемое свойство, не
+        # колонка БД) — сортируем по birth_date, направление обратное:
+        # старше = раньше родился, т.е. "возраст по убыванию" — это
+        # "дата рождения по возрастанию".
+        descending = not descending
+    ordering = f"-{field}" if descending else field
+    # pk — стабильный tie-break: без него строки с одинаковым значением
+    # сортируемого поля могут менять порядок между запросами соседних
+    # страниц (LIMIT/OFFSET без полного порядка не гарантирует стабильность).
+    return qs.order_by(ordering, "pk")
+
+
+def _batch_child_extras(organization, child_ids):
+    """Группа/абонемент/долг для страницы детей — батчем на весь список
+    child_ids, не запросом на каждую строку (ТЗ п. 10.2: иначе 50 строк на
+    странице превращаются в 100+ запросов, и бюджет ≤1с не выдерживается)."""
+    memberships = (
+        GroupMembership.objects.for_tenant(organization)
+        .filter(child_id__in=child_ids, left_at__isnull=True)
+        .select_related("group")
+    )
+    groups_by_child = {}
+    for membership in memberships:
+        groups_by_child.setdefault(membership.child_id, []).append(membership.group.name)
+
+    subscriptions = list(
+        Subscription.objects.for_tenant(organization)
+        .filter(child_id__in=child_ids)
+        .select_related("subscription_type_version")
+        .order_by("child_id", "-starts_on")
+    )
+    paid_by_subscription = dict(
+        Payment.objects.for_tenant(organization)
+        .filter(subscription_id__in=[sub.id for sub in subscriptions])
+        .values("subscription_id")
+        .annotate(total=Sum("amount"))
+        .values_list("subscription_id", "total")
+    )
+
+    # subscriptions уже отсортированы по (child_id, -starts_on) — первое
+    # вхождение на child_id — самый свежий абонемент, без лишнего запроса
+    # с MAX(starts_on)/DISTINCT.
+    latest_subscription_by_child = {}
+    debt_by_child = {}
+    for sub in subscriptions:
+        latest_subscription_by_child.setdefault(sub.child_id, sub)
+        paid = paid_by_subscription.get(sub.id) or Decimal(0)
+        owed = max(Decimal(0), sub.price - paid)
+        debt_by_child[sub.child_id] = debt_by_child.get(sub.child_id, Decimal(0)) + owed
+
+    return groups_by_child, latest_subscription_by_child, debt_by_child
 
 
 def _contacts_tab_context(request, child):
@@ -98,6 +179,31 @@ def _contacts_tab_context(request, child):
     }
 
 
+def _serialize_communication_logs(logs, organization):
+    # Общий формат строк для communications-feed.js (схлопывание после N
+    # записей + фильтр по датам) — используется и на вкладке ребёнка, и на
+    # сводной ленте карточки родителя, чтобы не разойтись в двух местах.
+    tz_name = getattr(organization, "timezone", None)
+    org_tz = pytz.timezone(tz_name) if tz_name else dj_timezone.get_default_timezone()
+    rows = []
+    for log in logs:
+        local_dt = dj_timezone.localtime(log.created_at, org_tz)
+        rows.append(
+            {
+                "id": str(log.id),
+                "channel_code": log.channel,
+                "channel_display": log.get_channel_display(),
+                "note": log.note,
+                "author": log.author.full_name,
+                "child_name": log.child.full_name,
+                "contact_name": log.parent_contact.full_name if log.parent_contact else None,
+                "date": local_dt.strftime("%Y-%m-%d"),
+                "date_display": local_dt.strftime("%d.%m.%Y %H:%M"),
+            }
+        )
+    return rows
+
+
 def _communications_tab_context(request, child, form=None):
     logs = (
         CommunicationLog.objects.for_tenant(request.user.organization)
@@ -107,7 +213,7 @@ def _communications_tab_context(request, child, form=None):
     can_manage = request.user.role in COMMUNICATION_LOG_MANAGE_ROLES
     return {
         "child": child,
-        "logs": logs,
+        "logs": _serialize_communication_logs(logs, request.user.organization),
         "form": form or (CommunicationLogForm(child=child) if can_manage else None),
         "can_manage": can_manage,
     }
@@ -115,25 +221,64 @@ def _communications_tab_context(request, child, form=None):
 
 @role_required()
 def child_list(request):
-    children = Child.objects.for_tenant(request.user.organization).prefetch_related(
-        "directions__branches"
+    # Каркас страницы — сами строки грузит child_list_data() (удалённый
+    # режим table.js): на 5000 детей отдавать всё разом одним json_script,
+    # как раньше, не укладывается в бюджет ≤1с (ТЗ п. 10.2).
+    return render(
+        request,
+        "clients/child_list.html",
+        {"can_manage": request.user.role in CHILD_EDIT_ROLES},
     )
+
+
+@role_required()
+def child_list_data(request):
+    organization = request.user.organization
+    qs = Child.objects.for_tenant(organization).prefetch_related("directions__branches")
+    qs = _sort_child_queryset(
+        qs, request.GET.get("sort", "full_name"), request.GET.get("dir", "asc")
+    )
+
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+    except ValueError:
+        page = 1
+    try:
+        # Верхняя граница — не даёт с фронта произвольным page_size вернуться
+        # к "отдать всё разом" тем же способом, который этот тикет убирает.
+        page_size = min(max(1, int(request.GET.get("page_size", 50))), 200)
+    except ValueError:
+        page_size = 50
+
+    total = qs.count()
+    start = (page - 1) * page_size
+    children = list(qs[start : start + page_size])
+
+    child_ids = [child.id for child in children]
+    groups_by_child, subscription_by_child, debt_by_child = _batch_child_extras(
+        organization, child_ids
+    )
+
     rows = [
         {
             "id": str(child.id),
             "full_name": child.full_name,
             "age": child.age,
-            "status": child.status,
             "branch_names": _branch_names(child) or "—",
+            "direction_names": _direction_names(child) or "—",
+            "group_names": ", ".join(groups_by_child.get(child.id, [])) or "—",
+            "status": child.status,
+            "subscription_name": (
+                subscription_by_child[child.id].subscription_type_version.name
+                if child.id in subscription_by_child
+                else None
+            ),
+            "debt": str(debt_by_child.get(child.id, Decimal(0))),
             "card_url": reverse("clients_web:child-card", args=[child.pk]),
         }
         for child in children
     ]
-    return render(
-        request,
-        "clients/child_list.html",
-        {"rows": rows, "can_manage": request.user.role in CHILD_EDIT_ROLES},
-    )
+    return JsonResponse({"rows": rows, "total": total})
 
 
 @role_required(*CHILD_EDIT_ROLES)
@@ -344,6 +489,7 @@ def parent_list(request):
             "phones": ", ".join(p.number for p in parent.phones.all()) if show_phones else None,
             "whatsapp": parent.whatsapp if show_phones else None,
             "email": parent.email,
+            "card_url": reverse("clients_web:parent-card", args=[parent.pk]),
             "edit_url": reverse("clients_web:parent-edit", args=[parent.pk]),
             "delete_url": reverse("clients_web:parent-delete", args=[parent.pk]),
         }
@@ -434,3 +580,107 @@ def parent_delete(request, pk):
     parent.delete()
     messages.success(request, "Родитель удалён.")
     return redirect("clients_web:parent-list")
+
+
+def _parent_children_rows(request, parent):
+    links = (
+        ChildContact.objects.for_tenant(request.user.organization)
+        .filter(parent_contact=parent)
+        .select_related("child")
+        .prefetch_related("child__directions__branches")
+    )
+    return [
+        {
+            "id": str(link.child.id),
+            "full_name": link.child.full_name,
+            "role": link.get_role_display(),
+            "role_code": link.role,
+            "branch_names": _branch_names(link.child) or "—",
+            "card_url": reverse("clients_web:child-card", args=[link.child.pk]),
+        }
+        for link in links
+    ]
+
+
+def _parent_communication_logs(request, parent):
+    # По ребёнку, не по CommunicationLog.parent_contact: тот необязателен
+    # (звонок не всегда привязан к конкретному контакту, см. docstring
+    # модели), а сводная лента родителя — это "всё по любому из его детей",
+    # а не только записи, где явно отмечен именно этот контакт.
+    child_ids = ChildContact.objects.filter(parent_contact=parent).values_list(
+        "child_id", flat=True
+    )
+    logs = (
+        CommunicationLog.objects.for_tenant(request.user.organization)
+        .filter(child_id__in=child_ids)
+        .select_related("child", "author")
+    )
+    return _serialize_communication_logs(logs, parent.organization)
+
+
+@role_required()
+def parent_card(request, pk):
+    parent = get_object_or_404(ParentContact.objects.for_tenant(request.user.organization), pk=pk)
+    show_phones = can_view_phone(request.user)
+    can_manage = request.user.role in PARENT_MANAGE_ROLES
+    phones = list(parent.phones.all()) if show_phones else []
+    # tel:/wa.me — тот же нормализованный "+7..." (см. phone.py), wa.me
+    # хочет только цифры без "+" (ТЗ п. 4.5 — deep-link). show_phones — та
+    # же проверка, что скрывает сам номер: иначе номер утекал бы через
+    # href кнопки WhatsApp тому, кому нельзя видеть его текстом.
+    call_url = f"tel:{phones[0].number}" if phones else None
+    whatsapp_url = (
+        f"https://wa.me/{parent.whatsapp.lstrip('+')}"
+        if show_phones and parent.whatsapp
+        else None
+    )
+    return render(
+        request,
+        "clients/parent_card.html",
+        {
+            "parent": parent,
+            "children_rows": _parent_children_rows(request, parent),
+            "communication_logs": _parent_communication_logs(request, parent),
+            "phones": phones if show_phones else None,
+            "whatsapp": parent.whatsapp if show_phones else None,
+            "call_url": call_url,
+            "whatsapp_url": whatsapp_url,
+            "can_manage": can_manage,
+            "edit_url": reverse("clients_web:parent-edit", args=[parent.pk]),
+            "communication_create_url": reverse(
+                "clients_web:parent-communication-create", args=[parent.pk]
+            ),
+        },
+    )
+
+
+@role_required(*COMMUNICATION_LOG_MANAGE_ROLES)
+@require_http_methods(["GET", "POST"])
+def parent_communication_create(request, pk):
+    parent = get_object_or_404(ParentContact.objects.for_tenant(request.user.organization), pk=pk)
+    if request.method == "POST":
+        form = ParentCommunicationLogForm(request.POST, parent_contact=parent)
+        if form.is_valid():
+            form.save(author=request.user)
+            messages.success(request, "Коммуникация записана.")
+            if _is_ajax(request):
+                return JsonResponse({"success": True})
+            return redirect("clients_web:parent-card", pk=parent.pk)
+        if _is_ajax(request):
+            return render(
+                request,
+                "clients/_parent_communication_form_fields.html",
+                {"form": form},
+                status=400,
+            )
+    else:
+        form = ParentCommunicationLogForm(parent_contact=parent)
+    if _is_ajax(request):
+        return render(
+            request, "clients/_parent_communication_form_fields.html", {"form": form}
+        )
+    return render(
+        request,
+        "clients/parent_communication_form.html",
+        {"form": form, "parent": parent},
+    )

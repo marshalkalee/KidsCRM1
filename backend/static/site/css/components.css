@@ -340,6 +340,14 @@
   color: var(--kc-color-text-muted);
 }
 
+/* Долг > 0 в списке детей (ТЗ п. 4.1) — визуально выделить, не только
+   цифрой: администратор сканирует таблицу взглядом, а не читает каждую
+   строку. */
+.kc-text-danger {
+  color: var(--kc-color-danger);
+  font-weight: var(--kc-font-weight-bold);
+}
+
 .kc-child-header {
   display: flex;
   flex-wrap: wrap;
@@ -388,6 +396,16 @@
 
 .kc-child-header__facts dd {
   margin: 0;
+}
+
+/* Быстрые действия карточки родителя (позвонить/WhatsApp/записать
+   коммуникацию, ТЗ п. 4.1/4.5) — flex-wrap по той же причине, что у
+   .kc-tabs ниже: на телефоне кнопки переходят на вторую строку. */
+.kc-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kc-space-2);
+  width: 100%;
 }
 
 /* flex-wrap, не overflow-x — на телефоне вкладки переходят на вторую
@@ -481,6 +499,26 @@
 .kc-timeline__meta {
   font-size: 0.8rem;
   color: var(--kc-color-text-muted);
+}
+
+/* Фильтр по датам над лентой коммуникаций (карточка родителя) — те же
+   .kc-field, что в формах, просто в ряд, а не друг под другом. */
+.kc-communications-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--kc-space-3);
+  margin-bottom: var(--kc-space-3);
+}
+
+.kc-communications-filter .kc-field {
+  flex: 1;
+  min-width: 160px;
+  margin-bottom: 0;
+}
+
+[data-comm-toggle] {
+  margin-top: var(--kc-space-3);
 }
 
 /* ---------------------------------------------------------------------- */

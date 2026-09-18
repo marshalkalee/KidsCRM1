@@ -212,6 +212,15 @@
       }
 
       function initCommunicationsTab() {
+        var feedRoot = document.getElementById("js-child-communications");
+        var feedDataEl = document.getElementById("child-communications-data");
+        if (feedRoot && feedDataEl) {
+          window.KidsCRM.communicationsFeed.init(feedRoot, JSON.parse(feedDataEl.textContent), {
+            showContactName: true,
+            emptyTextKey: "communications.empty",
+          });
+        }
+
         var form = document.getElementById("js-communication-form");
         if (!form) {
           return;

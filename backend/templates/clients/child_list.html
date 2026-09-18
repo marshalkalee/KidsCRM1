@@ -18,7 +18,6 @@
       <span data-i18n="child_list.create">Добавить ребёнка</span>
     </button>
   {% endif %}
-  {{ rows|json_script:"children-data" }}
 {% endblock content %}
 {% block extra_js %}
   <script>
@@ -26,7 +25,6 @@
       "use strict";
       var t = window.KidsCRM.t;
       var createUrl = "{% url 'clients_web:child-create' %}";
-      var rows = JSON.parse(document.getElementById("children-data").textContent);
 
       var createBtn = document.getElementById("js-create-child");
       if (createBtn) {
@@ -41,11 +39,17 @@
         });
       }
 
-      var STATUS = {
-        active: { badge: "kc-badge--green", labelKey: "child_list.status_active" },
-        paused: { badge: "kc-badge--amber", labelKey: "child_list.status_paused" },
-        left: { badge: "kc-badge--muted", labelKey: "child_list.status_left" },
+      var STATUS_BADGE = {
+        active: "kc-badge--green",
+        paused: "kc-badge--amber",
+        left: "kc-badge--muted",
       };
+
+      function formatTenge(value) {
+        var amount = Math.round(Number(value) || 0);
+        var formatted = amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+        return formatted + " ₸";
+      }
 
       var columns = [
         {
@@ -59,19 +63,41 @@
             return link;
           },
         },
-        { key: "age", label: t("child_list.col_age") },
+        { key: "age", label: t("child_list.col_age"), sortable: true },
+        { key: "branch_names", label: t("child_list.col_branch") },
+        { key: "direction_names", label: t("child_list.col_direction") },
+        { key: "group_names", label: t("child_list.col_group") },
         {
           key: "status",
           label: t("child_list.col_status"),
+          sortable: true,
           render: function (row) {
-            var meta = STATUS[row.status] || STATUS.left;
             var badge = document.createElement("span");
-            badge.className = "kc-badge " + meta.badge;
-            badge.textContent = t(meta.labelKey);
+            badge.className = "kc-badge " + (STATUS_BADGE[row.status] || "kc-badge--muted");
+            badge.textContent = t("choices.child_status." + row.status);
             return badge;
           },
         },
-        { key: "branch_names", label: t("child_list.col_branch") },
+        {
+          key: "subscription_name",
+          label: t("child_list.col_subscription"),
+          render: function (row) {
+            return row.subscription_name || "—";
+          },
+        },
+        {
+          key: "debt",
+          label: t("child_list.col_debt"),
+          render: function (row) {
+            var amount = Number(row.debt) || 0;
+            var span = document.createElement("span");
+            if (amount > 0) {
+              span.className = "kc-text-danger";
+            }
+            span.textContent = formatTenge(amount);
+            return span;
+          },
+        },
         {
           key: "actions",
           label: t("child_list.col_actions"),
@@ -85,15 +111,15 @@
         },
       ];
 
-      var table = window.KidsCRM.table.init("#js-children-table", {
+      window.KidsCRM.table.init("#js-children-table", {
         columns: columns,
-        pageSize: 10,
+        pageSize: 50,
         rowKey: function (row) {
           return row.id;
         },
         emptyTextKey: "child_list.empty",
+        remote: { url: "{% url 'clients_web:child-list-data' %}" },
       });
-      table.setData(rows);
     })();
   </script>
 {% endblock extra_js %}

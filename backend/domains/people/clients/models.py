@@ -55,6 +55,28 @@ class Child(TenantModel):
 
     class Meta:
         ordering = ["full_name"]
+        # Частичные индексы (condition=deleted_at IS NULL) — под тем же
+        # фильтром, что уже всегда накладывает SoftDeleteQuerySet.alive(),
+        # поэтому индекс реально покрывает то, что запросы фактически
+        # исполняют, а не полную таблицу с историческими (удалёнными)
+        # строками (ТЗ п. 10.2 — список на 5000 детей, сортировки/фильтры).
+        indexes = [
+            models.Index(
+                fields=["organization", "full_name"],
+                name="child_org_full_name_idx",
+                condition=models.Q(deleted_at__isnull=True),
+            ),
+            models.Index(
+                fields=["organization", "birth_date"],
+                name="child_org_birth_date_idx",
+                condition=models.Q(deleted_at__isnull=True),
+            ),
+            models.Index(
+                fields=["organization", "status"],
+                name="child_org_status_idx",
+                condition=models.Q(deleted_at__isnull=True),
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.full_name

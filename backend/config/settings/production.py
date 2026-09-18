@@ -6,6 +6,11 @@ from .base import env
 DEBUG = False
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")
 
+# nginx терминирует TLS и проксирует на backend по обычному HTTP внутри
+# docker-сети — без этой настройки Django считает каждый запрос HTTP и
+# уходит в бесконечный редирект на SECURE_SSL_REDIRECT.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True

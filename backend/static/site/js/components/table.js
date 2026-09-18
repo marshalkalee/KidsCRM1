@@ -4,12 +4,24 @@
  * components.css — CSS сам превращает строки в карточки, JS только
  * проставляет data-label на каждой ячейке).
  *
- * Работает с массивом данных на клиенте (пока нет реальных списков с
- * бэкенда — Child/Parent и т.п. появятся в других тикетах). Загрузка с
- * сервера подключается через setLoading()/setData() снаружи — сам
- * компонент не делает предположений про формат API.
+ * По умолчанию работает с массивом данных на клиенте — вся сортировка/
+ * фильтрация/пагинация режет один уже загруженный JS-массив. Годится для
+ * списков, где реально можно отдать всё разом (справочники, филиалы и
+ * т.п.), но НЕ годится для списков в тысячи строк (ТЗ п. 10.2 — 5000
+ * детей, отклик ≤ 1с): отдавать 5000 строк в одном json_script и держать
+ * их в памяти клиента — сам по себе бюджет не даст.
  *
- * Использование:
+ * options.remote = { url } — включает удалённый режим: страница/сортировка
+ * шлются на сервер query-параметрами (page, page_size, sort, dir), сервер
+ * отвечает { rows: [...], total: N } уже готовой страницей — компонент не
+ * держит весь список в памяти и не сортирует/не режет на страницы сам.
+ * Текстовый/произвольный фильтр (setTextFilter/setFilter) в удалённом
+ * режиме не поддержан — если понадобится, его нужно будет тоже перенести
+ * на сервер (query-параметр), а не резать на клиенте вперемешку с
+ * серверной пагинацией (кусок данных на клиенте — не полный набор,
+ * фильтровать его нечестно).
+ *
+ * Использование (клиентский режим — как раньше):
  *   var table = KidsCRM.table.init("#js-clients-table", {
  *     columns: [
  *       { key: "name", label: t("..."), sortable: true },
@@ -22,6 +34,17 @@
  *   });
  *   table.setData(rows);
  *   table.setTextFilter("иван", ["name", "phone"]); // поиск по колонкам
+ *
+ * Использование (удалённый режим):
+ *   var table = KidsCRM.table.init("#js-children-table", {
+ *     columns: [...],
+ *     pageSize: 50,
+ *     rowKey: function (row) { return row.id; },
+ *     emptyTextKey: "child_list.empty",
+ *     remote: { url: "/clients/children/data/" },
+ *   });
+ *   // Первая страница грузится сама — setData() не нужен и не должен
+ *   // вызываться в этом режиме (данные всегда с сервера).
  */
 (function (window, document) {
   "use strict";
@@ -38,9 +61,11 @@
     var selectable = !!options.selectable;
     var rowKey = options.rowKey || function (row, index) { return index; };
     var emptyTextKey = options.emptyTextKey || "state.empty";
+    var remote = options.remote || null;
 
     var state = {
       data: [],
+      total: 0, // только для remote — общее число строк по всем страницам
       loading: false,
       filterFn: null,
       textFilter: null,
@@ -123,7 +148,14 @@
               } else {
                 state.sortDir = "ascending";
               }
-              render();
+              if (remote) {
+                // В клиентском режиме сорт не трогает текущую страницу
+                // (так было и раньше) — в удалённом это другая полная
+                // выборка на сервере, оставаться на той же странице не
+                // имеет смысла.
+                state.page = 1;
+              }
+              refreshData();
             };
             th.addEventListener("click", activate);
             th.addEventListener("keydown", function (event) {
@@ -173,13 +205,51 @@
     }
 
     function pageCount() {
-      return Math.max(1, Math.ceil(filteredSortedData().length / pageSize));
+      var total = remote ? state.total : filteredSortedData().length;
+      return Math.max(1, Math.ceil(total / pageSize));
     }
 
     function getPageRows() {
+      if (remote) {
+        // Сервер уже отдал ровно эту страницу, отсортированную по его
+        // правилам — резать/сортировать на клиенте нечем и не нужно.
+        return state.data;
+      }
       var rows = filteredSortedData();
       var start = (state.page - 1) * pageSize;
       return rows.slice(start, start + pageSize);
+    }
+
+    function fetchRemotePage() {
+      state.loading = true;
+      render();
+      var params = new URLSearchParams();
+      params.set("page", String(state.page));
+      params.set("page_size", String(pageSize));
+      if (state.sortKey && state.sortDir !== "none") {
+        params.set("sort", state.sortKey);
+        params.set("dir", state.sortDir === "ascending" ? "asc" : "desc");
+      }
+      fetch(remote.url + "?" + params.toString(), {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      })
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (data) {
+          state.data = data.rows || [];
+          state.total = data.total || 0;
+          state.loading = false;
+          render();
+        });
+    }
+
+    function refreshData() {
+      if (remote) {
+        fetchRemotePage();
+      } else {
+        render();
+      }
     }
 
     function getSelected() {
@@ -245,7 +315,7 @@
     }
 
     function renderFooter() {
-      var total = filteredSortedData().length;
+      var total = remote ? state.total : filteredSortedData().length;
       var infoEl = footer.querySelector(".kc-table-footer__info");
       infoEl.textContent = t("table.total_rows").replace("{count}", total);
 
@@ -269,7 +339,7 @@
         } else {
           btn.addEventListener("click", function () {
             state.page = page;
-            render();
+            refreshData();
           });
         }
         return btn;
@@ -291,10 +361,17 @@
       renderFooter();
     }
 
-    render();
+    if (remote) {
+      fetchRemotePage();
+    } else {
+      render();
+    }
 
     return {
       setData: function (data) {
+        if (remote) {
+          return; // данные всегда с сервера — внешний setData() тут не к месту
+        }
         state.data = data || [];
         state.loading = false;
         state.page = 1;
@@ -305,11 +382,17 @@
         render();
       },
       setFilter: function (filterFn) {
+        if (remote) {
+          return; // не поддержано в удалённом режиме, см. комментарий выше
+        }
         state.filterFn = filterFn;
         state.page = 1;
         render();
       },
       setTextFilter: function (text, fields) {
+        if (remote) {
+          return;
+        }
         state.textFilter = text || null;
         state.textFilterFields = fields || [];
         state.page = 1;
@@ -324,7 +407,7 @@
         listeners[event] = listeners[event] || [];
         listeners[event].push(callback);
       },
-      refresh: render,
+      refresh: refreshData,
     };
   }
 

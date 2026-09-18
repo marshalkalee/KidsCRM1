@@ -12,6 +12,10 @@ backend/htmlcov/
 # Автогенерируется build_i18n_bundle.py из backend/i18n_src/ — не коммитим.
 backend/static/site/js/i18n-bundle.js
 
+# Staging — реальные дампы БД, не для репозитория
+backend/.env.staging
+infra/backups/
+
 # Editors / OS
 .vscode/
 .idea/
