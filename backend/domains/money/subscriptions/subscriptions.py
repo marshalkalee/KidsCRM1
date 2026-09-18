@@ -16,10 +16,15 @@ def recompute_sessions_remaining(subscription: Subscription) -> int | None:
 
 
 @transaction.atomic
-def add_ledger_entry(subscription: Subscription, *, kind: str, delta: int, comment: str = "") -> SubscriptionLedgerEntry:
+def add_ledger_entry(
+    subscription: Subscription, *, kind: str, delta: int, comment: str = ""
+) -> SubscriptionLedgerEntry:
     entry = SubscriptionLedgerEntry.objects.create(
-        organization=subscription.organization, subscription=subscription,
-        kind=kind, delta=delta, comment=comment,
+        organization=subscription.organization,
+        subscription=subscription,
+        kind=kind,
+        delta=delta,
+        comment=comment,
     )
     subscription.sessions_remaining_cache = recompute_sessions_remaining(subscription)
     subscription.save(update_fields=["sessions_remaining_cache"])
