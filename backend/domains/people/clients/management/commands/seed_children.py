@@ -124,9 +124,7 @@ class Command(BaseCommand):
                         full_name=f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
                         birth_date=date.today() - timedelta(days=365 * random.randint(3, 15)),
                         gender=random.choice(["male", "female"]),
-                        status=random.choices(
-                            ["active", "paused", "left"], weights=[80, 15, 5]
-                        )[0],
+                        status=random.choices(["active", "paused", "left"], weights=[80, 15, 5])[0],
                     )
                     for _ in range(count)
                 ]
