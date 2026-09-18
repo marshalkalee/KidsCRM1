@@ -42,3 +42,25 @@ def user_permissions(request):
     if user is None or not user.is_authenticated:
         return {"kc_permissions": {}}
     return {"kc_permissions": get_user_permissions(user)}
+
+
+# Названия — в родном языке каждого варианта (Русский/Қазақша/English), а не
+# переведённые: так их узнают независимо от того, какой язык выбран сейчас
+# (тот же принцип, что у переключателей языка в других продуктах).
+LANGUAGES = [
+    ("ru", "Русский"),
+    ("kk", "Қазақша"),
+    ("en", "English"),
+]
+
+
+def language(request):
+    """
+    Текущий язык интерфейса — для переключателя в шапке и <html lang> в
+    base.html/base_minimal.html. Хранится в сессии (см. switch_language),
+    не в cookie/localStorage — по той же причине, что и активный филиал.
+    """
+    current = request.session.get("lang", "ru")
+    if current not in dict(LANGUAGES):
+        current = "ru"
+    return {"kc_lang": current, "kc_languages": LANGUAGES}

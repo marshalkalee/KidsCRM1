@@ -11,6 +11,8 @@
 | `jquery.min.js` | jQuery | 3.5.1 | code.jquery.com |
 | `bootstrap.bundle.min.js` + `../css/vendor/bootstrap.min.css` | Bootstrap (bundle с Popper) | 5.3.3 | cdnjs.cloudflare.com |
 | `select2.min.js` + `../css/vendor/select2.min.css` | Select2 | 4.1.0-rc.0 | cdnjs.cloudflare.com |
+| `bootstrap-datepicker.min.js` + `bootstrap-datepicker.ru.min.js` + `../css/vendor/bootstrap-datepicker.min.css` | bootstrap-datepicker | 1.10.0 | cdnjs.cloudflare.com |
+| `dropzone.min.js` + `../css/vendor/dropzone.min.css` | Dropzone | 5.9.3 | cdnjs.cloudflare.com |
 
 Обновлять версию — заменить файл целиком и поправить эту таблицу, не
 патчить содержимое вручную.
@@ -26,8 +28,6 @@
 | `datatables.min.js` + css | DataTables | — |
 | `fullcalendar.min.js` + css | FullCalendar | — |
 | `chart.min.js` | Chart.js | — |
-| `bootstrap-datepicker.min.js` + css | bootstrap-datepicker | — |
-| `dropzone.min.js` + css | Dropzone | — |
 | `sortable.min.js` | Sortable | — |
 | `tagify.min.js` + css | Tagify | — |
 | `quill.min.js` + css | Quill | — |

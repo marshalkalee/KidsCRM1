@@ -185,26 +185,6 @@
   margin-bottom: var(--kc-space-3);
 }
 
-/* Множественный выбор чекбоксами (например, филиалы у направления) —
-   Django рисует его как обычный <ul>, без класса, стилизуем по тегу
-   внутри .kc-field, чтобы не переопределять виджет в Python-коде. */
-.kc-field ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--kc-space-3);
-}
-
-.kc-field ul li label {
-  display: flex;
-  align-items: center;
-  gap: var(--kc-space-1);
-  font-size: var(--kc-font-size-sm);
-  cursor: pointer;
-}
-
 .kc-field__label {
   display: block;
   margin-bottom: var(--kc-space-1);
@@ -441,20 +421,40 @@
   gap: var(--kc-space-2);
 }
 
+/* Непрозрачная поверхность на невыбранном варианте — иначе на светлом фоне
+   карточки кнопки читаются как обычный текст, а не как кликабельные
+   варианты (см. фидбек: "всё прозрачное, ничего не понятно"). Сам радио —
+   скрыт, весь блок и есть кликабельная зона (через <label>). */
 .kc-segmented__option {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--kc-space-1);
-  padding: var(--kc-space-2) var(--kc-space-3);
+  padding: var(--kc-space-2) var(--kc-space-4);
   border: 1px solid var(--kc-color-border);
   border-radius: var(--kc-radius-md);
   cursor: pointer;
   font-size: 0.85rem;
+  background: var(--kc-color-surface);
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.kc-segmented__option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.kc-segmented__option:hover {
+  border-color: var(--kc-color-accent);
 }
 
 .kc-segmented__option:has(input:checked) {
   border-color: var(--kc-color-accent);
-  background: color-mix(in srgb, var(--kc-color-accent) 12%, transparent);
+  background: var(--kc-color-accent);
+  color: var(--kc-color-accent-contrast);
 }
 
 .kc-communication-form {
@@ -512,4 +512,155 @@
   font-size: 0.85rem;
   color: var(--kc-color-text-muted);
   white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Сетка полей формы (2 колонки) — вместо длинного столбика полей друг под  */
+/* другом. Шире модалка (form-modal.js: size: "lg"), ниже по высоте.       */
+/* ---------------------------------------------------------------------- */
+
+.kc-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 var(--kc-space-4);
+}
+
+@media (max-width: 600px) {
+  .kc-field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Загрузка фото (Dropzone) — form-enhance.js                             */
+/* ---------------------------------------------------------------------- */
+
+.kc-photo-upload {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-3);
+}
+
+.kc-photo-upload__preview {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--kc-radius-md);
+  object-fit: cover;
+  border: 1px solid var(--kc-color-border);
+  flex-shrink: 0;
+}
+
+.kc-photo-upload__dropzone {
+  flex: 1;
+  min-height: 56px;
+  border: 1px dashed var(--kc-color-border);
+  border-radius: var(--kc-radius-md);
+  background: var(--kc-color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: var(--kc-font-size-sm);
+  color: var(--kc-color-text-muted);
+  cursor: pointer;
+  padding: var(--kc-space-2);
+}
+
+.kc-photo-upload__dropzone.dz-drag-hover {
+  border-color: var(--kc-color-accent);
+  background: color-mix(in srgb, var(--kc-color-accent) 8%, var(--kc-color-bg));
+}
+
+/* Dropzone сам добавляет превью/прогресс внутрь контейнера — у нас своё
+   превью рядом (.kc-photo-upload__preview), встроенное скрываем, чтобы не
+   дублировалось. */
+.kc-photo-upload__dropzone .dz-preview,
+.kc-photo-upload__dropzone .dz-message .dz-button {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Тема вендорных виджетов (bootstrap-datepicker, Select2) под акцент      */
+/* сайта — иначе они остаются синими по умолчанию библиотек.              */
+/* ---------------------------------------------------------------------- */
+
+.datepicker.datepicker-dropdown {
+  font-family: var(--kc-font-family);
+  border-color: var(--kc-color-border);
+  box-shadow: var(--kc-shadow-md);
+  /* Bootstrap-datepicker сам не задаёт z-index — календарь открывался
+     позади модалки (у .modal он 1055, см. vendor/bootstrap.min.css).
+     1055 — то же число, что form-enhance.js: container: "body". */
+  z-index: 1075 !important;
+}
+
+.datepicker table tr td.active.active,
+.datepicker table tr td.active.highlighted.active,
+.datepicker table tr td.today,
+.datepicker table tr td.today.disabled,
+.datepicker table tr td.today.disabled:hover {
+  background: var(--kc-color-accent) !important;
+  background-image: none !important;
+  border-color: var(--kc-color-accent) !important;
+  color: var(--kc-color-accent-contrast) !important;
+}
+
+.datepicker table tr td.today {
+  background: color-mix(in srgb, var(--kc-color-accent) 15%, white) !important;
+  color: var(--kc-color-text) !important;
+}
+
+.select2-container--default .select2-selection--multiple {
+  border-color: var(--kc-color-border);
+  border-radius: var(--kc-radius-sm);
+  min-height: 38px;
+}
+
+/* Select2 при открытии переносит .select2-container в <body> (не внутрь
+   .modal), а свой z-index (1051, vendor/select2.min.css) не согласовывает
+   с Bootstrap-модалкой (1055) — список опций рисуется, но позади модалки,
+   кликом не поймать ни одну опцию. */
+.select2-dropdown {
+  z-index: 1075 !important;
+}
+
+.select2-container--default.select2-container--focus .select2-selection--multiple {
+  border-color: var(--kc-color-accent);
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+  background: color-mix(in srgb, var(--kc-color-accent) 15%, white);
+  border-color: var(--kc-color-accent);
+  color: var(--kc-color-text);
+  border-radius: var(--kc-radius-sm);
+}
+
+.select2-container--default .select2-results__option--highlighted[aria-selected] {
+  background: var(--kc-color-accent);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Переключатель языка в шапке (includes/language_switcher.html)           */
+/* ------------------------------------------------------------------------ */
+
+.kc-lang-switcher .dropdown-menu {
+  border-color: var(--kc-color-border);
+  border-radius: var(--kc-radius-md);
+  box-shadow: var(--kc-shadow-md);
+  padding: var(--kc-space-2);
+}
+
+.kc-lang-switcher .dropdown-item {
+  border-radius: var(--kc-radius-sm);
+  font-family: var(--kc-font-family);
+}
+
+.kc-lang-switcher .dropdown-item:hover,
+.kc-lang-switcher .dropdown-item:focus {
+  background: var(--kc-color-bg);
+}
+
+.kc-lang-switcher .dropdown-item.active {
+  background: var(--kc-color-accent);
+  color: var(--kc-color-accent-contrast);
 }

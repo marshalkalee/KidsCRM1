@@ -9,30 +9,42 @@
 {% block content %}
   <div class="kc-card kc-child-header">
     <div class="kc-child-header__main">
-      <div class="kc-avatar kc-avatar--lg">{{ child.full_name|kc_initials }}</div>
+      {% if child.photo_url %}
+        <img src="{{ child.photo_url }}"
+             alt=""
+             width="40"
+             height="40"
+             class="kc-avatar kc-avatar--lg kc-avatar--photo" />
+      {% else %}
+        <div class="kc-avatar kc-avatar--lg">{{ child.full_name|kc_initials }}</div>
+      {% endif %}
       <div>
         <h2 class="kc-child-header__name">{{ child.full_name }}</h2>
         <div class="kc-child-header__meta">
           <span data-i18n="child_card.age">Возраст</span>: {{ child.age }}
           {% if child.status == "active" %}
-            <span class="kc-badge kc-badge--green">{{ child.get_status_display }}</span>
+            <span class="kc-badge kc-badge--green"
+                  data-i18n="child_list.status_active">{{ child.get_status_display }}</span>
           {% elif child.status == "paused" %}
-            <span class="kc-badge kc-badge--amber">{{ child.get_status_display }}</span>
+            <span class="kc-badge kc-badge--amber"
+                  data-i18n="child_list.status_paused">{{ child.get_status_display }}</span>
           {% else %}
-            <span class="kc-badge kc-badge--muted">{{ child.get_status_display }}</span>
+            <span class="kc-badge kc-badge--muted"
+                  data-i18n="child_list.status_left">{{ child.get_status_display }}</span>
           {% endif %}
         </div>
       </div>
       {% if can_edit %}
         <button type="button"
                 id="js-edit-child"
-                class="kc-btn kc-btn--secondary kc-child-header__edit"
-                data-edit-url="{{ edit_url }}">
+                class="kc-btn kc-btn--icon kc-btn--secondary kc-child-header__edit"
+                data-edit-url="{{ edit_url }}"
+                aria-label="Редактировать"
+                title="Редактировать">
           <svg viewBox="0 0 24 24">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
             <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />
           </svg>
-          <span data-i18n="child_card.edit">Редактировать</span>
         </button>
       {% endif %}
     </div>
@@ -105,7 +117,13 @@
 
         var columns = [
           { key: "full_name", label: t("child_contacts.col_name"), sortable: true },
-          { key: "role", label: t("child_contacts.col_role") },
+          {
+            key: "role",
+            label: t("child_contacts.col_role"),
+            render: function (row) {
+              return t("choices.child_contact_role." + row.role_code);
+            },
+          },
           {
             key: "is_payer",
             label: t("child_contacts.col_payer"),
@@ -214,6 +232,7 @@
               cache.communications = html;
               panel.innerHTML = html;
               window.KidsCRM.applyI18n(panel);
+              window.KidsCRM.enhanceForms(panel);
               initCommunicationsTab();
             });
         });
@@ -262,6 +281,7 @@
             cache[slug] = html;
             panel.innerHTML = html;
             window.KidsCRM.applyI18n(panel);
+            window.KidsCRM.enhanceForms(panel);
             runInit(slug);
           });
       });
@@ -270,7 +290,7 @@
       if (editBtn) {
         editBtn.addEventListener("click", function () {
           window.KidsCRM.formModal
-            .open({ url: editBtn.dataset.editUrl, title: t("child_card.edit") })
+            .open({ url: editBtn.dataset.editUrl, title: t("child_card.edit"), size: "lg" })
             .then(function (saved) {
               if (saved) {
                 window.location.reload();

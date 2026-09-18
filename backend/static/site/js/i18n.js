@@ -40,6 +40,25 @@
       var key = node.getAttribute("data-i18n");
       node.textContent = t(key);
     }
+
+    // <option> — не текстовый узел с data-i18n, а атрибут value/label
+    // django-виджета (Select из TextChoices, см. Child.Status и т.п.) —
+    // применяем словарь по паре "группа" (data-i18n-choices на <select>) +
+    // "значение" (option.value), а не по самому тексту (тот на русском и
+    // меняется от локали к локали, а value — стабильный код).
+    var selects = scope.querySelectorAll("[data-i18n-choices]");
+    for (var s = 0; s < selects.length; s += 1) {
+      var select = selects[s];
+      var group = select.getAttribute("data-i18n-choices");
+      var options = select.querySelectorAll("option");
+      for (var o = 0; o < options.length; o += 1) {
+        var option = options[o];
+        if (!option.value) {
+          continue;
+        }
+        option.textContent = t("choices." + group + "." + option.value);
+      }
+    }
   }
 
   window.KidsCRM = window.KidsCRM || {};

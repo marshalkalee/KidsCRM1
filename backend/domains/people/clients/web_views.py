@@ -9,7 +9,11 @@
 заглушки, см. child_card_tabs.py (контракт для Дарьи/Bekzat'а).
 """
 
+import uuid
+from pathlib import Path
+
 from django.contrib import messages
+from django.core.files.storage import default_storage
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -22,6 +26,7 @@ from .child_card_tabs import get_child_card_tabs
 from .forms import (
     ChildContactForm,
     ChildForm,
+    ChildPhotoUploadForm,
     CommunicationLogForm,
     ContactPhoneFormSet,
     ParentContactForm,
@@ -72,7 +77,12 @@ def _contacts_tab_context(request, child):
         {
             "id": str(link.id),
             "full_name": link.parent_contact.full_name,
+            # role_code — сырое значение (например "father"), нужно JS
+            # (child_card.html) для перевода через choices.child_contact_role.*
+            # (i18n.js); role — русский текст как HTML-фолбэк по умолчанию,
+            # тот же принцип, что у всех остальных строк на сайте.
             "role": link.get_role_display(),
+            "role_code": link.role,
             "is_payer": link.is_payer,
             "is_primary_contact": link.is_primary_contact,
             "phone": _first_phone(link) if show_phones else None,
@@ -148,6 +158,27 @@ def child_create(request):
     if _is_ajax(request):
         return render(request, "clients/_child_form_fields.html", {"form": form})
     return render(request, "clients/child_form.html", {"form": form, "is_create": True})
+
+
+@role_required(*CHILD_EDIT_ROLES)
+@require_http_methods(["POST"])
+def child_photo_upload(request):
+    """Заливка файла Dropzone'ом (form-enhance.js) — отдельно от самой
+    ChildForm, потому что при создании Child ещё не существует (нет
+    child_id, на который можно было бы что-то прикрепить), а фото должно
+    заливаться сразу при выборе файла, до отправки всей формы. Возвращает
+    URL — форма просто хранит его в скрытом photo_url (см. ChildForm)."""
+    form = ChildPhotoUploadForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return JsonResponse({"success": False, "errors": form.errors}, status=400)
+
+    uploaded = form.cleaned_data["file"]
+    extension = Path(uploaded.name).suffix.lower()
+    saved_path = default_storage.save(f"children/photos/{uuid.uuid4()}{extension}", uploaded)
+    # URLField на Child требует абсолютный URL (со схемой/хостом) — путь
+    # относительно MEDIA_URL сам по себе такую проверку не пройдёт.
+    url = request.build_absolute_uri(default_storage.url(saved_path))
+    return JsonResponse({"success": True, "url": url})
 
 
 @role_required()

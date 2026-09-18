@@ -1,6 +1,6 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{ kc_lang }}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -21,6 +21,10 @@
           href="{% static 'site/css/vendor/bootstrap.min.css' %}" />
     <link rel="stylesheet"
           href="{% static 'site/css/vendor/select2.min.css' %}" />
+    <link rel="stylesheet"
+          href="{% static 'site/css/vendor/bootstrap-datepicker.min.css' %}" />
+    <link rel="stylesheet"
+          href="{% static 'site/css/vendor/dropzone.min.css' %}" />
     <link rel="stylesheet" href="{% static 'site/css/tokens.css' %}" />
     <link rel="stylesheet" href="{% static 'site/css/layout.css' %}" />
     <link rel="stylesheet" href="{% static 'site/css/kc.css' %}" />
@@ -42,6 +46,7 @@
             {% endblock page_title %}
           </h1>
           {% include "includes/branch_switcher.html" %}
+          {% include "includes/language_switcher.html" %}
           {# Имя пользователя/выход — в подвале сайдбара (includes/sidebar.html), #}
           {# чтобы на мобильном не пришлось прятать имя рядом с переключателем. #}
         </header>
@@ -55,6 +60,9 @@
     <script src="{% static 'site/js/vendor/jquery.min.js' %}"></script>
     <script src="{% static 'site/js/vendor/bootstrap.bundle.min.js' %}"></script>
     <script src="{% static 'site/js/vendor/select2.min.js' %}"></script>
+    <script src="{% static 'site/js/vendor/bootstrap-datepicker.min.js' %}"></script>
+    <script src="{% static 'site/js/vendor/bootstrap-datepicker.ru.min.js' %}"></script>
+    <script src="{% static 'site/js/vendor/dropzone.min.js' %}"></script>
     <!-- Своя i18n-система: бандл собран backend/scripts/build_i18n_bundle.py -->
     <script src="{% static 'site/js/i18n-bundle.js' %}"></script>
     <script src="{% static 'site/js/i18n.js' %}"></script>
@@ -68,6 +76,7 @@
     <script src="{% static 'site/js/components/table.js' %}"></script>
     <script src="{% static 'site/js/components/picker.js' %}"></script>
     <script src="{% static 'site/js/components/formset.js' %}"></script>
+    <script src="{% static 'site/js/components/form-enhance.js' %}"></script>
     <script src="{% static 'site/js/app.js' %}"></script>
     {# djlint:off #}
     {% if messages %}

@@ -40,17 +40,21 @@ class KcFormMixin:
     """Проставляет .kc-form-input каждому текстовому/числовому/select-полю —
     иначе пришлось бы повторять attrs={"class": ...} на каждом поле формы.
 
-    CheckboxSelectMultiple — тоже не текстовое поле, хоть и не CheckboxInput:
-    без этого исключения .kc-form-input (display:block; width:100%) попадал
-    на каждый чекбокс в списке (например, "Доступно в филиалах" у
-    направления), раздувая его на всю строку и роняя подпись под него."""
+    CheckboxSelectMultiple/RadioSelect — тоже не текстовые поля, хоть и не
+    CheckboxInput: без этого исключения .kc-form-input (display:block;
+    width:100%) попадал бы на каждый чекбокс/радио в списке (например,
+    "Доступно в филиалах" у направления, "Канал" в форме коммуникации),
+    раздувая его на всю строку и роняя подпись под него."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             if isinstance(
                 field.widget,
-                forms.CheckboxInput | forms.CheckboxSelectMultiple | forms.HiddenInput,
+                forms.CheckboxInput
+                | forms.CheckboxSelectMultiple
+                | forms.HiddenInput
+                | forms.RadioSelect,
             ):
                 continue
             existing = field.widget.attrs.get("class", "")
@@ -192,10 +196,12 @@ class BranchMultipleChoiceField(forms.ModelMultipleChoiceField):
 
 
 class DirectionForm(KcFormMixin, forms.ModelForm):
+    # SelectMultiple + Select2 (form-enhance.js), не CheckboxSelectMultiple —
+    # список филиалов растёт, чекбоксами это не масштабируется.
     branches = BranchMultipleChoiceField(
         queryset=Branch.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple,
+        widget=forms.SelectMultiple,
         label="Доступно в филиалах",
     )
 

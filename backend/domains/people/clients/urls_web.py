@@ -12,6 +12,11 @@ app_name = "clients_web"
 urlpatterns = [
     path("clients/children/", web_views.child_list, name="child-list"),
     path("clients/children/create/", web_views.child_create, name="child-create"),
+    path(
+        "clients/children/photo-upload/",
+        web_views.child_photo_upload,
+        name="child-photo-upload",
+    ),
     path("clients/children/<uuid:child_id>/", web_views.child_card, name="child-card"),
     path("clients/children/<uuid:child_id>/edit/", web_views.child_edit, name="child-edit"),
     path(

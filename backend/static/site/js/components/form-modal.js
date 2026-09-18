@@ -23,7 +23,15 @@
       if (!el.name) {
         continue;
       }
-      if (el.type === "checkbox") {
+      if (el.tagName === "SELECT" && el.multiple) {
+        // el.value у <select multiple> отдаёт только ПЕРВЫЙ выбранный
+        // вариант — направления/филиалы (Select2 поверх такого select,
+        // form-enhance.js) сохранялись бы только одним значением из
+        // нескольких выбранных.
+        Array.from(el.selectedOptions).forEach(function (option) {
+          formData.append(el.name, option.value);
+        });
+      } else if (el.type === "checkbox") {
         if (el.checked) {
           formData.append(el.name, el.value || "on");
         }
@@ -45,16 +53,26 @@
         return true;
       }
       // Сервер вернул фрагмент формы заново — с ошибками валидации и уже
-      // введёнными значениями (Django bound form), просто подменяем тело.
+      // введёнными значениями (Django bound form). Новые DOM-узлы (innerHTML
+      // пересобирает их с нуля) не переведены и не знают о Select2/
+      // datepicker/Dropzone — оба вызова обязательны, не только подмена тела.
       return response.text().then(function (html) {
         bodyEl.innerHTML = html;
+        if (window.KidsCRM.applyI18n) {
+          window.KidsCRM.applyI18n(bodyEl);
+        }
+        if (window.KidsCRM.enhanceForms) {
+          window.KidsCRM.enhanceForms(bodyEl);
+        }
         return false;
       });
     });
   }
 
   /**
-   * options: { url, title, saveText, cancelText }
+   * options: { url, title, saveText, cancelText, size }
+   * size — тот же аргумент, что у modal.open() ("lg" и т.п.); по умолчанию
+   * средний размер Bootstrap-модалки.
    * Возвращает Promise<boolean> — true, если форма была успешно сохранена.
    */
   function open(options) {
@@ -67,6 +85,7 @@
         return window.KidsCRM.modal.open({
           title: options.title,
           bodyHtml: html,
+          size: options.size,
           buttons: [
             { text: options.cancelText || t("branch_form.cancel"), variant: "secondary", value: false },
             {

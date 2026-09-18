@@ -1,0 +1,27 @@
+<div class="dropdown kc-lang-switcher">
+  <button type="button"
+          class="kc-btn kc-btn--icon kc-btn--secondary"
+          data-bs-toggle="dropdown"
+          aria-expanded="false"
+          aria-label="Язык интерфейса"
+          title="Язык интерфейса">
+    <svg viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    {% for code, name in kc_languages %}
+      <li>
+        <form method="post" action="{% url 'core:switch-language' %}">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.path }}" />
+          <input type="hidden" name="lang" value="{{ code }}" />
+          <button type="submit"
+                  class="dropdown-item{% if code == kc_lang %} active{% endif %}">{{ name }}</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+</div>

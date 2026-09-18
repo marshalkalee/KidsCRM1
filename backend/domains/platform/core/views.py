@@ -3,6 +3,7 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from domains.platform.core.context_processors import LANGUAGES
 from domains.platform.core.decorators import role_required
 from domains.platform.tenants.models import Branch
 
@@ -70,5 +71,16 @@ def switch_branch(request):
             .exists()
         ):
             request.session["active_branch_id"] = branch_id
+    next_url = request.POST.get("next") or "core:home"
+    return redirect(next_url)
+
+
+@require_http_methods(["POST"])
+def switch_language(request):
+    """Переключатель языка в шапке — та же схема хранения, что у филиала
+    (сессия), см. context_processors.language()."""
+    lang = request.POST.get("lang")
+    if lang in dict(LANGUAGES):
+        request.session["lang"] = lang
     next_url = request.POST.get("next") or "core:home"
     return redirect(next_url)

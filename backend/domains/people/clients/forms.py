@@ -24,6 +24,10 @@ class ChildContactForm(KcFormMixin, forms.ModelForm):
             "is_payer": "Плательщик",
             "is_primary_contact": "Основной контакт",
         }
+        widgets = {
+            # data-i18n-choices — см. комментарий у ChildForm.Meta.widgets.
+            "role": forms.Select(attrs={"data-i18n-choices": "child_contact_role"}),
+        }
 
     def __init__(self, *args, child=None, organization=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -61,6 +65,25 @@ class ChildForm(KcFormMixin, forms.ModelForm):
     ChildSerializer (API), проверяется по единому Child.ALLOWED_STATUS_TRANSITIONS,
     а не переизобретается здесь."""
 
+    # input_formats: ISO первым — это формат, который шлёт API/тесты и в
+    # котором Django хранит DateField; "dd.mm.yyyy" вторым — то, что реально
+    # печатает bootstrap-datepicker (form-enhance.js) в текстовое поле.
+    #
+    # Атрибут-маркер называется data-datefield, а не data-datepicker: jQuery
+    # автоматически заводит data-datepicker="true" как $el.data('datepicker')
+    # === true ДО вызова плагина, а bootstrap-datepicker хранит свой
+    # инстанс ровно под тем же ключом ('datepicker') и проверяет его через
+    # if (!data) — видит уже истинное значение и молча не создаёт календарь
+    # (без ошибок, без событий). Название "datepicker" для маркера в
+    # принципе конфликтует с любым jQuery-плагином с таким же именем.
+    birth_date = forms.DateField(
+        input_formats=["%Y-%m-%d", "%d.%m.%Y"],
+        widget=forms.DateInput(
+            attrs={"data-datefield": "true", "autocomplete": "off"}, format="%d.%m.%Y"
+        ),
+        label="Дата рождения",
+    )
+
     class Meta:
         model = Child
         fields = [
@@ -76,11 +99,10 @@ class ChildForm(KcFormMixin, forms.ModelForm):
         ]
         labels = {
             "full_name": "ФИО",
-            "birth_date": "Дата рождения",
             "gender": "Пол",
             "directions": "Направления",
             "medical_notes": "Медицинские заметки и особенности",
-            "photo_url": "Фото (URL)",
+            "photo_url": "Фото",
             "status": "Статус",
             "leave_reason": "Причина ухода",
             "consent_given": "Согласие на обработку данных получено",
@@ -88,7 +110,28 @@ class ChildForm(KcFormMixin, forms.ModelForm):
         widgets = {
             "medical_notes": forms.Textarea(attrs={"rows": 3}),
             "leave_reason": forms.Textarea(attrs={"rows": 2}),
-            "directions": forms.CheckboxSelectMultiple,
+            # SelectMultiple, не CheckboxSelectMultiple — список направлений
+            # растёт, чекбоксами это не масштабируется; JS (form-enhance.js)
+            # оживляет его в Select2 (уже подключённая, но нигде не
+            # использованная библиотека) — с поиском и чипами.
+            "directions": forms.SelectMultiple,
+            # Заполняется JS после загрузки файла в Dropzone
+            # (form-enhance.js) — сам инпут не виден, см. _child_form_fields.html.
+            "photo_url": forms.HiddenInput,
+            # data-i18n-choices — <option> у TextChoices рендерится Django
+            # сразу на русском (см. Gender/Status в models.py), data-i18n на
+            # сам текст тут не навесить (это не статичная разметка шаблона,
+            # а вывод виджета); i18n.js по этому атрибуту переводит option
+            # по паре группа+value, см. applyToDom().
+            "gender": forms.Select(attrs={"data-i18n-choices": "child_gender"}),
+            # Триггер для initConditionalFields (form-enhance.js) — поле
+            # "Причина ухода" видно только при этом статусе, см. шаблон.
+            "status": forms.Select(
+                attrs={
+                    "data-conditional-trigger": "child_status",
+                    "data-i18n-choices": "child_status",
+                }
+            ),
         }
 
     def __init__(self, *args, organization=None, **kwargs):
@@ -183,6 +226,10 @@ class ContactPhoneForm(KcFormMixin, forms.ModelForm):
             "number": "Номер",
             "phone_type": "Тип",
         }
+        widgets = {
+            # data-i18n-choices — см. комментарий у ChildForm.Meta.widgets.
+            "phone_type": forms.Select(attrs={"data-i18n-choices": "phone_type"}),
+        }
 
     def clean_number(self):
         value = self.cleaned_data.get("number")
@@ -220,3 +267,14 @@ ContactPhoneFormSet = forms.inlineformset_factory(
     min_num=1,
     validate_min=True,
 )
+
+
+class ChildPhotoUploadForm(forms.Form):
+    """Загрузка фото ребёнка через Dropzone (form-enhance.js) — отдельный
+    маленький эндпоинт (child_photo_upload), не часть ChildForm: файл
+    заливается сразу при выборе, до сохранения самой карточки (Child может
+    ещё не существовать — экран создания). forms.ImageField сам проверяет
+    через Pillow, что это реальное изображение, не просто файл с чужим
+    расширением."""
+
+    file = forms.ImageField()

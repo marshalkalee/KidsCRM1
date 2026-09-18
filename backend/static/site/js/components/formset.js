@@ -41,5 +41,16 @@
       rowsContainer.appendChild(wrapper.firstChild);
     }
     totalFormsInput.value = String(index + 1);
+
+    // Новая строка — свежие DOM-узлы (innerHTML их пересобрал с нуля), они
+    // не переведены (см. i18n.js) и не знают о Select2/datepicker
+    // (form-enhance.js) — то же самое, что и после AJAX-вставки формы в
+    // модалку (modal.js), просто другой источник вставки.
+    if (window.KidsCRM.applyI18n) {
+      window.KidsCRM.applyI18n(rowsContainer);
+    }
+    if (window.KidsCRM.enhanceForms) {
+      window.KidsCRM.enhanceForms(rowsContainer);
+    }
   });
 })(window, document);
