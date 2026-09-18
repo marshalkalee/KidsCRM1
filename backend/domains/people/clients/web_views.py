@@ -10,19 +10,24 @@
 """
 
 import uuid
+from decimal import Decimal
 from pathlib import Path
 
 import pytz
 from django.contrib import messages
 from django.core.files.storage import default_storage
+from django.db.models import Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone as dj_timezone
 from django.views.decorators.http import require_http_methods
 
+from domains.money.payments.models import Payment
+from domains.money.subscriptions.models import Subscription
 from domains.platform.core.decorators import role_required
 from domains.platform.core.role_permissions import can_view_phone
+from domains.scheduling.groups.models import GroupMembership
 
 from .child_card_tabs import get_child_card_tabs
 from .forms import (
@@ -59,6 +64,79 @@ def _branch_names(child):
         branch.name for direction in child.directions.all() for branch in direction.branches.all()
     }
     return ", ".join(sorted(branch_names)) if branch_names else None
+
+
+def _direction_names(child):
+    names = {direction.name for direction in child.directions.all()}
+    return ", ".join(sorted(names)) if names else None
+
+
+CHILD_SORT_FIELDS = {
+    "full_name": "full_name",
+    "age": "birth_date",
+    "status": "status",
+}
+
+
+def _sort_child_queryset(qs, sort, direction):
+    # Только скалярные поля Child — филиал/направление/группа/абонемент/
+    # долг многозначны (M2M/через другую таблицу) или требуют коррелирующих
+    # подзапросов, сортировка по ним сюда не входит в этой задаче (JS-колонки
+    # с этими ключами не помечены sortable, см. child_list.html).
+    field = CHILD_SORT_FIELDS.get(sort, "full_name")
+    descending = direction == "desc"
+    if sort == "age":
+        # Возраст не хранится (Child.age — вычисляемое свойство, не
+        # колонка БД) — сортируем по birth_date, направление обратное:
+        # старше = раньше родился, т.е. "возраст по убыванию" — это
+        # "дата рождения по возрастанию".
+        descending = not descending
+    ordering = f"-{field}" if descending else field
+    # pk — стабильный tie-break: без него строки с одинаковым значением
+    # сортируемого поля могут менять порядок между запросами соседних
+    # страниц (LIMIT/OFFSET без полного порядка не гарантирует стабильность).
+    return qs.order_by(ordering, "pk")
+
+
+def _batch_child_extras(organization, child_ids):
+    """Группа/абонемент/долг для страницы детей — батчем на весь список
+    child_ids, не запросом на каждую строку (ТЗ п. 10.2: иначе 50 строк на
+    странице превращаются в 100+ запросов, и бюджет ≤1с не выдерживается)."""
+    memberships = (
+        GroupMembership.objects.for_tenant(organization)
+        .filter(child_id__in=child_ids, left_at__isnull=True)
+        .select_related("group")
+    )
+    groups_by_child = {}
+    for membership in memberships:
+        groups_by_child.setdefault(membership.child_id, []).append(membership.group.name)
+
+    subscriptions = list(
+        Subscription.objects.for_tenant(organization)
+        .filter(child_id__in=child_ids)
+        .select_related("subscription_type_version")
+        .order_by("child_id", "-starts_on")
+    )
+    paid_by_subscription = dict(
+        Payment.objects.for_tenant(organization)
+        .filter(subscription_id__in=[sub.id for sub in subscriptions])
+        .values("subscription_id")
+        .annotate(total=Sum("amount"))
+        .values_list("subscription_id", "total")
+    )
+
+    # subscriptions уже отсортированы по (child_id, -starts_on) — первое
+    # вхождение на child_id — самый свежий абонемент, без лишнего запроса
+    # с MAX(starts_on)/DISTINCT.
+    latest_subscription_by_child = {}
+    debt_by_child = {}
+    for sub in subscriptions:
+        latest_subscription_by_child.setdefault(sub.child_id, sub)
+        paid = paid_by_subscription.get(sub.id) or Decimal(0)
+        owed = max(Decimal(0), sub.price - paid)
+        debt_by_child[sub.child_id] = debt_by_child.get(sub.child_id, Decimal(0)) + owed
+
+    return groups_by_child, latest_subscription_by_child, debt_by_child
 
 
 def _contacts_tab_context(request, child):
@@ -143,25 +221,64 @@ def _communications_tab_context(request, child, form=None):
 
 @role_required()
 def child_list(request):
-    children = Child.objects.for_tenant(request.user.organization).prefetch_related(
-        "directions__branches"
+    # Каркас страницы — сами строки грузит child_list_data() (удалённый
+    # режим table.js): на 5000 детей отдавать всё разом одним json_script,
+    # как раньше, не укладывается в бюджет ≤1с (ТЗ п. 10.2).
+    return render(
+        request,
+        "clients/child_list.html",
+        {"can_manage": request.user.role in CHILD_EDIT_ROLES},
     )
+
+
+@role_required()
+def child_list_data(request):
+    organization = request.user.organization
+    qs = Child.objects.for_tenant(organization).prefetch_related("directions__branches")
+    qs = _sort_child_queryset(
+        qs, request.GET.get("sort", "full_name"), request.GET.get("dir", "asc")
+    )
+
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+    except ValueError:
+        page = 1
+    try:
+        # Верхняя граница — не даёт с фронта произвольным page_size вернуться
+        # к "отдать всё разом" тем же способом, который этот тикет убирает.
+        page_size = min(max(1, int(request.GET.get("page_size", 50))), 200)
+    except ValueError:
+        page_size = 50
+
+    total = qs.count()
+    start = (page - 1) * page_size
+    children = list(qs[start : start + page_size])
+
+    child_ids = [child.id for child in children]
+    groups_by_child, subscription_by_child, debt_by_child = _batch_child_extras(
+        organization, child_ids
+    )
+
     rows = [
         {
             "id": str(child.id),
             "full_name": child.full_name,
             "age": child.age,
-            "status": child.status,
             "branch_names": _branch_names(child) or "—",
+            "direction_names": _direction_names(child) or "—",
+            "group_names": ", ".join(groups_by_child.get(child.id, [])) or "—",
+            "status": child.status,
+            "subscription_name": (
+                subscription_by_child[child.id].subscription_type_version.name
+                if child.id in subscription_by_child
+                else None
+            ),
+            "debt": str(debt_by_child.get(child.id, Decimal(0))),
             "card_url": reverse("clients_web:child-card", args=[child.pk]),
         }
         for child in children
     ]
-    return render(
-        request,
-        "clients/child_list.html",
-        {"rows": rows, "can_manage": request.user.role in CHILD_EDIT_ROLES},
-    )
+    return JsonResponse({"rows": rows, "total": total})
 
 
 @role_required(*CHILD_EDIT_ROLES)

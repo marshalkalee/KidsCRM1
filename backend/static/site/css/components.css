@@ -340,6 +340,14 @@
   color: var(--kc-color-text-muted);
 }
 
+/* Долг > 0 в списке детей (ТЗ п. 4.1) — визуально выделить, не только
+   цифрой: администратор сканирует таблицу взглядом, а не читает каждую
+   строку. */
+.kc-text-danger {
+  color: var(--kc-color-danger);
+  font-weight: var(--kc-font-weight-bold);
+}
+
 .kc-child-header {
   display: flex;
   flex-wrap: wrap;
