@@ -1,4 +1,6 @@
 from django.contrib.auth import authenticate, login, logout
+from django.db import connection
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -84,3 +86,16 @@ def switch_language(request):
         request.session["lang"] = lang
     next_url = request.POST.get("next") or "core:home"
     return redirect(next_url)
+
+
+def healthz(request):
+    """
+    Проверка живости для мониторинга (staging/прод) — не для бизнес-логики.
+    Проверяет реальное соединение с БД, а не просто "процесс жив".
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except Exception as exc:
+        return JsonResponse({"status": "error", "detail": str(exc)}, status=503)
+    return JsonResponse({"status": "ok"})

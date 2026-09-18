@@ -11,4 +11,5 @@ urlpatterns = [
     path("switch-branch/", views.switch_branch, name="switch-branch"),
     path("switch-language/", views.switch_language, name="switch-language"),
     path("dev/components/", views.components_demo, name="components-demo"),
+    path("healthz/", views.healthz, name="healthz"),
 ]
