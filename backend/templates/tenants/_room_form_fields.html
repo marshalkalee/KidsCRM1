@@ -1,0 +1,17 @@
+{% csrf_token %}
+<div class="kc-card">
+  <div class="kc-field{% if form.name.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label kc-field__label--required"
+           for="{{ form.name.id_for_label }}"
+           data-i18n="room_form.name">{{ form.name.label }}</label>
+    {{ form.name }}
+    <div class="kc-field__error">{{ form.name.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.capacity.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.capacity.id_for_label }}"
+           data-i18n="room_form.capacity">{{ form.capacity.label }}</label>
+    {{ form.capacity }}
+    <div class="kc-field__error">{{ form.capacity.errors|first }}</div>
+  </div>
+</div>
