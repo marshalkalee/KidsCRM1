@@ -1,6 +1,8 @@
+from django.db.utils import IntegrityError
 from django.test import TestCase
 
 from domains.platform.tenants.models import Organization
+
 from .models import SubscriptionType
 from .subscription_types import get_selectable_subscription_types, update_rules
 
@@ -9,8 +11,11 @@ class SubscriptionTypeVersioningTests(TestCase):
     def setUp(self):
         self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
         self.st = SubscriptionType.objects.create(
-            organization=self.org, name="8 занятий", price=25000,
-            quota_sessions=8, duration_days=30,
+            organization=self.org,
+            name="8 занятий",
+            price=25000,
+            quota_sessions=8,
+            duration_days=30,
         )
 
     def test_update_rules_creates_new_version_and_keeps_old_unchanged(self):
@@ -27,11 +32,17 @@ class SubscriptionTypeVersioningTests(TestCase):
         self.st.save(update_fields=["is_active"])
 
         self.assertNotIn(self.st, get_selectable_subscription_types(self.org))
-        self.assertTrue(SubscriptionType.objects.for_tenant(self.org).filter(pk=self.st.pk).exists())
+        self.assertTrue(
+            SubscriptionType.objects.for_tenant(self.org).filter(pk=self.st.pk).exists()
+        )
 
     def test_unlimited_xor_quota_constraint(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(IntegrityError):
             SubscriptionType.objects.create(
-                organization=self.org, name="Безлимит", price=50000,
-                is_unlimited=True, quota_sessions=8, duration_days=30,
+                organization=self.org,
+                name="Безлимит",
+                price=50000,
+                is_unlimited=True,
+                quota_sessions=8,
+                duration_days=30,
             )
