@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — {{ child.full_name }}
+{% endblock title %}
+{% block page_title %}
+  {% if is_create %}
+    <span data-i18n="child_form.title_create">Новый ребёнок</span>
+  {% else %}
+    <span data-i18n="child_form.title_edit">Редактирование ребёнка</span>
+  {% endif %}
+{% endblock page_title %}
+{% block content %}
+  <form method="post">
+    {% include "clients/_child_form_fields.html" %}
+    <button type="submit"
+            class="kc-btn kc-btn--primary"
+            data-i18n="child_form.save">Сохранить</button>
+    {% if is_create %}
+      <a href="{% url 'clients_web:child-list' %}"
+         class="kc-btn kc-btn--secondary"
+         data-i18n="child_form.cancel">Отмена</a>
+    {% else %}
+      <a href="{% url 'clients_web:child-card' child.pk %}"
+         class="kc-btn kc-btn--secondary"
+         data-i18n="child_form.cancel">Отмена</a>
+    {% endif %}
+  </form>
+{% endblock content %}

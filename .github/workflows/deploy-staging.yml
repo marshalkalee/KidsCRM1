@@ -1,0 +1,40 @@
+name: Deploy staging
+
+# Мёрдж в main -> автовыкат на staging. Нужны секреты в GitHub
+# (Settings -> Environments -> staging, см. README "Staging и деплой" —
+# кто имеет доступ к ним): STAGING_SSH_HOST, STAGING_SSH_USER,
+# STAGING_SSH_KEY, STAGING_DOMAIN.
+#
+# До выбора хостинга (ADR-002, открытый вопрос) эти секреты не заведены —
+# workflow при пуше в main будет падать на шаге деплоя, это ожидаемо и не
+# баг. Как только появится реальный сервер — завести секреты, и всё
+# заработает без правок этого файла.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Деплой на staging по SSH
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/kidscrm
+            git fetch origin main
+            git reset --hard origin/main
+            docker compose -f docker-compose.staging.yml up -d --build
+            docker compose -f docker-compose.staging.yml exec -T backend python manage.py migrate --noinput
+
+      - name: Проверить, что staging реально поднялся
+        run: curl -fsS "https://${{ secrets.STAGING_DOMAIN }}/healthz/"

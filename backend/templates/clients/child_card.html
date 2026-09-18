@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% load kc_format %}
+{% block title %}
+  KidsCRM — {{ child.full_name }}
+{% endblock title %}
+{% block page_title %}
+  {{ child.full_name }}
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-card kc-child-header">
+    <div class="kc-child-header__main">
+      {% if child.photo_url %}
+        <img src="{{ child.photo_url }}"
+             alt=""
+             width="40"
+             height="40"
+             class="kc-avatar kc-avatar--lg kc-avatar--photo" />
+      {% else %}
+        <div class="kc-avatar kc-avatar--lg">{{ child.full_name|kc_initials }}</div>
+      {% endif %}
+      <div>
+        <h2 class="kc-child-header__name">{{ child.full_name }}</h2>
+        <div class="kc-child-header__meta">
+          <span data-i18n="child_card.age">Возраст</span>: {{ child.age }}
+          {% if child.status == "active" %}
+            <span class="kc-badge kc-badge--green"
+                  data-i18n="child_list.status_active">{{ child.get_status_display }}</span>
+          {% elif child.status == "paused" %}
+            <span class="kc-badge kc-badge--amber"
+                  data-i18n="child_list.status_paused">{{ child.get_status_display }}</span>
+          {% else %}
+            <span class="kc-badge kc-badge--muted"
+                  data-i18n="child_list.status_left">{{ child.get_status_display }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% if can_edit %}
+        <button type="button"
+                id="js-edit-child"
+                class="kc-btn kc-btn--icon kc-btn--secondary kc-child-header__edit"
+                data-edit-url="{{ edit_url }}"
+                aria-label="Редактировать"
+                title="Редактировать">
+          <svg viewBox="0 0 24 24">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />
+          </svg>
+        </button>
+      {% endif %}
+    </div>
+    <dl class="kc-child-header__facts">
+      <div>
+        <dt data-i18n="child_card.branch">Филиал</dt>
+        <dd>
+          {{ branch_names|default:"—" }}
+        </dd>
+      </div>
+      <div>
+        <dt data-i18n="child_card.groups">Группы</dt>
+        <dd class="kc-muted" data-i18n="child_card.groups_placeholder">
+          Появятся, когда подключат группы
+        </dd>
+      </div>
+    </dl>
+  </div>
+  <div class="kc-tabs" id="js-child-tabs" role="tablist">
+    {% for tab in tabs %}
+      <button type="button"
+              class="kc-tabs__item{% if forloop.first %} kc-tabs__item--active{% endif %}"
+              data-slug="{{ tab.slug }}"
+              data-url="{{ tab.url|default:'' }}"
+              data-i18n="{{ tab.label_key }}">{{ tab.label_fallback }}</button>
+    {% endfor %}
+  </div>
+  <div id="js-tab-panel">{% include "clients/_tab_contacts.html" %}</div>
+{% endblock content %}
+{% block extra_js %}
+  <script>
+    (function () {
+      "use strict";
+      var t = window.KidsCRM.t;
+      var panel = document.getElementById("js-tab-panel");
+      var tabsNav = document.getElementById("js-child-tabs");
+      // slug -> html — чтобы не фетчить вкладку повторно при каждом клике;
+      // квик-добавление коммуникации сама обновляет свою запись в кэше.
+      var cache = {};
+
+      function initContactsTab() {
+        var createBtn = document.getElementById("js-create-child-contact");
+        var rowsEl = document.getElementById("child-contacts-data");
+        if (!rowsEl) {
+          return;
+        }
+        var rows = JSON.parse(rowsEl.textContent);
+
+        if (createBtn) {
+          createBtn.addEventListener("click", function () {
+            window.KidsCRM.formModal
+              .open({ url: createBtn.dataset.createUrl, title: t("child_contact_form.title_create") })
+              .then(function (saved) {
+                if (saved) {
+                  window.location.reload();
+                }
+              });
+          });
+        }
+
+        function badge(active, textOn) {
+          var span = document.createElement("span");
+          if (!active) {
+            return span;
+          }
+          span.className = "kc-badge kc-badge--green";
+          span.textContent = textOn;
+          return span;
+        }
+
+        var columns = [
+          { key: "full_name", label: t("child_contacts.col_name"), sortable: true },
+          {
+            key: "role",
+            label: t("child_contacts.col_role"),
+            render: function (row) {
+              return t("choices.child_contact_role." + row.role_code);
+            },
+          },
+          {
+            key: "is_payer",
+            label: t("child_contacts.col_payer"),
+            render: function (row) {
+              return badge(row.is_payer, t("child_contacts.payer"));
+            },
+          },
+          {
+            key: "is_primary_contact",
+            label: t("child_contacts.col_primary"),
+            render: function (row) {
+              return badge(row.is_primary_contact, t("child_contacts.primary"));
+            },
+          },
+          {
+            key: "phone",
+            label: t("child_contacts.col_phone"),
+            render: function (row) {
+              return row.phone || "—";
+            },
+          },
+        ];
+
+        var ICONS = {
+          edit: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />',
+          detach: '<line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />',
+        };
+
+        function iconButton(icon, label, extraClass, onClick) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "kc-btn kc-btn--icon " + extraClass;
+          btn.setAttribute("aria-label", label);
+          btn.title = label;
+          btn.innerHTML = '<svg viewBox="0 0 24 24">' + icon + "</svg>";
+          btn.addEventListener("click", onClick);
+          return btn;
+        }
+
+        if (document.getElementById("js-create-child-contact")) {
+          columns.push({
+            key: "actions",
+            label: t("child_contacts.col_actions"),
+            render: function (row) {
+              var wrap = document.createElement("div");
+              wrap.appendChild(
+                iconButton(ICONS.edit, t("child_contacts.edit"), "kc-btn--secondary", function () {
+                  window.KidsCRM.formModal
+                    .open({ url: row.edit_url, title: t("child_contact_form.title_edit") })
+                    .then(function (saved) {
+                      if (saved) {
+                        window.location.reload();
+                      }
+                    });
+                })
+              );
+              wrap.appendChild(
+                iconButton(ICONS.detach, t("child_contacts.detach"), "kc-btn--danger", function () {
+                  window.KidsCRM.modal
+                    .confirmDanger({
+                      title: t("child_contacts.confirm_detach_title"),
+                      message: row.full_name,
+                      confirmText: t("child_contacts.detach"),
+                    })
+                    .then(function (confirmed) {
+                      if (confirmed) {
+                        document.getElementById("js-detach-form-" + row.id).submit();
+                      }
+                    });
+                })
+              );
+              return wrap;
+            },
+          });
+        }
+
+        var table = window.KidsCRM.table.init("#js-contacts-table", {
+          columns: columns,
+          pageSize: 10,
+          rowKey: function (row) {
+            return row.id;
+          },
+          emptyTextKey: "child_contacts.empty",
+        });
+        table.setData(rows);
+      }
+
+      function initCommunicationsTab() {
+        var feedRoot = document.getElementById("js-child-communications");
+        var feedDataEl = document.getElementById("child-communications-data");
+        if (feedRoot && feedDataEl) {
+          window.KidsCRM.communicationsFeed.init(feedRoot, JSON.parse(feedDataEl.textContent), {
+            showContactName: true,
+            emptyTextKey: "communications.empty",
+          });
+        }
+
+        var form = document.getElementById("js-communication-form");
+        if (!form) {
+          return;
+        }
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var submitBtn = form.querySelector('button[type="submit"]');
+          submitBtn.disabled = true;
+          fetch(form.action, {
+            method: "POST",
+            body: new FormData(form),
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+          })
+            .then(function (r) {
+              return r.text();
+            })
+            .then(function (html) {
+              cache.communications = html;
+              panel.innerHTML = html;
+              window.KidsCRM.applyI18n(panel);
+              window.KidsCRM.enhanceForms(panel);
+              initCommunicationsTab();
+            });
+        });
+      }
+
+      var INITTERS = { contacts: initContactsTab, communications: initCommunicationsTab };
+
+      function runInit(slug) {
+        if (INITTERS[slug]) {
+          INITTERS[slug]();
+        }
+      }
+
+      // Первая вкладка уже отрисована сервером в исходном HTML — просто
+      // инициализируем её, без лишнего фетча ради самого частого случая.
+      runInit("contacts");
+
+      tabsNav.addEventListener("click", function (e) {
+        var btn = e.target.closest(".kc-tabs__item");
+        if (!btn) {
+          return;
+        }
+        var slug = btn.dataset.slug;
+        var url = btn.dataset.url;
+
+        tabsNav.querySelectorAll(".kc-tabs__item").forEach(function (b) {
+          b.classList.toggle("kc-tabs__item--active", b === btn);
+        });
+
+        if (!url) {
+          panel.innerHTML = '<p class="kc-empty-state">' + t("child_card.tab_coming_soon") + "</p>";
+          return;
+        }
+
+        if (cache[slug]) {
+          panel.innerHTML = cache[slug];
+          runInit(slug);
+          return;
+        }
+
+        fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
+          .then(function (r) {
+            return r.text();
+          })
+          .then(function (html) {
+            cache[slug] = html;
+            panel.innerHTML = html;
+            window.KidsCRM.applyI18n(panel);
+            window.KidsCRM.enhanceForms(panel);
+            runInit(slug);
+          });
+      });
+
+      var editBtn = document.getElementById("js-edit-child");
+      if (editBtn) {
+        editBtn.addEventListener("click", function () {
+          window.KidsCRM.formModal
+            .open({ url: editBtn.dataset.editUrl, title: t("child_card.edit"), size: "lg" })
+            .then(function (saved) {
+              if (saved) {
+                window.location.reload();
+              }
+            });
+        });
+      }
+    })();
+  </script>
+{% endblock extra_js %}
