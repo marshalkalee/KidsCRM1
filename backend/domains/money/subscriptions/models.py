@@ -199,3 +199,25 @@ class LessonConsumption(TenantModel):
                 name="unique_active_consumption_per_child_lesson",
             ),
         ]
+
+
+class BalanceDiscrepancy(TenantModel):
+    """Найдено фоновой сверкой (ТЗ п. 3.2, 11.3). Кэш чинится сразу же при
+    обнаружении — запись остаётся как история для отчёта: если расхождения
+    появляются регулярно, это баг, а не разовая гонка."""
+
+    subscription = models.ForeignKey(
+        Subscription, on_delete=models.CASCADE, related_name="discrepancies"
+    )
+    cached_value = models.SmallIntegerField(null=True)
+    recomputed_value = models.SmallIntegerField(null=True)
+    found_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-found_at"]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.subscription}: {self.cached_value} -> {self.recomputed_value} "
+            f"({self.found_at:%d.%m.%Y})"
+        )
