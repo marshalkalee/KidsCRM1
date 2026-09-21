@@ -15,6 +15,11 @@ def recompute_sessions_remaining(subscription: Subscription) -> int | None:
     return subscription.ledger_entries.aggregate(total=Sum("delta"))["total"] or 0
 
 
+def sync_cache(subscription: Subscription) -> None:
+    subscription.sessions_remaining_cache = recompute_sessions_remaining(subscription)
+    subscription.save(update_fields=["sessions_remaining_cache"])
+
+
 @transaction.atomic
 def add_ledger_entry(
     subscription: Subscription, *, kind: str, delta: int, comment: str = ""
@@ -26,8 +31,7 @@ def add_ledger_entry(
         delta=delta,
         comment=comment,
     )
-    subscription.sessions_remaining_cache = recompute_sessions_remaining(subscription)
-    subscription.save(update_fields=["sessions_remaining_cache"])
+    sync_cache(subscription)
     return entry
 
 

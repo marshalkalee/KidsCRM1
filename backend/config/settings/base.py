@@ -204,12 +204,18 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
 CELERY_BEAT_SCHEDULE = {
     "generate-lessons-daily": {
         "task": (
             "domains.scheduling.schedule_templates.tasks"
             ".generate_lessons_for_all_active_templates"
         ),
+        "schedule": crontab(hour=3, minute=0),
+    },
+    "reconcile-subscription-balances": {
+        "task": "domains.money.subscriptions.tasks.reconcile_balances_task",
         "schedule": crontab(hour=3, minute=0),
     },
 }
