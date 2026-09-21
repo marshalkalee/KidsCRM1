@@ -58,6 +58,7 @@ DOMAIN_APPS = [
     "domains.platform.notifications",
     "domains.platform.tasks",
     "domains.platform.leads",
+    "domains.scheduling.schedule_templates",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + DOMAIN_APPS
