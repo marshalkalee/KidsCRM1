@@ -23,14 +23,11 @@
         <div class="kc-child-header__meta">
           <span data-i18n="child_card.age">Возраст</span>: {{ child.age }}
           {% if child.status == "active" %}
-            <span class="kc-badge kc-badge--green"
-                  data-i18n="child_list.status_active">{{ child.get_status_display }}</span>
+            <span class="kc-badge kc-badge--green" data-i18n="child_list.status_active">{{ child.get_status_display }}</span>
           {% elif child.status == "paused" %}
-            <span class="kc-badge kc-badge--amber"
-                  data-i18n="child_list.status_paused">{{ child.get_status_display }}</span>
+            <span class="kc-badge kc-badge--amber" data-i18n="child_list.status_paused">{{ child.get_status_display }}</span>
           {% else %}
-            <span class="kc-badge kc-badge--muted"
-                  data-i18n="child_list.status_left">{{ child.get_status_display }}</span>
+            <span class="kc-badge kc-badge--muted" data-i18n="child_list.status_left">{{ child.get_status_display }}</span>
           {% endif %}
         </div>
       </div>
