@@ -5,12 +5,14 @@
 
 from django.urls import path
 
-from . import web_views
+from . import import_views, web_views
 
 app_name = "clients_web"
 
 urlpatterns = [
     path("clients/search/", web_views.global_search, name="global-search"),
+    path("clients/import/", import_views.child_import_upload, name="child-import-upload"),
+    path("clients/import/confirm/", import_views.child_import_confirm, name="child-import-confirm"),
     path("clients/children/", web_views.child_list, name="child-list"),
     path("clients/children/data/", web_views.child_list_data, name="child-list-data"),
     path("clients/children/create/", web_views.child_create, name="child-create"),

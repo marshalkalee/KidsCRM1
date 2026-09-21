@@ -313,3 +313,18 @@ class ChildPhotoUploadForm(forms.Form):
     расширением."""
 
     file = forms.ImageField()
+
+
+class ChildImportUploadForm(KcFormMixin, forms.Form):
+    """Загрузка Excel-файла для импорта детей (import_service.py) —
+    формат/парсинг там, здесь только проверка расширения (быстрая
+    подсказка администратору до попытки разбора, не подмена валидации
+    самого файла)."""
+
+    file = forms.FileField(label="Файл (.xlsx)")
+
+    def clean_file(self):
+        uploaded = self.cleaned_data["file"]
+        if not uploaded.name.lower().endswith(".xlsx"):
+            raise forms.ValidationError("Ожидается файл .xlsx.")
+        return uploaded
