@@ -513,9 +513,7 @@ def parent_card(request, pk):
     # href кнопки WhatsApp тому, кому нельзя видеть его текстом.
     call_url = f"tel:{phones[0].number}" if phones else None
     whatsapp_url = (
-        f"https://wa.me/{parent.whatsapp.lstrip('+')}"
-        if show_phones and parent.whatsapp
-        else None
+        f"https://wa.me/{parent.whatsapp.lstrip('+')}" if show_phones and parent.whatsapp else None
     )
     return render(
         request,
@@ -559,9 +557,7 @@ def parent_communication_create(request, pk):
     else:
         form = ParentCommunicationLogForm(parent_contact=parent)
     if _is_ajax(request):
-        return render(
-            request, "clients/_parent_communication_form_fields.html", {"form": form}
-        )
+        return render(request, "clients/_parent_communication_form_fields.html", {"form": form})
     return render(
         request,
         "clients/parent_communication_form.html",
