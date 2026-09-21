@@ -7,6 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -202,3 +203,13 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+CELERY_BEAT_SCHEDULE = {
+    "generate-lessons-daily": {
+        "task": (
+            "domains.scheduling.schedule_templates.tasks"
+            ".generate_lessons_for_all_active_templates"
+        ),
+        "schedule": crontab(hour=3, minute=0),
+    },
+}

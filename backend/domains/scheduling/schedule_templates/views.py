@@ -1,3 +1,4 @@
+from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -34,17 +35,30 @@ class ScheduleTemplateViewSet(TenantModelViewSet):
 
     @action(detail=True, methods=["post"])
     def generate(self, request, pk=None):
-        """Генерировать занятия из шаблона."""
         template = self.get_object()
         dry_run = request.data.get("dry_run", False)
-        result = generate_lessons_from_template(template, dry_run=dry_run)
+
+        if dry_run:
+            result = generate_lessons_from_template(template, dry_run=True)
+            return Response(
+                {
+                    "created_count": len(result["created"]),
+                    "skipped_count": result["skipped"],
+                    "dry_run": True,
+                    "lessons": result["created"],
+                }
+            )
+
+        from domains.scheduling.schedule_templates.tasks import generate_lessons_for_template
+
+        task = generate_lessons_for_template.delay(str(template.id))
         return Response(
             {
-                "created_count": len(result["created"]),
-                "skipped_count": result["skipped"],
-                "dry_run": dry_run,
-                "lessons": result["created"] if dry_run else [],
-            }
+                "task_id": task.id,
+                "message": "Генерация запущена в фоне.",
+                "dry_run": False,
+            },
+            status=status.HTTP_202_ACCEPTED,
         )
 
     @action(detail=True, methods=["get"])
