@@ -2,6 +2,16 @@
   <div class="kc-global-search"
        id="kc-global-search"
        data-global-search-url="{{ kc_global_search_url }}">
+    <button type="button"
+            class="kc-btn kc-btn--icon kc-btn--secondary kc-global-search__toggle"
+            data-global-search-toggle
+            aria-label="Поиск"
+            title="Поиск">
+      <svg viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="7" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+      </svg>
+    </button>
     <div class="kc-search-input">
       <input class="kc-form-input"
              type="search"
@@ -10,6 +20,10 @@
              placeholder="Поиск: ребёнок, родитель, телефон" />
       <span class="kc-spinner kc-search-input__spinner"></span>
     </div>
+    <button type="button"
+            class="kc-btn kc-btn--icon kc-global-search__close"
+            data-global-search-close
+            aria-label="Закрыть">✕</button>
     <div class="kc-global-search__results" data-global-search-results hidden></div>
   </div>
 {% endif %}

@@ -86,10 +86,26 @@
     var t = window.KidsCRM.t;
     var input = root.querySelector("input");
     var resultsEl = root.querySelector("[data-global-search-results]");
+    var toggleBtn = root.querySelector("[data-global-search-toggle]");
+    var closeBtn = root.querySelector("[data-global-search-close]");
     var controller = null;
 
     function hideResults() {
       resultsEl.hidden = true;
+    }
+
+    // Открыть/закрыть — только мобильный вид (иконка вместо постоянного
+    // поля, см. components.css); на десктопе кнопок нет (display: none),
+    // эти функции просто никогда не вызываются оттуда.
+    function openOverlay() {
+      root.classList.add("kc-global-search--open");
+      input.focus();
+    }
+
+    function closeOverlay() {
+      root.classList.remove("kc-global-search--open");
+      hideResults();
+      input.value = "";
     }
 
     function search(value) {
@@ -119,6 +135,13 @@
 
     window.KidsCRM.searchInput.init(input, { onSearch: search, delay: 300 });
 
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", openOverlay);
+    }
+    if (closeBtn) {
+      closeBtn.addEventListener("click", closeOverlay);
+    }
+
     document.addEventListener("click", function (event) {
       if (!root.contains(event.target)) {
         hideResults();
@@ -127,8 +150,12 @@
 
     input.addEventListener("keydown", function (event) {
       if (event.key === "Escape") {
-        hideResults();
-        input.blur();
+        if (root.classList.contains("kc-global-search--open")) {
+          closeOverlay();
+        } else {
+          hideResults();
+          input.blur();
+        }
       }
     });
 

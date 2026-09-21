@@ -25,11 +25,14 @@ from django.utils import timezone as dj_timezone
 from django.views.decorators.http import require_http_methods
 
 from domains.money.payments.models import Payment
+from domains.money.subscriptions.debt import debtor_child_ids
 from domains.money.subscriptions.models import Subscription
+from domains.money.subscriptions.renewals import expiring_child_ids
 from domains.platform.core.decorators import role_required
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.role_permissions import can_view_phone
-from domains.scheduling.groups.models import GroupMembership
+from domains.platform.tenants.models import Branch, Direction
+from domains.scheduling.groups.models import Group, GroupMembership
 
 from .child_card_tabs import get_child_card_tabs
 from .forms import (
@@ -98,6 +101,43 @@ def _sort_child_queryset(qs, sort, direction):
     # сортируемого поля могут менять порядок между запросами соседних
     # страниц (LIMIT/OFFSET без полного порядка не гарантирует стабильность).
     return qs.order_by(ordering, "pk")
+
+
+def _filter_child_queryset(qs, organization, params):
+    """Шесть фильтров ТЗ п. 4.1, комбинируются между собой (AND). Долг/
+    абонемент — через domains.money.subscriptions (debtor_child_ids/
+    expiring_child_ids), не своей копией арифметики: иначе этот список и
+    будущие экраны Bekzat'а («Задолженности»/«Продления») разойдутся."""
+    needs_distinct = False
+
+    branch_id = params.get("branch")
+    if branch_id:
+        qs = qs.filter(directions__branches__id=branch_id)
+        needs_distinct = True
+
+    direction_id = params.get("direction")
+    if direction_id:
+        qs = qs.filter(directions__id=direction_id)
+        needs_distinct = True
+
+    group_id = params.get("group")
+    if group_id:
+        qs = qs.filter(
+            group_memberships__group_id=group_id, group_memberships__left_at__isnull=True
+        )
+        needs_distinct = True
+
+    status = params.get("status")
+    if status in Child.Status.values:
+        qs = qs.filter(status=status)
+
+    if params.get("has_debt") == "1":
+        qs = qs.filter(id__in=debtor_child_ids(organization))
+
+    if params.get("expiring") == "1":
+        qs = qs.filter(id__in=expiring_child_ids(organization))
+
+    return qs.distinct() if needs_distinct else qs
 
 
 def _batch_child_extras(organization, child_ids):
@@ -381,11 +421,21 @@ def _communications_tab_context(request, child, form=None):
 def child_list(request):
     # Каркас страницы — сами строки грузит child_list_data() (удалённый
     # режим table.js): на 5000 детей отдавать всё разом одним json_script,
-    # как раньше, не укладывается в бюджет ≤1с (ТЗ п. 10.2).
+    # как раньше, не укладывается в бюджет ≤1с (ТЗ п. 10.2). Списки для
+    # <select> фильтров — реальные справочники организации; сами значения
+    # фильтров read/write делает JS из query-строки (см. child_list.html),
+    # не эта view — ссылку с фильтрами должно быть можно переслать коллеге.
+    organization = request.user.organization
     return render(
         request,
         "clients/child_list.html",
-        {"can_manage": request.user.role in CHILD_EDIT_ROLES},
+        {
+            "can_manage": request.user.role in CHILD_EDIT_ROLES,
+            "branches": Branch.objects.for_tenant(organization).filter(is_active=True),
+            "directions": Direction.objects.for_tenant(organization),
+            "groups": Group.objects.for_tenant(organization),
+            "statuses": Child.Status.choices,
+        },
     )
 
 
@@ -393,6 +443,7 @@ def child_list(request):
 def child_list_data(request):
     organization = request.user.organization
     qs = Child.objects.for_tenant(organization).prefetch_related("directions__branches")
+    qs = _filter_child_queryset(qs, organization, request.GET)
     qs = _sort_child_queryset(
         qs, request.GET.get("sort", "full_name"), request.GET.get("dir", "asc")
     )

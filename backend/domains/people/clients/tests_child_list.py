@@ -372,6 +372,194 @@ class ChildListDataWebViewTests(TestCase):
         self.assertEqual(len(response["rows"]), 3)
 
 
+class ChildListFiltersWebViewTests(TestCase):
+    """Фильтры списка детей (ТЗ п. 4.1): филиал/направление/группа/статус/
+    долг/абонемент, комбинируются между собой. Долг/абонемент — через
+    domains.money.subscriptions (debtor_child_ids/expiring_child_ids), не
+    свою копию арифметики (см. tests_debt.py/tests_renewals.py там же)."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.owner = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.branch = Branch.objects.create(organization=self.org, name="Центральный")
+        self.other_branch = Branch.objects.create(organization=self.org, name="Северный")
+        self.direction = Direction.objects.create(organization=self.org, name="Балет")
+        self.direction.branches.add(self.branch)
+        self.other_direction = Direction.objects.create(organization=self.org, name="Гимнастика")
+        self.other_direction.branches.add(self.other_branch)
+        self.client.force_login(self.owner)
+
+    def _make_child(self, name, **extra):
+        defaults = {
+            "organization": self.org,
+            "full_name": name,
+            "birth_date": datetime.date.today() - datetime.timedelta(days=365 * 7),
+            "gender": Child.Gender.FEMALE,
+        }
+        defaults.update(extra)
+        return Child.objects.create(**defaults)
+
+    def _get(self, params):
+        return self.client.get(reverse("clients_web:child-list-data"), params).json()
+
+    def test_filter_by_branch(self):
+        in_branch = self._make_child("В филиале")
+        in_branch.directions.add(self.direction)
+        elsewhere = self._make_child("В другом филиале")
+        elsewhere.directions.add(self.other_direction)
+
+        response = self._get({"branch": str(self.branch.id)})
+
+        self.assertEqual([r["full_name"] for r in response["rows"]], ["В филиале"])
+
+    def test_filter_by_direction(self):
+        ballet = self._make_child("Балет")
+        ballet.directions.add(self.direction)
+        gymnastics = self._make_child("Гимнастика")
+        gymnastics.directions.add(self.other_direction)
+
+        response = self._get({"direction": str(self.direction.id)})
+
+        self.assertEqual([r["full_name"] for r in response["rows"]], ["Балет"])
+
+    def test_filter_by_group_only_counts_active_membership(self):
+        group = Group.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            direction=self.direction,
+            name="Группа А",
+            capacity=10,
+        )
+        current_member = self._make_child("Сейчас в группе")
+        GroupMembership.objects.create(
+            organization=self.org,
+            group=group,
+            child=current_member,
+            joined_at=datetime.date.today(),
+        )
+        past_member = self._make_child("Раньше был в группе")
+        GroupMembership.objects.create(
+            organization=self.org,
+            group=group,
+            child=past_member,
+            joined_at=datetime.date.today() - datetime.timedelta(days=100),
+            left_at=datetime.date.today() - datetime.timedelta(days=10),
+        )
+
+        response = self._get({"group": str(group.id)})
+
+        self.assertEqual([r["full_name"] for r in response["rows"]], ["Сейчас в группе"])
+
+    def test_filter_by_status(self):
+        self._make_child("Активна", status=Child.Status.ACTIVE)
+        self._make_child("Ушла", status=Child.Status.LEFT)
+
+        response = self._get({"status": "left"})
+
+        self.assertEqual([r["full_name"] for r in response["rows"]], ["Ушла"])
+
+    def _sell(self, child, paid_amount, **overrides):
+        sub_type = overrides.pop(
+            "subscription_type",
+            create_type(
+                self.org, name="8 занятий", price=25000, quota_sessions=8, duration_days=30
+            ),
+        )
+        kwargs = dict(
+            actor=self.owner,
+            child=child,
+            subscription_type_version=sub_type.versions.latest(),
+            direction=self.direction,
+            starts_on=datetime.date.today(),
+            ends_on=datetime.date.today() + datetime.timedelta(days=30),
+            paid_amount=paid_amount,
+            payment_method="cash",
+        )
+        kwargs.update(overrides)
+        return sell_subscription(**kwargs)
+
+    def test_filter_by_has_debt(self):
+        debtor = self._make_child("Должник")
+        self._sell(debtor, paid_amount=Decimal("10000"))
+        paid_up = self._make_child("Оплатил")
+        self._sell(paid_up, paid_amount=Decimal("25000"))
+
+        response = self._get({"has_debt": "1"})
+
+        self.assertEqual([r["full_name"] for r in response["rows"]], ["Должник"])
+
+    def test_filter_by_expiring(self):
+        sub_type = create_type(
+            self.org, name="8 занятий", price=25000, quota_sessions=8, duration_days=30
+        )
+        soon = self._make_child("Скоро истекает")
+        sell_subscription(
+            actor=self.owner,
+            child=soon,
+            subscription_type_version=sub_type.versions.latest(),
+            direction=self.direction,
+            starts_on=datetime.date.today(),
+            ends_on=datetime.date.today() + datetime.timedelta(days=2),
+            paid_amount=Decimal("25000"),
+            payment_method="cash",
+        )
+        far = self._make_child("Далеко до конца")
+        sell_subscription(
+            actor=self.owner,
+            child=far,
+            subscription_type_version=sub_type.versions.latest(),
+            direction=self.direction,
+            starts_on=datetime.date.today(),
+            ends_on=datetime.date.today() + datetime.timedelta(days=60),
+            paid_amount=Decimal("25000"),
+            payment_method="cash",
+        )
+
+        response = self._get({"expiring": "1"})
+
+        self.assertEqual([r["full_name"] for r in response["rows"]], ["Скоро истекает"])
+
+    def test_filters_combine_with_and(self):
+        # Критерий приёмки: "филиал + направление + есть долг" — только
+        # ребёнок, подходящий под ВСЕ три условия одновременно.
+        matches_all = self._make_child("Подходит везде")
+        matches_all.directions.add(self.direction)
+        self._sell(matches_all, paid_amount=Decimal("10000"))
+
+        wrong_branch = self._make_child("Другой филиал, тот же долг")
+        wrong_branch.directions.add(self.other_direction)
+        self._sell(wrong_branch, paid_amount=Decimal("10000"))
+
+        no_debt = self._make_child("Тот же филиал, оплатил")
+        no_debt.directions.add(self.direction)
+        self._sell(no_debt, paid_amount=Decimal("25000"))
+
+        response = self._get(
+            {
+                "branch": str(self.branch.id),
+                "direction": str(self.direction.id),
+                "has_debt": "1",
+            }
+        )
+
+        self.assertEqual([r["full_name"] for r in response["rows"]], ["Подходит везде"])
+
+    def test_total_reflects_filtered_count_not_full_list(self):
+        matching = self._make_child("Подходит")
+        matching.directions.add(self.direction)
+        self._make_child("Не подходит")
+
+        response = self._get({"direction": str(self.direction.id)})
+
+        self.assertEqual(response["total"], 1)
+
+
 class ParentListWebViewTests(TestCase):
     def setUp(self):
         self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
