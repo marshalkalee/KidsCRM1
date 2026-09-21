@@ -189,4 +189,8 @@ CELERY_BEAT_SCHEDULE = {
         "task": "domains.money.subscriptions.tasks.reconcile_balances_task",
         "schedule": crontab(hour=3, minute=0),  # ночью, вне часов работы центра
     },
+    "update-subscription-statuses": {
+        "task": "domains.money.subscriptions.tasks.update_subscription_statuses_task",
+        "schedule": crontab(hour=0, minute=5),  # сразу после полуночи — "утром уже истёк"
+    },
 }
