@@ -94,6 +94,7 @@ TEMPLATES = [
                 "domains.platform.core.context_processors.branches",
                 "domains.platform.core.context_processors.user_permissions",
                 "domains.platform.core.context_processors.language",
+                "domains.platform.core.context_processors.global_search",
             ],
         },
     },

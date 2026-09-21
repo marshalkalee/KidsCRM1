@@ -1,0 +1,15 @@
+{% if kc_global_search_url %}
+  <div class="kc-global-search"
+       id="kc-global-search"
+       data-global-search-url="{{ kc_global_search_url }}">
+    <div class="kc-search-input">
+      <input class="kc-form-input"
+             type="search"
+             id="js-global-search-input"
+             autocomplete="off"
+             placeholder="Поиск: ребёнок, родитель, телефон" />
+      <span class="kc-spinner kc-search-input__spinner"></span>
+    </div>
+    <div class="kc-global-search__results" data-global-search-results hidden></div>
+  </div>
+{% endif %}

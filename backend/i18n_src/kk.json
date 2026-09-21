@@ -290,5 +290,10 @@
   "communications_feed.date_to": "Аяқталу күні",
   "communications_feed.date_reset": "Тазалау",
   "communications_feed.show_older": "Ескі жазбаларды көрсету",
-  "communications_feed.show_recent": "Ескі жазбаларды жасыру"
+  "communications_feed.show_recent": "Ескі жазбаларды жасыру",
+  "global_search.type_child": "Бала",
+  "global_search.type_parent": "Ата-ана",
+  "global_search.matched_parent_name": "Ата-ана",
+  "global_search.matched_phone": "Телефон",
+  "global_search.no_results": "Ешнәрсе табылмады"
 }

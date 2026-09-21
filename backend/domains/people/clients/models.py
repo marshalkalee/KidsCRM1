@@ -10,6 +10,7 @@
 """
 
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -76,6 +77,16 @@ class Child(TenantModel):
                 name="child_org_status_idx",
                 condition=models.Q(deleted_at__isnull=True),
             ),
+            # GIN + gin_trgm_ops (pg_trgm, включено в 0001_baseline) — под
+            # частичное совпадение без учёта регистра (ТЗ п. 4.1, 10.2:
+            # быстрый поиск, 3 символа среди 5000 детей ≤1с). Обычный
+            # B-tree выше не ускоряет ILIKE '%...%' — только точное
+            # совпадение/сортировку по началу строки.
+            GinIndex(
+                fields=["full_name"],
+                name="child_full_name_trgm_idx",
+                opclasses=["gin_trgm_ops"],
+            ),
         ]
 
     def __str__(self) -> str:
@@ -113,6 +124,20 @@ class ParentContact(TenantModel):
 
     class Meta:
         ordering = ["full_name"]
+        # GIN + gin_trgm_ops — быстрый поиск по родителю (ТЗ п. 4.1,
+        # единый поиск по имени ребёнка/родителя/телефону).
+        indexes = [
+            GinIndex(
+                fields=["full_name"],
+                name="pc_full_name_trgm_idx",
+                opclasses=["gin_trgm_ops"],
+            ),
+            GinIndex(
+                fields=["whatsapp"],
+                name="pc_whatsapp_trgm_idx",
+                opclasses=["gin_trgm_ops"],
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.full_name
@@ -139,6 +164,15 @@ class ContactPhone(TenantModel):
 
     class Meta:
         ordering = ["parent_contact_id", "phone_type"]
+        indexes = [
+            # GIN + gin_trgm_ops — поиск по телефону (частичный: последние
+            # 4 цифры и т.п., ТЗ п. 4.1 критерий приёмки).
+            GinIndex(
+                fields=["number"],
+                name="cp_number_trgm_idx",
+                opclasses=["gin_trgm_ops"],
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.number

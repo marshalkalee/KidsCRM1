@@ -318,6 +318,81 @@
 }
 
 /* ---------------------------------------------------------------------- */
+/* Глобальный поиск в шапке (ТЗ п. 4.1)                                    */
+/* ---------------------------------------------------------------------- */
+
+.kc-global-search {
+  position: relative;
+  flex: 0 1 320px;
+  min-width: 160px;
+}
+
+.kc-global-search__results {
+  position: absolute;
+  top: calc(100% + var(--kc-space-1));
+  left: 0;
+  right: 0;
+  background: var(--kc-color-surface);
+  border: 1px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-md);
+  box-shadow: var(--kc-shadow-md);
+  max-height: 60vh;
+  overflow-y: auto;
+  z-index: 60;
+}
+
+.kc-global-search__item {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-2) var(--kc-space-3);
+  text-decoration: none;
+  color: var(--kc-color-text);
+}
+
+.kc-global-search__item:hover,
+.kc-global-search__item:focus {
+  background: var(--kc-color-bg);
+}
+
+.kc-global-search__item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.kc-global-search__item-title {
+  font-weight: var(--kc-font-weight-bold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kc-global-search__item-sub {
+  font-size: var(--kc-font-size-sm);
+  color: var(--kc-color-text-muted);
+}
+
+.kc-global-search__results .kc-empty-state {
+  padding: var(--kc-space-3);
+  margin: 0;
+}
+
+/* Персистентное поле, а не иконка-переключатель (решение при обсуждении
+   тикета) — на мобильном ширины шапки не хватает всем элементам в одну
+   строку, поэтому строка переносится (flex-wrap), а не прячет поиск. */
+@media (max-width: 768px) {
+  .kc-header {
+    flex-wrap: wrap;
+  }
+
+  .kc-global-search {
+    order: 10;
+    flex: 1 1 100%;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
 /* Модалка                                                                 */
 /* ---------------------------------------------------------------------- */
 

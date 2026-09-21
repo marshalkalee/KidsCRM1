@@ -290,5 +290,10 @@
   "communications_feed.date_to": "Date to",
   "communications_feed.date_reset": "Reset",
   "communications_feed.show_older": "Show older entries",
-  "communications_feed.show_recent": "Hide older entries"
+  "communications_feed.show_recent": "Hide older entries",
+  "global_search.type_child": "Child",
+  "global_search.type_parent": "Parent",
+  "global_search.matched_parent_name": "Parent",
+  "global_search.matched_phone": "Phone",
+  "global_search.no_results": "Nothing found"
 }

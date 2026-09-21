@@ -290,5 +290,10 @@
   "communications_feed.date_to": "Дата до",
   "communications_feed.date_reset": "Сбросить",
   "communications_feed.show_older": "Показать старые записи",
-  "communications_feed.show_recent": "Скрыть старые записи"
+  "communications_feed.show_recent": "Скрыть старые записи",
+  "global_search.type_child": "Ребёнок",
+  "global_search.type_parent": "Родитель",
+  "global_search.matched_parent_name": "Родитель",
+  "global_search.matched_phone": "Телефон",
+  "global_search.no_results": "Ничего не найдено"
 }

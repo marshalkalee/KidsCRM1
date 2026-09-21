@@ -45,6 +45,7 @@
             {% block page_title %}
             {% endblock page_title %}
           </h1>
+          {% include "includes/header_search.html" %}
           {% include "includes/branch_switcher.html" %}
           {% include "includes/language_switcher.html" %}
           {# Имя пользователя/выход — в подвале сайдбара (includes/sidebar.html), #}
@@ -78,6 +79,7 @@
     <script src="{% static 'site/js/components/formset.js' %}"></script>
     <script src="{% static 'site/js/components/form-enhance.js' %}"></script>
     <script src="{% static 'site/js/components/communications-feed.js' %}"></script>
+    <script src="{% static 'site/js/components/global-search.js' %}"></script>
     <script src="{% static 'site/js/app.js' %}"></script>
     {# djlint:off #}
     {% if messages %}
