@@ -163,6 +163,34 @@ def _phone_digits_and_normalized(raw_query):
     return digits, normalized
 
 
+def _phone_field_matches(value, phone_digits, phone_normalized):
+    if not value:
+        return False
+    if phone_normalized and value == phone_normalized:
+        return True
+    return bool(phone_digits) and phone_digits in re.sub(r"\D", "", value)
+
+
+def _find_matched_phone(parent, phone_digits, phone_normalized):
+    """
+    Что из телефонов родителя реально совпало с запросом — не "просто
+    показать whatsapp, если он есть" (это давало неверный matched_detail:
+    родитель мог совпасть по ContactPhone.number, а в подсказке всё равно
+    показывался бы его несовпавший whatsapp).
+    """
+    if _phone_field_matches(parent.whatsapp, phone_digits, phone_normalized):
+        return parent.whatsapp
+    phone_match = next(
+        (
+            p
+            for p in parent.phones.all()
+            if _phone_field_matches(p.number, phone_digits, phone_normalized)
+        ),
+        None,
+    )
+    return phone_match.number if phone_match else None
+
+
 def _global_search_children(organization, query, phone_digits, phone_normalized):
     filters = Q(full_name__icontains=query) | Q(
         contacts__parent_contact__full_name__icontains=query
@@ -192,23 +220,9 @@ def _global_search_children(organization, query, phone_digits, phone_normalized)
                 if query_lower in parent.full_name.lower():
                     matched_on, matched_detail = "parent_name", parent.full_name
                     break
-                parent_digits = re.sub(r"\D", "", parent.whatsapp or "")
-                if phone_digits and (
-                    phone_digits in parent_digits or parent.whatsapp == phone_normalized
-                ):
-                    matched_on, matched_detail = "phone", parent.whatsapp
-                    break
-                phone_match = next(
-                    (
-                        p
-                        for p in parent.phones.all()
-                        if (phone_digits and phone_digits in re.sub(r"\D", "", p.number))
-                        or p.number == phone_normalized
-                    ),
-                    None,
-                )
-                if phone_match:
-                    matched_on, matched_detail = "phone", phone_match.number
+                matched_phone = _find_matched_phone(parent, phone_digits, phone_normalized)
+                if matched_phone:
+                    matched_on, matched_detail = "phone", matched_phone
                     break
         results.append(
             {
@@ -230,20 +244,16 @@ def _global_search_parents(organization, query, phone_digits, phone_normalized):
     if phone_normalized:
         filters |= Q(whatsapp=phone_normalized) | Q(phones__number=phone_normalized)
 
-    # Родитель с привязанными детьми уже виден через них (см.
-    # _global_search_children выше) — здесь только "самостоятельные"
-    # родители без единого ребёнка. Без этого исключения один и тот же
-    # телефон давал бы и карточку родителя, и карточку каждого его
-    # ребёнка отдельными строками — противоречит критерию приёмки "один
-    # номер в разных написаниях — один результат".
-    linked_parent_ids = ChildContact.objects.for_tenant(organization).values_list(
-        "parent_contact_id", flat=True
-    )
-
+    # Родитель — своя строка всегда, даже если у него есть дети: иначе
+    # через поиск нельзя попасть в его собственную карточку (контакты,
+    # коммуникации, WhatsApp), только в карточки детей. "Один номер в
+    # разных написаниях — один результат" (ТЗ п. 4.1) — про стабильность
+    # написания номера, а не про то, что родитель и его ребёнок должны
+    # схлопнуться в одну строку; бейджи "Родитель"/"Ребёнок" в выдаче
+    # различают их и так.
     parents = (
         ParentContact.objects.for_tenant(organization)
         .filter(filters)
-        .exclude(id__in=linked_parent_ids)
         .distinct()
         .order_by("full_name")
         .prefetch_related("phones")[:GLOBAL_SEARCH_LIMIT_PER_TYPE]
@@ -255,18 +265,8 @@ def _global_search_parents(organization, query, phone_digits, phone_normalized):
         if query_lower in parent.full_name.lower():
             matched_on, matched_detail = "parent_name", None
         else:
-            matched_on, matched_detail = "phone", parent.whatsapp or None
-            if not matched_detail:
-                phone_match = next(
-                    (
-                        p
-                        for p in parent.phones.all()
-                        if (phone_digits and phone_digits in re.sub(r"\D", "", p.number))
-                        or p.number == phone_normalized
-                    ),
-                    None,
-                )
-                matched_detail = phone_match.number if phone_match else None
+            matched_on = "phone"
+            matched_detail = _find_matched_phone(parent, phone_digits, phone_normalized)
         results.append(
             {
                 "type": "parent",
@@ -324,6 +324,7 @@ def _contacts_tab_context(request, child):
             "is_payer": link.is_payer,
             "is_primary_contact": link.is_primary_contact,
             "phone": _first_phone(link) if show_phones else None,
+            "card_url": reverse("clients_web:parent-card", args=[link.parent_contact.pk]),
             "edit_url": reverse("clients_web:child-contact-edit", args=[child.pk, link.pk]),
             "detach_url": reverse("clients_web:child-contact-detach", args=[child.pk, link.pk]),
         }

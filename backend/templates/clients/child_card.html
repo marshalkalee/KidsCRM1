@@ -113,7 +113,17 @@
         }
 
         var columns = [
-          { key: "full_name", label: t("child_contacts.col_name"), sortable: true },
+          {
+            key: "full_name",
+            label: t("child_contacts.col_name"),
+            sortable: true,
+            render: function (row) {
+              var link = document.createElement("a");
+              link.href = row.card_url;
+              link.textContent = row.full_name;
+              return link;
+            },
+          },
           {
             key: "role",
             label: t("child_contacts.col_role"),

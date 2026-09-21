@@ -81,7 +81,9 @@ class GlobalSearchWebViewTests(TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["id"], str(child.id))
 
-    def test_search_by_parent_name_finds_child(self):
+    def test_search_by_parent_name_finds_child_and_parent(self):
+        # Родитель — своя строка всегда (можно попасть прямо в его
+        # карточку), а не только через привязанного ребёнка.
         child = _make_child(self.org, "Данияр")
         parent = ParentContact.objects.create(organization=self.org, full_name="Иванова Марина")
         ChildContact.objects.create(
@@ -90,11 +92,13 @@ class GlobalSearchWebViewTests(TestCase):
 
         results = self._search("иван")
 
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["type"], "child")
-        self.assertEqual(results[0]["id"], str(child.id))
-        self.assertEqual(results[0]["matched_on"], "parent_name")
-        self.assertEqual(results[0]["matched_detail"], "Иванова Марина")
+        self.assertEqual(len(results), 2)
+        by_type = {r["type"]: r for r in results}
+        self.assertEqual(by_type["child"]["id"], str(child.id))
+        self.assertEqual(by_type["child"]["matched_on"], "parent_name")
+        self.assertEqual(by_type["child"]["matched_detail"], "Иванова Марина")
+        self.assertEqual(by_type["parent"]["id"], str(parent.id))
+        self.assertEqual(by_type["parent"]["matched_on"], "parent_name")
 
     def test_search_by_last_four_digits_of_phone(self):
         child = _make_child(self.org, "Данияр")
@@ -108,27 +112,29 @@ class GlobalSearchWebViewTests(TestCase):
 
         results = self._search("4567")
 
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["id"], str(child.id))
-        self.assertEqual(results[0]["matched_on"], "phone")
+        self.assertEqual(len(results), 2)
+        ids = {r["id"] for r in results}
+        self.assertEqual(ids, {str(child.id), str(parent.id)})
+        self.assertTrue(all(r["matched_on"] == "phone" for r in results))
 
-    def test_same_phone_in_three_written_forms_gives_one_result(self):
+    def test_same_phone_in_three_written_forms_gives_same_results(self):
         child = _make_child(self.org, "Данияр")
         parent = ParentContact.objects.create(organization=self.org, full_name="Иванова Марина")
         ChildContact.objects.create(
             organization=self.org, child=child, parent_contact=parent, role=ChildContact.Role.MOTHER
         )
         # Хранится нормализованным (ContactPhone.save()) — все три написания
-        # ниже должны найти именно эту запись.
+        # ниже должны найти именно эту пару (ребёнок + родитель), а не
+        # промахнуться из-за формы записи ("8" вместо "+7" и т.п.).
         ContactPhone.objects.create(
             organization=self.org, parent_contact=parent, number="+77011234567"
         )
+        expected_ids = {str(child.id), str(parent.id)}
 
         for written_form in ["+7 (701) 123-45-67", "8 701 123 45 67", "77011234567"]:
             with self.subTest(written_form=written_form):
                 results = self._search(written_form)
-                self.assertEqual(len(results), 1)
-                self.assertEqual(results[0]["id"], str(child.id))
+                self.assertEqual({r["id"] for r in results}, expected_ids)
 
     def test_standalone_parent_without_children_is_returned(self):
         parent = ParentContact.objects.create(organization=self.org, full_name="Петрова Анна")
