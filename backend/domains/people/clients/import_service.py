@@ -1,14 +1,16 @@
 """
-Импорт детей из Excel (ТЗ п. 4.1, MVP критерий приёмки №1: "дубли
+Импорт детей из Excel/CSV (ТЗ п. 4.1, MVP критерий приёмки №1: "дубли
 выявлены при импорте") — первый из трёх потребителей ChildService
 (services.py, TRU-8 контракт №2). Не своя копия поиска дублей — весь
 дедуп идёт через ChildService.find_duplicates(), иначе этот экран и
 будущая конвертация заявки (M2) посчитают дубли по-разному.
 
-Формат файла — фиксированные колонки (см. EXPECTED_HEADERS), без
-произвольного сопоставления: администратору проще один раз привести файл
-к формату, чем каждый раз сопоставлять колонки вручную, а сопоставление
-"на глаз" само может стать источником ошибок импорта.
+Откуда берутся колонки файла (маппинг, автоугадывание, чтение
+.xlsx/.csv) — column_mapping.py. Здесь — только то, что происходит
+ПОСЛЕ маппинга: очистка "грязных" значений одного поля (build_row) и
+дедуп/создание записей (resolve_rows/execute_import), не зависящие от
+того, был ли файл .xlsx с фиксированными колонками или .csv с
+маппингом мышью.
 
 Дедуп внутри файла и второй ребёнок в семье внутри ОДНОГО файла — тот же
 сценарий из ТЗ ("тот же телефон, другой ребёнок"), просто оба ребёнка
@@ -22,7 +24,6 @@ import datetime
 import re
 from dataclasses import dataclass, field
 
-import openpyxl
 from django.db.models import Q
 
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
@@ -46,22 +47,6 @@ def _existing_family_child_keys(organization, phone):
     )
     return {(c.full_name.lower(), c.birth_date) for c in children}
 
-
-# Порядок значим только для сообщения об ошибке заголовка — сами колонки
-# ищутся по названию, не по позиции (администратор может переставить
-# столбцы местами в своей копии файла).
-EXPECTED_HEADERS = {
-    "ФИО ребёнка": "child_name",
-    "Дата рождения ребёнка": "birth_date",
-    "Пол ребёнка": "gender",
-    "ФИО родителя": "parent_name",
-    "Телефон родителя": "phone",
-    "Роль родителя": "role",
-    "Медицинские заметки": "medical_notes",
-    "Остаток занятий": "reported_balance",
-}
-OPTIONAL_HEADERS = {"Роль родителя", "Медицинские заметки", "Остаток занятий"}
-REQUIRED_HEADERS = [h for h in EXPECTED_HEADERS if h not in OPTIONAL_HEADERS]
 
 GENDER_ALIASES = {
     "м": Child.Gender.MALE,
@@ -174,6 +159,47 @@ class ImportRow:
         except ValueError:
             return self.gender
 
+    def to_dict(self) -> dict:
+        """Для передачи между шагами (скрытое поле формы / ImportJob.rows_payload)
+        — только примитивы, не сами объекты Child/ParentContact
+        (matched_child/matched_parent восстанавливать не нужно: к моменту
+        сериализации решение уже принято, дальше нужен только id)."""
+        return {
+            "row_number": self.row_number,
+            "child_name": self.child_name,
+            "birth_date": self.birth_date.isoformat() if self.birth_date else None,
+            "gender": self.gender,
+            "parent_name": self.parent_name,
+            "phone": self.phone,
+            "extra_phones": self.extra_phones,
+            "role": self.role,
+            "medical_notes": self.medical_notes,
+            "reported_balance": self.reported_balance,
+            "errors": self.errors,
+            "action": self.action,
+            "matched_parent_id": self.matched_parent_id,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ImportRow":
+        return cls(
+            row_number=data["row_number"],
+            child_name=data.get("child_name", ""),
+            birth_date=(
+                datetime.date.fromisoformat(data["birth_date"]) if data.get("birth_date") else None
+            ),
+            gender=data.get("gender", ""),
+            parent_name=data.get("parent_name", ""),
+            phone=data.get("phone", ""),
+            extra_phones=data.get("extra_phones") or [],
+            role=data.get("role", ChildContact.Role.OTHER),
+            medical_notes=data.get("medical_notes", ""),
+            reported_balance=data.get("reported_balance", ""),
+            errors=data.get("errors") or [],
+            action=data.get("action", RowAction.CREATE_NEW_FAMILY),
+            matched_parent_id=data.get("matched_parent_id"),
+        )
+
 
 # Три формата дат из реальной практики (ТЗ): точки, слэши, ISO — плюс
 # нативная дата Excel (обрабатывается отдельно ниже, это не строка).
@@ -198,110 +224,66 @@ def _clean_str(value) -> str:
     return str(value).strip() if value is not None else ""
 
 
-def _build_merge_lookup(sheet) -> dict[tuple[int, int], object]:
-    """(строка, колонка, 1-based) -> значение якоря объединённой ячейки —
-    объединённые ячейки — реальная грязь (ТЗ): например, ФИО/телефон
-    родителя объединены на несколько строк его детей, и без этой подсказки
-    все строки кроме первой читались бы как пустые."""
-    lookup = {}
-    for merged_range in sheet.merged_cells.ranges:
-        anchor = sheet.cell(row=merged_range.min_row, column=merged_range.min_col).value
-        for row in range(merged_range.min_row, merged_range.max_row + 1):
-            for col in range(merged_range.min_col, merged_range.max_col + 1):
-                if (row, col) != (merged_range.min_row, merged_range.min_col):
-                    lookup[(row, col)] = anchor
-    return lookup
+def build_row(row_number: int, values: dict) -> ImportRow:
+    """Строка после маппинга (column_mapping.apply_mapping) → очищенный
+    ImportRow с ошибками валидации. `values` — {ключ_поля: сырое_значение
+    из файла}, ключ отсутствует или None, если поле не сопоставлено с
+    колонкой (для необязательных полей это нормально)."""
+    row = ImportRow(row_number=row_number)
+    errors = []
+
+    row.child_name = _clean_str(values.get("child_name"))
+    if not row.child_name:
+        errors.append("не заполнено ФИО ребёнка")
+
+    birth_date = _parse_cell_date(values.get("birth_date"))
+    if birth_date is None:
+        errors.append("не удалось разобрать дату рождения (ожидается ДД.ММ.ГГГГ)")
+    row.birth_date = birth_date
+
+    gender_raw = _clean_str(values.get("gender")).lower()
+    gender = GENDER_ALIASES.get(gender_raw)
+    if gender is None:
+        errors.append(f"не удалось разобрать пол ребёнка: {gender_raw!r}")
+    row.gender = gender or ""
+
+    parent_name_raw = _clean_str(values.get("parent_name"))
+    prefix_role, cleaned_parent_name = _split_role_prefix(parent_name_raw)
+    row.parent_name = cleaned_parent_name
+    if not row.parent_name:
+        errors.append("не заполнено ФИО родителя")
+
+    phone_raw = _clean_str(values.get("phone"))
+    normalized_phones = []
+    for candidate in _split_phones(phone_raw):
+        try:
+            normalized = normalize_phone_number(candidate)
+        except InvalidPhoneNumberError:
+            continue
+        if normalized not in normalized_phones:
+            normalized_phones.append(normalized)
+    if not normalized_phones:
+        errors.append(f"не похоже на телефон: {phone_raw!r}")
+        row.phone = phone_raw
+    else:
+        row.phone = normalized_phones[0]
+        row.extra_phones = normalized_phones[1:]
+
+    # Явная колонка "Роль родителя" приоритетнее роли, угаданной из
+    # префикса в имени ("мама Айгерим") — администратор мог заполнить
+    # обе, и явная колонка — более осознанный ввод.
+    role_raw = _clean_str(values.get("role")).lower()
+    row.role = ROLE_ALIASES.get(role_raw) or prefix_role or ChildContact.Role.OTHER
+
+    row.medical_notes = _clean_str(values.get("medical_notes"))
+    row.reported_balance = _clean_str(values.get("reported_balance"))
+
+    row.errors = errors
+    return row
 
 
-def parse_workbook(file) -> tuple[list[ImportRow], list[str]]:
-    """
-    Возвращает (строки, ошибки_заголовка). При ошибке заголовка строки
-    пустые — нет смысла разбирать данные под неверными колонками.
-
-    read_only=False (не потоковый режим) — нужен доступ к
-    merged_cells.ranges и произвольным ячейкам для _build_merge_lookup();
-    для разового admin-действия на файл в тысячи строк это не проблема
-    производительности (не сравнимо с бюджетом списка на 5000 детей).
-    """
-    workbook = openpyxl.load_workbook(file, data_only=True, read_only=False)
-    sheet = workbook.active
-    merge_lookup = _build_merge_lookup(sheet)
-
-    header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
-    header_index = {
-        _clean_str(cell): idx for idx, cell in enumerate(header_row) if _clean_str(cell)
-    }
-    missing = [h for h in REQUIRED_HEADERS if h not in header_index]
-    if missing:
-        return [], [f"В файле не найдены обязательные колонки: {', '.join(missing)}"]
-
-    rows = []
-    for row_number, raw_row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
-        if not any(_clean_str(v) for v in raw_row):
-            continue  # пустая строка — обычный хвост файла, не ошибка
-
-        def cell(header, _raw_row=raw_row, _row_number=row_number):
-            idx = header_index.get(header)
-            if idx is None:
-                return None
-            value = _raw_row[idx] if idx < len(_raw_row) else None
-            if value is None:
-                value = merge_lookup.get((_row_number, idx + 1))
-            return value
-
-        row = ImportRow(row_number=row_number)
-        errors = []
-
-        row.child_name = _clean_str(cell("ФИО ребёнка"))
-        if not row.child_name:
-            errors.append("не заполнено ФИО ребёнка")
-
-        birth_date = _parse_cell_date(cell("Дата рождения ребёнка"))
-        if birth_date is None:
-            errors.append("не удалось разобрать дату рождения (ожидается ДД.МM.ГГГГ)")
-        row.birth_date = birth_date
-
-        gender_raw = _clean_str(cell("Пол ребёнка")).lower()
-        gender = GENDER_ALIASES.get(gender_raw)
-        if gender is None:
-            errors.append(f"не удалось разобрать пол ребёнка: {gender_raw!r}")
-        row.gender = gender or ""
-
-        parent_name_raw = _clean_str(cell("ФИО родителя"))
-        prefix_role, cleaned_parent_name = _split_role_prefix(parent_name_raw)
-        row.parent_name = cleaned_parent_name
-        if not row.parent_name:
-            errors.append("не заполнено ФИО родителя")
-
-        phone_raw = _clean_str(cell("Телефон родителя"))
-        normalized_phones = []
-        for candidate in _split_phones(phone_raw):
-            try:
-                normalized = normalize_phone_number(candidate)
-            except InvalidPhoneNumberError:
-                continue
-            if normalized not in normalized_phones:
-                normalized_phones.append(normalized)
-        if not normalized_phones:
-            errors.append(f"не похоже на телефон: {phone_raw!r}")
-            row.phone = phone_raw
-        else:
-            row.phone = normalized_phones[0]
-            row.extra_phones = normalized_phones[1:]
-
-        # Явная колонка "Роль родителя" приоритетнее роли, угаданной из
-        # префикса в имени ("мама Айгерим") — администратор мог заполнить
-        # обе, и явная колонка — более осознанный ввод.
-        role_raw = _clean_str(cell("Роль родителя")).lower()
-        row.role = ROLE_ALIASES.get(role_raw) or prefix_role or ChildContact.Role.OTHER
-
-        row.medical_notes = _clean_str(cell("Медицинские заметки"))
-        row.reported_balance = _clean_str(cell("Остаток занятий"))
-
-        row.errors = errors
-        rows.append(row)
-
-    return rows, []
+def build_rows(mapped_rows: list[tuple[int, dict]]) -> list[ImportRow]:
+    return [build_row(row_number, values) for row_number, values in mapped_rows]
 
 
 class _PhoneResolutionMap:

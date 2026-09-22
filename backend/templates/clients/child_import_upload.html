@@ -4,16 +4,20 @@
   KidsCRM — импорт детей
 {% endblock title %}
 {% block page_title %}
-  <span data-i18n="child_import.title">Импорт детей из Excel</span>
+  <span data-i18n="child_import.title">Импорт детей</span>
 {% endblock page_title %}
 {% block content %}
   <div class="kc-card">
+    <p data-i18n="child_import.intro_mapping">
+      Загрузите файл .xlsx или .csv как есть — колонки могут называться
+      по-своему, на следующем шаге вы укажете мышью, что чему соответствует.
+    </p>
     <p>
       <a href="{% static 'site/files/child_import_template.xlsx' %}"
          class="kc-btn kc-btn--secondary"
          data-i18n="child_import.download_template">Скачать шаблон .xlsx</a>
     </p>
-    <p data-i18n="child_import.intro">Файл .xlsx с колонками (первая строка — заголовки, порядок колонок не важен):</p>
+    <p data-i18n="child_import.intro_fields">Система умеет распознать следующие поля:</p>
     <ul>
       <li data-i18n="child_import.col_child_name">ФИО ребёнка — обязательно</li>
       <li data-i18n="child_import.col_birth_date">
@@ -41,7 +45,7 @@
       {% if form.non_field_errors %}<div class="kc-field__error">{{ form.non_field_errors|first }}</div>{% endif %}
       <button type="submit"
               class="kc-btn kc-btn--primary"
-              data-i18n="child_import.upload">Загрузить и проверить</button>
+              data-i18n="child_import.upload">Загрузить и сопоставить колонки</button>
     </form>
   </div>
 {% endblock content %}

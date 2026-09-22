@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — импорт детей
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="child_import.job_title">Импорт детей</span>
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-card">
+    <p>
+      <span data-i18n="child_import.job_status">Статус:</span>
+      <span class="kc-badge {% if job.status == 'done' %}kc-badge--green{% elif job.status == 'failed' %}kc-badge--red{% elif job.status == 'running' %}kc-badge--amber{% else %}kc-badge--muted{% endif %}">
+        {{ job.get_status_display }}
+      </span>
+    </p>
+    <p>
+      <span data-i18n="child_import.job_total_rows">Строк к импорту:</span>
+      <strong>{{ job.total_rows }}</strong>
+    </p>
+    {% if job.status == "pending" or job.status == "running" %}
+      <p data-i18n="child_import.job_in_progress">
+        Импорт выполняется в фоне — эта страница не обновляется сама, обновите её вручную через некоторое время.
+      </p>
+      <a href="{% url 'clients_web:child-import-job-status' job.id %}"
+         class="kc-btn kc-btn--secondary"
+         data-i18n="child_import.job_refresh">Обновить статус</a>
+    {% endif %}
+    {% if job.status == "done" %}
+      <p>
+        <span data-i18n="child_import.result_created">Создано новых детей:</span>
+        <strong>{{ job.created_count }}</strong>
+      </p>
+      <p>
+        <span data-i18n="child_import.result_attached">Привязано как второй ребёнок в семье:</span>
+        <strong>{{ job.attached_count }}</strong>
+      </p>
+      <p>
+        <span data-i18n="child_import.result_skipped">Пропущено (дубли/ошибки):</span>
+        <strong>{{ job.skipped_count }}</strong>
+      </p>
+      {% if job.failed_rows %}
+        <p data-i18n="child_import.result_failed_title">Не удалось импортировать:</p>
+        <ul>
+          {% for row_number, error in job.failed_rows %}
+            <li>
+              <span data-i18n="child_import.th_row">Строка</span> {{ row_number }}: {{ error }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if job.unhandled_balances %}
+        <p data-i18n="child_import.result_balances_title">
+          В файле был указан остаток занятий — перенесите вручную, автоматически не создаётся:
+        </p>
+        <ul>
+          {% for row_number, child_name, balance in job.unhandled_balances %}
+            <li>
+              <span data-i18n="child_import.th_row">Строка</span> {{ row_number }} ({{ child_name }}): {{ balance }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <a href="{% url 'clients_web:child-list' %}"
+         class="kc-btn kc-btn--primary"
+         data-i18n="child_import.go_to_list">К списку детей</a>
+    {% endif %}
+    {% if job.status == "failed" %}<div class="kc-field__error">{{ job.error_message }}</div>{% endif %}
+  </div>
+{% endblock content %}

@@ -308,3 +308,68 @@ class CommunicationLog(TenantModel):
 
     def __str__(self) -> str:
         return f"{self.get_channel_display()} — {self.child_id} ({self.created_at:%Y-%m-%d})"
+
+
+class ImportColumnMapping(TenantModel):
+    """Сохранённый маппинг колонок файла → поля системы (ТЗ п. 4.1) —
+    повторный импорт файла с тем же составом колонок не требует
+    настраивать заново. Ключ — точный набор заголовков (headers_key), не
+    имя файла: два разных файла с одинаковыми колонками должны получить
+    один и тот же сохранённый маппинг."""
+
+    # "|".join(file_headers) — для быстрого поиска/уникальности; JSONField
+    # саму по себе так индексировать/сравнивать неудобно.
+    headers_key = models.CharField(max_length=1000)
+    file_headers = models.JSONField()
+    mapping = models.JSONField()  # {"child_name": "ФИО ребёнка", ...}
+    csv_delimiter = models.CharField(max_length=4, blank=True)
+    csv_encoding = models.CharField(max_length=32, blank=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "headers_key"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_mapping_per_headers",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Маппинг {self.organization_id} ({len(self.file_headers)} колонок)"
+
+
+class ImportJob(TenantModel):
+    """Импорт файла — фоновая задача (ТЗ п. 10.1), не HTTP-запрос: на
+    файле в тысячи строк дедуп (ChildService.find_duplicates на каждую
+    новую семью) и создание записей не укладываются в бюджет одного
+    запроса. rows_payload — уже распознанные и провалидированные строки
+    (ImportRow.to_dict()) на момент постановки в очередь; сам дедуп
+    (resolve_rows) и создание (execute_import) выполняет tasks.py."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ожидает"
+        RUNNING = "running", "Выполняется"
+        DONE = "done", "Готово"
+        FAILED = "failed", "Ошибка"
+
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    total_rows = models.PositiveIntegerField(default=0)
+    rows_payload = models.JSONField()
+
+    created_count = models.PositiveIntegerField(default=0)
+    attached_count = models.PositiveIntegerField(default=0)
+    skipped_count = models.PositiveIntegerField(default=0)
+    failed_rows = models.JSONField(default=list, blank=True)  # [[row_number, error], ...]
+    unhandled_balances = models.JSONField(default=list, blank=True)
+    error_message = models.TextField(blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Импорт {self.id} ({self.get_status_display()})"

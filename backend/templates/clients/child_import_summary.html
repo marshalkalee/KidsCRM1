@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — импорт детей
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="child_import.summary_title">Проверка перед импортом</span>
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-card">
+    <p>
+      <span data-i18n="child_import.summary_total">Всего строк:</span>
+      <strong>{{ total_rows }}</strong>
+    </p>
+    <p>
+      <span class="kc-badge kc-badge--green"
+            data-i18n="child_import.summary_recognized">Распознано:</span>
+      <strong>{{ valid_count }}</strong>
+    </p>
+    <p>
+      <span class="kc-badge {% if error_count %}kc-badge--red{% else %}kc-badge--muted{% endif %}"
+            data-i18n="child_import.summary_failed">Не удалось разобрать:</span>
+      <strong>{{ error_count }}</strong>
+    </p>
+    {% if valid_count %}
+      <form method="post" action="{% url 'clients_web:child-import-start' %}">
+        {% csrf_token %}
+        <input type="hidden" name="valid_rows_json" value="{{ valid_rows_json }}" />
+        <button type="submit"
+                class="kc-btn kc-btn--primary"
+                data-i18n="child_import.summary_start">Запустить импорт ({{ valid_count }})</button>
+      </form>
+    {% endif %}
+  </div>
+  {% if error_rows %}
+    <div class="kc-card">
+      <strong data-i18n="child_import.error_rows_title">Строки с ошибками (не будут импортированы)</strong>
+      {% if error_rows_truncated %}
+        <p data-i18n="child_import.summary_error_truncated">Показаны первые 100 — остальные той же природы.</p>
+      {% endif %}
+      <table class="kc-table kc-table--cards">
+        <thead>
+          <tr>
+            <th data-i18n="child_import.th_row">Строка</th>
+            <th data-i18n="child_import.th_child">ФИО ребёнка</th>
+            <th data-i18n="child_import.th_error">Ошибка</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in error_rows %}
+            <tr>
+              <td data-label="Строка">{{ row.row_number }}</td>
+              <td data-label="ФИО ребёнка">{{ row.child_name|default:"—" }}</td>
+              <td data-label="Ошибка">{{ row.errors|join:"; " }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+  {% if sample_rows %}
+    <div class="kc-card">
+      <strong data-i18n="child_import.summary_sample_title">Пример распознанных строк</strong>
+      <table class="kc-table kc-table--cards">
+        <thead>
+          <tr>
+            <th data-i18n="child_import.th_row">Строка</th>
+            <th data-i18n="child_import.th_child">Ребёнок</th>
+            <th data-i18n="child_import.th_parent">Родитель</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in sample_rows %}
+            <tr>
+              <td data-label="Строка">{{ row.row_number }}</td>
+              <td data-label="Ребёнок">{{ row.child_name }} ({{ row.birth_date|date:"d.m.Y" }}, {{ row.gender_label }})</td>
+              <td data-label="Родитель">{{ row.parent_name }}, {{ row.phone }}, {{ row.role_label }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock content %}
