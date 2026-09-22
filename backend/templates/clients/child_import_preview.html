@@ -81,6 +81,11 @@
                   {% else %}
                     <span class="kc-badge kc-badge--green" data-i18n="child_import.match_new">Новая запись</span>
                   {% endif %}
+                  {% if row.reported_balance %}
+                    <div>
+                      <span class="kc-badge kc-badge--muted" data-i18n="child_import.has_balance">Есть остаток занятий — не перенесётся автоматически</span>
+                    </div>
+                  {% endif %}
                 </td>
                 <td data-label="Действие">
                   <select class="kc-form-input" name="action_{{ row.row_number }}">

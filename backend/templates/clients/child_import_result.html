@@ -29,6 +29,18 @@
         {% endfor %}
       </ul>
     {% endif %}
+    {% if result.unhandled_balances %}
+      <p data-i18n="child_import.result_balances_title">
+        В файле был указан остаток занятий — перенесите вручную, автоматически не создаётся:
+      </p>
+      <ul>
+        {% for row_number, child_name, balance in result.unhandled_balances %}
+          <li>
+            <span data-i18n="child_import.th_row">Строка</span> {{ row_number }} ({{ child_name }}): {{ balance }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
     <a href="{% url 'clients_web:child-list' %}"
        class="kc-btn kc-btn--primary"
        data-i18n="child_import.go_to_list">К списку детей</a>

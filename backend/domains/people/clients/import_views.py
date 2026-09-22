@@ -35,7 +35,10 @@ def _row_to_json(row):
         "gender": row.gender,
         "parent_name": row.parent_name,
         "phone": row.phone,
+        "extra_phones": row.extra_phones,
         "role": row.role,
+        "medical_notes": row.medical_notes,
+        "reported_balance": row.reported_balance,
         "action": row.action,
         "matched_parent_id": row.matched_parent_id,
     }
@@ -49,7 +52,10 @@ def _row_from_json(data, action):
         gender=data["gender"],
         parent_name=data["parent_name"],
         phone=data["phone"],
+        extra_phones=data.get("extra_phones") or [],
         role=data["role"],
+        medical_notes=data.get("medical_notes") or "",
+        reported_balance=data.get("reported_balance") or "",
         action=action,
         matched_parent_id=data["matched_parent_id"],
     )

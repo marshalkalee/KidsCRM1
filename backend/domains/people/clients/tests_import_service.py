@@ -9,6 +9,7 @@ import io
 import openpyxl
 from django.test import TestCase
 
+from domains.money.subscriptions.models import Subscription
 from domains.platform.tenants.models import Organization
 
 from .import_service import (
@@ -145,6 +146,110 @@ class ParseWorkbookTests(TestCase):
         rows, _ = parse_workbook(file)
 
         self.assertEqual(rows[0].birth_date, datetime.date(2018, 3, 10))
+
+    def test_slash_separated_date_is_parsed(self):
+        file = _workbook([["Данияр", "10/03/2018", "м", "Иванова", "+77011234567", ""]])
+
+        rows, _ = parse_workbook(file)
+
+        self.assertEqual(rows[0].birth_date, datetime.date(2018, 3, 10))
+
+    def test_iso_date_is_parsed(self):
+        file = _workbook([["Данияр", "2018-03-10", "м", "Иванова", "+77011234567", ""]])
+
+        rows, _ = parse_workbook(file)
+
+        self.assertEqual(rows[0].birth_date, datetime.date(2018, 3, 10))
+
+    def test_role_prefix_in_parent_name_is_split_out(self):
+        # Реальная грязь из ТЗ: "мама Айгерим" вместо чистого ФИО.
+        file = _workbook([["Данияр", "10.03.2018", "м", "мама Иванова Марина", "+77011234567", ""]])
+
+        rows, _ = parse_workbook(file)
+
+        self.assertEqual(rows[0].parent_name, "Иванова Марина")
+        self.assertEqual(rows[0].role, ChildContact.Role.MOTHER)
+
+    def test_explicit_role_column_wins_over_name_prefix(self):
+        file = _workbook(
+            [["Данияр", "10.03.2018", "м", "мама Иванова Марина", "+77011234567", "папа"]]
+        )
+
+        rows, _ = parse_workbook(file)
+
+        self.assertEqual(rows[0].role, ChildContact.Role.FATHER)
+
+    def test_multiple_phones_in_one_cell_are_all_captured(self):
+        file = _workbook(
+            [
+                [
+                    "Данияр",
+                    "10.03.2018",
+                    "м",
+                    "Иванова Марина",
+                    "+7 701 123 45 67, +7 707 890 89 89",
+                    "",
+                ]
+            ]
+        )
+
+        rows, _ = parse_workbook(file)
+
+        self.assertEqual(rows[0].phone, "+77011234567")
+        self.assertEqual(rows[0].extra_phones, ["+77078908989"])
+
+    def test_one_invalid_phone_among_several_is_dropped_not_fatal(self):
+        file = _workbook(
+            [["Данияр", "10.03.2018", "м", "Иванова Марина", "не телефон, +77011234567", ""]]
+        )
+
+        rows, _ = parse_workbook(file)
+
+        self.assertTrue(rows[0].is_valid)
+        self.assertEqual(rows[0].phone, "+77011234567")
+
+    def test_medical_notes_column_is_captured(self):
+        headers = [*HEADERS, "Медицинские заметки"]
+        file = _workbook(
+            [["Данияр", "10.03.2018", "м", "Иванова", "+77011234567", "", "Аллергия на орехи"]],
+            headers=headers,
+        )
+
+        rows, _ = parse_workbook(file)
+
+        self.assertEqual(rows[0].medical_notes, "Аллергия на орехи")
+
+    def test_balance_column_is_captured_not_dropped(self):
+        headers = [*HEADERS, "Остаток занятий"]
+        file = _workbook(
+            [["Данияр", "10.03.2018", "м", "Иванова", "+77011234567", "", "5"]], headers=headers
+        )
+
+        rows, _ = parse_workbook(file)
+
+        self.assertEqual(rows[0].reported_balance, "5")
+
+    def test_merged_parent_cells_are_resolved_for_second_child_row(self):
+        # Реальная грязь из ТЗ: ФИО/телефон родителя объединены на
+        # несколько строк, когда у него больше одного ребёнка в файле.
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(HEADERS)
+        ws.append(["Данияр", "10.03.2018", "м", "Иванова Марина", "+77011234567", "мама"])
+        ws.append(["Айгерим", "01.01.2020", "ж", None, None, None])
+        ws.merge_cells("D2:D3")
+        ws.merge_cells("E2:E3")
+        ws.merge_cells("F2:F3")
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        rows, _ = parse_workbook(buf)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1].parent_name, "Иванова Марина")
+        self.assertEqual(rows[1].phone, "+77011234567")
+        self.assertEqual(rows[1].role, ChildContact.Role.MOTHER)
 
 
 class ResolveRowsTests(TestCase):
@@ -391,3 +496,33 @@ class ExecuteImportTests(TestCase):
 
         self.assertTrue(Child.objects.filter(pk=existing_child.pk).exists())
         self.assertEqual(Child.objects.for_tenant(self.org).count(), 1)
+
+    def test_extra_phones_are_all_saved_on_new_parent(self):
+        row = self._row(2, "Данияр", "+77011234567", extra_phones=["+77078908989"])
+        resolve_rows(self.org, [row])
+
+        execute_import(self.org, [row])
+
+        parent = ParentContact.objects.for_tenant(self.org).get()
+        self.assertEqual(
+            set(parent.phones.values_list("number", flat=True)),
+            {"+77011234567", "+77078908989"},
+        )
+
+    def test_medical_notes_are_saved_on_the_child(self):
+        row = self._row(2, "Данияр", "+77011234567", medical_notes="Аллергия на орехи")
+        resolve_rows(self.org, [row])
+
+        execute_import(self.org, [row])
+
+        child = Child.objects.for_tenant(self.org).get()
+        self.assertEqual(child.medical_notes, "Аллергия на орехи")
+
+    def test_reported_balance_is_surfaced_not_imported_as_subscription(self):
+        row = self._row(2, "Данияр", "+77011234567", reported_balance="5")
+        resolve_rows(self.org, [row])
+
+        result = execute_import(self.org, [row])
+
+        self.assertEqual(result.unhandled_balances, [(2, "Данияр", "5")])
+        self.assertEqual(Subscription.objects.for_tenant(self.org).count(), 0)

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}
   KidsCRM — импорт детей
 {% endblock title %}
@@ -7,14 +8,27 @@
 {% endblock page_title %}
 {% block content %}
   <div class="kc-card">
+    <p>
+      <a href="{% static 'site/files/child_import_template.xlsx' %}"
+         class="kc-btn kc-btn--secondary"
+         data-i18n="child_import.download_template">Скачать шаблон .xlsx</a>
+    </p>
     <p data-i18n="child_import.intro">Файл .xlsx с колонками (первая строка — заголовки, порядок колонок не важен):</p>
     <ul>
       <li data-i18n="child_import.col_child_name">ФИО ребёнка — обязательно</li>
-      <li data-i18n="child_import.col_birth_date">Дата рождения ребёнка — обязательно, ДД.ММ.ГГГГ</li>
+      <li data-i18n="child_import.col_birth_date">
+        Дата рождения ребёнка — обязательно, ДД.ММ.ГГГГ (также понимает ДД/ММ/ГГГГ и ГГГГ-ММ-ДД)
+      </li>
       <li data-i18n="child_import.col_gender">Пол ребёнка — обязательно, М/Ж</li>
-      <li data-i18n="child_import.col_parent_name">ФИО родителя — обязательно</li>
-      <li data-i18n="child_import.col_phone">Телефон родителя — обязательно</li>
+      <li data-i18n="child_import.col_parent_name">
+        ФИО родителя — обязательно (можно с ролью впереди, например «мама Иванова Марина»)
+      </li>
+      <li data-i18n="child_import.col_phone">Телефон родителя — обязательно, можно несколько через запятую</li>
       <li data-i18n="child_import.col_role">Роль родителя — необязательно (мама/папа/опекун/бабушка)</li>
+      <li data-i18n="child_import.col_medical_notes">Медицинские заметки — необязательно, переносится в карточку ребёнка</li>
+      <li data-i18n="child_import.col_balance">
+        Остаток занятий — необязательно. Не создаёт абонемент автоматически, только попадает в отчёт после импорта для переноса вручную
+      </li>
     </ul>
     <form method="post" enctype="multipart/form-data">
       {% csrf_token %}

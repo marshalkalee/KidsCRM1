@@ -19,6 +19,7 @@
 """
 
 import datetime
+import re
 from dataclasses import dataclass, field
 
 import openpyxl
@@ -56,8 +57,11 @@ EXPECTED_HEADERS = {
     "ФИО родителя": "parent_name",
     "Телефон родителя": "phone",
     "Роль родителя": "role",
+    "Медицинские заметки": "medical_notes",
+    "Остаток занятий": "reported_balance",
 }
-REQUIRED_HEADERS = [h for h in EXPECTED_HEADERS if h != "Роль родителя"]
+OPTIONAL_HEADERS = {"Роль родителя", "Медицинские заметки", "Остаток занятий"}
+REQUIRED_HEADERS = [h for h in EXPECTED_HEADERS if h not in OPTIONAL_HEADERS]
 
 GENDER_ALIASES = {
     "м": Child.Gender.MALE,
@@ -77,6 +81,37 @@ ROLE_ALIASES.update(
     }
 )
 
+# "мама Айгерим" вместо чистого ФИО в колонке родителя — реальная грязь
+# из ТЗ (найдено на синтетических файлах, см. docs/import_format.md).
+# Роль-префикс отделяется от имени и используется, только если отдельная
+# колонка "Роль родителя" не задана явно (она приоритетнее).
+_ROLE_PREFIX_RE = re.compile(
+    r"^("
+    + "|".join(re.escape(k) for k in sorted(ROLE_ALIASES, key=len, reverse=True))
+    + r")\s+(.+)$",
+    re.IGNORECASE,
+)
+
+
+def _split_role_prefix(raw_name: str) -> tuple[str | None, str]:
+    match = _ROLE_PREFIX_RE.match(raw_name.strip())
+    if not match:
+        return None, raw_name
+    prefix, rest = match.groups()
+    return ROLE_ALIASES.get(prefix.lower()), rest.strip()
+
+
+# Несколько телефонов в одной ячейке через запятую/точку с запятой/слэш/
+# "и" — тоже реальная грязь (родитель и его партнёр в одной колонке).
+# ContactPhone — отдельная модель (не одно поле), поэтому все валидные
+# номера сохраняются, не только первый.
+_PHONE_SPLIT_RE = re.compile(r"[,;/]+|\s+и\s+", re.IGNORECASE)
+
+
+def _split_phones(raw: str) -> list[str]:
+    parts = [p.strip() for p in _PHONE_SPLIT_RE.split(raw) if p.strip()]
+    return parts or ([raw.strip()] if raw.strip() else [])
+
 
 class RowAction:
     CREATE_NEW_FAMILY = "create_new_family"
@@ -92,8 +127,18 @@ class ImportRow:
     birth_date: datetime.date | None = None
     gender: str = ""
     parent_name: str = ""
-    phone: str = ""
+    phone: str = ""  # первый валидный номер — используется для дедупа
+    extra_phones: list[str] = field(
+        default_factory=list
+    )  # остальные валидные номера из той же ячейки
     role: str = ChildContact.Role.OTHER
+    medical_notes: str = ""
+    # Сырое значение колонки "Остаток занятий" — не превращается в
+    # реальный Subscription при импорте (решение зафиксировано в
+    # docs/import_format.md: перенос остатков — отдельная задача домена
+    # Bekzat'а), но и не отбрасывается молча — видно в отчёте импорта,
+    # чтобы не всплыло на приёмке.
+    reported_balance: str = ""
     errors: list[str] = field(default_factory=list)
 
     # Заполняется resolve_rows() — не на этапе разбора файла.
@@ -130,13 +175,18 @@ class ImportRow:
             return self.gender
 
 
+# Три формата дат из реальной практики (ТЗ): точки, слэши, ISO — плюс
+# нативная дата Excel (обрабатывается отдельно ниже, это не строка).
+_DATE_FORMATS = ("%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d")
+
+
 def _parse_cell_date(value):
     if isinstance(value, datetime.datetime):
         return value.date()
     if isinstance(value, datetime.date):
         return value
     if isinstance(value, str) and value.strip():
-        for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+        for fmt in _DATE_FORMATS:
             try:
                 return datetime.datetime.strptime(value.strip(), fmt).date()
             except ValueError:
@@ -148,13 +198,34 @@ def _clean_str(value) -> str:
     return str(value).strip() if value is not None else ""
 
 
+def _build_merge_lookup(sheet) -> dict[tuple[int, int], object]:
+    """(строка, колонка, 1-based) -> значение якоря объединённой ячейки —
+    объединённые ячейки — реальная грязь (ТЗ): например, ФИО/телефон
+    родителя объединены на несколько строк его детей, и без этой подсказки
+    все строки кроме первой читались бы как пустые."""
+    lookup = {}
+    for merged_range in sheet.merged_cells.ranges:
+        anchor = sheet.cell(row=merged_range.min_row, column=merged_range.min_col).value
+        for row in range(merged_range.min_row, merged_range.max_row + 1):
+            for col in range(merged_range.min_col, merged_range.max_col + 1):
+                if (row, col) != (merged_range.min_row, merged_range.min_col):
+                    lookup[(row, col)] = anchor
+    return lookup
+
+
 def parse_workbook(file) -> tuple[list[ImportRow], list[str]]:
     """
     Возвращает (строки, ошибки_заголовка). При ошибке заголовка строки
     пустые — нет смысла разбирать данные под неверными колонками.
+
+    read_only=False (не потоковый режим) — нужен доступ к
+    merged_cells.ranges и произвольным ячейкам для _build_merge_lookup();
+    для разового admin-действия на файл в тысячи строк это не проблема
+    производительности (не сравнимо с бюджетом списка на 5000 детей).
     """
-    workbook = openpyxl.load_workbook(file, data_only=True, read_only=True)
+    workbook = openpyxl.load_workbook(file, data_only=True, read_only=False)
     sheet = workbook.active
+    merge_lookup = _build_merge_lookup(sheet)
 
     header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
     header_index = {
@@ -169,9 +240,14 @@ def parse_workbook(file) -> tuple[list[ImportRow], list[str]]:
         if not any(_clean_str(v) for v in raw_row):
             continue  # пустая строка — обычный хвост файла, не ошибка
 
-        def cell(header, _raw_row=raw_row):
+        def cell(header, _raw_row=raw_row, _row_number=row_number):
             idx = header_index.get(header)
-            return _raw_row[idx] if idx is not None and idx < len(_raw_row) else None
+            if idx is None:
+                return None
+            value = _raw_row[idx] if idx < len(_raw_row) else None
+            if value is None:
+                value = merge_lookup.get((_row_number, idx + 1))
+            return value
 
         row = ImportRow(row_number=row_number)
         errors = []
@@ -191,19 +267,36 @@ def parse_workbook(file) -> tuple[list[ImportRow], list[str]]:
             errors.append(f"не удалось разобрать пол ребёнка: {gender_raw!r}")
         row.gender = gender or ""
 
-        row.parent_name = _clean_str(cell("ФИО родителя"))
+        parent_name_raw = _clean_str(cell("ФИО родителя"))
+        prefix_role, cleaned_parent_name = _split_role_prefix(parent_name_raw)
+        row.parent_name = cleaned_parent_name
         if not row.parent_name:
             errors.append("не заполнено ФИО родителя")
 
         phone_raw = _clean_str(cell("Телефон родителя"))
-        try:
-            row.phone = normalize_phone_number(phone_raw)
-        except InvalidPhoneNumberError:
+        normalized_phones = []
+        for candidate in _split_phones(phone_raw):
+            try:
+                normalized = normalize_phone_number(candidate)
+            except InvalidPhoneNumberError:
+                continue
+            if normalized not in normalized_phones:
+                normalized_phones.append(normalized)
+        if not normalized_phones:
             errors.append(f"не похоже на телефон: {phone_raw!r}")
             row.phone = phone_raw
+        else:
+            row.phone = normalized_phones[0]
+            row.extra_phones = normalized_phones[1:]
 
+        # Явная колонка "Роль родителя" приоритетнее роли, угаданной из
+        # префикса в имени ("мама Айгерим") — администратор мог заполнить
+        # обе, и явная колонка — более осознанный ввод.
         role_raw = _clean_str(cell("Роль родителя")).lower()
-        row.role = ROLE_ALIASES.get(role_raw, ChildContact.Role.OTHER)
+        row.role = ROLE_ALIASES.get(role_raw) or prefix_role or ChildContact.Role.OTHER
+
+        row.medical_notes = _clean_str(cell("Медицинские заметки"))
+        row.reported_balance = _clean_str(cell("Остаток занятий"))
 
         row.errors = errors
         rows.append(row)
@@ -328,6 +421,13 @@ class ImportResult:
     attached_to_existing_family: int = 0
     skipped: int = 0
     failed: list[tuple[int, str]] = field(default_factory=list)  # (row_number, error)
+    # Строки, где была непустая колонка "Остаток занятий" — сознательно
+    # НЕ превращается в реальный Subscription при импорте (см.
+    # docs/import_format.md), но и не пропадает молча: администратор
+    # должен увидеть и перенести остаток вручную/отдельным механизмом.
+    unhandled_balances: list[tuple[int, str, str]] = field(
+        default_factory=list
+    )  # (row_number, child_name, reported_balance)
 
 
 def execute_import(organization, rows: list[ImportRow]) -> ImportResult:
@@ -337,6 +437,9 @@ def execute_import(organization, rows: list[ImportRow]) -> ImportResult:
     phone_map = _PhoneResolutionMap()
 
     for row in rows:
+        if row.reported_balance and row.action not in (RowAction.SKIP, RowAction.ERROR):
+            result.unhandled_balances.append((row.row_number, row.child_name, row.reported_balance))
+
         if row.action in (RowAction.SKIP, RowAction.ERROR):
             result.skipped += 1
             continue
@@ -346,6 +449,7 @@ def execute_import(organization, rows: list[ImportRow]) -> ImportResult:
                 "full_name": row.child_name,
                 "birth_date": row.birth_date,
                 "gender": row.gender,
+                "medical_notes": row.medical_notes,
             }
 
             remembered = phone_map.get(row.phone)
@@ -354,7 +458,10 @@ def execute_import(organization, rows: list[ImportRow]) -> ImportResult:
             elif row.action == RowAction.ATTACH_EXISTING and row.matched_parent_id:
                 parent_data = {"id": row.matched_parent_id}
             else:
-                parent_data = {"full_name": row.parent_name, "phones": [row.phone]}
+                parent_data = {
+                    "full_name": row.parent_name,
+                    "phones": [row.phone, *row.extra_phones],
+                }
 
             child = ChildService.create_with_parent(
                 organization, child_data=child_data, parent_data=parent_data, link_role=row.role
