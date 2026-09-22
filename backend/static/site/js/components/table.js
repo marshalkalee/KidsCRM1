@@ -19,7 +19,11 @@
  * режиме не поддержан — если понадобится, его нужно будет тоже перенести
  * на сервер (query-параметр), а не резать на клиенте вперемешку с
  * серверной пагинацией (кусок данных на клиенте — не полный набор,
- * фильтровать его нечестно).
+ * фильтровать его нечестно). Именно так — через query-параметры — сделаны
+ * произвольные фильтры (филиал/направление/группа/статус/долг/абонемент):
+ * setRemoteParams({...}) шлёт их серверу вместе с page/sort и сбрасывает
+ * на 1-ю страницу; событие "load" (table.on("load", fn)) отдаёт итоговый
+ * total — например, для счётчика найденного (см. filters-panel.js).
  *
  * Использование (клиентский режим — как раньше):
  *   var table = KidsCRM.table.init("#js-clients-table", {
@@ -74,6 +78,7 @@
       sortDir: "none", // none | ascending | descending
       page: 1,
       selected: {},
+      remoteParams: {}, // только для remote — доп. query-параметры (фильтры)
     };
     var listeners = {};
 
@@ -230,6 +235,12 @@
         params.set("sort", state.sortKey);
         params.set("dir", state.sortDir === "ascending" ? "asc" : "desc");
       }
+      Object.keys(state.remoteParams).forEach(function (key) {
+        var value = state.remoteParams[key];
+        if (value !== null && value !== undefined && value !== "") {
+          params.set(key, value);
+        }
+      });
       fetch(remote.url + "?" + params.toString(), {
         headers: { "X-Requested-With": "XMLHttpRequest" },
       })
@@ -241,6 +252,7 @@
           state.total = data.total || 0;
           state.loading = false;
           render();
+          emit("load", { total: state.total });
         });
     }
 
@@ -397,6 +409,14 @@
         state.textFilterFields = fields || [];
         state.page = 1;
         render();
+      },
+      setRemoteParams: function (params) {
+        if (!remote) {
+          return; // клиентский режим фильтрует иначе, см. setFilter/setTextFilter
+        }
+        state.remoteParams = params || {};
+        state.page = 1;
+        refreshData();
       },
       getSelected: getSelected,
       clearSelection: function () {

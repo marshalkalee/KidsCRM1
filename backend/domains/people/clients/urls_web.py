@@ -10,6 +10,7 @@ from . import web_views
 app_name = "clients_web"
 
 urlpatterns = [
+    path("clients/search/", web_views.global_search, name="global-search"),
     path("clients/children/", web_views.child_list, name="child-list"),
     path("clients/children/data/", web_views.child_list_data, name="child-list-data"),
     path("clients/children/create/", web_views.child_create, name="child-create"),

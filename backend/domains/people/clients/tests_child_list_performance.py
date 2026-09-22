@@ -47,8 +47,8 @@ class ChildListPerformanceTests(TestCase):
             role=User.Role.OWNER,
         )
 
-        branch = Branch.objects.create(organization=cls.org, name="Филиал 1")
-        direction = Direction.objects.create(organization=cls.org, name="Балет")
+        branch = cls.branch = Branch.objects.create(organization=cls.org, name="Филиал 1")
+        direction = cls.direction = Direction.objects.create(organization=cls.org, name="Балет")
         direction.branches.add(branch)
         group = Group.objects.create(
             organization=cls.org, branch=branch, direction=direction, name="Группа 1", capacity=15
@@ -169,3 +169,22 @@ class ChildListPerformanceTests(TestCase):
         # (5000), чтобы явно связать это утверждение с самим ТЗ п. 10.2.
         with self.assertNumQueries(10):
             self.client.get(reverse("clients_web:child-list-data"), {"page_size": 50})
+
+    def test_filter_combination_responds_within_budget(self):
+        # Критерий приёмки тикета "Фильтры списка детей": "филиал +
+        # направление + есть долг" на 5000 детей — ≤1с (запас теста — как
+        # у остальных проверок этого файла, дев-контейнер не прод-железо).
+        start = time.perf_counter()
+        response = self.client.get(
+            reverse("clients_web:child-list-data"),
+            {"branch": str(self.branch.id), "direction": str(self.direction.id), "has_debt": "1"},
+        )
+        elapsed = time.perf_counter() - start
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLess(
+            elapsed,
+            RESPONSE_BUDGET_SECONDS,
+            f"фильтр филиал+направление+долг ответил за {elapsed:.3f}с на "
+            f"{CHILD_COUNT} детей (бюджет теста {RESPONSE_BUDGET_SECONDS}с)",
+        )

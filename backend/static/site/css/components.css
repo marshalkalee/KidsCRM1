@@ -318,6 +318,146 @@
 }
 
 /* ---------------------------------------------------------------------- */
+/* Глобальный поиск в шапке (ТЗ п. 4.1)                                    */
+/* ---------------------------------------------------------------------- */
+
+.kc-global-search {
+  position: relative;
+  flex: 0 1 320px;
+  min-width: 160px;
+}
+
+/* Кнопка-иконка (мобильный переключатель) и крестик закрытия оверлея —
+   на десктопе оба не нужны, поле уже постоянно видно. */
+.kc-global-search__toggle,
+.kc-global-search__close {
+  display: none;
+}
+
+.kc-global-search__results {
+  position: absolute;
+  top: calc(100% + var(--kc-space-1));
+  left: 0;
+  right: 0;
+  background: var(--kc-color-surface);
+  border: 1px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-md);
+  box-shadow: var(--kc-shadow-md);
+  max-height: 60vh;
+  overflow-y: auto;
+  z-index: 60;
+}
+
+.kc-global-search__item {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-2) var(--kc-space-3);
+  text-decoration: none;
+  color: var(--kc-color-text);
+}
+
+.kc-global-search__item:hover,
+.kc-global-search__item:focus {
+  background: var(--kc-color-bg);
+}
+
+.kc-global-search__item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.kc-global-search__item-title {
+  font-weight: var(--kc-font-weight-bold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kc-global-search__item-sub {
+  font-size: var(--kc-font-size-sm);
+  color: var(--kc-color-text-muted);
+}
+
+.kc-global-search__results .kc-empty-state {
+  padding: var(--kc-space-3);
+  margin: 0;
+}
+
+/* Переключатель филиала — десктоп/мобильный вариант (см. ниже media query
+   и templates/includes/branch_switcher.html): по умолчанию (десктоп)
+   виден select с названием, иконка-меню скрыта. */
+.kc-branch-switcher--icon {
+  display: none;
+}
+
+/* На мобильном постоянное поле во всю строку шапки заняло слишком много
+   места и выглядело чужим рядом с остальной шапкой (обратная связь после
+   живой проверки) — вместо этого иконка, как у переключателя языка;
+   тап открывает поле полноэкранным слоем поверх всего интерфейса. На
+   десктопе — как раньше, поле всегда видно, иконка/крестик не показаны.
+   Переключатель филиала — тем же приёмом: select с полным названием
+   филиала не помещается в шапку рядом с бургером/поиском/языком на одной
+   строке, а всё должно быть в ОДНОЙ строке шапки (явное требование), не
+   переноситься на вторую — поэтому на мобильном тоже иконка+меню, а не
+   перенос строки. */
+@media (max-width: 768px) {
+  .kc-global-search {
+    flex: 0 0 auto;
+    /* min-width: 160px (базовое правило) — под десктопное поле; на
+       мобильном тут только маленькая иконка, но min-width всё равно
+       резервирует те же 160px, раздвигая иконку поиска от филиала/языка
+       пустым промежутком (нашлось живой проверкой). */
+    min-width: 0;
+  }
+
+  .kc-branch-switcher--select {
+    display: none;
+  }
+
+  .kc-branch-switcher--icon {
+    display: block;
+  }
+
+  .kc-global-search__toggle {
+    display: inline-flex;
+  }
+
+  .kc-global-search .kc-search-input {
+    display: none;
+  }
+
+  .kc-global-search--open {
+    position: fixed;
+    inset: 0;
+    z-index: 160;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--kc-space-2);
+    background: var(--kc-color-surface);
+    padding: var(--kc-space-3);
+  }
+
+  .kc-global-search--open .kc-global-search__toggle {
+    display: none;
+  }
+
+  .kc-global-search--open .kc-search-input {
+    display: block;
+    flex: 1;
+  }
+
+  .kc-global-search--open .kc-global-search__close {
+    display: inline-flex;
+  }
+
+  .kc-global-search--open .kc-global-search__results {
+    top: 52px;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
 /* Модалка                                                                 */
 /* ---------------------------------------------------------------------- */
 
@@ -701,4 +841,102 @@
 .kc-lang-switcher .dropdown-item.active {
   background: var(--kc-color-accent);
   color: var(--kc-color-accent-contrast);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Панель фильтров списка (ТЗ п. 4.1) — static/site/js/components/filters- */
+/* panel.js. Десктоп — постоянная колонка слева от таблицы; мобильный —    */
+/* скрытый полноэкранный слой, открывается кнопкой (не боковая панель,     */
+/* см. критерий приёмки "удобно применять с телефона").                    */
+/* ------------------------------------------------------------------------ */
+
+.kc-list-layout {
+  display: flex;
+  gap: var(--kc-space-4);
+  align-items: flex-start;
+}
+
+.kc-list-layout__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.kc-filters-panel {
+  flex: 0 0 260px;
+  background: var(--kc-color-surface);
+  border: 1px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-md);
+  padding: var(--kc-space-4);
+}
+
+.kc-filters-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--kc-space-3);
+}
+
+/* Кнопка закрытия — нужна только на мобильном полноэкранном виде, но
+   элемент один и тот же в разметке на всех размерах (проще, чем два
+   разных фрагмента); прячем на десктопе, где панель и так всегда видна. */
+.kc-filters-panel__header [data-filters-close] {
+  display: none;
+}
+
+.kc-filters-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kc-space-3);
+}
+
+.kc-filters-panel__body label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kc-space-1);
+  font-size: var(--kc-font-size-sm);
+}
+
+.kc-filters-panel__body label.kc-filters-panel__checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+
+.kc-filters-panel__footer {
+  margin-top: var(--kc-space-4);
+}
+
+.kc-filters-toggle-row {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .kc-list-layout {
+    display: block;
+  }
+
+  .kc-filters-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: var(--kc-space-3);
+    margin-bottom: var(--kc-space-3);
+  }
+
+  .kc-filters-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+    border-radius: 0;
+    border: none;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+  }
+
+  .kc-filters-panel--open {
+    transform: translateX(0);
+  }
+
+  .kc-filters-panel__header [data-filters-close] {
+    display: inline-flex;
+  }
 }

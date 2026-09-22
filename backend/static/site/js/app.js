@@ -14,5 +14,12 @@
     $("#js-ping").on("click", function () {
       window.alert("jQuery работает: " + $.fn.jquery);
     });
+
+    var globalSearchRoot = document.getElementById("kc-global-search");
+    if (globalSearchRoot && window.KidsCRM && window.KidsCRM.globalSearch) {
+      window.KidsCRM.globalSearch.init(globalSearchRoot, {
+        url: globalSearchRoot.getAttribute("data-global-search-url"),
+      });
+    }
   });
 })(window.jQuery);

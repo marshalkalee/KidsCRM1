@@ -6,7 +6,72 @@
   <span data-i18n="child_list.title">Дети</span>
 {% endblock page_title %}
 {% block content %}
-  <div id="js-children-table"></div>
+  <div class="kc-filters-toggle-row">
+    <button type="button" class="kc-btn kc-btn--secondary" data-filters-toggle>
+      <span data-i18n="child_list.filters_toggle">Фильтры</span>
+    </button>
+    <span data-filters-count></span>
+  </div>
+  <div class="kc-list-layout">
+    <aside class="kc-filters-panel" id="js-child-filters">
+      <div class="kc-filters-panel__header">
+        <strong data-i18n="child_list.filters_title">Фильтры</strong>
+        <span data-filters-count></span>
+        <button type="button"
+                class="kc-btn kc-btn--icon"
+                data-filters-close
+                aria-label="Закрыть">✕</button>
+      </div>
+      <div class="kc-filters-panel__body">
+        <label>
+          <span data-i18n="child_list.filter_branch">Филиал</span>
+          <select class="kc-form-input" data-filter="branch">
+            <option value="" data-i18n="child_list.filter_any">Все</option>
+            {% for branch in branches %}<option value="{{ branch.id }}">{{ branch.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>
+          <span data-i18n="child_list.filter_direction">Направление</span>
+          <select class="kc-form-input" data-filter="direction">
+            <option value="" data-i18n="child_list.filter_any">Все</option>
+            {% for direction in directions %}<option value="{{ direction.id }}">{{ direction.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>
+          <span data-i18n="child_list.filter_group">Группа</span>
+          <select class="kc-form-input" data-filter="group">
+            <option value="" data-i18n="child_list.filter_any">Все</option>
+            {% for group in groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>
+          <span data-i18n="child_list.filter_status">Статус</span>
+          <select class="kc-form-input"
+                  data-filter="status"
+                  data-i18n-choices="child_status">
+            <option value="" data-i18n="child_list.filter_any">Все</option>
+            {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="kc-filters-panel__checkbox">
+          <input type="checkbox" data-filter="has_debt" value="1" />
+          <span data-i18n="child_list.filter_has_debt">Есть задолженность</span>
+        </label>
+        <label class="kc-filters-panel__checkbox">
+          <input type="checkbox" data-filter="expiring" value="1" />
+          <span data-i18n="child_list.filter_expiring">Абонемент скоро заканчивается</span>
+        </label>
+      </div>
+      <div class="kc-filters-panel__footer">
+        <button type="button" class="kc-btn kc-btn--secondary" data-filters-reset>
+          <span data-i18n="child_list.filters_reset">Сбросить</span>
+        </button>
+      </div>
+    </aside>
+    <div class="kc-list-layout__main">
+      <div id="js-children-table"></div>
+    </div>
+  </div>
   {% if can_manage %}
     <button type="button"
             id="js-create-child"
@@ -111,7 +176,7 @@
         },
       ];
 
-      window.KidsCRM.table.init("#js-children-table", {
+      var table = window.KidsCRM.table.init("#js-children-table", {
         columns: columns,
         pageSize: 50,
         rowKey: function (row) {
@@ -119,6 +184,19 @@
         },
         emptyTextKey: "child_list.empty",
         remote: { url: "{% url 'clients_web:child-list-data' %}" },
+      });
+
+      var filtersPanel = window.KidsCRM.filtersPanel.init(
+        document.getElementById("js-child-filters"),
+        {
+          storageKey: "child_list_filters",
+          onChange: function (values) {
+            table.setRemoteParams(values);
+          },
+        }
+      );
+      table.on("load", function (data) {
+        filtersPanel.setCount(data.total);
       });
     })();
   </script>

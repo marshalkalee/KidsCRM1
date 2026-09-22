@@ -36,6 +36,22 @@ def branches(request):
     return {"kc_branches": available, "kc_active_branch": active}
 
 
+def global_search(request):
+    """
+    URL быстрого поиска по шапке (ТЗ п. 4.1) — доступен с любого экрана,
+    не только со списка детей, поэтому здесь, а не в контексте одной
+    страницы. Пусто для анонима/пользователя без organization — тот же
+    случай, что у branches() выше.
+    """
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated or user.organization_id is None:
+        return {"kc_global_search_url": None}
+
+    from django.urls import reverse
+
+    return {"kc_global_search_url": reverse("clients_web:global-search")}
+
+
 def user_permissions(request):
     """Гранулярные права текущего пользователя — см. core/role_permissions.py."""
     user = getattr(request, "user", None)

@@ -9,6 +9,7 @@
 заглушки, см. child_card_tabs.py (контракт для Дарьи/Bekzat'а).
 """
 
+import re
 import uuid
 from decimal import Decimal
 from pathlib import Path
@@ -16,7 +17,7 @@ from pathlib import Path
 import pytz
 from django.contrib import messages
 from django.core.files.storage import default_storage
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -24,10 +25,14 @@ from django.utils import timezone as dj_timezone
 from django.views.decorators.http import require_http_methods
 
 from domains.money.payments.models import Payment
+from domains.money.subscriptions.debt import debtor_child_ids
 from domains.money.subscriptions.models import Subscription
+from domains.money.subscriptions.renewals import expiring_child_ids
 from domains.platform.core.decorators import role_required
+from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.role_permissions import can_view_phone
-from domains.scheduling.groups.models import GroupMembership
+from domains.platform.tenants.models import Branch, Direction
+from domains.scheduling.groups.models import Group, GroupMembership
 
 from .child_card_tabs import get_child_card_tabs
 from .forms import (
@@ -98,6 +103,43 @@ def _sort_child_queryset(qs, sort, direction):
     return qs.order_by(ordering, "pk")
 
 
+def _filter_child_queryset(qs, organization, params):
+    """Шесть фильтров ТЗ п. 4.1, комбинируются между собой (AND). Долг/
+    абонемент — через domains.money.subscriptions (debtor_child_ids/
+    expiring_child_ids), не своей копией арифметики: иначе этот список и
+    будущие экраны Bekzat'а («Задолженности»/«Продления») разойдутся."""
+    needs_distinct = False
+
+    branch_id = params.get("branch")
+    if branch_id:
+        qs = qs.filter(directions__branches__id=branch_id)
+        needs_distinct = True
+
+    direction_id = params.get("direction")
+    if direction_id:
+        qs = qs.filter(directions__id=direction_id)
+        needs_distinct = True
+
+    group_id = params.get("group")
+    if group_id:
+        qs = qs.filter(
+            group_memberships__group_id=group_id, group_memberships__left_at__isnull=True
+        )
+        needs_distinct = True
+
+    status = params.get("status")
+    if status in Child.Status.values:
+        qs = qs.filter(status=status)
+
+    if params.get("has_debt") == "1":
+        qs = qs.filter(id__in=debtor_child_ids(organization))
+
+    if params.get("expiring") == "1":
+        qs = qs.filter(id__in=expiring_child_ids(organization))
+
+    return qs.distinct() if needs_distinct else qs
+
+
 def _batch_child_extras(organization, child_ids):
     """Группа/абонемент/долг для страницы детей — батчем на весь список
     child_ids, не запросом на каждую строку (ТЗ п. 10.2: иначе 50 строк на
@@ -139,6 +181,161 @@ def _batch_child_extras(organization, child_ids):
     return groups_by_child, latest_subscription_by_child, debt_by_child
 
 
+GLOBAL_SEARCH_MIN_LENGTH = 3  # ТЗ п. 4.1: 3 символа имени — уже 4 цифры телефона тоже проходят
+GLOBAL_SEARCH_LIMIT_PER_TYPE = 8  # шапка — быстрый список, не полноценная страница результатов
+
+
+def _phone_digits_and_normalized(raw_query):
+    """
+    digits — для частичного совпадения (последние 4 цифры и т.п., ТЗ
+    п. 4.1); normalized — для точного совпадения по нормализованному
+    номеру, когда запрос сам похож на полный номер (тогда "8 701..." и
+    "+7 701..." находят один и тот же ContactPhone.number, который всегда
+    хранится нормализованным — см. ContactPhone.save()). Без normalized
+    один digits__icontains не поймал бы "8" вместо "+7": это не подстрока
+    друг друга, хотя номер тот же.
+    """
+    digits = re.sub(r"\D", "", raw_query or "")
+    try:
+        normalized = normalize_phone_number(raw_query)
+    except InvalidPhoneNumberError:
+        normalized = None
+    return digits, normalized
+
+
+def _phone_field_matches(value, phone_digits, phone_normalized):
+    if not value:
+        return False
+    if phone_normalized and value == phone_normalized:
+        return True
+    return bool(phone_digits) and phone_digits in re.sub(r"\D", "", value)
+
+
+def _find_matched_phone(parent, phone_digits, phone_normalized):
+    """
+    Что из телефонов родителя реально совпало с запросом — не "просто
+    показать whatsapp, если он есть" (это давало неверный matched_detail:
+    родитель мог совпасть по ContactPhone.number, а в подсказке всё равно
+    показывался бы его несовпавший whatsapp).
+    """
+    if _phone_field_matches(parent.whatsapp, phone_digits, phone_normalized):
+        return parent.whatsapp
+    phone_match = next(
+        (
+            p
+            for p in parent.phones.all()
+            if _phone_field_matches(p.number, phone_digits, phone_normalized)
+        ),
+        None,
+    )
+    return phone_match.number if phone_match else None
+
+
+def _global_search_children(organization, query, phone_digits, phone_normalized):
+    filters = Q(full_name__icontains=query) | Q(
+        contacts__parent_contact__full_name__icontains=query
+    )
+    if phone_digits:
+        filters |= Q(contacts__parent_contact__phones__number__icontains=phone_digits)
+        filters |= Q(contacts__parent_contact__whatsapp__icontains=phone_digits)
+    if phone_normalized:
+        filters |= Q(contacts__parent_contact__phones__number=phone_normalized)
+        filters |= Q(contacts__parent_contact__whatsapp=phone_normalized)
+
+    children = (
+        Child.objects.for_tenant(organization)
+        .filter(filters)
+        .distinct()
+        .order_by("full_name")
+        .prefetch_related("contacts__parent_contact__phones")[:GLOBAL_SEARCH_LIMIT_PER_TYPE]
+    )
+
+    query_lower = query.lower()
+    results = []
+    for child in children:
+        matched_on, matched_detail = "child_name", None
+        if query_lower not in child.full_name.lower():
+            for link in child.contacts.all():
+                parent = link.parent_contact
+                if query_lower in parent.full_name.lower():
+                    matched_on, matched_detail = "parent_name", parent.full_name
+                    break
+                matched_phone = _find_matched_phone(parent, phone_digits, phone_normalized)
+                if matched_phone:
+                    matched_on, matched_detail = "phone", matched_phone
+                    break
+        results.append(
+            {
+                "type": "child",
+                "id": str(child.id),
+                "title": child.full_name,
+                "matched_on": matched_on,
+                "matched_detail": matched_detail,
+                "url": reverse("clients_web:child-card", args=[child.pk]),
+            }
+        )
+    return results
+
+
+def _global_search_parents(organization, query, phone_digits, phone_normalized):
+    filters = Q(full_name__icontains=query)
+    if phone_digits:
+        filters |= Q(whatsapp__icontains=phone_digits) | Q(phones__number__icontains=phone_digits)
+    if phone_normalized:
+        filters |= Q(whatsapp=phone_normalized) | Q(phones__number=phone_normalized)
+
+    # Родитель — своя строка всегда, даже если у него есть дети: иначе
+    # через поиск нельзя попасть в его собственную карточку (контакты,
+    # коммуникации, WhatsApp), только в карточки детей. "Один номер в
+    # разных написаниях — один результат" (ТЗ п. 4.1) — про стабильность
+    # написания номера, а не про то, что родитель и его ребёнок должны
+    # схлопнуться в одну строку; бейджи "Родитель"/"Ребёнок" в выдаче
+    # различают их и так.
+    parents = (
+        ParentContact.objects.for_tenant(organization)
+        .filter(filters)
+        .distinct()
+        .order_by("full_name")
+        .prefetch_related("phones")[:GLOBAL_SEARCH_LIMIT_PER_TYPE]
+    )
+
+    query_lower = query.lower()
+    results = []
+    for parent in parents:
+        if query_lower in parent.full_name.lower():
+            matched_on, matched_detail = "parent_name", None
+        else:
+            matched_on = "phone"
+            matched_detail = _find_matched_phone(parent, phone_digits, phone_normalized)
+        results.append(
+            {
+                "type": "parent",
+                "id": str(parent.id),
+                "title": parent.full_name,
+                "matched_on": matched_on,
+                "matched_detail": matched_detail,
+                "url": reverse("clients_web:parent-card", args=[parent.pk]),
+            }
+        )
+    return results
+
+
+@role_required()
+def global_search(request):
+    query = (request.GET.get("q") or "").strip()
+    if len(query) < GLOBAL_SEARCH_MIN_LENGTH:
+        return JsonResponse({"results": []})
+
+    organization = request.user.organization
+    phone_digits, phone_normalized = (
+        _phone_digits_and_normalized(query) if can_view_phone(request.user) else (None, None)
+    )
+
+    results = _global_search_children(organization, query, phone_digits, phone_normalized)
+    results += _global_search_parents(organization, query, phone_digits, phone_normalized)
+    return JsonResponse({"results": results})
+
+
 def _contacts_tab_context(request, child):
     links = (
         ChildContact.objects.for_tenant(request.user.organization)
@@ -167,6 +364,7 @@ def _contacts_tab_context(request, child):
             "is_payer": link.is_payer,
             "is_primary_contact": link.is_primary_contact,
             "phone": _first_phone(link) if show_phones else None,
+            "card_url": reverse("clients_web:parent-card", args=[link.parent_contact.pk]),
             "edit_url": reverse("clients_web:child-contact-edit", args=[child.pk, link.pk]),
             "detach_url": reverse("clients_web:child-contact-detach", args=[child.pk, link.pk]),
         }
@@ -223,11 +421,21 @@ def _communications_tab_context(request, child, form=None):
 def child_list(request):
     # Каркас страницы — сами строки грузит child_list_data() (удалённый
     # режим table.js): на 5000 детей отдавать всё разом одним json_script,
-    # как раньше, не укладывается в бюджет ≤1с (ТЗ п. 10.2).
+    # как раньше, не укладывается в бюджет ≤1с (ТЗ п. 10.2). Списки для
+    # <select> фильтров — реальные справочники организации; сами значения
+    # фильтров read/write делает JS из query-строки (см. child_list.html),
+    # не эта view — ссылку с фильтрами должно быть можно переслать коллеге.
+    organization = request.user.organization
     return render(
         request,
         "clients/child_list.html",
-        {"can_manage": request.user.role in CHILD_EDIT_ROLES},
+        {
+            "can_manage": request.user.role in CHILD_EDIT_ROLES,
+            "branches": Branch.objects.for_tenant(organization).filter(is_active=True),
+            "directions": Direction.objects.for_tenant(organization),
+            "groups": Group.objects.for_tenant(organization),
+            "statuses": Child.Status.choices,
+        },
     )
 
 
@@ -235,6 +443,7 @@ def child_list(request):
 def child_list_data(request):
     organization = request.user.organization
     qs = Child.objects.for_tenant(organization).prefetch_related("directions__branches")
+    qs = _filter_child_queryset(qs, organization, request.GET)
     qs = _sort_child_queryset(
         qs, request.GET.get("sort", "full_name"), request.GET.get("dir", "asc")
     )
