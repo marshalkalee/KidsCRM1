@@ -10,28 +10,20 @@ to_tenge() (TRU-17), никогда напрямую Decimal(str(...)) — ин�
 from django.db import transaction
 
 from domains.platform.core.audit import AuditLog
-from domains.platform.core.utils import to_tenge
 
 from .models import Payment
 
 
 @transaction.atomic
 def record_payment(*, actor, subscription, amount, method, comment="") -> Payment:
-    payment = Payment.objects.create(
-        organization=subscription.organization,
+    from .providers import ManualProvider
+
+    return ManualProvider(method).record(
         subscription=subscription,
-        amount=to_tenge(amount),
-        method=method,
-        received_by=actor,
+        amount=amount,
+        actor=actor,
         comment=comment,
     )
-    AuditLog.record(
-        actor=actor,
-        action=AuditLog.Action.CREATE,
-        entity=payment,
-        after={"amount": str(payment.amount), "method": method, "subscription": str(subscription)},
-    )
-    return payment
 
 
 @transaction.atomic
