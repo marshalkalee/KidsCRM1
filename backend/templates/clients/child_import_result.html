@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — импорт детей
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="child_import.result_title">Результат импорта</span>
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-card">
+    <p>
+      <span data-i18n="child_import.result_created">Создано новых детей:</span>
+      <strong>{{ result.created }}</strong>
+    </p>
+    <p>
+      <span data-i18n="child_import.result_attached">Привязано как второй ребёнок в семье:</span>
+      <strong>{{ result.attached_to_existing_family }}</strong>
+    </p>
+    <p>
+      <span data-i18n="child_import.result_skipped">Пропущено (дубли/ошибки):</span>
+      <strong>{{ result.skipped }}</strong>
+    </p>
+    {% if result.failed %}
+      <p data-i18n="child_import.result_failed_title">Не удалось импортировать:</p>
+      <ul>
+        {% for row_number, error in result.failed %}
+          <li>
+            <span data-i18n="child_import.th_row">Строка</span> {{ row_number }}: {{ error }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    <a href="{% url 'clients_web:child-list' %}"
+       class="kc-btn kc-btn--primary"
+       data-i18n="child_import.go_to_list">К списку детей</a>
+  </div>
+{% endblock content %}

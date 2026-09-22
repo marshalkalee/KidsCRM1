@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — импорт детей
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="child_import.title">Импорт детей из Excel</span>
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-card">
+    <p data-i18n="child_import.intro">Файл .xlsx с колонками (первая строка — заголовки, порядок колонок не важен):</p>
+    <ul>
+      <li data-i18n="child_import.col_child_name">ФИО ребёнка — обязательно</li>
+      <li data-i18n="child_import.col_birth_date">Дата рождения ребёнка — обязательно, ДД.ММ.ГГГГ</li>
+      <li data-i18n="child_import.col_gender">Пол ребёнка — обязательно, М/Ж</li>
+      <li data-i18n="child_import.col_parent_name">ФИО родителя — обязательно</li>
+      <li data-i18n="child_import.col_phone">Телефон родителя — обязательно</li>
+      <li data-i18n="child_import.col_role">Роль родителя — необязательно (мама/папа/опекун/бабушка)</li>
+    </ul>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="kc-field{% if form.file.errors %} kc-field--invalid{% endif %}">
+        <label class="kc-field__label kc-field__label--required"
+               for="{{ form.file.id_for_label }}">{{ form.file.label }}</label>
+        {{ form.file }}
+        <div class="kc-field__error">{{ form.file.errors|first }}</div>
+      </div>
+      {% if form.non_field_errors %}<div class="kc-field__error">{{ form.non_field_errors|first }}</div>{% endif %}
+      <button type="submit"
+              class="kc-btn kc-btn--primary"
+              data-i18n="child_import.upload">Загрузить и проверить</button>
+    </form>
+  </div>
+{% endblock content %}
