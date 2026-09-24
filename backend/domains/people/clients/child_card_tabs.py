@@ -59,7 +59,7 @@ CHILD_CARD_TABS = [
         slug="payments",
         label_key="child_card.tab_payments",
         label_fallback="Оплаты",
-        url_name=None,
+        url_name="payments_web:child-tab-payments",
         order=40,
     ),
     ChildCardTab(

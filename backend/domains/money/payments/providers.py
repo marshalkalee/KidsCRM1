@@ -28,24 +28,37 @@ class ManualProvider(PaymentProvider):
     def __init__(self, method: str):
         self.method = method
 
-    def record(self, *, subscription, amount, actor, comment="") -> Payment:
+    def record(self, *, subscription, amount, actor, comment="", idempotency_key=None) -> Payment:
         now = timezone.now()
-        payment = Payment.objects.create(
+        defaults = dict(
             organization=subscription.organization,
             subscription=subscription,
             amount=to_tenge(amount),
             method=self.method,
-            provider=Payment.Provider.MANUAL,
-            provider_transaction_id=None,
             status=Payment.Status.CONFIRMED,
             confirmed_at=now,
             received_by=actor,
             comment=comment,
         )
-        AuditLog.record(
-            actor=actor,
-            action=AuditLog.Action.CREATE,
-            entity=payment,
-            after={"amount": str(payment.amount), "method": self.method, "provider": "manual"},
-        )
+        if idempotency_key:
+            payment, created = Payment.objects.get_or_create(
+                provider=Payment.Provider.MANUAL,
+                provider_transaction_id=str(idempotency_key),
+                defaults=defaults,
+            )
+        else:
+            payment = Payment.objects.create(
+                provider=Payment.Provider.MANUAL,
+                provider_transaction_id=None,
+                **defaults,
+            )
+            created = True
+
+        if created:
+            AuditLog.record(
+                actor=actor,
+                action=AuditLog.Action.CREATE,
+                entity=payment,
+                after={"amount": str(payment.amount), "method": self.method, "provider": "manual"},
+            )
         return payment
