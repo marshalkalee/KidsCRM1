@@ -1,0 +1,70 @@
+{% extends "base_minimal.html" %}
+{% block title %}
+  KidsCRM — регистрация центра
+{% endblock title %}
+{% block content %}
+  <div class="kc-auth-page">
+    <form method="post" class="kc-auth-card">
+      {% csrf_token %}
+      <div class="kc-auth-card__brand">
+        <span class="kc-logo">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+          </svg>
+        </span>
+        <span data-i18n="nav.brand">KidsCRM</span>
+      </div>
+      <p data-i18n="signup.hint">Зарегистрируйте центр — дальше мастер поможет всё настроить.</p>
+      {% if errors.non_field_errors %}<p class="kc-error-state">{{ errors.non_field_errors }}</p>{% endif %}
+      <label class="kc-auth-card__label"
+             for="id_org_name"
+             data-i18n="signup.org_name">Название центра</label>
+      <input class="kc-form-input"
+             type="text"
+             name="org_name"
+             id="id_org_name"
+             value="{{ values.org_name }}"
+             maxlength="255"
+             required />
+      {% if errors.org_name %}<p class="kc-error-state">{{ errors.org_name }}</p>{% endif %}
+      <label class="kc-auth-card__label"
+             for="id_full_name"
+             data-i18n="signup.full_name">Ваше ФИО</label>
+      <input class="kc-form-input"
+             type="text"
+             name="full_name"
+             id="id_full_name"
+             value="{{ values.full_name }}"
+             autocomplete="name"
+             maxlength="255"
+             required />
+      {% if errors.full_name %}<p class="kc-error-state">{{ errors.full_name }}</p>{% endif %}
+      <label class="kc-auth-card__label" for="id_phone" data-i18n="login.phone">Телефон</label>
+      <input class="kc-form-input"
+             type="tel"
+             name="phone"
+             id="id_phone"
+             value="{{ values.phone }}"
+             autocomplete="tel"
+             required />
+      {% if errors.phone %}<p class="kc-error-state">{{ errors.phone }}</p>{% endif %}
+      <label class="kc-auth-card__label"
+             for="id_password"
+             data-i18n="login.password">Пароль</label>
+      <input class="kc-form-input"
+             type="password"
+             name="password"
+             id="id_password"
+             autocomplete="new-password"
+             required />
+      {% if errors.password %}<p class="kc-error-state">{{ errors.password }}</p>{% endif %}
+      <button type="submit"
+              class="kc-btn kc-btn--primary kc-auth-card__submit"
+              data-i18n="signup.submit">Зарегистрировать центр</button>
+      <p>
+        <span data-i18n="signup.have_account">Уже есть аккаунт?</span>
+        <a href="{% url 'core:login' %}" data-i18n="signup.login_link">Войти</a>
+      </p>
+    </form>
+  </div>
+{% endblock content %}

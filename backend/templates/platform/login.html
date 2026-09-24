@@ -35,6 +35,10 @@
       <button type="submit"
               class="kc-btn kc-btn--primary kc-auth-card__submit"
               data-i18n="login.submit">Войти</button>
+      <p>
+        <span data-i18n="login.no_account">Нет аккаунта?</span>
+        <a href="{% url 'core:signup' %}" data-i18n="login.signup_link">Зарегистрировать центр</a>
+      </p>
     </form>
   </div>
 {% endblock content %}

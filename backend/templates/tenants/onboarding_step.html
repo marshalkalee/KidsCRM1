@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — настройка центра
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="onboarding.title">Настройка центра</span>
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-onboarding">
+    <ol class="kc-onboarding__steps">
+      {% for item in steps %}
+        <li class="kc-onboarding__step kc-onboarding__step--{{ item.status }}{% if item.key == step %} kc-onboarding__step--current{% endif %}">
+          <a href="{{ item.url }}">
+            <span class="kc-onboarding__number">
+              {% if item.status == "done" %}
+                ✓
+              {% else %}
+                {{ item.number }}
+              {% endif %}
+            </span>
+            <span data-i18n="onboarding.step_{{ item.key }}">{{ item.title }}</span>
+            {% if item.status == "skipped" %}
+              <span class="kc-badge kc-badge--muted" data-i18n="onboarding.skipped">пропущен</span>
+            {% endif %}
+          </a>
+        </li>
+      {% endfor %}
+    </ol>
+    <div class="kc-card kc-onboarding__body">
+      <h2 data-i18n="onboarding.step_{{ step }}">{{ step_title }}</h2>
+      {% if step == "organization" %}
+        <p data-i18n="onboarding.organization_hint">
+          Проверьте название и часовой пояс. Пороги автостатусов уже заполнены разумными значениями — их можно поменять и позже в настройках организации.
+        </p>
+        <form method="post">
+          {% csrf_token %}
+          {% include "tenants/_organization_settings_fields.html" %}
+          <div class="kc-onboarding__actions">
+            <button type="submit"
+                    class="kc-btn kc-btn--primary"
+                    data-i18n="onboarding.save_and_next">Сохранить и дальше</button>
+          </div>
+        </form>
+      {% else %}
+        {% if step == "branch" %}
+          <p data-i18n="onboarding.branch_hint">
+            Добавьте хотя бы один филиал — адрес, телефон и рабочие часы. Рабочие часы уже заполнены (пн–пт 09:00–20:00), поправьте под себя.
+          </p>
+        {% elif step == "directions" %}
+          <p data-i18n="onboarding.directions_hint">
+            Направления — чем занимаются дети: балет, гимнастика, английский. По ним строятся группы и абонементы.
+          </p>
+        {% elif step == "subscription_types" %}
+          <p data-i18n="onboarding.subscription_types_hint">
+            Типы абонементов — что вы продаёте: количество занятий, срок, цена.
+          </p>
+          {% if not create_url %}
+            <p class="kc-muted" data-i18n="onboarding.subscription_types_pending">
+              Экран типов абонементов ещё в разработке — пропустите этот шаг, мастер напомнит о нём позже.
+            </p>
+          {% endif %}
+        {% elif step == "groups" %}
+          <p data-i18n="onboarding.groups_hint">
+            Группа — конкретный набор детей: направление, филиал, вместимость, преподаватель.
+          </p>
+          {% if missing_for_groups %}
+            <p class="kc-error-state">
+              <span data-i18n="onboarding.groups_missing">Для группы сначала нужны:</span>
+              {{ missing_for_groups|join:", " }}
+            </p>
+          {% endif %}
+        {% elif step == "import" %}
+          <p data-i18n="onboarding.import_hint">
+            Загрузите базу детей и родителей из Excel или CSV. Сначала будет сухой прогон — ничего не запишется, пока вы не проверите отчёт.
+          </p>
+        {% endif %}
+        {% if items %}
+          <p>
+            <strong data-i18n="onboarding.already_added">Уже добавлено:</strong>
+            {{ items|join:", " }}
+          </p>
+        {% endif %}
+        {% if step_state.done and step == "import" %}
+          <p data-i18n="onboarding.import_done">База уже импортирована.</p>
+        {% endif %}
+        <div class="kc-onboarding__actions">
+          {% if create_url %}
+            <button type="button"
+                    class="kc-btn {% if step_state.done %}kc-btn--secondary{% else %}kc-btn--primary{% endif %}"
+                    id="js-onboarding-create"
+                    data-url="{{ create_url }}"
+                    data-title-key="{% if step == 'branch' %}branch_form.title_create{% elif step == 'directions' %}direction_form.title_create{% else %}group_form.title_create{% endif %}"
+                    data-i18n="onboarding.add_{{ step }}">
+              {% if step == "branch" %}
+                Добавить филиал
+              {% elif step == "directions" %}
+                Добавить направление
+              {% elif step == "groups" %}
+                Добавить группу
+              {% else %}
+                Добавить тип абонемента
+              {% endif %}
+            </button>
+          {% endif %}
+          {% if import_url and not step_state.done %}
+            <a href="{{ import_url }}"
+               class="kc-btn kc-btn--primary"
+               data-i18n="onboarding.import_start">Загрузить базу</a>
+          {% endif %}
+          {% if step_state.done %}
+            <form method="post" action="{% url 'tenants_web:onboarding-step' step %}">
+              {% csrf_token %}
+              <button type="submit"
+                      class="kc-btn kc-btn--primary"
+                      data-i18n="onboarding.next">Дальше</button>
+            </form>
+          {% else %}
+            <form method="post" action="{% url 'tenants_web:onboarding-skip' step %}">
+              {% csrf_token %}
+              <button type="submit" class="kc-btn kc-btn--secondary">
+                {% if step == "import" %}
+                  <span data-i18n="onboarding.skip_import">Пока пропущу</span>
+                {% else %}
+                  <span data-i18n="onboarding.skip">Пропустить, вернусь позже</span>
+                {% endif %}
+              </button>
+            </form>
+          {% endif %}
+        </div>
+      {% endif %}
+      {% if previous_step %}
+        <p>
+          <a href="{% url 'tenants_web:onboarding-step' previous_step %}"
+             data-i18n="onboarding.back">← Назад</a>
+        </p>
+      {% endif %}
+    </div>
+  </div>
+{% endblock content %}
+{% block extra_js %}
+  {# djlint:off #}
+  <script>
+    (function () {
+      // Та же форма и та же вьюха, что на обычном экране (branch_list.html
+      // и т.д.) — мастер не заводит своего пути записи.
+      var btn = document.getElementById("js-onboarding-create");
+      if (!btn) { return; }
+      btn.addEventListener("click", function () {
+        window.KidsCRM.formModal
+          .open({ url: btn.dataset.url, title: window.KidsCRM.t(btn.dataset.titleKey) })
+          .then(function (saved) {
+            if (saved) { window.location.reload(); }
+          });
+      });
+    })();
+</script>
+  {# djlint:on #}
+{% endblock extra_js %}

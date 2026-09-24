@@ -1,8 +1,10 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.db import transaction
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.tenants.models import Branch, Organization
 
 User = get_user_model()
@@ -82,11 +84,27 @@ class OrganizationRegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError("Организация с таким slug уже существует.")
         return value
 
+    def validate_phone(self, value):
+        # Нормализованный номер — тот же формат, что у остальных телефонов
+        # системы; иначе «8 701…» и «+7 701…» — два разных владельца.
+        try:
+            phone = normalize_phone_number(value)
+        except InvalidPhoneNumberError as exc:
+            raise serializers.ValidationError("Не похоже на номер телефона.") from exc
+        # _base_manager — уникальность в базе действует и на удалённых
+        # пользователей, иначе вместо ошибки формы — IntegrityError (500).
+        if User._base_manager.filter(phone=phone).exists():
+            raise serializers.ValidationError("Пользователь с таким телефоном уже есть.")
+        return phone
+
     def validate_password(self, value):
         validate_password(value)
         return value
 
+    @transaction.atomic
     def create(self, validated_data):
+        # Атомарно: без этого сбой при создании владельца оставлял бы
+        # организацию без единого пользователя.
         org = Organization.objects.create(
             name=validated_data["org_name"],
             slug=validated_data["org_slug"],
