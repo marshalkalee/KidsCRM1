@@ -12,7 +12,36 @@ app_name = "clients_web"
 urlpatterns = [
     path("clients/search/", web_views.global_search, name="global-search"),
     path("clients/import/", import_views.child_import_upload, name="child-import-upload"),
-    path("clients/import/confirm/", import_views.child_import_confirm, name="child-import-confirm"),
+    path(
+        "clients/import/mapping/",
+        import_views.child_import_mapping_confirm,
+        name="child-import-mapping-confirm",
+    ),
+    path(
+        "clients/import/jobs/<uuid:job_id>/",
+        import_views.child_import_job_status,
+        name="child-import-job-status",
+    ),
+    path(
+        "clients/import/jobs/<uuid:job_id>/report.xlsx",
+        import_views.child_import_report_download,
+        name="child-import-report-download",
+    ),
+    path(
+        "clients/import/jobs/<uuid:job_id>/decisions/",
+        import_views.child_import_decisions,
+        name="child-import-decisions",
+    ),
+    path(
+        "clients/import/jobs/<uuid:job_id>/execute/",
+        import_views.child_import_execute,
+        name="child-import-execute",
+    ),
+    path(
+        "clients/import/jobs/<uuid:job_id>/rollback/",
+        import_views.child_import_rollback,
+        name="child-import-rollback",
+    ),
     path("clients/children/", web_views.child_list, name="child-list"),
     path("clients/children/data/", web_views.child_list_data, name="child-list-data"),
     path("clients/children/create/", web_views.child_create, name="child-create"),

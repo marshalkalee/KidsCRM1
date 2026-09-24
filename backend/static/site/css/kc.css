@@ -402,3 +402,79 @@
 .kc-auth-card__submit {
   margin-top: var(--kc-space-3);
 }
+
+/* Мастер онбординга (tenants/onboarding_step.html): шаги слева, шаг справа. */
+.kc-onboarding {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--kc-space-5);
+  align-items: start;
+}
+
+.kc-onboarding__steps {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--kc-space-2);
+  padding: 0;
+  margin: 0;
+}
+
+.kc-onboarding__step a {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  padding: var(--kc-space-2) var(--kc-space-3);
+  border-radius: var(--kc-radius-md);
+  color: var(--kc-color-text-muted);
+  text-decoration: none;
+}
+
+.kc-onboarding__step--current a {
+  background: var(--kc-color-surface);
+  color: var(--kc-color-text);
+  font-weight: 600;
+}
+
+.kc-onboarding__step--done a {
+  color: var(--kc-color-success);
+}
+
+.kc-onboarding__number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--kc-color-border);
+  font-size: var(--kc-font-size-sm);
+  flex-shrink: 0;
+}
+
+.kc-onboarding__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kc-space-2);
+  margin-top: var(--kc-space-4);
+}
+
+.kc-onboarding-progress {
+  width: 100%;
+  height: 8px;
+  border-radius: var(--kc-radius-sm);
+  background: var(--kc-color-border);
+  overflow: hidden;
+  margin: var(--kc-space-3) 0;
+}
+
+.kc-onboarding-progress__bar {
+  height: 100%;
+  background: var(--kc-gradient-accent);
+}
+
+@media (max-width: 768px) {
+  .kc-onboarding {
+    grid-template-columns: 1fr;
+  }
+}

@@ -287,6 +287,39 @@ class ChildListDataWebViewTests(TestCase):
         self.assertEqual(row["subscription_name"], "8 занятий")
         self.assertEqual(Decimal(row["debt"]), Decimal("10000"))
 
+    def test_teacher_gets_no_money_columns_and_no_money_filters(self):
+        child = self._make_child("Аружан")
+        direction = Direction.objects.create(organization=self.org, name="Балет")
+        sub_type = create_type(
+            self.org, name="8 занятий", price=25000, quota_sessions=8, duration_days=30
+        )
+        sell_subscription(
+            actor=self.owner,
+            child=child,
+            subscription_type_version=sub_type.versions.latest(),
+            direction=direction,
+            starts_on=datetime.date.today(),
+            ends_on=datetime.date.today() + datetime.timedelta(days=30),
+            paid_amount=Decimal("15000"),
+            payment_method="cash",
+        )
+        teacher = User.objects.create_user(
+            phone="+77010000009",
+            full_name="Teacher",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self._make_child("Без долга")
+        self.client.force_login(teacher)
+
+        response = self.client.get(reverse("clients_web:child-list-data"), {"has_debt": "1"}).json()
+
+        # Фильтр по долгу для преподавателя игнорируется — видны оба ребёнка.
+        self.assertEqual(response["total"], 2)
+        self.assertTrue(all(row["debt"] is None for row in response["rows"]))
+        self.assertTrue(all(row["subscription_name"] is None for row in response["rows"]))
+
     def test_fully_paid_subscription_has_zero_debt(self):
         child = self._make_child("Аружан")
         direction = Direction.objects.create(organization=self.org, name="Балет")

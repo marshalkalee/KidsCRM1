@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — импорт детей
+{% endblock title %}
+{% block page_title %}
+  {% if job.job_type == "dry_run" %}
+    <span data-i18n="child_import.dry_run_title">Сухой прогон</span>
+  {% else %}
+    <span data-i18n="child_import.job_title">Импорт детей</span>
+  {% endif %}
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-card">
+    <p>
+      <span data-i18n="child_import.job_status">Статус:</span>
+      <span class="kc-badge {% if job.rolled_back_at %}kc-badge--muted{% elif job.status == 'done' %}kc-badge--green{% elif job.status == 'failed' %}kc-badge--red{% elif job.status == 'running' %}kc-badge--amber{% else %}kc-badge--muted{% endif %}">
+        {% if job.rolled_back_at %}
+          <span data-i18n="child_import.rolled_back">Откатан</span>
+        {% else %}
+          {{ job.get_status_display }}
+        {% endif %}
+      </span>
+    </p>
+    <p>
+      <span data-i18n="child_import.job_total_rows">Строк к импорту:</span>
+      <strong>{{ job.total_rows }}</strong>
+    </p>
+    {% if job.status == "pending" or job.status == "running" %}
+      {% if progress %}
+        <p>
+          {% if progress.phase == "writing" %}
+            <span data-i18n="child_import.progress_writing">Запись в базу:</span>
+          {% else %}
+            <span data-i18n="child_import.progress_checking">Проверка дублей:</span>
+          {% endif %}
+          <strong>{{ progress.done }} / {{ progress.total }}</strong>
+        </p>
+        <progress max="{{ progress.total }}"
+                  value="{{ progress.done }}"
+                  style="width: 100%">
+          {{ progress.done }} / {{ progress.total }}
+        </progress>
+      {% endif %}
+      <p data-i18n="child_import.job_in_progress_auto">
+        Импорт выполняется в фоне — страница обновляется сама каждые несколько секунд.
+      </p>
+      {% if job.job_type == "execute" %}
+        <p class="kc-muted" data-i18n="child_import.job_atomic_hint">
+          Импорт применяется целиком или не применяется вовсе: если он прервётся, в базе не останется половины данных.
+        </p>
+      {% endif %}
+      <a href="{% url 'clients_web:child-import-job-status' job.id %}"
+         class="kc-btn kc-btn--secondary"
+         data-i18n="child_import.job_refresh">Обновить статус</a>
+    {% endif %}
+    {% if job.status == "done" and job.job_type == "dry_run" %}
+      <p>
+        <span class="kc-badge kc-badge--green"
+              data-i18n="child_import.dry_run_ready">Готово к импорту:</span>
+        <strong>{{ job.ready_count }}</strong>
+      </p>
+      <p>
+        <span class="kc-badge {% if job.warning_count %}kc-badge--amber{% else %}kc-badge--muted{% endif %}"
+              data-i18n="child_import.dry_run_warnings">С предупреждениями:</span>
+        <strong>{{ job.warning_count }}</strong>
+      </p>
+      <p>
+        <span class="kc-badge {% if job.error_count %}kc-badge--red{% else %}kc-badge--muted{% endif %}"
+              data-i18n="child_import.dry_run_errors">С ошибками:</span>
+        <strong>{{ job.error_count }}</strong>
+      </p>
+      <a href="{% url 'clients_web:child-import-report-download' job.id %}"
+         class="kc-btn kc-btn--secondary"
+         data-i18n="child_import.dry_run_download">Скачать отчёт (.xlsx)</a>
+      {% if job.executed_job_id %}
+        <a href="{% url 'clients_web:child-import-job-status' job.executed_job_id %}"
+           class="kc-btn kc-btn--primary"
+           data-i18n="child_import.dry_run_already_executed">Импорт из этого сухого прогона уже запущен — посмотреть результат</a>
+      {% elif not job.ready_count and not job.warning_count %}
+        <p data-i18n="child_import.dry_run_nothing_ready">
+          Нет ни одной строки без ошибок — исправьте файл и загрузите заново.
+        </p>
+      {% elif not duplicate_rows %}
+        <form method="post"
+              action="{% url 'clients_web:child-import-execute' job.id %}">
+          {% csrf_token %}
+          <button type="submit" class="kc-btn kc-btn--primary">
+            <span data-i18n="child_import.dry_run_execute_label">Запустить импорт</span> ({{ job.ready_count|add:job.warning_count }})
+          </button>
+        </form>
+      {% endif %}
+    {% endif %}
+    {% if job.status == "done" and job.job_type == "execute" %}
+      <p>
+        <span data-i18n="child_import.result_children_created">Создано детей:</span>
+        <strong>{{ job.created_count|add:job.attached_count }}</strong>
+      </p>
+      <p>
+        <span data-i18n="child_import.result_parents_created">Создано родителей:</span>
+        <strong>{{ job.parents_created_count }}</strong>
+      </p>
+      <p>
+        <span data-i18n="child_import.result_attached">Новых детей привязано к существующим родителям:</span>
+        <strong>{{ job.attached_count }}</strong>
+      </p>
+      <p>
+        <span data-i18n="child_import.result_linked">Строк привязано к уже существующим детям:</span>
+        <strong>{{ job.linked_count }}</strong>
+      </p>
+      <p>
+        <span data-i18n="child_import.result_enrolled">Записано в группы:</span>
+        <strong>{{ job.enrolled_count }}</strong>
+      </p>
+      <p>
+        <span data-i18n="child_import.result_skipped">Пропущено (дубли):</span>
+        <strong>{{ job.skipped_count }}</strong>
+      </p>
+      {% if job.failed_rows %}
+        <p data-i18n="child_import.result_failed_title">Не удалось импортировать:</p>
+        <ul>
+          {% for row_number, error in job.failed_rows %}
+            <li>
+              <span data-i18n="child_import.th_row">Строка</span> {{ row_number }}: {{ error }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if job.unhandled_balances %}
+        <p data-i18n="child_import.result_balances_title">
+          В файле был указан остаток занятий — перенесите вручную, автоматически не создаётся:
+        </p>
+        <ul>
+          {% for row_number, child_name, balance in job.unhandled_balances %}
+            <li>
+              <span data-i18n="child_import.th_row">Строка</span> {{ row_number }} ({{ child_name }}): {{ balance }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <a href="{% url 'clients_web:child-list' %}"
+         class="kc-btn kc-btn--primary"
+         data-i18n="child_import.go_to_list">К списку детей</a>
+    {% endif %}
+    {% if job.status == "failed" %}
+      <div class="kc-field__error">{{ job.error_message }}</div>
+      {% if job.job_type == "execute" %}
+        <p data-i18n="child_import.job_failed_nothing_written">
+          Импорт не применён целиком — в базу не записано ничего из этого файла.
+        </p>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% if job.status == "done" and job.job_type == "execute" %}
+    <div class="kc-card">
+      <strong data-i18n="child_import.rollback_title">Откат импорта</strong>
+      {% if job.rolled_back_at %}
+        <p>
+          <span data-i18n="child_import.rollback_done">Импорт откатан:</span>
+          {{ job.rolled_back_at|date:"d.m.Y H:i" }}, {{ job.rolled_back_by.full_name }}
+        </p>
+      {% elif rollback_blockers %}
+        <p data-i18n="child_import.rollback_blocked">Откатить уже нельзя — с импортированными данными начали работать:</p>
+        <ul>
+          {% for reason in rollback_blockers %}<li>{{ reason }}</li>{% endfor %}
+        </ul>
+      {% else %}
+        <p data-i18n="child_import.rollback_hint">
+          Пока с импортированными данными никто не работал, импорт можно отменить целиком — система вернётся в состояние до импорта.
+        </p>
+        <form method="post"
+              action="{% url 'clients_web:child-import-rollback' job.id %}"
+              id="js-rollback-form">
+          {% csrf_token %}
+          <button type="submit"
+                  class="kc-btn kc-btn--danger"
+                  data-i18n="child_import.rollback_button">Откатить импорт</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
+  {% if duplicate_rows and not job.executed_job_id %}
+    <div class="kc-card" id="duplicates">
+      <strong data-i18n="child_import.duplicates_title">Совпадения — решите, что делать</strong>
+      <p class="kc-muted" data-i18n="child_import.duplicates_hint">
+        По умолчанию выбрано самое безопасное действие. Для однотипных случаев используйте массовое решение.
+      </p>
+      {% for kind in duplicate_kinds %}
+        <form method="post"
+              action="{% url 'clients_web:child-import-decisions' job.id %}">
+          {% csrf_token %}
+          <input type="hidden" name="bulk_kind" value="{{ kind.kind }}">
+          <p>
+            <strong>{{ kind.label }}</strong> ({{ kind.count }}):
+            <select class="kc-form-input" name="bulk_decision">
+              {% for value, label in kind.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+            <button type="submit"
+                    class="kc-btn kc-btn--secondary"
+                    data-i18n="child_import.duplicates_apply_all">Применить ко всем</button>
+          </p>
+        </form>
+      {% endfor %}
+      <form method="post"
+            action="{% url 'clients_web:child-import-execute' job.id %}">
+        {% csrf_token %}
+        {% if duplicate_rows_truncated %}
+          <p data-i18n="child_import.duplicates_truncated">
+            Показаны первые 500 совпадений — для остальных действует массовое решение или действие по умолчанию.
+          </p>
+        {% endif %}
+        <table class="kc-table kc-table--cards">
+          <thead>
+            <tr>
+              <th data-i18n="child_import.th_row">Строка</th>
+              <th data-i18n="child_import.th_child">ФИО ребёнка</th>
+              <th data-i18n="child_import.duplicates_th_kind">Совпадение</th>
+              <th data-i18n="child_import.duplicates_th_matched">С кем</th>
+              <th data-i18n="child_import.duplicates_th_decision">Решение</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in duplicate_rows %}
+              <tr>
+                <td data-label="Строка">{{ row.row_number }}</td>
+                <td data-label="ФИО ребёнка">{{ row.child_name }}</td>
+                <td data-label="Совпадение">{{ row.kind_label }}</td>
+                <td data-label="С кем">{{ row.matched }}</td>
+                <td data-label="Решение">
+                  <select class="kc-form-input" name="decision_{{ row.row_number }}">
+                    {% for value, label, selected in row.choices %}
+                      <option value="{{ value }}" {% if selected %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <button type="submit"
+                class="kc-btn kc-btn--secondary"
+                formaction="{% url 'clients_web:child-import-decisions' job.id %}"
+                data-i18n="child_import.duplicates_save">Сохранить решения</button>
+        <button type="submit" class="kc-btn kc-btn--primary">
+          <span data-i18n="child_import.dry_run_execute_label">Запустить импорт</span> ({{ job.ready_count|add:job.warning_count }})
+        </button>
+      </form>
+    </div>
+  {% endif %}
+  {% if job.status == "done" and job.job_type == "dry_run" and report_rows %}
+    <div class="kc-card">
+      <strong data-i18n="child_import.dry_run_report_title">Отчёт по строкам</strong>
+      {% if report_rows_truncated %}
+        <p data-i18n="child_import.dry_run_report_truncated">Показаны первые 200 — остальные смотрите в выгрузке.</p>
+      {% endif %}
+      <table class="kc-table kc-table--cards">
+        <thead>
+          <tr>
+            <th data-i18n="child_import.th_row">Строка</th>
+            <th data-i18n="child_import.dry_run_th_status">Статус</th>
+            <th data-i18n="child_import.th_child">ФИО ребёнка</th>
+            <th data-i18n="child_import.dry_run_th_messages">Сообщения</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in report_rows %}
+            <tr>
+              <td data-label="Строка">{{ row.row_number }}</td>
+              <td data-label="Статус">
+                <span class="kc-badge {% if row.level == 'ready' %}kc-badge--green{% elif row.level == 'warning' %}kc-badge--amber{% else %}kc-badge--red{% endif %}">
+                  {% if row.level == "ready" %}
+                    <span data-i18n="child_import.dry_run_level_ready">Готово</span>
+                  {% elif row.level == "warning" %}
+                    <span data-i18n="child_import.dry_run_level_warning">Предупреждение</span>
+                  {% else %}
+                    <span data-i18n="child_import.dry_run_level_error">Ошибка</span>
+                  {% endif %}
+                </span>
+              </td>
+              <td data-label="ФИО ребёнка">{{ row.child_name|default:"—" }}</td>
+              <td data-label="Сообщения">{{ row.messages|join:"; " }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock content %}
+{% block extra_js %}
+  {# djlint:off #}
+  {% if job.status == "pending" or job.status == "running" %}
+    <script>
+      // Статус и прогресс фонового импорта — страница перезагружается сама,
+      // чтобы экран не выглядел зависшим на больших файлах.
+      setTimeout(function () { window.location.reload(); }, 3000);
+</script>
+  {% endif %}
+  {% if job.status == "done" and job.job_type == "execute" and not job.rolled_back_at and not rollback_blockers %}
+    <script>
+      (function () {
+        var form = document.getElementById("js-rollback-form");
+        if (!form) { return; }
+        var t = window.KidsCRM.t;
+        form.addEventListener("submit", function (event) {
+          if (form.dataset.confirmed) { return; }
+          event.preventDefault();
+          window.KidsCRM.modal
+            .confirmDanger({
+              title: t("child_import.rollback_confirm_title"),
+              message: t("child_import.rollback_confirm_message"),
+              confirmText: t("child_import.rollback_button"),
+            })
+            .then(function (confirmed) {
+              if (confirmed) {
+                form.dataset.confirmed = "1";
+                form.submit();
+              }
+            });
+        });
+      })();
+</script>
+  {% endif %}
+  {# djlint:on #}
+{% endblock extra_js %}

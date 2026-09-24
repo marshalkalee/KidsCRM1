@@ -308,3 +308,119 @@ class CommunicationLog(TenantModel):
 
     def __str__(self) -> str:
         return f"{self.get_channel_display()} — {self.child_id} ({self.created_at:%Y-%m-%d})"
+
+
+class ImportColumnMapping(TenantModel):
+    """Сохранённый маппинг колонок файла → поля системы (ТЗ п. 4.1) —
+    повторный импорт файла с тем же составом колонок не требует
+    настраивать заново. Ключ — точный набор заголовков (headers_key), не
+    имя файла: два разных файла с одинаковыми колонками должны получить
+    один и тот же сохранённый маппинг."""
+
+    # "|".join(file_headers) — для быстрого поиска/уникальности; JSONField
+    # саму по себе так индексировать/сравнивать неудобно.
+    headers_key = models.CharField(max_length=1000)
+    file_headers = models.JSONField()
+    mapping = models.JSONField()  # {"child_name": "ФИО ребёнка", ...}
+    csv_delimiter = models.CharField(max_length=4, blank=True)
+    csv_encoding = models.CharField(max_length=32, blank=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "headers_key"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_mapping_per_headers",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Маппинг {self.organization_id} ({len(self.file_headers)} колонок)"
+
+
+class ImportJob(TenantModel):
+    """Импорт файла — фоновая задача (ТЗ п. 10.1), не HTTP-запрос: на
+    файле в тысячи строк дедуп (ChildService.find_duplicates на каждую
+    новую семью) и создание записей не укладываются в бюджет одного
+    запроса. rows_payload — уже распознанные и провалидированные строки
+    (ImportRow.to_dict()) на момент постановки в очередь; сам дедуп
+    (resolve_rows) и создание (execute_import) выполняет tasks.py.
+
+    Два вида задачи (job_type) — сухой прогон (ТЗ п. 4.1, тикет
+    «валидация, сухой прогон и отчёт об ошибках») и настоящее выполнение.
+    Общая модель, а не две разные: оба вида парсят один и тот же
+    rows_payload и проходят один и тот же resolve_rows — расхождение
+    логики дедупа между "проверить" и "сделать" было бы худшим исходом,
+    чем небольшое дублирование пары полей результата."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ожидает"
+        RUNNING = "running", "Выполняется"
+        DONE = "done", "Готово"
+        FAILED = "failed", "Ошибка"
+
+    class JobType(models.TextChoices):
+        DRY_RUN = "dry_run", "Сухой прогон"
+        EXECUTE = "execute", "Импорт"
+
+    job_type = models.CharField(max_length=10, choices=JobType.choices, default=JobType.EXECUTE)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    total_rows = models.PositiveIntegerField(default=0)
+    rows_payload = models.JSONField()
+
+    # JobType.EXECUTE.
+    created_count = models.PositiveIntegerField(default=0)  # новых детей
+    attached_count = models.PositiveIntegerField(default=0)  # новых детей к существующему родителю
+    skipped_count = models.PositiveIntegerField(default=0)
+    parents_created_count = models.PositiveIntegerField(default=0)
+    # Строки, привязанные к уже существующему ребёнку (решение администратора
+    # по дублю, см. import_service.Decision.ATTACH) — новый ребёнок не создан.
+    linked_count = models.PositiveIntegerField(default=0)
+    enrolled_count = models.PositiveIntegerField(default=0)  # записано в группы
+    # Строки, которые не удалось импортировать не из-за ошибки данных, а из-за
+    # решения по дублю, которое стало не к чему применить (см. execute_import).
+    failed_rows = models.JSONField(default=list, blank=True)  # [[row_number, reason], ...]
+    unhandled_balances = models.JSONField(default=list, blank=True)
+    # id всего, что создал ЭТОТ импорт — по нему работает откат
+    # (import_service.rollback_import): {"children": [...], "parents": [...], ...}.
+    created_objects = models.JSONField(default=dict, blank=True)
+    rolled_back_at = models.DateTimeField(null=True, blank=True)
+    rolled_back_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    # JobType.DRY_RUN — см. import_service.build_dry_run_report.
+    ready_count = models.PositiveIntegerField(default=0)
+    warning_count = models.PositiveIntegerField(default=0)
+    error_count = models.PositiveIntegerField(default=0)
+    report_rows = models.JSONField(default=list, blank=True)
+    # Решения администратора по дублям: {"<номер строки>": Decision.*} —
+    # применяются при выполнении поверх действия по умолчанию.
+    decisions = models.JSONField(default=dict, blank=True)
+    # Импорт, уже запущенный из этого сухого прогона — один сухой прогон
+    # даёт максимум один импорт (повторное нажатие / двойной клик не
+    # создаёт вторую задачу, см. import_views.child_import_execute).
+    executed_job = models.OneToOneField(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_dry_run",
+    )
+
+    error_message = models.TextField(blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.get_job_type_display()} {self.id} ({self.get_status_display()})"

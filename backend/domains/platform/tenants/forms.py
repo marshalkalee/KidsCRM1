@@ -9,6 +9,7 @@ from django import forms
 from domains.platform.tenants.models import Branch, Direction, Room
 from domains.platform.tenants.org_settings import (
     DEBT_OVERDUE_DAYS_THRESHOLD,
+    DEFAULT_ORG_SETTINGS,
     GROUP_UNDERFILLED_PERCENT_THRESHOLD,
     SUBSCRIPTION_ENDING_DAYS_THRESHOLD,
     SUBSCRIPTION_ENDING_LESSONS_THRESHOLD,
@@ -85,6 +86,21 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
         if tz_name not in zoneinfo.available_timezones():
             raise forms.ValidationError("Неизвестный часовой пояс.")
         return tz_name
+
+    @classmethod
+    def for_organization(cls, organization):
+        """Форма с текущими значениями организации (пороги — с фолбэком на
+        значения по умолчанию) — общая для экрана настроек и мастера онбординга."""
+        return cls(
+            initial={
+                "name": organization.name,
+                "timezone": organization.timezone,
+                **{
+                    key: organization.settings.get(key, default)
+                    for key, default in DEFAULT_ORG_SETTINGS.items()
+                },
+            }
+        )
 
     def save(self, organization):
         organization.name = self.cleaned_data["name"]
