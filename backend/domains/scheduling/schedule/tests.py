@@ -11,7 +11,7 @@ from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from domains.people.clients.models import Child
-from domains.platform.tenants.models import Branch, Direction, Organization
+from domains.platform.tenants.models import Branch, Direction, Organization, Room
 from domains.scheduling.groups.models import Group, GroupMembership
 from domains.scheduling.schedule.models import Lesson
 
@@ -204,3 +204,121 @@ class LessonCalendarApiTest(APITestCase):
 
         self.assertEqual(len(response.data), 60)
         self.assertEqual(len(small.captured_queries), len(large.captured_queries))
+
+
+class LessonCalendarFiltersTest(APITestCase):
+    """
+    Фильтры и режим преподавателя (TRU-45).
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.branch_a = Branch.objects.create(organization=self.org, name="Центр")
+        self.branch_b = Branch.objects.create(organization=self.org, name="Юг")
+        self.room_a = Room.objects.create(branch=self.branch_a, name="Зал 1")
+        self.room_b = Room.objects.create(branch=self.branch_b, name="Зал 2")
+        self.direction_ballet = Direction.objects.create(organization=self.org, name="Балет")
+        self.direction_vocal = Direction.objects.create(organization=self.org, name="Вокал")
+        self.group_ballet = Group.objects.create(
+            organization=self.org,
+            branch=self.branch_a,
+            direction=self.direction_ballet,
+            name="Балет",
+            capacity=10,
+        )
+        self.group_vocal = Group.objects.create(
+            organization=self.org,
+            branch=self.branch_b,
+            direction=self.direction_vocal,
+            name="Вокал",
+            capacity=10,
+        )
+        self.teacher_a = User.objects.create_user(
+            phone="+77020000001",
+            full_name="Айгуль",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.teacher_b = User.objects.create_user(
+            phone="+77020000002",
+            full_name="Бекзат",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.owner = User.objects.create_user(
+            phone="+77020000003",
+            full_name="Владелец",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        day = datetime.datetime(2026, 9, 24, 10, 0, tzinfo=tz)
+        self.lesson_a = Lesson.objects.create(
+            organization=self.org,
+            group=self.group_ballet,
+            room=self.room_a,
+            teacher=self.teacher_a,
+            starts_at=day,
+            ends_at=day + datetime.timedelta(hours=1),
+        )
+        self.lesson_b = Lesson.objects.create(
+            organization=self.org,
+            group=self.group_vocal,
+            room=self.room_b,
+            teacher=self.teacher_b,
+            starts_at=day + datetime.timedelta(hours=2),
+            ends_at=day + datetime.timedelta(hours=3),
+        )
+        self.params = {"date_from": "2026-09-24", "date_to": "2026-09-24"}
+
+    def test_room_filter(self):
+        client = _authenticated_client(self.owner)
+        response = client.get("/api/v1/schedule/", {**self.params, "room": self.room_a.id})
+        ids = {row["id"] for row in response.data}
+        self.assertEqual(ids, {str(self.lesson_a.id)})
+
+    def test_direction_filter(self):
+        client = _authenticated_client(self.owner)
+        response = client.get(
+            "/api/v1/schedule/", {**self.params, "direction": self.direction_vocal.id}
+        )
+        ids = {row["id"] for row in response.data}
+        self.assertEqual(ids, {str(self.lesson_b.id)})
+
+    def test_branch_filter_matches_individual_lesson_via_room(self):
+        # Индивидуальное занятие без группы — филиал берётся из зала.
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        solo = Lesson.objects.create(
+            organization=self.org,
+            room=self.room_b,
+            starts_at=datetime.datetime(2026, 9, 24, 15, 0, tzinfo=tz),
+            ends_at=datetime.datetime(2026, 9, 24, 16, 0, tzinfo=tz),
+        )
+        client = _authenticated_client(self.owner)
+        response = client.get("/api/v1/schedule/", {**self.params, "branch": self.branch_b.id})
+        ids = {row["id"] for row in response.data}
+        self.assertEqual(ids, {str(self.lesson_b.id), str(solo.id)})
+
+    def test_teacher_sees_only_own_lessons_without_filtering(self):
+        client = _authenticated_client(self.teacher_a)
+        response = client.get("/api/v1/schedule/", self.params)
+        ids = {row["id"] for row in response.data}
+        self.assertEqual(ids, {str(self.lesson_a.id)})
+
+    def test_teacher_filter_is_ignored_for_teacher_role(self):
+        # Даже если преподаватель явно запросит чужой teacher=,
+        # бэкенд всё равно отдаёт только его собственные занятия.
+        client = _authenticated_client(self.teacher_a)
+        response = client.get("/api/v1/schedule/", {**self.params, "teacher": self.teacher_b.id})
+        ids = {row["id"] for row in response.data}
+        self.assertEqual(ids, {str(self.lesson_a.id)})
+
+    def test_owner_can_filter_by_any_teacher(self):
+        client = _authenticated_client(self.owner)
+        response = client.get("/api/v1/schedule/", {**self.params, "teacher": self.teacher_b.id})
+        ids = {row["id"] for row in response.data}
+        self.assertEqual(ids, {str(self.lesson_b.id)})

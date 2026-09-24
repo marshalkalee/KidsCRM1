@@ -58,20 +58,40 @@ class LessonViewSet(TenantModelViewSet):
         if group_id:
             qs = qs.filter(group_id=group_id)
 
-        # Фильтр по преподавателю
+        # Фильтр по преподавателю — сам преподаватель не может им себя
+        # расширить на чужие занятия, см. принудительный скоуп ниже.
+        user = self.request.user
         teacher_id = self.request.query_params.get("teacher")
-        if teacher_id:
+        if teacher_id and user.role != "teacher":
             qs = qs.filter(teacher_id=teacher_id)
 
-        # Фильтр по филиалу
+        # Фильтр по филиалу — у занятия нет своего branch, берём либо из
+        # группы, либо (для индивидуальных занятий без группы) из зала.
         branch_id = self.request.query_params.get("branch")
         if branch_id:
-            qs = qs.filter(group__branch_id=branch_id)
+            qs = qs.filter(Q(group__branch_id=branch_id) | Q(room__branch_id=branch_id))
+
+        # Фильтр по залу (TRU-45: дневной вид по залам)
+        room_id = self.request.query_params.get("room")
+        if room_id:
+            qs = qs.filter(room_id=room_id)
+
+        # Фильтр по направлению (TRU-45)
+        direction_id = self.request.query_params.get("direction")
+        if direction_id:
+            qs = qs.filter(group__direction_id=direction_id)
 
         # Фильтр по статусу
         status_filter = self.request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
+
+        # Преподаватель видит только свои занятия (ТЗ п. 2, TRU-19) —
+        # экран календаря должен открываться сразу в этом виде, без
+        # необходимости фильтровать самому (TRU-45). Та же схема, что и
+        # в groups.views.GroupViewSet.get_queryset.
+        if user.role == "teacher":
+            qs = qs.filter(teacher=user)
 
         # Занятия сегодня в зоне организации
         if self.request.query_params.get("today"):

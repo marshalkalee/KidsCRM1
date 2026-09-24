@@ -1,16 +1,21 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, X, Users, MapPin, User as UserIcon, Plus } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, MapPin, User as UserIcon, Plus, CalendarDays, Rows3 } from 'lucide-react'
 import {
   startOfWeek, addDays, toISODate, isToday, formatWeekRange, formatDayLabel,
   localDatePart, localTimePart, timeToMinutes, WEEKDAY_LABELS,
 } from '../utils/calendarDate'
-import { fetchLessons, fetchGroups, fetchRooms, fetchTeachers, createLesson, cancelLesson, rescheduleLesson } from '../api/lessons'
+import {
+  fetchLessons, fetchGroups, fetchRooms, fetchTeachers, fetchBranches, fetchDirections, fetchMe,
+  createLesson, cancelLesson, rescheduleLesson,
+} from '../api/lessons'
 
 const ACCENT = '#C97B6E'
 const DEFAULT_COLOR = '#7C6FF7'
 const ROW_HEIGHT = 56 // px за час
 const MOBILE_BREAKPOINT = 860
+const FILTERS_STORAGE_KEY = 'kidscrm.schedule.filters'
+const EMPTY_FILTERS = { branch: '', room: '', teacher: '', direction: '' }
 
 const STATUS_LABEL = {
   scheduled: 'Запланировано',
@@ -29,9 +34,21 @@ function useIsMobile() {
   return isMobile
 }
 
-// Раскладка занятий одного дня по колонкам, чтобы пересекающиеся по времени
-// не наезжали друг на друга (простой greedy-алгоритм интервального графа).
-function layoutDay(lessons) {
+function loadStoredFilters() {
+  try {
+    const raw = localStorage.getItem(FILTERS_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch { return {} }
+}
+
+function saveStoredFilters(view, filters) {
+  try { localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({ view, ...filters })) } catch { /* приватный режим и т.п. — не критично */ }
+}
+
+// Раскладка занятий одного столбца (день недели, либо зал в дневном виде)
+// по колонкам, чтобы пересекающиеся по времени не наезжали друг на друга
+// (простой greedy-алгоритм интервального графа).
+function layoutColumn(lessons) {
   const sorted = [...lessons].sort((a, b) => a.startMin - b.startMin)
   const columns = [] // конец последнего занятия в колонке
   const placed = sorted.map(lesson => {
@@ -44,107 +61,214 @@ function layoutDay(lessons) {
   return placed.map(l => ({ ...l, totalCols }))
 }
 
+function withMinutes(lesson) {
+  return {
+    ...lesson,
+    startMin: timeToMinutes(localTimePart(lesson.starts_at_local)),
+    endMin: timeToMinutes(localTimePart(lesson.ends_at_local)),
+  }
+}
+
+function computeHourRange(lessons) {
+  let min = 8, max = 21
+  lessons.forEach(l => {
+    const startH = Math.floor(l.startMin / 60)
+    const endH = Math.ceil(l.endMin / 60)
+    if (startH < min) min = startH
+    if (endH > max) max = endH
+  })
+  return Array.from({ length: max - min }, (_, i) => min + i)
+}
+
 export default function Schedule() {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
+  const [searchParams, setSearchParams] = useSearchParams()
+  const stored = useMemo(loadStoredFilters, [])
+
+  const [view, setView] = useState(() => searchParams.get('view') || stored.view || 'week')
+  const [date, setDate] = useState(() => searchParams.get('date') || toISODate(new Date()))
+  const [filters, setFilters] = useState(() => ({
+    branch: searchParams.get('branch') || stored.branch || '',
+    room: searchParams.get('room') || stored.room || '',
+    teacher: searchParams.get('teacher') || stored.teacher || '',
+    direction: searchParams.get('direction') || stored.direction || '',
+  }))
+
+  const [me, setMe] = useState(null)
   const [lessons, setLessons] = useState([])
   const [loading, setLoading] = useState(true)
   const [groups, setGroups] = useState([])
   const [rooms, setRooms] = useState([])
   const [teachers, setTeachers] = useState([])
+  const [branches, setBranches] = useState([])
+  const [directions, setDirections] = useState([])
   const [selectedLesson, setSelectedLesson] = useState(null)
   const [createSlot, setCreateSlot] = useState(null)
   const [mobileDay, setMobileDay] = useState(0)
   const isMobile = useIsMobile()
   const navigate = useNavigate()
+  const isTeacher = me?.role === 'teacher'
 
+  const weekStart = useMemo(() => startOfWeek(new Date(date)), [date])
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
+
+  // Фильтры и вид — в URL (переживают шаринг ссылки и обновление страницы)
+  // и в localStorage (переживают закрытие вкладки). Дата в localStorage не
+  // хранится — новая сессия без даты в URL открывается на сегодня.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams)
+    next.set('view', view)
+    next.set('date', date)
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) next.set(key, value); else next.delete(key)
+    })
+    setSearchParams(next, { replace: true })
+    saveStoredFilters(view, filters)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, date, filters])
 
   const load = useCallback(() => {
     setLoading(true)
-    const from = toISODate(weekStart)
-    const to = toISODate(addDays(weekStart, 6))
-    fetchLessons(from, to)
+    const from = view === 'week' ? toISODate(weekStart) : date
+    const to = view === 'week' ? toISODate(addDays(weekStart, 6)) : date
+    fetchLessons(from, to, filters)
       .then(setLessons)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [weekStart])
+  }, [view, date, weekStart, filters])
 
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    Promise.all([fetchGroups(), fetchRooms(), fetchTeachers()])
-      .then(([g, r, t]) => { setGroups(g); setRooms(r); setTeachers(t) })
-      .catch(console.error)
+    fetchMe().then(setMe).catch(console.error)
+    fetchGroups().then(setGroups).catch(console.error)
+    fetchRooms().then(setRooms).catch(console.error)
+    fetchBranches().then(setBranches).catch(console.error)
+    fetchDirections().then(setDirections).catch(console.error)
   }, [])
 
-  const byDay = useMemo(() => {
+  useEffect(() => {
+    // Преподавателю бэкенд и так отдаёт только его занятия (TRU-19) —
+    // список остальных преподавателей ему не нужен.
+    if (isTeacher) { setTeachers([]); return }
+    fetchTeachers().then(setTeachers).catch(console.error)
+  }, [isTeacher])
+
+  const filteredRooms = useMemo(
+    () => filters.branch ? rooms.filter(r => String(r.branch) === String(filters.branch)) : rooms,
+    [rooms, filters.branch]
+  )
+
+  const byWeekday = useMemo(() => {
     const map = {}
     weekDays.forEach(d => { map[toISODate(d)] = [] })
     lessons.forEach(lesson => {
       const dateStr = localDatePart(lesson.starts_at_local)
-      const timeStr = localTimePart(lesson.starts_at_local)
-      const endStr = localTimePart(lesson.ends_at_local)
-      if (!map[dateStr]) return
-      map[dateStr].push({
-        ...lesson,
-        startMin: timeToMinutes(timeStr),
-        endMin: timeToMinutes(endStr),
-      })
+      if (!(dateStr in map)) return
+      map[dateStr].push(withMinutes(lesson))
     })
-    Object.keys(map).forEach(k => { map[k] = layoutDay(map[k]) })
+    Object.keys(map).forEach(k => { map[k] = layoutColumn(map[k]) })
     return map
   }, [lessons, weekDays])
 
-  const { gridStartHour, gridEndHour } = useMemo(() => {
-    let min = 8, max = 21
-    lessons.forEach(l => {
-      const startH = Math.floor(timeToMinutes(localTimePart(l.starts_at_local)) / 60)
-      const endH = Math.ceil(timeToMinutes(localTimePart(l.ends_at_local)) / 60)
-      if (startH < min) min = startH
-      if (endH > max) max = endH
+  const byRoom = useMemo(() => {
+    const map = {}
+    lessons.forEach(lesson => {
+      const key = lesson.room || '__none__'
+      if (!map[key]) map[key] = []
+      map[key].push(withMinutes(lesson))
     })
-    return { gridStartHour: min, gridEndHour: max }
+    Object.keys(map).forEach(k => { map[k] = layoutColumn(map[k]) })
+    return map
   }, [lessons])
 
+  const dayColumns = useMemo(() => {
+    const cols = filteredRooms.map(r => ({ id: r.id, name: r.name }))
+    if (byRoom.__none__?.length) cols.push({ id: '__none__', name: 'Без зала' })
+    return cols
+  }, [filteredRooms, byRoom])
+
   const hours = useMemo(
-    () => Array.from({ length: gridEndHour - gridStartHour }, (_, i) => gridStartHour + i),
-    [gridStartHour, gridEndHour]
+    () => computeHourRange(view === 'week' ? lessons.map(withMinutes) : lessons.map(withMinutes)),
+    [lessons, view]
   )
 
-  function goToday() { setWeekStart(startOfWeek(new Date())); setMobileDay(new Date().getDay() === 0 ? 6 : new Date().getDay() - 1) }
-  function goPrevWeek() { setWeekStart(w => addDays(w, -7)) }
-  function goNextWeek() { setWeekStart(w => addDays(w, 7)) }
+  function goToday() {
+    const today = new Date()
+    setDate(toISODate(today))
+    setMobileDay(today.getDay() === 0 ? 6 : today.getDay() - 1)
+  }
+  function goPrev() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? -7 : -1))) }
+  function goNext() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? 7 : 1))) }
 
   function handleActionDone() { setSelectedLesson(null); setCreateSlot(null); load() }
+
+  const headerLabel = view === 'week' ? formatWeekRange(weekStart) : formatDayLabel(new Date(date))
 
   return (
     <div>
       <CalendarHeader
-        weekStart={weekStart}
-        onPrev={goPrevWeek}
-        onNext={goNextWeek}
+        label={headerLabel}
+        view={view}
+        onViewChange={setView}
+        onPrev={goPrev}
+        onNext={goNext}
         onToday={goToday}
         loading={loading}
       />
 
-      {isMobile ? (
-        <MobileDayView
-          weekDays={weekDays}
-          mobileDay={mobileDay}
-          setMobileDay={setMobileDay}
-          byDay={byDay}
-          loading={loading}
-          onSelectLesson={setSelectedLesson}
-        />
-      ) : (
-        <WeekGrid
-          weekDays={weekDays}
-          byDay={byDay}
-          hours={hours}
-          loading={loading}
-          onSelectLesson={setSelectedLesson}
-          onSelectSlot={setCreateSlot}
-        />
+      <FiltersBar
+        filters={filters}
+        onChange={patch => setFilters(f => ({ ...f, ...patch }))}
+        onReset={() => setFilters(EMPTY_FILTERS)}
+        branches={branches}
+        rooms={filteredRooms}
+        teachers={teachers}
+        directions={directions}
+        isTeacher={isTeacher}
+      />
+
+      {view === 'week' && (
+        isMobile ? (
+          <MobileWeekDayView
+            weekDays={weekDays}
+            mobileDay={mobileDay}
+            setMobileDay={setMobileDay}
+            byDay={byWeekday}
+            loading={loading}
+            onSelectLesson={setSelectedLesson}
+          />
+        ) : (
+          <WeekGrid
+            weekDays={weekDays}
+            byDay={byWeekday}
+            hours={hours}
+            loading={loading}
+            onSelectLesson={setSelectedLesson}
+            onSelectSlot={isTeacher ? undefined : setCreateSlot}
+          />
+        )
+      )}
+
+      {view === 'day' && (
+        isMobile ? (
+          <MobileDayRoomsView
+            date={date}
+            columns={dayColumns}
+            byRoom={byRoom}
+            loading={loading}
+            onSelectLesson={setSelectedLesson}
+          />
+        ) : (
+          <DayGrid
+            date={date}
+            columns={dayColumns}
+            byRoom={byRoom}
+            hours={hours}
+            loading={loading}
+            onSelectLesson={setSelectedLesson}
+            onSelectSlot={isTeacher ? undefined : setCreateSlot}
+          />
+        )
       )}
 
       {selectedLesson && (
@@ -170,7 +294,7 @@ export default function Schedule() {
   )
 }
 
-function CalendarHeader({ weekStart, onPrev, onNext, onToday, loading }) {
+function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, loading }) {
   return (
     <div style={{
       background: '#fff', borderRadius: 16, padding: '16px 24px', marginBottom: 16,
@@ -179,14 +303,34 @@ function CalendarHeader({ weekStart, onPrev, onNext, onToday, loading }) {
     }}>
       <div>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>Расписание</h1>
-        <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{formatWeekRange(weekStart)}{loading ? ' · загрузка…' : ''}</p>
+        <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{label}{loading ? ' · загрузка…' : ''}</p>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button onClick={onPrev} style={navBtnStyle} aria-label="Предыдущая неделя"><ChevronLeft size={16} /></button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2 }}>
+          <ViewToggleBtn active={view === 'week'} onClick={() => onViewChange('week')} icon={<Rows3 size={14} />} label="Неделя" />
+          <ViewToggleBtn active={view === 'day'} onClick={() => onViewChange('day')} icon={<CalendarDays size={14} />} label="День" />
+        </div>
+        <button onClick={onPrev} style={navBtnStyle} aria-label="Назад"><ChevronLeft size={16} /></button>
         <button onClick={onToday} style={{ ...navBtnStyle, width: 'auto', padding: '0 16px', fontWeight: 600, fontSize: 13, color: ACCENT }}>Сегодня</button>
-        <button onClick={onNext} style={navBtnStyle} aria-label="Следующая неделя"><ChevronRight size={16} /></button>
+        <button onClick={onNext} style={navBtnStyle} aria-label="Вперёд"><ChevronRight size={16} /></button>
       </div>
     </div>
+  )
+}
+
+function ViewToggleBtn({ active, onClick, icon, label }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', border: 'none', borderRadius: 8,
+        background: active ? '#fff' : 'transparent', color: active ? ACCENT : '#6B7280',
+        fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope',
+        boxShadow: active ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+      }}
+    >
+      {icon}{label}
+    </button>
   )
 }
 
@@ -194,6 +338,141 @@ const navBtnStyle = {
   width: 36, height: 36, borderRadius: 10, border: '1px solid #F0F0F5',
   background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
   color: '#6B7280', fontFamily: 'Manrope',
+}
+
+// options: [[value, label], ...], value === '' — пункт по умолчанию ("Все…")
+// options: [[value, label], ...], value === '' — пункт по умолчанию.
+// variant 'filter' — компактный чип для панели фильтров (подсвечивается,
+// когда выбрано не значение по умолчанию); 'field' — обычное поле формы
+// в модалках (тот же вид, что inputStyle/select у соседних инпутов).
+function Dropdown({ value, onChange, options, width = 160, variant = 'filter', placeholder }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef()
+
+  useEffect(() => {
+    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const selected = options.find(([v]) => v === value)
+  const active = variant === 'filter' && value !== ''
+  const displayText = selected ? selected[1] : (placeholder ?? options[0][1])
+
+  return (
+    <div ref={ref} style={{ width, flexShrink: 0, position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', boxSizing: 'border-box',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: variant === 'field' ? '9px 12px' : '8px 12px',
+          border: `1.5px solid ${open || active ? ACCENT : '#EBEBF0'}`,
+          borderRadius: 8,
+          background: active ? '#FDF0EE' : (variant === 'field' ? '#fff' : '#FAFAFA'),
+          fontSize: variant === 'field' ? 13 : 12,
+          fontFamily: 'Manrope', fontWeight: active ? 600 : 400,
+          color: active ? ACCENT : (variant === 'field' ? '#1A1A2E' : '#6B7280'),
+          cursor: 'pointer', outline: 'none',
+          transition: 'border-color 0.15s, background 0.15s',
+          boxShadow: open ? `0 0 0 3px ${ACCENT}1F` : 'none',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {displayText}
+        </span>
+        <ChevronDown
+          size={13}
+          style={{ flexShrink: 0, marginLeft: 6, color: active ? ACCENT : '#9CA3AF',
+            transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+        />
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100,
+          background: '#fff',
+          border: '1.5px solid #F0F0F5',
+          borderRadius: 10,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
+          overflow: 'hidden',
+          maxHeight: 260, overflowY: 'auto',
+        }}>
+          {options.map(([v, l]) => {
+            const isSelected = value === v
+            return (
+              <div
+                key={v}
+                onClick={() => { onChange(v); setOpen(false) }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '9px 12px',
+                  fontSize: 12, fontFamily: 'Manrope',
+                  fontWeight: isSelected ? 600 : 400,
+                  color: isSelected ? ACCENT : '#374151',
+                  background: isSelected ? '#FDF0EE' : '#fff',
+                  cursor: 'pointer', whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = '#FAFAFA' }}
+                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = '#fff' }}
+              >
+                {l}
+                {isSelected && <Check size={12} style={{ color: ACCENT, flexShrink: 0, marginLeft: 8 }} />}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FiltersBar({ filters, onChange, onReset, branches, rooms, teachers, directions, isTeacher }) {
+  const hasActive = Object.values(filters).some(Boolean)
+
+  return (
+    <div style={{
+      background: '#fff', borderRadius: 14, border: '1px solid #F0F0F5', padding: '12px 16px',
+      marginBottom: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', overflow: 'visible',
+    }}>
+      <Dropdown
+        value={filters.branch}
+        onChange={v => onChange({ branch: v, room: '' })}
+        options={[['', 'Все филиалы'], ...branches.map(b => [String(b.id), b.name])]}
+      />
+      <Dropdown
+        value={filters.room}
+        onChange={v => onChange({ room: v })}
+        options={[['', 'Все залы'], ...rooms.map(r => [String(r.id), r.name])]}
+      />
+      <Dropdown
+        value={filters.direction}
+        onChange={v => onChange({ direction: v })}
+        options={[['', 'Все направления'], ...directions.map(d => [String(d.id), d.name])]}
+      />
+      {isTeacher ? (
+        <span style={{ fontSize: 12, color: ACCENT, fontWeight: 600, background: '#FDF0EE', padding: '8px 12px', borderRadius: 8 }}>
+          Показано ваше расписание
+        </span>
+      ) : (
+        <Dropdown
+          value={filters.teacher}
+          onChange={v => onChange({ teacher: v })}
+          options={[['', 'Все преподаватели'], ...teachers.map(t => [String(t.id), t.full_name])]}
+          width={180}
+        />
+      )}
+      {hasActive && (
+        <button
+          onClick={onReset}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 12px', border: 'none', background: 'none', color: '#9CA3AF', fontSize: 12, fontFamily: 'Manrope', cursor: 'pointer' }}
+        >
+          <X size={12} /> Сбросить
+        </button>
+      )}
+    </div>
+  )
 }
 
 function LessonChip({ lesson, style, onClick }) {
@@ -236,82 +515,126 @@ function LessonChip({ lesson, style, onClick }) {
   )
 }
 
-function WeekGrid({ weekDays, byDay, hours, loading, onSelectLesson, onSelectSlot }) {
+// Общая временная сетка (колонки + часы слева) — переиспользуется недельным
+// видом (колонки = дни) и дневным видом (колонки = залы).
+function TimeGrid({ columns, columnHeader, itemsByColumn, hours, loading, emptyText, onSelectLesson, onSelectSlot }) {
   const gridStartHour = hours[0] ?? 8
   const totalHeight = hours.length * ROW_HEIGHT
+  const templateColumns = `56px repeat(${columns.length || 1}, 1fr)`
 
   function minutesToTop(min) { return ((min - gridStartHour * 60) / 60) * ROW_HEIGHT }
 
+  const isEmpty = !loading && columns.every(c => !(itemsByColumn[c.id]?.length))
+
   return (
     <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #F0F0F5', overflow: 'hidden' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '56px repeat(7, 1fr)', borderBottom: '1px solid #F0F0F5' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: templateColumns, borderBottom: '1px solid #F0F0F5' }}>
         <div />
-        {weekDays.map(day => (
-          <div key={toISODate(day)} style={{
-            padding: '10px 8px', textAlign: 'center', borderLeft: '1px solid #F0F0F5',
-            background: isToday(day) ? '#FDF0EE' : 'transparent',
-          }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase' }}>
-              {WEEKDAY_LABELS[day.getDay() === 0 ? 6 : day.getDay() - 1]}
-            </div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: isToday(day) ? ACCENT : '#1A1A2E' }}>
-              {day.getDate()}
-            </div>
+        {columns.map(col => (
+          <div key={col.id} style={{ padding: '10px 8px', textAlign: 'center', borderLeft: '1px solid #F0F0F5', background: col.highlighted ? '#FDF0EE' : 'transparent' }}>
+            {columnHeader(col)}
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '56px repeat(7, 1fr)', position: 'relative', maxHeight: '70vh', overflowY: 'auto' }}>
-        <div>
-          {hours.map(h => (
-            <div key={h} style={{ height: ROW_HEIGHT, textAlign: 'right', paddingRight: 8, paddingTop: 4, boxSizing: 'border-box', fontSize: 11, color: '#9CA3AF' }}>
-              {String(h).padStart(2, '0')}:00
-            </div>
-          ))}
-        </div>
-        {weekDays.map(day => {
-          const dateStr = toISODate(day)
-          const dayLessons = byDay[dateStr] || []
-          return (
-            <div key={dateStr} style={{ position: 'relative', borderLeft: '1px solid #F0F0F5', height: totalHeight }}>
-              {hours.map((h, i) => (
-                <div
-                  key={h}
-                  onClick={() => onSelectSlot({ date: dateStr, time: `${String(h).padStart(2, '0')}:00` })}
-                  style={{ position: 'absolute', top: i * ROW_HEIGHT, left: 0, right: 0, height: ROW_HEIGHT, borderBottom: '1px solid #F7F7FA', cursor: 'pointer' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#FAFAFA'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                />
-              ))}
-              {dayLessons.map(lesson => (
-                <LessonChip
-                  key={lesson.id}
-                  lesson={lesson}
-                  onClick={e => { e.stopPropagation(); onSelectLesson(lesson) }}
-                  style={{
-                    top: minutesToTop(lesson.startMin) + 1,
-                    height: Math.max(minutesToTop(lesson.endMin) - minutesToTop(lesson.startMin) - 2, 22),
-                    left: `calc(${(lesson.col / lesson.totalCols) * 100}% + 2px)`,
-                    width: `calc(${(1 / lesson.totalCols) * 100}% - 4px)`,
-                    zIndex: 1,
-                  }}
-                />
-              ))}
-            </div>
-          )
-        })}
-      </div>
-
-      {!loading && Object.values(byDay).every(d => d.length === 0) && (
+      {columns.length === 0 ? (
         <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
-          На этой неделе занятий нет. Кликните по пустому слоту, чтобы создать.
+          Нет залов, подходящих под фильтр.
         </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: templateColumns, position: 'relative', maxHeight: '70vh', overflowY: 'auto' }}>
+          <div>
+            {hours.map(h => (
+              <div key={h} style={{ height: ROW_HEIGHT, textAlign: 'right', paddingRight: 8, paddingTop: 4, boxSizing: 'border-box', fontSize: 11, color: '#9CA3AF' }}>
+                {String(h).padStart(2, '0')}:00
+              </div>
+            ))}
+          </div>
+          {columns.map(col => {
+            const items = itemsByColumn[col.id] || []
+            return (
+              <div key={col.id} style={{ position: 'relative', borderLeft: '1px solid #F0F0F5', height: totalHeight }}>
+                {hours.map((h, i) => (
+                  <div
+                    key={h}
+                    onClick={() => onSelectSlot?.({ col, time: `${String(h).padStart(2, '0')}:00` })}
+                    style={{ position: 'absolute', top: i * ROW_HEIGHT, left: 0, right: 0, height: ROW_HEIGHT, borderBottom: '1px solid #F7F7FA', cursor: onSelectSlot ? 'pointer' : 'default' }}
+                    onMouseEnter={e => { if (onSelectSlot) e.currentTarget.style.background = '#FAFAFA' }}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  />
+                ))}
+                {items.map(lesson => (
+                  <LessonChip
+                    key={lesson.id}
+                    lesson={lesson}
+                    onClick={e => { e.stopPropagation(); onSelectLesson(lesson) }}
+                    style={{
+                      top: minutesToTop(lesson.startMin) + 1,
+                      height: Math.max(minutesToTop(lesson.endMin) - minutesToTop(lesson.startMin) - 2, 22),
+                      left: `calc(${(lesson.col / lesson.totalCols) * 100}% + 2px)`,
+                      width: `calc(${(1 / lesson.totalCols) * 100}% - 4px)`,
+                      zIndex: 1,
+                    }}
+                  />
+                ))}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {isEmpty && columns.length > 0 && (
+        <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{emptyText}</div>
       )}
     </div>
   )
 }
 
-function MobileDayView({ weekDays, mobileDay, setMobileDay, byDay, loading, onSelectLesson }) {
+function WeekGrid({ weekDays, byDay, hours, loading, onSelectLesson, onSelectSlot }) {
+  const columns = weekDays.map(day => ({ id: toISODate(day), day, highlighted: isToday(day) }))
+  return (
+    <TimeGrid
+      columns={columns}
+      columnHeader={col => (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase' }}>
+            {WEEKDAY_LABELS[col.day.getDay() === 0 ? 6 : col.day.getDay() - 1]}
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: col.highlighted ? ACCENT : '#1A1A2E' }}>{col.day.getDate()}</div>
+        </>
+      )}
+      itemsByColumn={byDay}
+      hours={hours}
+      loading={loading}
+      emptyText="На этой неделе занятий нет. Кликните по пустому слоту, чтобы создать."
+      onSelectLesson={onSelectLesson}
+      onSelectSlot={onSelectSlot ? (slot => onSelectSlot({ date: slot.col.id, time: slot.time })) : undefined}
+    />
+  )
+}
+
+function DayGrid({ date, columns, byRoom, hours, loading, onSelectLesson, onSelectSlot }) {
+  return (
+    <TimeGrid
+      columns={columns}
+      columnHeader={col => (
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1A2E' }}>{col.name}</div>
+      )}
+      itemsByColumn={byRoom}
+      hours={hours}
+      loading={loading}
+      emptyText="На этот день занятий нет. Кликните по пустому слоту, чтобы создать."
+      onSelectLesson={onSelectLesson}
+      onSelectSlot={onSelectSlot ? (slot => onSelectSlot({
+        date,
+        time: slot.time,
+        room: slot.col.id === '__none__' ? '' : slot.col.id,
+      })) : undefined}
+    />
+  )
+}
+
+function MobileWeekDayView({ weekDays, mobileDay, setMobileDay, byDay, loading, onSelectLesson }) {
   const day = weekDays[mobileDay]
   const dateStr = toISODate(day)
   const dayLessons = (byDay[dateStr] || []).slice().sort((a, b) => a.startMin - b.startMin)
@@ -343,56 +666,88 @@ function MobileDayView({ weekDays, mobileDay, setMobileDay, byDay, loading, onSe
 
       <div style={{ padding: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', marginBottom: 10 }}>{formatDayLabel(day)}</div>
-        {loading ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка…</div>
-        ) : dayLessons.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Занятий нет</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {dayLessons.map(lesson => {
-              const color = lesson.direction_color || DEFAULT_COLOR
-              const dimmed = lesson.status === 'cancelled' || lesson.status === 'rescheduled'
-              return (
-                <div
-                  key={lesson.id}
-                  onClick={() => onSelectLesson(lesson)}
-                  style={{
-                    display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
-                    border: `1px solid ${dimmed ? '#E5E7EB' : color}`,
-                    background: dimmed ? '#FAFAFA' : `${color}0D`,
-                    opacity: dimmed ? 0.7 : 1,
-                  }}
-                >
-                  <div style={{ minWidth: 52, fontSize: 13, fontWeight: 700, color: '#1A1A2E' }}>
-                    {localTimePart(lesson.starts_at_local)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', textDecoration: lesson.status === 'cancelled' ? 'line-through' : 'none' }}>
-                      {lesson.group_name || 'Индив. занятие'}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
-                      {lesson.room_name || '—'} · {lesson.teacher_name || '—'}
-                      {lesson.capacity != null && ` · ${lesson.enrolled_count}/${lesson.capacity}`}
-                    </div>
-                    {dimmed && (
-                      <div style={{ fontSize: 10, fontWeight: 700, color: lesson.status === 'cancelled' ? '#DC2626' : '#D97706', marginTop: 4 }}>
-                        {STATUS_LABEL[lesson.status]}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+        <LessonList lessons={dayLessons} loading={loading} emptyText="Занятий нет" onSelectLesson={onSelectLesson} showRoom />
       </div>
+    </div>
+  )
+}
+
+function MobileDayRoomsView({ date, columns, byRoom, loading, onSelectLesson }) {
+  const nonEmptyColumns = columns.filter(c => (byRoom[c.id] || []).length > 0)
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #F0F0F5', padding: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', marginBottom: 10 }}>{formatDayLabel(new Date(date))}</div>
+      {loading ? (
+        <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка…</div>
+      ) : nonEmptyColumns.length === 0 ? (
+        <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>На этот день занятий нет</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {nonEmptyColumns.map(col => (
+            <div key={col.id}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 8 }}>{col.name}</div>
+              <LessonList
+                lessons={(byRoom[col.id] || []).slice().sort((a, b) => a.startMin - b.startMin)}
+                loading={false}
+                emptyText=""
+                onSelectLesson={onSelectLesson}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
+  if (loading) return <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка…</div>
+  if (lessons.length === 0) return emptyText ? <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{emptyText}</div> : null
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {lessons.map(lesson => {
+        const color = lesson.direction_color || DEFAULT_COLOR
+        const dimmed = lesson.status === 'cancelled' || lesson.status === 'rescheduled'
+        return (
+          <div
+            key={lesson.id}
+            onClick={() => onSelectLesson(lesson)}
+            style={{
+              display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
+              border: `1px solid ${dimmed ? '#E5E7EB' : color}`,
+              background: dimmed ? '#FAFAFA' : `${color}0D`,
+              opacity: dimmed ? 0.7 : 1,
+            }}
+          >
+            <div style={{ minWidth: 52, fontSize: 13, fontWeight: 700, color: '#1A1A2E' }}>
+              {localTimePart(lesson.starts_at_local)}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', textDecoration: lesson.status === 'cancelled' ? 'line-through' : 'none' }}>
+                {lesson.group_name || 'Индив. занятие'}
+              </div>
+              <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
+                {showRoom && `${lesson.room_name || '—'} · `}{lesson.teacher_name || '—'}
+                {lesson.capacity != null && ` · ${lesson.enrolled_count}/${lesson.capacity}`}
+              </div>
+              {dimmed && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: lesson.status === 'cancelled' ? '#DC2626' : '#D97706', marginTop: 4 }}>
+                  {STATUS_LABEL[lesson.status]}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
 const modalOverlay = { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }
 const modalBox = { background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, padding: '24px 24px 20px', fontFamily: 'Manrope' }
-const primaryBtn = { padding: '10px 18px', border: 'none', borderRadius: 8, background: `linear-gradient(135deg, #E8998D, ${ACCENT})`, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope' }
+const primaryBtn = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 18px', border: 'none', borderRadius: 8, background: `linear-gradient(135deg, #E8998D, ${ACCENT})`, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope' }
 const secondaryBtn = { padding: '10px 18px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', color: '#6B7280' }
 const dangerBtn = { ...secondaryBtn, color: '#DC2626', borderColor: '#FECACA' }
 const inputStyle = { width: '100%', padding: '9px 12px', border: '1.5px solid #EBEBF0', borderRadius: 8, fontSize: 13, fontFamily: 'Manrope', outline: 'none', boxSizing: 'border-box' }
@@ -523,7 +878,7 @@ function InfoRow({ icon, text }) {
 
 function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
   const [groupId, setGroupId] = useState('')
-  const [roomId, setRoomId] = useState('')
+  const [roomId, setRoomId] = useState(slot.room || '')
   const [teacherId, setTeacherId] = useState('')
   const [time, setTime] = useState(slot.time)
   const [durationMin, setDurationMin] = useState(60)
@@ -559,10 +914,14 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 12 }}>
             <label style={labelStyle}>Группа *</label>
-            <select value={groupId} onChange={e => setGroupId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-              <option value="">Выберите группу</option>
-              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
+            <Dropdown
+              variant="field"
+              width="100%"
+              value={groupId}
+              onChange={setGroupId}
+              placeholder="Выберите группу"
+              options={[['', 'Выберите группу'], ...groups.map(g => [String(g.id), g.name])]}
+            />
           </div>
           <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
             <div style={{ flex: 1 }}>
@@ -581,24 +940,30 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
           <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Зал</label>
-              <select value={roomId} onChange={e => setRoomId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                <option value="">—</option>
-                {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
+              <Dropdown
+                variant="field"
+                width="100%"
+                value={roomId}
+                onChange={setRoomId}
+                options={[['', '—'], ...rooms.map(r => [String(r.id), r.name])]}
+              />
             </div>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Преподаватель</label>
-              <select value={teacherId} onChange={e => setTeacherId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                <option value="">—</option>
-                {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-              </select>
+              <Dropdown
+                variant="field"
+                width="100%"
+                value={teacherId}
+                onChange={setTeacherId}
+                options={[['', '—'], ...teachers.map(t => [String(t.id), t.full_name])]}
+              />
             </div>
           </div>
           {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 12 }}>{error}</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button type="button" style={secondaryBtn} onClick={onClose}>Отмена</button>
             <button type="submit" style={primaryBtn} disabled={saving}>
-              {saving ? 'Создание…' : (<><Plus size={14} style={{ marginRight: 4, verticalAlign: -2 }} />Создать</>)}
+              {saving ? 'Создание…' : (<><Plus size={14} />Создать</>)}
             </button>
           </div>
         </form>

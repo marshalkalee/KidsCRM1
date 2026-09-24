@@ -112,3 +112,116 @@ class TenantScopedAPITests(APITestCase):
         response = self.client.get("/api/v1/branches/")
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class BranchArchiveApiTests(APITestCase):
+    """
+    Новый фронт (React) заменяет старые серверные страницы настроек
+    (branch_list.html и т.п.) — «архивация» филиала должна остаться
+    PATCH is_active, а не DELETE (тот убрал бы филиал из for_tenant()
+    совсем, см. TimestampedSoftDeleteModel.delete()).
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.branch = Branch.objects.create(organization=self.org, name="Центральный")
+        self.owner = User.objects.create_user(
+            phone="+77030000001",
+            full_name="Владелец",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+
+    def test_patch_is_active_archives_branch_without_soft_deleting_it(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.patch(
+            f"/api/v1/branches/{self.branch.id}/", {"is_active": False}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["is_active"])
+        # Архивный, но не мягко удалённый — for_tenant() его всё ещё видит.
+        self.assertTrue(Branch.objects.for_tenant(self.org).filter(pk=self.branch.pk).exists())
+
+    def test_patch_is_active_restores_branch(self):
+        self.branch.is_active = False
+        self.branch.save(update_fields=["is_active"])
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.patch(
+            f"/api/v1/branches/{self.branch.id}/", {"is_active": True}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["is_active"])
+
+
+class DirectionApiTests(APITestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.other_org = Organization.objects.create(name="Другая студия", slug="other")
+        self.branch = Branch.objects.create(organization=self.org, name="Центральный")
+        self.archived_branch = Branch.objects.create(
+            organization=self.org, name="Закрытый", is_active=False
+        )
+        self.foreign_branch = Branch.objects.create(organization=self.other_org, name="Чужой")
+        self.owner = User.objects.create_user(
+            phone="+77030000002",
+            full_name="Владелец",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+
+    def test_create_direction_with_age_range_and_branches(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/directions/",
+            {
+                "name": "Балет",
+                "color": "#AA00FF",
+                "age_min": 4,
+                "age_max": 12,
+                "branches": [str(self.branch.id)],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["age_min"], 4)
+        self.assertEqual(response.data["age_max"], 12)
+        self.assertEqual(response.data["branches"], [self.branch.id])
+
+    def test_age_max_below_age_min_is_rejected(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/directions/",
+            {"name": "Балет", "age_min": 10, "age_max": 5},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("age_max", response.data)
+
+    def test_cannot_attach_archived_or_foreign_branch(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/directions/",
+            {"name": "Балет", "branches": [str(self.archived_branch.id)]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("branches", response.data)
+
+        response = self.client.post(
+            "/api/v1/directions/",
+            {"name": "Балет", "branches": [str(self.foreign_branch.id)]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("branches", response.data)
