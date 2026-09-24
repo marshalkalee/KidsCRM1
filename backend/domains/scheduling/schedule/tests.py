@@ -7,7 +7,8 @@ from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from domains.people.clients.models import Child
 from domains.platform.tenants.models import Branch, Direction, Organization
@@ -89,6 +90,19 @@ class LessonStatusTransitionTest(TestCase):
         self.assertEqual(Lesson.objects.for_tenant(org2).count(), 0)
 
 
+def _authenticated_client(user):
+    # LessonViewSet берёт организацию из claim'а JWT через TenantMiddleware
+    # (request.organization), а не из request.user.organization — обычный
+    # force_authenticate() не создаёт заголовок Authorization, поэтому
+    # middleware его не видит и request.organization остаётся None (см.
+    # тот же паттерн в tests_rbac.py: make_client()).
+    client = APIClient()
+    refresh = RefreshToken.for_user(user)
+    refresh["organization_id"] = str(user.organization_id)
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+    return client
+
+
 class LessonCalendarApiTest(APITestCase):
     """
     Календарь (TRU-44): один запрос на весь диапазон дат, без запроса на
@@ -139,18 +153,27 @@ class LessonCalendarApiTest(APITestCase):
         tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
         self.week_start = datetime.datetime(2026, 9, 21, 9, 0, tzinfo=tz)
         for i in range(20):
-            Lesson.objects.create(
-                organization=self.org,
-                group=self.group,
-                teacher=self.teacher,
-                starts_at=self.week_start + datetime.timedelta(days=i % 7, hours=i),
-                ends_at=self.week_start + datetime.timedelta(days=i % 7, hours=i + 1),
-            )
+            self._create_lesson(i)
+
+    def _create_lesson(self, i):
+        # day = i % 7 держит занятие внутри одной из 7 дней недели, час
+        # растёт с i // 7 (а не с i целиком) — иначе при большом i
+        # (как в тесте на 60 занятий) время «утекает» на день/два вперёд
+        # и часть занятий выпадает за date_to недели.
+        day = i % 7
+        hour = i // 7
+        return Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            teacher=self.teacher,
+            starts_at=self.week_start + datetime.timedelta(days=day, hours=hour),
+            ends_at=self.week_start + datetime.timedelta(days=day, hours=hour + 1),
+        )
 
     def test_week_range_returns_calendar_fields_without_pagination(self):
-        self.client.force_authenticate(self.owner)
+        client = _authenticated_client(self.owner)
 
-        response = self.client.get(
+        response = client.get(
             "/api/v1/schedule/",
             {"date_from": "2026-09-21", "date_to": "2026-09-27"},
         )
@@ -166,24 +189,18 @@ class LessonCalendarApiTest(APITestCase):
         self.assertEqual(lesson["teacher_name"], "Преподаватель")
 
     def test_query_count_does_not_grow_with_lesson_count(self):
-        self.client.force_authenticate(self.owner)
+        client = _authenticated_client(self.owner)
         params = {"date_from": "2026-09-21", "date_to": "2026-09-27"}
 
         with CaptureQueriesContext(connection) as small:
-            self.client.get("/api/v1/schedule/", params)
+            client.get("/api/v1/schedule/", params)
 
         # Ещё занятия в том же диапазоне — число запросов не должно расти.
         for i in range(20, 60):
-            Lesson.objects.create(
-                organization=self.org,
-                group=self.group,
-                teacher=self.teacher,
-                starts_at=self.week_start + datetime.timedelta(days=i % 7, hours=i),
-                ends_at=self.week_start + datetime.timedelta(days=i % 7, hours=i + 1),
-            )
+            self._create_lesson(i)
 
         with CaptureQueriesContext(connection) as large:
-            response = self.client.get("/api/v1/schedule/", params)
+            response = client.get("/api/v1/schedule/", params)
 
         self.assertEqual(len(response.data), 60)
         self.assertEqual(len(small.captured_queries), len(large.captured_queries))
