@@ -26,22 +26,36 @@
 это не поломка данных), несуществующее направление/группа — строку не
 блокирует, только помечает для ручной проверки. Оба списка собираются в
 build_dry_run_report() для отчёта сухого прогона (tasks.py).
+
+Запись (тикет «запись данных с разрешением дублей»): по каждому
+совпадению (DuplicateKind) администратор выбирает «создать нового» /
+«привязать к существующему» / «пропустить», в том числе сразу для всех
+однотипных (apply_decisions). execute_import пишет одной транзакцией —
+целиком или ничего; всё созданное запоминается, чтобы импорт можно было
+откатить (rollback_import), пока с данными не начали работать.
 """
 
 import datetime
 import re
 from dataclasses import dataclass, field
 
+from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
+from domains.platform.core.audit import AuditLog
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 
-from .models import Child, ChildContact, ParentContact
+from .models import Child, ChildContact, CommunicationLog, ContactPhone, ImportJob, ParentContact
 from .services import ChildService, DuplicateReason
 
+# Как часто (в строках) сообщать о прогрессе — на 5000 строк это ~100
+# обновлений: экран не выглядит зависшим, а кэш не заваливается записями.
+PROGRESS_EVERY = 50
 
-def _existing_family_child_keys(organization, phone):
-    """(имя.lower(), дата рождения) уже существующих детей всех
+
+def _existing_family_children(organization, phone) -> dict:
+    """{(имя.lower(), дата рождения): child_id} уже существующих детей всех
     ParentContact с этим телефоном — используется, чтобы засеять
     _PhoneResolutionMap реальным состоянием базы в момент, когда телефон
     впервые встретился в файле: без этого второй ряд файла с тем же
@@ -53,7 +67,7 @@ def _existing_family_child_keys(organization, phone):
     children = Child.objects.for_tenant(organization).filter(
         contacts__parent_contact__in=parent_ids
     )
-    return {(c.full_name.lower(), c.birth_date) for c in children}
+    return {(c.full_name.lower(), c.birth_date): str(c.id) for c in children}
 
 
 GENDER_ALIASES = {
@@ -108,9 +122,69 @@ def _split_phones(raw: str) -> list[str]:
 
 class RowAction:
     CREATE_NEW_FAMILY = "create_new_family"
-    ATTACH_EXISTING = "attach_existing"
+    ATTACH_EXISTING = "attach_existing"  # новый ребёнок к существующему родителю
+    ATTACH_TO_CHILD = "attach_to_child"  # не новый ребёнок — уже существующий
     SKIP = "skip"
     ERROR = "error"
+
+
+class DuplicateKind:
+    """Вид найденного совпадения — по нему группируются решения
+    администратора (массовое решение «для всех однотипных», ТЗ п. 4.1)."""
+
+    IN_FILE = "in_file"  # тот же ребёнок с тем же телефоном выше в этом же файле
+    EXACT = "exact"  # тот же ребёнок с тем же телефоном уже есть в базе
+    FAMILY = "family"  # телефон родителя уже есть в базе, ребёнок — новый
+    WEAK = "weak"  # совпало только ФИО (или ФИО + дата рождения), телефон другой
+
+
+DUPLICATE_KIND_LABELS = {
+    DuplicateKind.IN_FILE: "Повтор внутри файла",
+    DuplicateKind.EXACT: "Ребёнок уже есть в базе",
+    DuplicateKind.FAMILY: "Родитель уже есть в базе",
+    DuplicateKind.WEAK: "Похожий ребёнок в базе",
+}
+
+
+class Decision:
+    CREATE_NEW = "create_new"
+    ATTACH = "attach"
+    SKIP = "skip"
+
+
+# Первый вариант — действие по умолчанию (то, что resolve_rows выбирает сам).
+DECISION_OPTIONS = {
+    DuplicateKind.IN_FILE: [Decision.SKIP, Decision.ATTACH, Decision.CREATE_NEW],
+    DuplicateKind.EXACT: [Decision.SKIP, Decision.ATTACH, Decision.CREATE_NEW],
+    DuplicateKind.FAMILY: [Decision.ATTACH, Decision.CREATE_NEW, Decision.SKIP],
+    DuplicateKind.WEAK: [Decision.CREATE_NEW, Decision.ATTACH, Decision.SKIP],
+}
+
+# «Привязать к существующему» значит разное: для FAMILY — новый ребёнок к
+# уже существующему родителю, для остальных — это тот же ребёнок (новый не
+# создаётся; дописываются контакт из файла, группа, направление).
+DECISION_LABELS = {
+    DuplicateKind.IN_FILE: {
+        Decision.SKIP: "Пропустить строку",
+        Decision.ATTACH: "Тот же ребёнок — дописать группу/направление",
+        Decision.CREATE_NEW: "Создать ещё одного ребёнка",
+    },
+    DuplicateKind.EXACT: {
+        Decision.SKIP: "Пропустить строку",
+        Decision.ATTACH: "Тот же ребёнок — дописать группу/направление",
+        Decision.CREATE_NEW: "Создать нового ребёнка",
+    },
+    DuplicateKind.FAMILY: {
+        Decision.ATTACH: "Привязать к существующему родителю",
+        Decision.CREATE_NEW: "Создать нового родителя",
+        Decision.SKIP: "Пропустить строку",
+    },
+    DuplicateKind.WEAK: {
+        Decision.CREATE_NEW: "Создать нового ребёнка",
+        Decision.ATTACH: "Тот же ребёнок — привязать к существующему",
+        Decision.SKIP: "Пропустить строку",
+    },
+}
 
 
 @dataclass
@@ -158,6 +232,20 @@ class ImportRow:
     # ЭТА строка при выполнении, см. execute_import): предпросмотру нечего
     # показать как id, но показать "строка N" — можно и нужно.
     attached_to_row_number: int | None = None
+    # Заполняется resolve_rows(): вид совпадения (DuplicateKind.*) — только у
+    # строк, по которым администратор может принять решение.
+    duplicate_kind: str | None = None
+    matched_child_id: str | None = None
+    # IN_FILE: строка файла, где этот ребёнок встретился впервые.
+    matched_row_number: int | None = None
+    # Решение администратора (Decision.*) — единственное из этих полей,
+    # которое переживает сериализацию: всё остальное resolve_rows
+    # пересчитывает при выполнении заново по текущему состоянию базы.
+    decision: str | None = None
+    # FAMILY + CREATE_NEW: новый родитель, хотя телефон уже есть в базе.
+    force_new_parent: bool = False
+    # С кем совпало — человекочитаемо, для экрана решений (не сериализуется).
+    matched_label: str = ""
 
     @property
     def is_valid(self) -> bool:
@@ -199,6 +287,7 @@ class ImportRow:
             "warnings": self.warnings,
             "action": self.action,
             "matched_parent_id": self.matched_parent_id,
+            "decision": self.decision,
         }
 
     @classmethod
@@ -222,6 +311,7 @@ class ImportRow:
             warnings=data.get("warnings") or [],
             action=data.get("action", RowAction.CREATE_NEW_FAMILY),
             matched_parent_id=data.get("matched_parent_id"),
+            decision=data.get("decision"),
         )
 
 
@@ -268,20 +358,99 @@ def _birth_date_plausibility_error(birth_date: datetime.date) -> str | None:
     return None
 
 
+def _name_key(name: str) -> str:
+    return " ".join(name.split()).lower()
+
+
+@dataclass
+class DirectoryLookup:
+    """Направления и группы организации — загружаются один раз на весь файл
+    (не запрос в базу на каждую строку, ТЗ п. 10.1).
+
+    Решение по тикету «запись данных с разрешением дублей»: импорт НЕ
+    создаёт ни направления, ни группы — только находит уже заведённые
+    (группе нужны филиал, вместимость, преподаватель — из файла их не
+    взять, а автосоздание на грязных данных плодит «Балет»/«балет »/«Балет
+    5-7»). Сравнение — без учёта регистра и лишних пробелов. Подробнее —
+    docs/import_format.md."""
+
+    # имя (см. _name_key) -> [direction_id, ...]
+    directions: dict[str, list[str]] = field(default_factory=dict)
+    # имя группы -> [(group_id, direction_id, имя направления), ...]
+    groups: dict[str, list[tuple[str, str, str]]] = field(default_factory=dict)
+
+    @classmethod
+    def load(cls, organization) -> "DirectoryLookup":
+        # Локальный импорт — clients не держит постоянную зависимость от
+        # домена Дарьи (groups) на уровне модуля.
+        from domains.platform.tenants.models import Direction
+        from domains.scheduling.groups.models import Group
+
+        lookup = cls()
+        for direction in Direction.objects.for_tenant(organization):
+            lookup.directions.setdefault(_name_key(direction.name), []).append(str(direction.id))
+        groups = (
+            Group.objects.for_tenant(organization)
+            .exclude(status=Group.Status.CLOSED)
+            .select_related("direction")
+        )
+        for group in groups:
+            lookup.groups.setdefault(_name_key(group.name), []).append(
+                (str(group.id), str(group.direction_id), _name_key(group.direction.name))
+            )
+        return lookup
+
+    def find_direction(self, name: str) -> tuple[str | None, str | None]:
+        """(direction_id, None) или (None, текст предупреждения)."""
+        found = self.directions.get(_name_key(name), [])
+        if len(found) == 1:
+            return found[0], None
+        if not found:
+            return None, (
+                f"направление «{name}» не найдено — импорт направления не создаёт, "
+                "ребёнок будет импортирован без него; заведите направление заранее"
+            )
+        return None, (
+            f"найдено несколько направлений «{name}» — ребёнок будет импортирован "
+            "без направления; переименуйте повторяющиеся направления"
+        )
+
+    def find_group(
+        self, name: str, direction_name: str = ""
+    ) -> tuple[tuple[str, str] | None, str | None]:
+        """((group_id, direction_id), None) или (None, текст предупреждения).
+        Направление из той же строки сужает выбор, если групп с таким
+        названием несколько (например, «Младшая» в балете и в пении)."""
+        found = self.groups.get(_name_key(name), [])
+        if direction_name and len(found) > 1:
+            found = [g for g in found if g[2] == _name_key(direction_name)]
+        if len(found) == 1:
+            group_id, direction_id, _ = found[0]
+            return (group_id, direction_id), None
+        if not found:
+            return None, (
+                f"группа «{name}» не найдена — импорт групп не создаёт, ребёнок будет "
+                "импортирован без группы; заведите группу заранее и запустите сухой "
+                "прогон заново"
+            )
+        return None, (
+            f"найдено несколько групп «{name}» — ребёнок будет импортирован без группы; "
+            "укажите направление в колонке «Направление» или переименуйте группы"
+        )
+
+
 def build_row(
     row_number: int,
     values: dict,
-    known_direction_names: frozenset[str] = frozenset(),
-    known_group_names: frozenset[str] = frozenset(),
+    lookup: DirectoryLookup | None = None,
 ) -> ImportRow:
     """Строка после маппинга (column_mapping.apply_mapping) → очищенный
     ImportRow с ошибками/предупреждениями валидации. `values` —
     {ключ_поля: сырое_значение из файла}, ключ отсутствует или None, если
     поле не сопоставлено с колонкой (для необязательных полей это
-    нормально). known_direction_names/known_group_names — уже
-    существующие в организации названия (в нижнем регистре, без пробелов
-    по краям) — передаются один раз на весь файл (не запрос в базу на
-    каждую строку), см. tasks.run_dry_run_job."""
+    нормально). `lookup` — справочник направлений/групп организации,
+    загружается один раз на весь файл (DirectoryLookup.load)."""
+    lookup = lookup or DirectoryLookup()
     row = ImportRow(row_number=row_number)
     errors = []
     warnings = []
@@ -345,18 +514,16 @@ def build_row(
     row.reported_balance = _clean_str(values.get("reported_balance"))
 
     row.direction_name = _clean_str(values.get("direction"))
-    if row.direction_name and row.direction_name.lower() not in known_direction_names:
-        warnings.append(
-            f"направление «{row.direction_name}» не найдено — при импорте не создаётся "
-            "автоматически, заведите его в справочнике направлений"
-        )
+    if row.direction_name:
+        _, problem = lookup.find_direction(row.direction_name)
+        if problem:
+            warnings.append(problem)
 
     row.group_name = _clean_str(values.get("group"))
-    if row.group_name and row.group_name.lower() not in known_group_names:
-        warnings.append(
-            f"группа «{row.group_name}» не найдена — при импорте не создаётся автоматически, "
-            "заведите её и добавьте ребёнка вручную"
-        )
+    if row.group_name:
+        _, problem = lookup.find_group(row.group_name, row.direction_name)
+        if problem:
+            warnings.append(problem)
 
     row.errors = errors
     row.warnings = warnings
@@ -364,20 +531,23 @@ def build_row(
 
 
 def build_rows(
-    mapped_rows: list[tuple[int, dict]],
-    known_direction_names: frozenset[str] = frozenset(),
-    known_group_names: frozenset[str] = frozenset(),
+    mapped_rows: list[tuple[int, dict]], lookup: DirectoryLookup | None = None
 ) -> list[ImportRow]:
-    return [
-        build_row(row_number, values, known_direction_names, known_group_names)
-        for row_number, values in mapped_rows
-    ]
+    lookup = lookup or DirectoryLookup()
+    return [build_row(row_number, values, lookup) for row_number, values in mapped_rows]
 
 
 class _PhoneResolutionMap:
     """Телефон -> уже найденный/созданный родитель в рамках ОДНОГО прогона
-    (предпросмотра или выполнения) — второй ребёнок с тем же номером
-    внутри файла попадает к тому же родителю, а не заводит второго."""
+    предпросмотра — второй ребёнок с тем же номером внутри файла попадает
+    к тому же родителю, а не заводит второго.
+
+    `children` — дети этой семьи: {child_key: {"row_number", "child_id"}}.
+    row_number=None — ребёнок уже был в базе; child_id=None — появится
+    только при выполнении (его создаст строка row_number).
+    `db_parent_label` — имя родителя, если он найден в БАЗЕ (а не будет
+    создан этим файлом): следующие дети с тем же телефоном — тоже
+    совпадение FAMILY, по которому решает администратор."""
 
     def __init__(self):
         self._by_phone: dict[str, dict] = {}
@@ -385,53 +555,88 @@ class _PhoneResolutionMap:
     def get(self, phone):
         return self._by_phone.get(phone)
 
-    def remember(self, phone, *, parent_id, row_number, child_keys=()):
+    def remember(self, phone, *, parent_id, row_number, children=None, db_parent_label=None):
         entry = self._by_phone.setdefault(
-            phone, {"parent_id": parent_id, "row_number": row_number, "children": set()}
+            phone, {"parent_id": parent_id, "row_number": row_number, "children": {}}
         )
         entry["parent_id"] = parent_id
         entry["row_number"] = row_number
-        entry["children"].update(child_keys)
+        if db_parent_label:
+            entry["db_parent_label"] = db_parent_label
+        for key, origin in (children or {}).items():
+            entry["children"].setdefault(key, origin)
 
     @staticmethod
     def child_key(child_name, birth_date):
         return (child_name.lower(), birth_date)
 
 
-def resolve_rows(organization, rows: list[ImportRow]) -> None:
-    """Проставляет action/reason/matched_* на каждой валидной строке —
-    дедуп и внутри файла, и против базы (см. докстринг модуля). Строки с
-    ошибками разбора не резолвятся вообще (action не имеет смысла)."""
-    phone_map = _PhoneResolutionMap()
+def _db_children(existing: dict) -> dict:
+    return {key: {"row_number": None, "child_id": child_id} for key, child_id in existing.items()}
 
-    for row in rows:
+
+def _child_label(child) -> str:
+    return f"{child.full_name}, {child.birth_date:%d.%m.%Y}"
+
+
+def resolve_rows(organization, rows: list[ImportRow], on_progress=None) -> None:
+    """Проставляет action/reason/duplicate_kind/matched_* на каждой валидной
+    строке — дедуп и внутри файла, и против базы (см. докстринг модуля).
+    Строки с ошибками разбора не резолвятся вообще (action не имеет
+    смысла). Действие здесь — по умолчанию; решение администратора
+    накладывается поверх (apply_decisions)."""
+    phone_map = _PhoneResolutionMap()
+    total = len(rows)
+
+    for index, row in enumerate(rows, start=1):
+        if on_progress and (index % PROGRESS_EVERY == 0 or index == total):
+            on_progress(index, total)
+
         if not row.is_valid:
             row.action = RowAction.ERROR
             continue
 
+        child_key = _PhoneResolutionMap.child_key(row.child_name, row.birth_date)
         remembered = phone_map.get(row.phone)
         if remembered:
-            child_key = _PhoneResolutionMap.child_key(row.child_name, row.birth_date)
-            if child_key in remembered["children"]:
-                # Тот же телефон И тот же ребёнок, что уже встречались в
-                # этом файле — повтор строки, не второй ребёнок.
+            origin = remembered["children"].get(child_key)
+            if origin:
+                # Тот же телефон И тот же ребёнок, что уже встречались —
+                # повтор, не второй ребёнок.
                 row.action = RowAction.SKIP
                 row.reason = DuplicateReason.PHONE
-                row.warnings.append(
-                    f"дубликат внутри файла — такая же строка уже была в строке "
-                    f"{remembered['row_number']}, при импорте будет пропущена"
-                )
+                row.matched_parent_id = remembered["parent_id"]
+                if origin["row_number"] is not None:
+                    row.duplicate_kind = DuplicateKind.IN_FILE
+                    row.matched_row_number = origin["row_number"]
+                    row.matched_label = f"строка {origin['row_number']}"
+                    row.warnings.append(
+                        f"дубликат внутри файла — этот ребёнок уже был в строке "
+                        f"{origin['row_number']}, по умолчанию строка будет пропущена"
+                    )
+                else:
+                    row.duplicate_kind = DuplicateKind.EXACT
+                    row.matched_child_id = origin["child_id"]
+                    child = Child.objects.for_tenant(organization).get(pk=origin["child_id"])
+                    row.matched_label = _child_label(child)
+                    row.warnings.append(
+                        f"дубликат — такой ребёнок уже есть в базе ({row.matched_label}), "
+                        "по умолчанию строка будет пропущена"
+                    )
             else:
                 row.action = RowAction.ATTACH_EXISTING
                 row.reason = DuplicateReason.EXISTING_PARENT_NEW_CHILD
                 row.matched_parent_id = remembered["parent_id"]
                 if remembered["parent_id"] is None:
                     row.attached_to_row_number = remembered["row_number"]
+                if remembered.get("db_parent_label"):
+                    row.duplicate_kind = DuplicateKind.FAMILY
+                    row.matched_label = remembered["db_parent_label"]
                 phone_map.remember(
                     row.phone,
                     parent_id=remembered["parent_id"],
                     row_number=remembered["row_number"],
-                    child_keys=[child_key],
+                    children={child_key: {"row_number": row.row_number, "child_id": None}},
                 )
             continue
 
@@ -457,27 +662,40 @@ def resolve_rows(organization, rows: list[ImportRow]) -> None:
         if phone_match:
             # Тот же телефон И тот же ребёнок — похоже на повтор строки/
             # повторную загрузку того же файла. По умолчанию пропускаем,
-            # администратор может явно выбрать "создать всё равно".
+            # администратор может решить иначе (apply_decisions).
             row.action = RowAction.SKIP
             row.reason = DuplicateReason.PHONE
+            row.duplicate_kind = DuplicateKind.EXACT
             row.matched_child = phone_match.child
+            row.matched_child_id = str(phone_match.child.id)
+            row.matched_parent_id = str(phone_match.parent.id)
+            row.matched_label = _child_label(phone_match.child)
             row.warnings.append(
-                f"дубликат — такой ребёнок уже есть в базе "
-                f"({phone_match.child.full_name}, {phone_match.child.birth_date:%d.%m.%Y}), "
-                "при импорте будет пропущена"
+                f"дубликат — такой ребёнок уже есть в базе ({row.matched_label}), "
+                "по умолчанию строка будет пропущена"
             )
-        elif family_match:
-            row.action = RowAction.ATTACH_EXISTING
-            row.reason = DuplicateReason.EXISTING_PARENT_NEW_CHILD
-            row.matched_parent_id = str(family_match.parent.id)
-            row.matched_parent = family_match.parent
-            existing_keys = _existing_family_child_keys(organization, row.phone)
-            existing_keys.add(_PhoneResolutionMap.child_key(row.child_name, row.birth_date))
             phone_map.remember(
                 row.phone,
                 parent_id=row.matched_parent_id,
                 row_number=row.row_number,
-                child_keys=existing_keys,
+                children=_db_children(_existing_family_children(organization, row.phone)),
+                db_parent_label=phone_match.parent.full_name,
+            )
+        elif family_match:
+            row.action = RowAction.ATTACH_EXISTING
+            row.reason = DuplicateReason.EXISTING_PARENT_NEW_CHILD
+            row.duplicate_kind = DuplicateKind.FAMILY
+            row.matched_parent_id = str(family_match.parent.id)
+            row.matched_parent = family_match.parent
+            row.matched_label = family_match.parent.full_name
+            children = _db_children(_existing_family_children(organization, row.phone))
+            children.setdefault(child_key, {"row_number": row.row_number, "child_id": None})
+            phone_map.remember(
+                row.phone,
+                parent_id=row.matched_parent_id,
+                row_number=row.row_number,
+                children=children,
+                db_parent_label=family_match.parent.full_name,
             )
         else:
             row.action = RowAction.CREATE_NEW_FAMILY
@@ -485,19 +703,49 @@ def resolve_rows(organization, rows: list[ImportRow]) -> None:
                 # Слабый сигнал — показать, но не настаивать (ТЗ): не
                 # блокирует и не меняет действие по умолчанию.
                 row.reason = weak_match.reason
+                row.duplicate_kind = DuplicateKind.WEAK
                 row.matched_child = weak_match.child
+                row.matched_child_id = str(weak_match.child.id)
+                row.matched_label = _child_label(weak_match.child)
                 row.warnings.append(
-                    f"похоже на уже существующего ребёнка "
-                    f"({weak_match.child.full_name}, {weak_match.child.birth_date:%d.%m.%Y}), "
-                    "но совпадения недостаточно для автоматической привязки — будет создана "
-                    "новая запись, проверьте вручную"
+                    f"похоже на уже существующего ребёнка ({row.matched_label}), "
+                    "но совпадения недостаточно для автоматической привязки — по умолчанию "
+                    "будет создана новая запись, проверьте вручную"
                 )
             phone_map.remember(
                 row.phone,
                 parent_id=None,
                 row_number=row.row_number,
-                child_keys=[_PhoneResolutionMap.child_key(row.child_name, row.birth_date)],
+                children={child_key: {"row_number": row.row_number, "child_id": None}},
             )
+
+
+def apply_decisions(rows: list[ImportRow]) -> None:
+    """Решение администратора по дублю (row.decision) поверх действия по
+    умолчанию из resolve_rows. Решение, неприменимое к виду совпадения
+    (например, совпадение исчезло между сухим прогоном и выполнением), —
+    игнорируется: остаётся действие по умолчанию."""
+    for row in rows:
+        kind = row.duplicate_kind
+        if not kind or row.decision not in DECISION_OPTIONS[kind]:
+            continue
+        if row.decision == Decision.SKIP:
+            row.action = RowAction.SKIP
+        elif row.decision == Decision.ATTACH:
+            row.action = (
+                RowAction.ATTACH_EXISTING
+                if kind == DuplicateKind.FAMILY
+                else RowAction.ATTACH_TO_CHILD
+            )
+        elif kind == DuplicateKind.FAMILY:
+            row.action = RowAction.CREATE_NEW_FAMILY
+            row.force_new_parent = True
+        elif kind in (DuplicateKind.EXACT, DuplicateKind.IN_FILE):
+            # Ещё один ребёнок — но у того же родителя (телефон тот же),
+            # не вторая мама с тем же номером.
+            row.action = RowAction.ATTACH_EXISTING
+        else:
+            row.action = RowAction.CREATE_NEW_FAMILY
 
 
 class ReportLevel:
@@ -511,10 +759,22 @@ class DryRunReport:
     ready_count: int = 0
     warning_count: int = 0
     error_count: int = 0
-    # [{row_number, level, child_name, messages}, ...] — по номеру строки
-    # исходного файла (не внутреннему индексу, ТЗ п. 10.4), используется и
-    # для экрана отчёта, и для выгрузки файлом (см. reporting.py).
+    # [{row_number, level, child_name, messages, duplicate}, ...] — по
+    # номеру строки исходного файла (не внутреннему индексу, ТЗ п. 10.4),
+    # используется и для экрана отчёта, и для выгрузки файлом (см.
+    # reporting.py). duplicate — None или {kind, matched, options}: строка,
+    # по которой администратор принимает решение перед импортом.
     rows: list[dict] = field(default_factory=list)
+
+
+def _duplicate_info(row: ImportRow) -> dict | None:
+    if not row.is_valid or not row.duplicate_kind:
+        return None
+    return {
+        "kind": row.duplicate_kind,
+        "matched": row.matched_label,
+        "options": DECISION_OPTIONS[row.duplicate_kind],
+    }
 
 
 def build_dry_run_report(rows: list[ImportRow]) -> DryRunReport:
@@ -541,17 +801,37 @@ def build_dry_run_report(rows: list[ImportRow]) -> DryRunReport:
                 "level": level,
                 "child_name": row.child_name,
                 "messages": messages,
+                "duplicate": _duplicate_info(row),
             }
         )
     return report
 
 
+CREATED_OBJECT_KEYS = (
+    "children",
+    "parents",
+    "phones",
+    "child_contacts",
+    "group_memberships",
+    "child_directions",  # [[child_id, direction_id], ...] — M2M, своего id нет
+)
+
+
+def _empty_created_objects() -> dict:
+    return {key: [] for key in CREATED_OBJECT_KEYS}
+
+
 @dataclass
 class ImportResult:
-    created: int = 0
-    attached_to_existing_family: int = 0
+    created: int = 0  # новый ребёнок + новый родитель
+    attached_to_existing_family: int = 0  # новый ребёнок к уже существующему родителю
+    linked_to_existing_child: int = 0  # строка привязана к уже существующему ребёнку
+    parents_created: int = 0
+    enrolled_in_groups: int = 0
     skipped: int = 0
-    failed: list[tuple[int, str]] = field(default_factory=list)  # (row_number, error)
+    # Строки, не импортированные не из-за ошибки данных, а потому что
+    # решение по дублю стало не к чему применить (см. _execute_row).
+    failed: list[tuple[int, str]] = field(default_factory=list)  # (row_number, причина)
     # Строки, где была непустая колонка "Остаток занятий" — сознательно
     # НЕ превращается в реальный Subscription при импорте (см.
     # docs/import_format.md), но и не пропадает молча: администратор
@@ -559,52 +839,329 @@ class ImportResult:
     unhandled_balances: list[tuple[int, str, str]] = field(
         default_factory=list
     )  # (row_number, child_name, reported_balance)
+    # id всего созданного — для отката (rollback_import).
+    created_objects: dict = field(default_factory=_empty_created_objects)
 
 
-def execute_import(organization, rows: list[ImportRow]) -> ImportResult:
-    """Строки — по порядку файла (важно для второго ребёнка в семье в
-    рамках одного прогона, см. _PhoneResolutionMap)."""
-    result = ImportResult()
-    phone_map = _PhoneResolutionMap()
+class ImportExecutionError(Exception):
+    """Поломка на строке — весь импорт откатывается (execute_import
+    транзакционен), а администратор видит номер строки файла."""
 
-    for row in rows:
-        if row.reported_balance and row.action not in (RowAction.SKIP, RowAction.ERROR):
-            result.unhandled_balances.append((row.row_number, row.child_name, row.reported_balance))
+    def __init__(self, row_number: int, message: str):
+        self.row_number = row_number
+        super().__init__(f"строка {row_number}: {message}")
 
-        if row.action in (RowAction.SKIP, RowAction.ERROR):
-            result.skipped += 1
-            continue
 
-        try:
-            child_data = {
+class _ExecutionState:
+    def __init__(self, organization, lookup, result):
+        self.organization = organization
+        self.lookup = lookup
+        self.result = result
+        # Телефон -> родитель, найденный/созданный в ЭТОМ прогоне.
+        self.parent_by_phone: dict[str, str] = {}
+        # Номер строки -> ребёнок (новый или существующий) — для IN_FILE + ATTACH.
+        self.child_by_row: dict[int, str] = {}
+        self.today = timezone.localdate()
+
+
+def _parent_data(row: ImportRow, state: _ExecutionState, *, prefer_existing: bool) -> dict:
+    if prefer_existing:
+        parent_id = row.matched_parent_id or state.parent_by_phone.get(row.phone)
+        if parent_id:
+            return {"id": parent_id}
+    return {"full_name": row.parent_name, "phones": [row.phone, *row.extra_phones]}
+
+
+def _record_new_parent(state: _ExecutionState, parent) -> None:
+    created = state.result.created_objects
+    created["parents"].append(str(parent.id))
+    created["phones"].extend(str(pk) for pk in parent.phones.values_list("id", flat=True))
+    state.result.parents_created += 1
+
+
+def _enroll(state: _ExecutionState, child, row: ImportRow) -> None:
+    """Существующие направление/группа из файла (DirectoryLookup) — ничего
+    не создаётся, ненайденное уже показано предупреждением в сухом прогоне."""
+    from domains.scheduling.groups.models import GroupMembership
+
+    organization = state.organization
+    created = state.result.created_objects
+    direction_ids = []
+    if row.direction_name:
+        direction_id, _ = state.lookup.find_direction(row.direction_name)
+        if direction_id:
+            direction_ids.append(direction_id)
+    if row.group_name:
+        found, _ = state.lookup.find_group(row.group_name, row.direction_name)
+        if found:
+            group_id, group_direction_id = found
+            already_in_group = (
+                GroupMembership.objects.for_tenant(organization)
+                .filter(group_id=group_id, child=child, left_at__isnull=True)
+                .exists()
+            )
+            if not already_in_group:
+                membership = GroupMembership.objects.create(
+                    organization=organization,
+                    group_id=group_id,
+                    child=child,
+                    joined_at=state.today,
+                )
+                created["group_memberships"].append(str(membership.id))
+                state.result.enrolled_in_groups += 1
+            direction_ids.append(group_direction_id)
+
+    if direction_ids:
+        existing = {str(pk) for pk in child.directions.values_list("id", flat=True)}
+        for direction_id in dict.fromkeys(direction_ids):
+            if direction_id not in existing:
+                child.directions.add(direction_id)
+                created["child_directions"].append([str(child.id), direction_id])
+
+
+def _execute_row(state: _ExecutionState, row: ImportRow) -> None:
+    organization = state.organization
+    result = state.result
+    created = result.created_objects
+
+    if row.action in (RowAction.SKIP, RowAction.ERROR):
+        result.skipped += 1
+        return
+
+    if row.action == RowAction.ATTACH_TO_CHILD:
+        child_id = row.matched_child_id or state.child_by_row.get(row.matched_row_number)
+        if not child_id:
+            result.failed.append(
+                (
+                    row.row_number,
+                    f"не к чему привязать — строка {row.matched_row_number} не импортирована",
+                )
+            )
+            return
+        child = Child.objects.for_tenant(organization).get(pk=child_id)
+        parent_data = _parent_data(row, state, prefer_existing=True)
+        link, parent, link_created = ChildService.link_parent(
+            organization, child, parent_data=parent_data, link_role=row.role
+        )
+        if "id" not in parent_data:
+            _record_new_parent(state, parent)
+        if link_created:
+            created["child_contacts"].append(str(link.id))
+        result.linked_to_existing_child += 1
+    else:
+        parent_data = _parent_data(row, state, prefer_existing=not row.force_new_parent)
+        child = ChildService.create_with_parent(
+            organization,
+            child_data={
                 "full_name": row.child_name,
                 "birth_date": row.birth_date,
                 "gender": row.gender,
                 "medical_notes": row.medical_notes,
-            }
+            },
+            parent_data=parent_data,
+            link_role=row.role,
+        )
+        link = (
+            ChildContact.objects.for_tenant(organization)
+            .select_related("parent_contact")
+            .get(child=child)
+        )
+        parent = link.parent_contact
+        created["children"].append(str(child.id))
+        created["child_contacts"].append(str(link.id))
+        if "id" in parent_data:
+            result.attached_to_existing_family += 1
+        else:
+            _record_new_parent(state, parent)
+            result.created += 1
 
-            remembered = phone_map.get(row.phone)
-            if remembered:
-                parent_data = {"id": remembered["parent_id"]}
-            elif row.action == RowAction.ATTACH_EXISTING and row.matched_parent_id:
-                parent_data = {"id": row.matched_parent_id}
-            else:
-                parent_data = {
-                    "full_name": row.parent_name,
-                    "phones": [row.phone, *row.extra_phones],
-                }
+    state.parent_by_phone.setdefault(row.phone, str(parent.id))
+    state.child_by_row[row.row_number] = str(child.id)
+    if row.reported_balance:
+        result.unhandled_balances.append((row.row_number, row.child_name, row.reported_balance))
+    _enroll(state, child, row)
 
-            child = ChildService.create_with_parent(
-                organization, child_data=child_data, parent_data=parent_data, link_role=row.role
-            )
-            parent_id = str(ChildContact.objects.get(child=child).parent_contact_id)
-            phone_map.remember(row.phone, parent_id=parent_id, row_number=row.row_number)
 
-            if row.action == RowAction.ATTACH_EXISTING:
-                result.attached_to_existing_family += 1
-            else:
-                result.created += 1
-        except Exception as exc:  # noqa: BLE001 — одна плохая строка не должна ронять весь импорт
-            result.failed.append((row.row_number, str(exc)))
+def execute_import(
+    organization,
+    rows: list[ImportRow],
+    lookup: DirectoryLookup | None = None,
+    on_progress=None,
+) -> ImportResult:
+    """Запись по результатам resolve_rows/apply_decisions. Строки — по
+    порядку файла (важно для второго ребёнка в семье в рамках одного
+    прогона).
 
-    return result
+    Транзакционно (тикет «запись данных с разрешением дублей»): импорт
+    применяется целиком или не применяется вовсе — поломка на любой строке
+    (или падение воркера посреди импорта) откатывает всё, частично
+    заехавшей базы не бывает. Поэтому здесь нет try/except «пропустить
+    строку и идти дальше»: плохая строка роняет весь импорт с её номером
+    (ImportExecutionError). Ошибки данных сюда не доходят — их отсекает
+    валидация (build_row), такие строки — RowAction.ERROR."""
+    lookup = lookup or DirectoryLookup.load(organization)
+    state = _ExecutionState(organization, lookup, ImportResult())
+    total = len(rows)
+
+    with transaction.atomic():
+        for index, row in enumerate(rows, start=1):
+            try:
+                _execute_row(state, row)
+            except ImportExecutionError:
+                raise
+            except Exception as exc:
+                raise ImportExecutionError(row.row_number, str(exc)) from exc
+            if on_progress and (index % PROGRESS_EVERY == 0 or index == total):
+                on_progress(index, total)
+
+    return state.result
+
+
+# Аудит (ТЗ п. 2): отдельных действий «импорт»/«откат импорта» в
+# AuditLog.Action пока нет (домен Bekzat'а) — пишем как создание/удаление
+# записи ImportJob со сводкой в before/after. Когда в AuditLog появятся
+# свои действия — поменять здесь, больше нигде.
+IMPORT_AUDIT_ACTION = AuditLog.Action.CREATE
+IMPORT_ROLLBACK_AUDIT_ACTION = AuditLog.Action.DELETE
+
+
+def import_audit_summary(job: ImportJob) -> dict:
+    return {
+        "event": "child_import",
+        "rows": job.total_rows,
+        "children_created": job.created_count + job.attached_count,
+        "parents_created": job.parents_created_count,
+        "attached_to_existing_parent": job.attached_count,
+        "linked_to_existing_child": job.linked_count,
+        "enrolled_in_groups": job.enrolled_count,
+        "skipped": job.skipped_count,
+    }
+
+
+def record_import_audit(job: ImportJob) -> None:
+    AuditLog.record(
+        actor=job.created_by,
+        action=IMPORT_AUDIT_ACTION,
+        entity=job,
+        after=import_audit_summary(job),
+    )
+
+
+class RollbackNotAllowed(Exception):
+    pass
+
+
+def _ids(job: ImportJob, key: str) -> list:
+    return (job.created_objects or {}).get(key) or []
+
+
+def rollback_blockers(job: ImportJob) -> list[str]:
+    """Откат — страховка на первый прогон, «пока никто не начал работать с
+    данными» (ТЗ). Любой след работы с импортированным — причина отказа:
+    откат не должен молча снести чужую работу. Пустой список — можно.
+
+    _base_manager — чтобы видеть и мягко удалённые записи: удаление
+    импортированного ребёнка вручную — тоже «работа с данными»."""
+    from domains.scheduling.groups.models import GroupMembership
+
+    if job.job_type != ImportJob.JobType.EXECUTE or job.status != ImportJob.Status.DONE:
+        return ["откатить можно только завершённый импорт"]
+    if job.rolled_back_at:
+        return ["импорт уже откатан"]
+    if not job.created_objects or not job.finished_at:
+        # Импорты, выполненные до появления отката, не запоминали созданное.
+        return ["для этого импорта не сохранён список созданных записей"]
+
+    children = _ids(job, "children")
+    parents = _ids(job, "parents")
+    contacts = _ids(job, "child_contacts")
+    memberships = _ids(job, "group_memberships")
+    phones = _ids(job, "phones")
+    blockers = []
+
+    child_qs = Child._base_manager.filter(id__in=children)
+    if child_qs.filter(subscriptions__isnull=False).exists():
+        blockers.append("у импортированных детей уже есть абонементы")
+    if child_qs.filter(lesson_consumptions__isnull=False).exists():
+        blockers.append("у импортированных детей уже есть списания занятий")
+    if CommunicationLog._base_manager.filter(child_id__in=children).exists():
+        blockers.append("по импортированным детям уже есть записи коммуникаций")
+    if (
+        GroupMembership._base_manager.filter(child_id__in=children)
+        .exclude(id__in=memberships)
+        .exists()
+    ):
+        blockers.append("импортированных детей уже записывали в группы вручную")
+    if (
+        ChildContact._base_manager.filter(
+            Q(child_id__in=children) | Q(parent_contact_id__in=parents)
+        )
+        .exclude(id__in=contacts)
+        .exists()
+    ):
+        blockers.append("к импортированным детям или родителям уже привязаны другие контакты")
+    if (
+        ContactPhone._base_manager.filter(parent_contact_id__in=parents)
+        .exclude(id__in=phones)
+        .exists()
+    ):
+        blockers.append("импортированным родителям уже добавляли телефоны")
+
+    touched = Q(updated_at__gt=job.finished_at) | Q(deleted_at__isnull=False)
+    for model, ids in (
+        (Child, children),
+        (ParentContact, parents),
+        (ChildContact, contacts),
+        (ContactPhone, phones),
+        (GroupMembership, memberships),
+    ):
+        if model._base_manager.filter(id__in=ids).filter(touched).exists():
+            blockers.append("импортированные записи уже редактировали или удаляли")
+            break
+    return blockers
+
+
+def rollback_import(job: ImportJob, actor) -> None:
+    """Возвращает систему в состояние до импорта: всё, что создал импорт,
+    мягко удаляется (ТЗ п. 3.2 — физического удаления нет), направления,
+    добавленные существующим детям, снимаются. Существующие записи импорт
+    не менял (привязка к существующему ребёнку — новая строка
+    ChildContact, не правка старой), поэтому возвращать их не нужно."""
+    from domains.scheduling.groups.models import GroupMembership
+
+    with transaction.atomic():
+        job = ImportJob.objects.select_for_update().get(pk=job.pk)
+        blockers = rollback_blockers(job)
+        if blockers:
+            raise RollbackNotAllowed("; ".join(blockers))
+
+        now = timezone.now()
+        for model, key in (
+            (GroupMembership, "group_memberships"),
+            (ChildContact, "child_contacts"),
+            (ContactPhone, "phones"),
+            (ParentContact, "parents"),
+            (Child, "children"),
+        ):
+            model._base_manager.filter(
+                organization=job.organization, id__in=_ids(job, key), deleted_at__isnull=True
+            ).update(deleted_at=now)
+
+        by_direction: dict[str, list[str]] = {}
+        for child_id, direction_id in _ids(job, "child_directions"):
+            by_direction.setdefault(direction_id, []).append(child_id)
+        for direction_id, child_ids in by_direction.items():
+            Child.directions.through.objects.filter(
+                direction_id=direction_id, child_id__in=child_ids
+            ).delete()
+
+        job.rolled_back_at = now
+        job.rolled_back_by = actor
+        job.save(update_fields=["rolled_back_at", "rolled_back_by"])
+        AuditLog.record(
+            actor=actor,
+            action=IMPORT_ROLLBACK_AUDIT_ACTION,
+            entity=job,
+            before=import_audit_summary(job),
+            after={"event": "child_import_rollback"},
+        )

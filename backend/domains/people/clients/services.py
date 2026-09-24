@@ -51,6 +51,20 @@ class DuplicateMatch:
     parent: ParentContact | None
 
 
+def _get_or_create_parent(organization, parent_data):
+    """`parent_data` с ключом "id" — существующий ParentContact, иначе —
+    новый (с телефонами из "phones")."""
+    parent_id = (parent_data or {}).get("id")
+    if parent_id:
+        return ParentContact.objects.for_tenant(organization).get(pk=parent_id)
+    data = dict(parent_data or {})
+    phones = data.pop("phones", [])
+    parent = ParentContact.objects.create(organization=organization, **data)
+    for number in phones:
+        ContactPhone.objects.create(organization=organization, parent_contact=parent, number=number)
+    return parent
+
+
 def _primary_contact_parent(organization, child):
     link = (
         ChildContact.objects.for_tenant(organization)
@@ -172,18 +186,7 @@ class ChildService:
         предотвратить.
         """
         child = Child.objects.create(organization=organization, **child_data)
-
-        parent_id = (parent_data or {}).get("id")
-        if parent_id:
-            parent = ParentContact.objects.for_tenant(organization).get(pk=parent_id)
-        else:
-            data = dict(parent_data or {})
-            phones = data.pop("phones", [])
-            parent = ParentContact.objects.create(organization=organization, **data)
-            for number in phones:
-                ContactPhone.objects.create(
-                    organization=organization, parent_contact=parent, number=number
-                )
+        parent = _get_or_create_parent(organization, parent_data)
 
         ChildContact.objects.create(
             organization=organization,
@@ -194,3 +197,34 @@ class ChildService:
             is_payer=True,
         )
         return child
+
+    @staticmethod
+    @transaction.atomic
+    def link_parent(organization, child, *, parent_data, link_role):
+        """
+        Добавить контакт к УЖЕ существующему ребёнку (импорт: администратор
+        решил, что строка файла — тот же ребёнок, что уже есть в базе).
+        Связь — не основной контакт и не плательщик: существующие связи
+        ребёнка не трогаются (иначе ChildContact.save() снял бы флаги с
+        уже заведённого плательщика). Если этот родитель уже привязан —
+        ничего не создаёт и возвращает существующую связь.
+
+        Возвращает (связь, родитель, создана_ли_связь).
+        """
+        parent = _get_or_create_parent(organization, parent_data)
+        existing = (
+            ChildContact.objects.for_tenant(organization)
+            .filter(child=child, parent_contact=parent)
+            .first()
+        )
+        if existing:
+            return existing, parent, False
+        link = ChildContact.objects.create(
+            organization=organization,
+            child=child,
+            parent_contact=parent,
+            role=link_role,
+            is_primary_contact=False,
+            is_payer=False,
+        )
+        return link, parent, True

@@ -14,11 +14,16 @@
 3. Статус/отчёт сухого прогона (`child_import_job_status`) — готово/
    предупреждения/ошибки по каждой строке (номер — из исходного файла, не
    внутренний индекс), отчёт можно скачать файлом
-   (`child_import_report_download`).
+   (`child_import_report_download`). Там же — решения по найденным
+   совпадениям: по строке или сразу для всех однотипных
+   (`child_import_decisions`).
 4. Запуск настоящего импорта из отчёта (`child_import_execute`) — берёт
    строки БЕЗ ошибок из уже посчитанного сухого прогона (не пересобирает
-   файл заново) и ставит в очередь `tasks.run_import_job`. Статус — та же
+   файл заново) вместе с решениями по дублям и ставит в очередь
+   `tasks.run_import_job`. Статус (с прогрессом) — та же
    `child_import_job_status`, но для job_type=EXECUTE.
+5. Откат импорта целиком (`child_import_rollback`), пока с
+   импортированными данными никто не начал работать.
 
 Сырые строки файла между шагами 1 и 2 передаются одним скрытым JSON-полем
 (шаг 1 ничего не пишет в базу — можно просто уйти со страницы маппинга).
@@ -30,6 +35,7 @@
 import datetime
 import json
 
+from django.contrib import messages
 from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -37,11 +43,20 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from domains.platform.core.decorators import role_required
-from domains.platform.tenants.models import Direction
 
-from . import column_mapping
+from . import column_mapping, progress
 from .forms import ChildImportUploadForm
-from .import_service import ImportRow, build_rows
+from .import_service import (
+    DECISION_LABELS,
+    DECISION_OPTIONS,
+    DUPLICATE_KIND_LABELS,
+    DirectoryLookup,
+    ImportRow,
+    RollbackNotAllowed,
+    build_rows,
+    rollback_blockers,
+    rollback_import,
+)
 from .models import ImportColumnMapping, ImportJob
 from .reporting import build_report_workbook
 from .tasks import run_dry_run_job, run_import_job
@@ -50,6 +65,9 @@ from .web_views import CHILD_EDIT_ROLES
 PREVIEW_ROW_LIMIT = 5  # сколько сырых строк показать на экране маппинга
 # Сколько строк отчёта показать на странице (не тысячи — для этого выгрузка файлом).
 REPORT_SAMPLE_LIMIT = 200
+# Сколько совпадений показать для решения по одному — остальные решаются
+# массово («для всех однотипных») или остаются с действием по умолчанию.
+DUPLICATE_ROW_LIMIT = 500
 
 
 def _json_safe(value):
@@ -91,22 +109,6 @@ def _save_mapping(organization, headers, mapping, meta):
         csv_delimiter=meta.get("delimiter", ""),
         csv_encoding=meta.get("encoding", ""),
     )
-
-
-def _known_names(queryset) -> frozenset[str]:
-    names = queryset.values_list("name", flat=True)
-    return frozenset(name.strip().lower() for name in names if name)
-
-
-def _known_group_names(organization) -> frozenset[str]:
-    # Локальный импорт — clients не держит постоянную зависимость от
-    # домена Дарьи (groups) на уровне модуля, только там, где реально
-    # нужно свериться со справочником (см. докстринг ImportRow в
-    # import_service.py: своей FK на Group этот домен сознательно не
-    # заводит).
-    from domains.scheduling.groups.models import Group
-
-    return _known_names(Group.objects.for_tenant(organization))
 
 
 @role_required(*CHILD_EDIT_ROLES)
@@ -189,11 +191,8 @@ def child_import_mapping_confirm(request):
     mapped_rows = column_mapping.apply_mapping(
         headers, [(rn, values) for rn, values in raw_rows], mapping
     )
-    # Один запрос на направления/группы на весь файл, не на строку —
-    # 5000 повторов того же SELECT ничего не строке не даёт (ТЗ п. 10.1).
-    known_direction_names = _known_names(Direction.objects.for_tenant(org))
-    known_group_names = _known_group_names(org)
-    rows = build_rows(mapped_rows, known_direction_names, known_group_names)
+    # Один запрос на направления/группы на весь файл, не на строку (ТЗ п. 10.1).
+    rows = build_rows(mapped_rows, DirectoryLookup.load(org))
 
     job = ImportJob.objects.create(
         organization=org,
@@ -206,19 +205,66 @@ def child_import_mapping_confirm(request):
     return redirect("clients_web:child-import-job-status", job_id=job.id)
 
 
+def _duplicate_rows(job: ImportJob) -> list[dict]:
+    return [row for row in job.report_rows if row.get("duplicate")]
+
+
+def _decision_context(job: ImportJob) -> dict:
+    """Экран решений по дублям: по строке (до DUPLICATE_ROW_LIMIT) и сводка
+    по видам совпадений для массового решения."""
+    duplicate_rows = _duplicate_rows(job)
+    rows = []
+    for row in duplicate_rows[:DUPLICATE_ROW_LIMIT]:
+        kind = row["duplicate"]["kind"]
+        current = job.decisions.get(str(row["row_number"])) or DECISION_OPTIONS[kind][0]
+        rows.append(
+            {
+                "row_number": row["row_number"],
+                "child_name": row["child_name"],
+                "kind_label": DUPLICATE_KIND_LABELS[kind],
+                "matched": row["duplicate"]["matched"],
+                "choices": [
+                    (value, DECISION_LABELS[kind][value], value == current)
+                    for value in DECISION_OPTIONS[kind]
+                ],
+            }
+        )
+    kinds = []
+    for kind, label in DUPLICATE_KIND_LABELS.items():
+        count = sum(1 for row in duplicate_rows if row["duplicate"]["kind"] == kind)
+        if count:
+            kinds.append(
+                {
+                    "kind": kind,
+                    "label": label,
+                    "count": count,
+                    "choices": [
+                        (value, DECISION_LABELS[kind][value]) for value in DECISION_OPTIONS[kind]
+                    ],
+                }
+            )
+    return {
+        "duplicate_rows": rows,
+        "duplicate_rows_truncated": len(duplicate_rows) > DUPLICATE_ROW_LIMIT,
+        "duplicate_kinds": kinds,
+    }
+
+
 @role_required(*CHILD_EDIT_ROLES)
 def child_import_job_status(request, job_id):
     job = get_object_or_404(ImportJob.objects.for_tenant(request.user.organization), pk=job_id)
-    report_rows = job.report_rows[:REPORT_SAMPLE_LIMIT]
-    return render(
-        request,
-        "clients/child_import_job_status.html",
-        {
-            "job": job,
-            "report_rows": report_rows,
-            "report_rows_truncated": len(job.report_rows) > REPORT_SAMPLE_LIMIT,
-        },
-    )
+    context = {
+        "job": job,
+        "report_rows": job.report_rows[:REPORT_SAMPLE_LIMIT],
+        "report_rows_truncated": len(job.report_rows) > REPORT_SAMPLE_LIMIT,
+    }
+    if job.status in (ImportJob.Status.PENDING, ImportJob.Status.RUNNING):
+        context["progress"] = progress.get_progress(job.id)
+    if job.job_type == ImportJob.JobType.DRY_RUN and job.status == ImportJob.Status.DONE:
+        context.update(_decision_context(job))
+    if job.job_type == ImportJob.JobType.EXECUTE and job.status == ImportJob.Status.DONE:
+        context["rollback_blockers"] = [] if job.rolled_back_at else rollback_blockers(job)
+    return render(request, "clients/child_import_job_status.html", context)
 
 
 @role_required(*CHILD_EDIT_ROLES)
@@ -238,6 +284,49 @@ def child_import_report_download(request, job_id):
     return response
 
 
+def _collect_decisions(request, job: ImportJob) -> dict:
+    """Решения из формы поверх уже сохранённых: по строке
+    (decision_<номер>) или массово для вида совпадения (bulk_kind +
+    bulk_decision). Решение, неприменимое к виду совпадения строки, —
+    игнорируется."""
+    decisions = dict(job.decisions or {})
+    bulk_kind = request.POST.get("bulk_kind")
+    bulk_decision = request.POST.get("bulk_decision")
+    for row in _duplicate_rows(job):
+        key = str(row["row_number"])
+        kind = row["duplicate"]["kind"]
+        if bulk_kind:
+            if kind == bulk_kind and bulk_decision in DECISION_OPTIONS[kind]:
+                decisions[key] = bulk_decision
+            continue
+        value = request.POST.get(f"decision_{key}")
+        if value in DECISION_OPTIONS[kind]:
+            decisions[key] = value
+    return decisions
+
+
+def _locked_dry_run_job(request, job_id) -> ImportJob:
+    return get_object_or_404(
+        ImportJob.objects.for_tenant(request.user.organization).select_for_update(),
+        pk=job_id,
+        job_type=ImportJob.JobType.DRY_RUN,
+        status=ImportJob.Status.DONE,
+    )
+
+
+@role_required(*CHILD_EDIT_ROLES)
+@require_http_methods(["POST"])
+def child_import_decisions(request, job_id):
+    with transaction.atomic():
+        job = _locked_dry_run_job(request, job_id)
+        if job.executed_job_id:
+            return redirect("clients_web:child-import-job-status", job_id=job.executed_job_id)
+        job.decisions = _collect_decisions(request, job)
+        job.save(update_fields=["decisions"])
+    messages.success(request, "Решения по совпадениям сохранены.")
+    return redirect(reverse("clients_web:child-import-job-status", args=[job.id]) + "#duplicates")
+
+
 @role_required(*CHILD_EDIT_ROLES)
 @require_http_methods(["POST"])
 def child_import_execute(request, job_id):
@@ -245,19 +334,19 @@ def child_import_execute(request, job_id):
         # select_for_update — двойной клик по «Запустить импорт» не должен
         # создать две задачи, которые параллельно запишут одних и тех же
         # детей до того, как дедуп одной из них увидит записи другой.
-        dry_run_job = get_object_or_404(
-            ImportJob.objects.for_tenant(request.user.organization).select_for_update(),
-            pk=job_id,
-            job_type=ImportJob.JobType.DRY_RUN,
-            status=ImportJob.Status.DONE,
-        )
+        dry_run_job = _locked_dry_run_job(request, job_id)
         if dry_run_job.executed_job_id:
             return redirect(
                 "clients_web:child-import-job-status", job_id=dry_run_job.executed_job_id
             )
+        # Кнопка запуска — в той же форме, что и решения по строкам: выбор в
+        # выпадающих списках, который не сохранили отдельно, не теряется.
+        dry_run_job.decisions = _collect_decisions(request, dry_run_job)
 
         rows = [ImportRow.from_dict(data) for data in dry_run_job.rows_payload]
         ready_rows = [r for r in rows if r.is_valid]  # ошибки блокируют строку — не идут дальше
+        for row in ready_rows:
+            row.decision = dry_run_job.decisions.get(str(row.row_number))
 
         job = ImportJob.objects.create(
             organization=request.user.organization,
@@ -267,7 +356,24 @@ def child_import_execute(request, job_id):
             rows_payload=[r.to_dict() for r in ready_rows],
         )
         dry_run_job.executed_job = job
-        dry_run_job.save(update_fields=["executed_job"])
+        dry_run_job.save(update_fields=["executed_job", "decisions"])
 
     run_import_job.delay(str(job.id))
+    return redirect("clients_web:child-import-job-status", job_id=job.id)
+
+
+@role_required(*CHILD_EDIT_ROLES)
+@require_http_methods(["POST"])
+def child_import_rollback(request, job_id):
+    job = get_object_or_404(
+        ImportJob.objects.for_tenant(request.user.organization),
+        pk=job_id,
+        job_type=ImportJob.JobType.EXECUTE,
+    )
+    try:
+        rollback_import(job, request.user)
+    except RollbackNotAllowed as exc:
+        messages.error(request, f"Откат невозможен: {exc}.")
+    else:
+        messages.success(request, "Импорт откатан — созданные им записи удалены.")
     return redirect("clients_web:child-import-job-status", job_id=job.id)
