@@ -45,6 +45,10 @@ DIRECTION_MANAGE_ROLES = {
     User.Role.MANAGER,
 }
 
+GROUP_MANAGE_ROLES = {
+    User.Role.OWNER,
+    User.Role.MANAGER,
+}
 
 PHONE_VIEW_ROLES = {
     User.Role.OWNER,
@@ -91,6 +95,10 @@ def can_manage_directions(user) -> bool:
     return user.role in DIRECTION_MANAGE_ROLES
 
 
+def can_manage_groups(user) -> bool:
+    return user.role in GROUP_MANAGE_ROLES
+
+
 def can_view_phone(user) -> bool:
     return user.role in PHONE_VIEW_ROLES
 
@@ -110,4 +118,5 @@ def get_user_permissions(user) -> dict:
         "can_manage_directions": can_manage_directions(user),
         "can_view_phone": can_view_phone(user),
         "can_view_child_sensitive_fields": can_view_child_sensitive_fields(user),
+        "can_manage_groups": can_manage_groups(user),
     }

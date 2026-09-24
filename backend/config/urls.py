@@ -37,6 +37,7 @@ urlpatterns = [
     path("", include("domains.platform.core.urls")),
     path("", include("domains.platform.tenants.urls_web")),
     path("", include("domains.people.clients.urls_web")),
+    path("", include("domains.scheduling.groups.urls_web")),
 ]
 
 if settings.DEBUG:

@@ -62,6 +62,24 @@
       </ul>
     </div>
   {% endif %}
+  {% if request.user.is_authenticated %}
+    <div class="kc-sidebar__section">
+      <div class="kc-sidebar__section-label" data-i18n="nav.section_scheduling">Учёт</div>
+      <ul class="kc-sidebar__nav">
+        <li>
+          <a href="{% url 'scheduling_web:group-list' %}" class="kc-sidebar__link">
+            <svg viewBox="0 0 24 24">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span data-i18n="nav.groups">Группы</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+  {% endif %}
   {% if kc_permissions.can_manage_branches or kc_permissions.can_manage_org_settings or kc_permissions.can_manage_directions %}
     <div class="kc-sidebar__section">
       <div class="kc-sidebar__section-label" data-i18n="nav.section_system">Система</div>

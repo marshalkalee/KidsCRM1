@@ -1,0 +1,60 @@
+{# djlint:off #}
+{% csrf_token %}
+<div class="kc-field{% if form.name.errors %} kc-field--invalid{% endif %}">
+  <label class="kc-field__label kc-field__label--required"
+         for="{{ form.name.id_for_label }}"
+         data-i18n="group_form.name">{{ form.name.label }}</label>
+  {{ form.name }}
+  <div class="kc-field__error">{{ form.name.errors|first }}</div>
+</div>
+<div class="kc-field{% if form.branch.errors %} kc-field--invalid{% endif %}">
+  <label class="kc-field__label kc-field__label--required"
+         for="{{ form.branch.id_for_label }}"
+         data-i18n="group_form.branch">{{ form.branch.label }}</label>
+  {{ form.branch }}
+  <div class="kc-field__error">{{ form.branch.errors|first }}</div>
+</div>
+<div class="kc-field{% if form.direction.errors %} kc-field--invalid{% endif %}">
+  <label class="kc-field__label kc-field__label--required"
+         for="{{ form.direction.id_for_label }}"
+         data-i18n="group_form.direction">{{ form.direction.label }}</label>
+  {{ form.direction }}
+  <div class="kc-field__error">{{ form.direction.errors|first }}</div>
+</div>
+<div class="kc-field{% if form.teachers.errors %} kc-field--invalid{% endif %}">
+  <label class="kc-field__label"
+         for="{{ form.teachers.id_for_label }}"
+         data-i18n="group_form.teachers">{{ form.teachers.label }}</label>
+  {{ form.teachers }}
+  <div class="kc-field__error">{{ form.teachers.errors|first }}</div>
+</div>
+<div class="kc-field{% if form.capacity.errors %} kc-field--invalid{% endif %}">
+  <label class="kc-field__label kc-field__label--required"
+         for="{{ form.capacity.id_for_label }}"
+         data-i18n="group_form.capacity">{{ form.capacity.label }}</label>
+  {{ form.capacity }}
+  <div class="kc-field__error">{{ form.capacity.errors|first }}</div>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+  <div class="kc-field{% if form.age_min.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.age_min.id_for_label }}"
+           data-i18n="group_form.age_min">{{ form.age_min.label }}</label>
+    {{ form.age_min }}
+    <div class="kc-field__error">{{ form.age_min.errors|first }}</div>
+  </div>
+  <div class="kc-field{% if form.age_max.errors %} kc-field--invalid{% endif %}">
+    <label class="kc-field__label"
+           for="{{ form.age_max.id_for_label }}"
+           data-i18n="group_form.age_max">{{ form.age_max.label }}</label>
+    {{ form.age_max }}
+    <div class="kc-field__error">{{ form.age_max.errors|first }}</div>
+  </div>
+</div>
+<div class="kc-field{% if form.status.errors %} kc-field--invalid{% endif %}">
+  <label class="kc-field__label"
+         for="{{ form.status.id_for_label }}"
+         data-i18n="group_form.status">{{ form.status.label }}</label>
+  {{ form.status }}
+  <div class="kc-field__error">{{ form.status.errors|first }}</div>
+</div>
