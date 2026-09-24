@@ -351,3 +351,165 @@
 .kc-modal .modal-footer {
   border-color: var(--kc-color-border);
 }
+
+/* ---------------------------------------------------------------------- */
+/* Карточка ребёнка: шапка, вкладки, лента коммуникаций                    */
+/* ---------------------------------------------------------------------- */
+
+.kc-muted {
+  color: var(--kc-color-text-muted);
+}
+
+.kc-child-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--kc-space-5);
+}
+
+.kc-child-header__main {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-3);
+  flex: 1;
+  min-width: 220px;
+}
+
+.kc-child-header__name {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.kc-child-header__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--kc-space-2);
+  color: var(--kc-color-text-muted);
+  font-size: 0.9rem;
+}
+
+.kc-child-header__edit {
+  align-self: center;
+}
+
+.kc-child-header__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kc-space-5);
+  margin: 0;
+}
+
+.kc-child-header__facts dt {
+  font-size: 0.75rem;
+  color: var(--kc-color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.kc-child-header__facts dd {
+  margin: 0;
+}
+
+/* flex-wrap, не overflow-x — на телефоне вкладки переходят на вторую
+   строку, а не уезжают в горизонтальный скролл (критерий приёмки). */
+.kc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kc-space-2);
+  margin: var(--kc-space-4) 0;
+}
+
+.kc-tabs__item {
+  padding: var(--kc-space-2) var(--kc-space-4);
+  border-radius: var(--kc-radius-md);
+  border: 1px solid var(--kc-color-border);
+  background: transparent;
+  color: var(--kc-color-text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.kc-tabs__item--active {
+  background: var(--kc-color-accent);
+  border-color: var(--kc-color-accent);
+  color: #fff;
+}
+
+.kc-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kc-space-2);
+}
+
+.kc-segmented__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kc-space-1);
+  padding: var(--kc-space-2) var(--kc-space-3);
+  border: 1px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-md);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.kc-segmented__option:has(input:checked) {
+  border-color: var(--kc-color-accent);
+  background: color-mix(in srgb, var(--kc-color-accent) 12%, transparent);
+}
+
+.kc-communication-form {
+  margin-bottom: var(--kc-space-4);
+}
+
+.kc-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kc-space-3);
+}
+
+.kc-timeline__item {
+  padding: var(--kc-space-3);
+  border: 1px solid var(--kc-color-border);
+  border-radius: var(--kc-radius-md);
+}
+
+.kc-timeline__note {
+  margin: var(--kc-space-2) 0;
+  white-space: pre-wrap;
+}
+
+.kc-timeline__meta {
+  font-size: 0.8rem;
+  color: var(--kc-color-text-muted);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Динамический формсет (телефоны родителя) — formset.js                  */
+/* ---------------------------------------------------------------------- */
+
+.kc-phone-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--kc-space-2);
+  margin-bottom: var(--kc-space-2);
+}
+
+.kc-phone-row input[type="text"] {
+  flex: 2;
+  min-width: 160px;
+}
+
+.kc-phone-row select {
+  flex: 1;
+  min-width: 120px;
+}
+
+.kc-phone-row__delete {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kc-space-1);
+  font-size: 0.85rem;
+  color: var(--kc-color-text-muted);
+  white-space: nowrap;
+}
