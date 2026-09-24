@@ -1,21 +1,24 @@
 # KidsCRM
 
 SaaS CRM для детских образовательных и спортивных центров. Стек и формат
-API зафиксированы в [ADR-002](docs/adr/); доменное деление кода описано в
+API зафиксированы в [ADR-002](backend/docs/adr-002-stack-repo-api), фронтенд —
+в [ADR-004](backend/docs/adr-004-frontend-spa.md); доменное деление кода описано в
 [`backend/domains/README.md`](backend/domains/README.md).
 
 ## Стек
 
-- Один Django-проект: Python 3.12, Django 5, DRF, PostgreSQL, Celery + Redis.
-- Веб — серверный рендеринг Django-шаблонами (`backend/templates/`) +
-  jQuery 3.5.1 и вендорные плагины без сборщика (Bootstrap, Select2,
-  DataTables, FullCalendar, Chart.js и др., `backend/static/site/js/vendor/`).
-  Никакого `package.json`/webpack/Vite — см. ADR-002.
-- API: REST, версионирование через `/api/v1/` — на него же ходят AJAX-вызовы
-  со страниц, отдельного «внутреннего» API нет.
-- nginx перед backend (`infra/nginx/nginx.conf`) — единая точка входа, тот
-  же путь запроса локально и в проде. Статику отдаёт сам Django через
-  whitenoise, nginx её не подхватывает отдельно — см. ADR-002.
+- Backend — Django-проект: Python 3.12, Django 5, DRF, PostgreSQL, Celery + Redis.
+- Веб — React-приложение `frontend2/` (Vite, Tailwind, react-router), ходит
+  только в REST API `/api/v1/` с JWT (ADR-004). Идёт переезд со старого
+  серверного веба (Django-шаблоны + jQuery, `backend/templates/`) — эпик
+  TRU-78: старые страницы работают параллельно до TRU-88.
+- API: REST, версионирование через `/api/v1/`, JWT (вход `auth/login/`,
+  продление `auth/refresh/` — фронт продлевает токен сам).
+- nginx (`infra/nginx/`) — единая точка входа, тот же путь запроса локально
+  и в проде: отдаёт собранный `frontend2` на `/`, проксирует на Django
+  `/api/`, `/admin/`, `/static/`, `/media/` и старые страницы
+  (`infra/nginx/app.conf`). Образ nginx сам собирает фронт
+  (`infra/nginx/Dockerfile`).
 - `worker` — Celery worker на той же кодовой базе, что и `backend`, слушает
   Redis. Реальных фоновых задач пока нет (см. `backend/config/celery.py`) —
   сервис поднят, чтобы окружение у всех троих было одинаковым с первого дня.
@@ -23,8 +26,9 @@ API зафиксированы в [ADR-002](docs/adr/); доменное дел�
 ## Быстрый старт с нуля
 
 Разработка — через Docker (как и в других продуктах AEM Solutions): никакого
-venv, зависимости ставятся прямо в образ. Нужны: **Docker**. Node/npm не
-нужны — фронтенд не собирается.
+venv, зависимости ставятся прямо в образ. Для запуска нужен только
+**Docker** — фронт собирается внутри образа nginx. Node 22+ нужен, только
+если разрабатываете фронт с горячей перезагрузкой (см. «Фронтенд» ниже).
 
 1. Клонировать репозиторий и перейти в него.
    ```bash
@@ -47,10 +51,12 @@ venv, зависимости ставятся прямо в образ. Нужн
    ```
 5. Открыть в браузере.
 
-   Основной вход — `http://localhost/` (через nginx, `infra/nginx/nginx.conf`
-   — тот же путь запроса, что и в проде). `http://localhost:8000/` — тот же
-   backend напрямую, без nginx, для отладки. API — `/api/v1/`, админка —
-   `/admin/`. Логи: `docker compose logs -f backend` / `worker` / `nginx`.
+   Основной вход — `http://localhost/` — React-приложение (через nginx, тот
+   же путь запроса, что и в проде). API — `/api/v1/`, админка — `/admin/`.
+   Старые серверные страницы на время переезда — по своим адресам со слешем
+   на конце: `/clients/children/`, `/settings/organization/`, `/groups/`,
+   вход в них — `/login/`. `http://localhost:8000/` — backend напрямую, без
+   nginx, для отладки. Логи: `docker compose logs -f backend` / `worker` / `nginx`.
 6. Установить pre-commit хуки (один раз после клонирования; сам pre-commit
    ставится на хост, не в контейнер — он вызывается git-хуком при `git commit`).
    ```bash
@@ -70,6 +76,28 @@ docker-сети (`db:5432`), порт 5432 на хосте вообще не и�
 не положены — см. [`backend/static/site/js/vendor/README.md`](backend/static/site/js/vendor/README.md).
 Без них сервер и страницы всё равно поднимаются (шаги выше пройдут), но
 без стилей и интерактивности плагинов.
+
+## Фронтенд (frontend2)
+
+После правок фронта образ nginx нужно пересобрать:
+
+```bash
+docker compose up -d --build nginx
+```
+
+Для разработки с горячей перезагрузкой — dev-сервер Vite поверх того же
+backend (запросы `/api` он проксирует на `http://localhost:80`):
+
+```bash
+cd frontend2
+npm ci
+npm run dev      # http://localhost:5173
+npm run lint     # oxlint
+npm run build
+```
+
+Все запросы к API идут через `src/api/axios.js`: он подставляет токен и
+продлевает его по refresh при 401 (если refresh протух — выход на `/login`).
 
 ## Линтер и форматтер
 
@@ -92,14 +120,15 @@ docker compose exec backend djlint templates --profile django --check
 ## CI
 
 Пайплайн — `.github/workflows/ci.yml`, запускается на каждый PR (в `main`
-и `develop`) и на пуш в них. Четыре независимых job'а, идут параллельно:
+и `develop`) и на пуш в них. Пять независимых job'ов, идут параллельно:
 
 | Job | Что делает |
 |---|---|
 | `lint` | `ruff check`/`ruff format --check`/`djlint` — аннотации ruff видны прямо на диффе PR (`--output-format=github`), не только в логе. |
 | `test` | Поднимает Postgres+Redis (`services:` GitHub Actions, не наш `docker-compose.yml` — так же, как CI в других продуктах AEM Solutions: `pip install` прямо на раннере, без Docker), гоняет `migrate` на пустой БД + тесты + `coverage report`. Отчёт о покрытии — без порога, но виден в Summary прогона, не только в логе. |
 | `tenant-isolation` | Отдельный **блокирующий** job: `python manage.py test --tag=tenant_isolation`. Конвенция — любой тест на изоляцию тенантов помечается `@tag("tenant_isolation")` (`django.test.tag`). Пока в репозитории нет бизнес-моделей с `organization_id` — тестов с этим тегом нет, job проходит на 0 тестах. Это не подделка проверки: как только появится первая такая модель, тест на её изоляцию обязан получить тег — иначе он не покрыт этим job'ом. |
-| `build` | Собирает `backend/Dockerfile` (прод-образ). Отдельной frontend-сборки нет — веб внутри backend (ADR-002). |
+| `frontend` | `frontend2`: `npm ci`, `npm run lint` (oxlint), `npm run build`. |
+| `build` | Собирает образы: `backend/Dockerfile` и nginx со сборкой frontend2 (`infra/nginx/Dockerfile`) — те же, что локально и на staging. |
 
 Все команды локально проверены (venv + реальный Postgres/Redis, без
 Docker для самого прогона — как и будет в CI).
@@ -110,7 +139,7 @@ protection в GitHub, чтобы PR нельзя было влить с крас
 
 1. GitHub → Settings → Branches → Add rule (для `main`, повторить для `develop`).
 2. Включить **Require status checks to pass before merging**.
-3. Выбрать все четыре job'а (`lint`, `test`, `tenant-isolation`, `build`) —
+3. Выбрать все пять job'ов (`lint`, `test`, `tenant-isolation`, `frontend`, `build`) —
    появятся в списке только после первого прогона пайплайна на любом PR.
 4. Включить **Require branches to be up to date before merging**.
 

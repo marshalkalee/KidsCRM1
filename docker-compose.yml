@@ -56,9 +56,13 @@ services:
         condition: service_started
 
   nginx:
-    image: nginx:1.27-alpine
-    volumes:
-      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    # React (frontend2) собирается внутри образа и раздаётся nginx'ом на "/",
+    # API и старые Django-страницы проксируются на backend (TRU-79,
+    # infra/nginx/app.conf). После правок фронта: docker compose up -d --build nginx.
+    # Для разработки фронта с горячей перезагрузкой — `npm run dev` во frontend2.
+    build:
+      context: .
+      dockerfile: infra/nginx/Dockerfile
     ports:
       - "80:80"
     depends_on:
