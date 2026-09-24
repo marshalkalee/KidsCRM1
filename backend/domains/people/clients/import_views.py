@@ -36,22 +36,20 @@ import datetime
 import json
 
 from django.contrib import messages
-from django.db import transaction
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from domains.platform.core.decorators import role_required
 
-from . import column_mapping, progress
+from . import column_mapping, import_jobs, progress
 from .forms import ChildImportUploadForm
 from .import_service import (
     DECISION_LABELS,
     DECISION_OPTIONS,
     DUPLICATE_KIND_LABELS,
     DirectoryLookup,
-    ImportRow,
     RollbackNotAllowed,
     build_rows,
     rollback_blockers,
@@ -59,7 +57,6 @@ from .import_service import (
 )
 from .models import ImportColumnMapping, ImportJob
 from .reporting import build_report_workbook
-from .tasks import run_dry_run_job, run_import_job
 from .web_views import CHILD_EDIT_ROLES
 
 PREVIEW_ROW_LIMIT = 5  # сколько сырых строк показать на экране маппинга
@@ -194,25 +191,14 @@ def child_import_mapping_confirm(request):
     # Один запрос на направления/группы на весь файл, не на строку (ТЗ п. 10.1).
     rows = build_rows(mapped_rows, DirectoryLookup.load(org))
 
-    job = ImportJob.objects.create(
-        organization=org,
-        created_by=request.user,
-        job_type=ImportJob.JobType.DRY_RUN,
-        total_rows=len(rows),
-        rows_payload=[r.to_dict() for r in rows],
-    )
-    run_dry_run_job.delay(str(job.id))
+    job = import_jobs.start_dry_run(org, request.user, rows)
     return redirect("clients_web:child-import-job-status", job_id=job.id)
-
-
-def _duplicate_rows(job: ImportJob) -> list[dict]:
-    return [row for row in job.report_rows if row.get("duplicate")]
 
 
 def _decision_context(job: ImportJob) -> dict:
     """Экран решений по дублям: по строке (до DUPLICATE_ROW_LIMIT) и сводка
     по видам совпадений для массового решения."""
-    duplicate_rows = _duplicate_rows(job)
+    duplicate_rows = import_jobs.duplicate_rows(job)
     rows = []
     for row in duplicate_rows[:DUPLICATE_ROW_LIMIT]:
         kind = row["duplicate"]["kind"]
@@ -284,45 +270,30 @@ def child_import_report_download(request, job_id):
     return response
 
 
-def _collect_decisions(request, job: ImportJob) -> dict:
-    """Решения из формы поверх уже сохранённых: по строке
-    (decision_<номер>) или массово для вида совпадения (bulk_kind +
-    bulk_decision). Решение, неприменимое к виду совпадения строки, —
-    игнорируется."""
-    decisions = dict(job.decisions or {})
-    bulk_kind = request.POST.get("bulk_kind")
-    bulk_decision = request.POST.get("bulk_decision")
-    for row in _duplicate_rows(job):
-        key = str(row["row_number"])
-        kind = row["duplicate"]["kind"]
-        if bulk_kind:
-            if kind == bulk_kind and bulk_decision in DECISION_OPTIONS[kind]:
-                decisions[key] = bulk_decision
-            continue
-        value = request.POST.get(f"decision_{key}")
-        if value in DECISION_OPTIONS[kind]:
-            decisions[key] = value
-    return decisions
-
-
-def _locked_dry_run_job(request, job_id) -> ImportJob:
-    return get_object_or_404(
-        ImportJob.objects.for_tenant(request.user.organization).select_for_update(),
-        pk=job_id,
-        job_type=ImportJob.JobType.DRY_RUN,
-        status=ImportJob.Status.DONE,
-    )
+def _posted_decisions(request) -> dict:
+    """{номер строки: решение} из выпадающих списков формы (decision_<номер>)."""
+    return {
+        key.removeprefix("decision_"): value
+        for key, value in request.POST.items()
+        if key.startswith("decision_")
+    }
 
 
 @role_required(*CHILD_EDIT_ROLES)
 @require_http_methods(["POST"])
 def child_import_decisions(request, job_id):
-    with transaction.atomic():
-        job = _locked_dry_run_job(request, job_id)
-        if job.executed_job_id:
-            return redirect("clients_web:child-import-job-status", job_id=job.executed_job_id)
-        job.decisions = _collect_decisions(request, job)
-        job.save(update_fields=["decisions"])
+    try:
+        job = import_jobs.save_decisions(
+            request.user.organization,
+            job_id,
+            per_row=_posted_decisions(request),
+            bulk_kind=request.POST.get("bulk_kind"),
+            bulk_decision=request.POST.get("bulk_decision"),
+        )
+    except ImportJob.DoesNotExist as exc:
+        raise Http404 from exc
+    if job.executed_job_id:
+        return redirect("clients_web:child-import-job-status", job_id=job.executed_job_id)
     messages.success(request, "Решения по совпадениям сохранены.")
     return redirect(reverse("clients_web:child-import-job-status", args=[job.id]) + "#duplicates")
 
@@ -330,35 +301,14 @@ def child_import_decisions(request, job_id):
 @role_required(*CHILD_EDIT_ROLES)
 @require_http_methods(["POST"])
 def child_import_execute(request, job_id):
-    with transaction.atomic():
-        # select_for_update — двойной клик по «Запустить импорт» не должен
-        # создать две задачи, которые параллельно запишут одних и тех же
-        # детей до того, как дедуп одной из них увидит записи другой.
-        dry_run_job = _locked_dry_run_job(request, job_id)
-        if dry_run_job.executed_job_id:
-            return redirect(
-                "clients_web:child-import-job-status", job_id=dry_run_job.executed_job_id
-            )
-        # Кнопка запуска — в той же форме, что и решения по строкам: выбор в
-        # выпадающих списках, который не сохранили отдельно, не теряется.
-        dry_run_job.decisions = _collect_decisions(request, dry_run_job)
-
-        rows = [ImportRow.from_dict(data) for data in dry_run_job.rows_payload]
-        ready_rows = [r for r in rows if r.is_valid]  # ошибки блокируют строку — не идут дальше
-        for row in ready_rows:
-            row.decision = dry_run_job.decisions.get(str(row.row_number))
-
-        job = ImportJob.objects.create(
-            organization=request.user.organization,
-            created_by=request.user,
-            job_type=ImportJob.JobType.EXECUTE,
-            total_rows=len(ready_rows),
-            rows_payload=[r.to_dict() for r in ready_rows],
+    # Кнопка запуска — в той же форме, что и решения по строкам: выбор в
+    # выпадающих списках, который не сохранили отдельно, не теряется.
+    try:
+        job = import_jobs.start_execute(
+            request.user.organization, request.user, job_id, per_row=_posted_decisions(request)
         )
-        dry_run_job.executed_job = job
-        dry_run_job.save(update_fields=["executed_job", "decisions"])
-
-    run_import_job.delay(str(job.id))
+    except ImportJob.DoesNotExist as exc:
+        raise Http404 from exc
     return redirect("clients_web:child-import-job-status", job_id=job.id)
 
 
