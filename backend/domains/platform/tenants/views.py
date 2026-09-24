@@ -9,8 +9,13 @@ from domains.platform.core.permissions import (
     IsStaffOfOrganization,
 )
 
-from .models import Branch, Room
-from .serializers import BranchSerializer, OrganizationSerializer, RoomSerializer
+from .models import Branch, Direction, Room
+from .serializers import (
+    BranchSerializer,
+    DirectionSerializer,
+    OrganizationSerializer,
+    RoomSerializer,
+)
 
 
 class OrganizationMeView(RetrieveUpdateAPIView):
@@ -68,3 +73,19 @@ class RoomViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Room.objects.for_tenant(self.request.user.organization).select_related("branch")
+
+
+class DirectionViewSet(viewsets.ModelViewSet):
+    serializer_class = DirectionSerializer
+    permission_classes = [IsStaffOfOrganization]
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsOwnerOrManager()]
+        return [IsStaffOfOrganization()]
+
+    def get_queryset(self):
+        return Direction.objects.for_tenant(self.request.user.organization)
+
+    def perform_create(self, serializer):
+        serializer.save(organization=self.request.user.organization)

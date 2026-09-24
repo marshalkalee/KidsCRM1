@@ -25,40 +25,28 @@
 
 ## Сводка
 
-
-| #   | Контракт                                                                       | Владелец | Потребитель(и)                   | Код                                                                                                                                         |
-| --- | ------------------------------------------------------------------------------ | -------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Расписание → Деньги: `SubscriptionService.consume`                             | Bekzat   | Дарья (посещаемость)             | `backend/domains/money/subscriptions/subscription_service.py`](../domains/money/subscriptions/subscription_[service.py](http://service.py)) |
-| 2   | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` / `link_parent` | Анель    | импорт Excel, конвертация заявки | [`backend/domains/people/clients/services.py`](../domains/people/clients/services.py)                                                       |
-| 3   | Расписание → всем: `LessonService.enroll`                                      | Дарья    | отработки (M1), пробные (M2)     | `[backend/apps/schedule/services.py](../apps/schedule/services.py)`                                                                         |
-| 4   | Деньги → всем: `AuditLog.record`                                               | Bekzat   | все домены                       | `[backend/apps/core/audit.py](../apps/core/audit.py)`                                                                                       |
-
+| #   | Контракт | Владелец | Потребитель(и) | Код |
+| --- | -------- | -------- | -------------- | --- |
+| 1   | Расписание → Деньги: `SubscriptionService.consume` | Bekzat | Дарья (посещаемость) | [`backend/domains/money/subscriptions/subscription_service.py`](../domains/money/subscriptions/subscription_service.py) |
+| 2   | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` / `link_parent` | Анель | импорт Excel, конвертация заявки | [`backend/domains/people/clients/services.py`](../domains/people/clients/services.py) |
+| 3   | Расписание → всем: `LessonService.enroll` | Дарья | отработки (M1), пробные (M2) | `backend/apps/schedule/services.py` (путь уточнит Дарья) |
+| 4   | Деньги → всем: `AuditLog.record` | Bekzat | все домены | [`backend/domains/platform/core/audit.py`](../domains/platform/core/audit.py) |
+| 5   | Деньги → всем: `debt_for_child` / `debt_for_parent` / `debt_for_subscription` | Bekzat | Анель (список детей, карточка родителя), экраны «Задолженности», вкладка «Оплаты» | [`backend/domains/money/payments/debt.py`](../domains/money/payments/debt.py) |
 
 
 
 ## 1. Расписание → Деньги
 
-​```python
-
-SubscriptionService.consume(child_id: UUID, lesson_id: UUID, direction_id: UUID) -> ConsumeResult
-
-​```
+```python
+SubscriptionService.consume(child_id: int, lesson_id: int) -> ConsumeResult
+```
 
 Вызывается при отметке посещения «пришёл» — списывает занятие с активного
-
-абонемента ребёнка. `direction_id` добавлен намеренно: при нескольких
-
-активных абонементах ребёнка (разные направления) без него нет способа
-
-выбрать правильный (см. TRU-58/59, Subscription.direction). Обновлено до
-
-появления первого вызывающего кода (TRU-50) — без обратной несовместимости.
-
-`ConsumeResult.outcome` различает пять исходов: `CONSUMED`,
-
-`NO_ACTIVE_SUBSCRIPTION`, `SUBSCRIPTION_EXHAUSTED`, `SUBSCRIPTION_FROZEN`,
-
-`RULE_FORBIDS`. Все пять — ожидаемые бизнес-исходы, не исключения.
+абонемента ребёнка. `ConsumeResult.status` различает четыре исхода:
+`CONSUMED`, `NO_ACTIVE_SUBSCRIPTION`, `SUBSCRIPTION_EXHAUSTED`,
+`RULE_FORBIDS_CONSUMPTION`. Все четыре — ожидаемые бизнес-исходы, не
+исключения; что делать с `NO_ACTIVE_SUBSCRIPTION` (визуальный флаг + задача
+администратору, ТЗ п. 4.3) решает потребитель, а не сервис.
 
 Владелец: **Bekzat**. Потребитель: **Дарья**.
 
@@ -135,3 +123,24 @@ AuditLog.record(actor, action: str, entity: AuditEntity, before: dict | None, af
 интерфейс принадлежит домену «Деньги».
 
 Владелец: **Bekzat**. Потребители: все домены.
+
+## 5. Деньги → всем (задолженность)
+
+debt_for_subscription(subscription) -> Decimal
+debt_for_child(child) -> Decimal
+debt_for_parent(parent_contact) -> Decimal
+
+Единственный источник правды для долга (ТЗ п. 3.1, критерий приёмки
+MVP №4 — сверка с бухгалтерией). Долг считается от Subscription.price
+(со скидкой), не от цены типа. Отрицательное значение — переплата,
+не ошибка.
+
+Владелец: Bekzat. Потребитель: Анель.
+
+> **Внимание (TRU-73):** в коде пока два расчёта долга —
+> `domains/money/payments/debt.py` (этот контракт) и
+> `domains/money/subscriptions/debt.py` (`debtor_child_ids`,
+> `debt_by_child` — сейчас ими пользуются список детей, фильтр «есть
+> долг» и карточка родителя). Они расходятся в учёте переплаты, в долге
+> родителя (только где он плательщик или по всем детям) и в статусе
+> оплаты. До закрытия TRU-73 цифры на экранах могут различаться.

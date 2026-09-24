@@ -19,6 +19,7 @@ api_v1_patterns = [
     path("clients/", include("domains.people.clients.urls")),
     path("schedule/", include("domains.scheduling.schedule.urls")),
     path("groups/", include("domains.scheduling.groups.urls")),
+    path("schedule-templates/", include("domains.scheduling.schedule_templates.urls")),
     path("attendance/", include("domains.scheduling.attendance.urls")),
     path("subscriptions/", include("domains.money.subscriptions.urls")),
     path("payments/", include("domains.money.payments.urls")),

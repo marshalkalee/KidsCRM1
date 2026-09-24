@@ -113,6 +113,13 @@ class Subscription(TenantModel):
     direction = models.ForeignKey(
         "tenants.Direction", on_delete=models.PROTECT, related_name="subscriptions"
     )
+    branch = models.ForeignKey(
+        "tenants.Branch",
+        on_delete=models.PROTECT,
+        related_name="subscriptions",
+        null=True,
+        blank=True,
+    )
 
     starts_on = models.DateField()
     ends_on = models.DateField()

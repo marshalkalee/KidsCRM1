@@ -59,6 +59,7 @@ DOMAIN_APPS = [
     "domains.platform.notifications",
     "domains.platform.tasks",
     "domains.platform.leads",
+    "domains.scheduling.schedule_templates",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + DOMAIN_APPS
@@ -219,8 +220,19 @@ CACHES = {
 }
 
 CELERY_BEAT_SCHEDULE = {
+    "generate-lessons-daily": {
+        "task": (
+            "domains.scheduling.schedule_templates.tasks"
+            ".generate_lessons_for_all_active_templates"
+        ),
+        "schedule": crontab(hour=3, minute=0),
+    },
     "reconcile-subscription-balances": {
         "task": "domains.money.subscriptions.tasks.reconcile_balances_task",
-        "schedule": crontab(hour=3, minute=0),  # ночью, вне часов работы центра
+        "schedule": crontab(hour=3, minute=0),
+    },
+    "update-subscription-statuses": {
+        "task": "domains.money.subscriptions.tasks.update_subscription_statuses_task",
+        "schedule": crontab(hour=0, minute=5),  # сразу после полуночи — "утром уже истёк"
     },
 }

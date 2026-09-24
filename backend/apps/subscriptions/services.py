@@ -85,6 +85,8 @@ class StubSubscriptionService(SubscriptionService):
 
         if self._default_status is ConsumeStatus.CONSUMED:
             return ConsumeResult(
-                status=ConsumeStatus.CONSUMED, subscription_id=1, remaining_lessons=9
+                status=ConsumeStatus.CONSUMED,
+                subscription_id=1,
+                remaining_lessons=9,
             )
         return ConsumeResult(status=self._default_status)
