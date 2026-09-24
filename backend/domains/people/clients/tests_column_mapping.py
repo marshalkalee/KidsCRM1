@@ -47,6 +47,18 @@ class GuessMappingTests(SimpleTestCase):
         self.assertEqual(mapping["phone"], "Телефон родителя")
         self.assertEqual(mapping["role"], "Роль родителя")
 
+    def test_direction_and_group_columns_are_recognized(self):
+        mapping = column_mapping.guess_mapping(["Направление", "Группа"])
+
+        self.assertEqual(mapping["direction"], "Направление")
+        self.assertEqual(mapping["group"], "Группа")
+
+    def test_direction_and_group_are_optional_fields(self):
+        required_keys = {key for key, _, required in column_mapping.SYSTEM_FIELDS if required}
+
+        self.assertNotIn("direction", required_keys)
+        self.assertNotIn("group", required_keys)
+
     def test_unrecognized_header_is_left_unmapped(self):
         mapping = column_mapping.guess_mapping(["Совершенно левая колонка"])
 

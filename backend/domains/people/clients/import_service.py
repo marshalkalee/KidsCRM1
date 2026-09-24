@@ -18,6 +18,14 @@
 обрабатываются по порядку, и телефон, once встреченный, "запоминается"
 на время предпросмотра/выполнения (см. _PhoneResolutionMap) — второй
 ребёнок в файле с тем же номером не создаёт вторую маму.
+
+Ошибки vs предупреждения (ТЗ п. 4.1, тикет «валидация, сухой прогон и
+отчёт об ошибках»): ошибка (ImportRow.errors) блокирует строку — она не
+попадёт в базу даже при выполнении импорта. Предупреждение
+(ImportRow.warnings) — слабое совпадение по ФИО, дубль (пропускается, но
+это не поломка данных), несуществующее направление/группа — строку не
+блокирует, только помечает для ручной проверки. Оба списка собираются в
+build_dry_run_report() для отчёта сухого прогона (tasks.py).
 """
 
 import datetime
@@ -124,7 +132,17 @@ class ImportRow:
     # Bekzat'а), но и не отбрасывается молча — видно в отчёте импорта,
     # чтобы не всплыло на приёмке.
     reported_balance: str = ""
+    # Сырые названия из колонок "Направление"/"Группа" (если сопоставлены) —
+    # используются только для предупреждения в отчёте сухого прогона
+    # (см. _check_direction_and_group), группу/направление сам импорт не
+    # создаёт (не на чём: не хватает филиала, преподавателя и т.д. — это
+    # за пределами этого тикета).
+    direction_name: str = ""
+    group_name: str = ""
     errors: list[str] = field(default_factory=list)
+    # Не блокируют строку — слабое совпадение по ФИО, дубль (пропуск —
+    # не поломка данных), несуществующее направление/группа.
+    warnings: list[str] = field(default_factory=list)
 
     # Заполняется resolve_rows() — не на этапе разбора файла.
     action: str = RowAction.CREATE_NEW_FAMILY
@@ -175,7 +193,10 @@ class ImportRow:
             "role": self.role,
             "medical_notes": self.medical_notes,
             "reported_balance": self.reported_balance,
+            "direction_name": self.direction_name,
+            "group_name": self.group_name,
             "errors": self.errors,
+            "warnings": self.warnings,
             "action": self.action,
             "matched_parent_id": self.matched_parent_id,
         }
@@ -195,7 +216,10 @@ class ImportRow:
             role=data.get("role", ChildContact.Role.OTHER),
             medical_notes=data.get("medical_notes", ""),
             reported_balance=data.get("reported_balance", ""),
+            direction_name=data.get("direction_name", ""),
+            group_name=data.get("group_name", ""),
             errors=data.get("errors") or [],
+            warnings=data.get("warnings") or [],
             action=data.get("action", RowAction.CREATE_NEW_FAMILY),
             matched_parent_id=data.get("matched_parent_id"),
         )
@@ -224,13 +248,43 @@ def _clean_str(value) -> str:
     return str(value).strip() if value is not None else ""
 
 
-def build_row(row_number: int, values: dict) -> ImportRow:
+# "Правдоподобна" (ТЗ, тикет про сухой прогон) — не только разобралась, но
+# и не выглядит как опечатка вида "1905" вместо "2005" (тот самый пример из
+# тикета). 100 лет — заведомо шире любого реального возраста ребёнка в
+# кружке/секции, так что не даёт ложных срабатываний на настоящих данных,
+# но ловит именно такие перепутанные цифры года.
+_MAX_PLAUSIBLE_AGE_YEARS = 100
+
+
+def _birth_date_plausibility_error(birth_date: datetime.date) -> str | None:
+    today = datetime.date.today()
+    if birth_date > today:
+        return f"дата рождения в будущем: {birth_date.strftime('%d.%m.%Y')}"
+    if birth_date.year <= today.year - _MAX_PLAUSIBLE_AGE_YEARS:
+        return (
+            f"дата рождения невероятно старая, похоже на опечатку в годе: "
+            f"{birth_date.strftime('%d.%m.%Y')}"
+        )
+    return None
+
+
+def build_row(
+    row_number: int,
+    values: dict,
+    known_direction_names: frozenset[str] = frozenset(),
+    known_group_names: frozenset[str] = frozenset(),
+) -> ImportRow:
     """Строка после маппинга (column_mapping.apply_mapping) → очищенный
-    ImportRow с ошибками валидации. `values` — {ключ_поля: сырое_значение
-    из файла}, ключ отсутствует или None, если поле не сопоставлено с
-    колонкой (для необязательных полей это нормально)."""
+    ImportRow с ошибками/предупреждениями валидации. `values` —
+    {ключ_поля: сырое_значение из файла}, ключ отсутствует или None, если
+    поле не сопоставлено с колонкой (для необязательных полей это
+    нормально). known_direction_names/known_group_names — уже
+    существующие в организации названия (в нижнем регистре, без пробелов
+    по краям) — передаются один раз на весь файл (не запрос в базу на
+    каждую строку), см. tasks.run_dry_run_job."""
     row = ImportRow(row_number=row_number)
     errors = []
+    warnings = []
 
     row.child_name = _clean_str(values.get("child_name"))
     if not row.child_name:
@@ -239,12 +293,21 @@ def build_row(row_number: int, values: dict) -> ImportRow:
     birth_date = _parse_cell_date(values.get("birth_date"))
     if birth_date is None:
         errors.append("не удалось разобрать дату рождения (ожидается ДД.ММ.ГГГГ)")
+    else:
+        plausibility_error = _birth_date_plausibility_error(birth_date)
+        if plausibility_error:
+            errors.append(plausibility_error)
     row.birth_date = birth_date
 
-    gender_raw = _clean_str(values.get("gender")).lower()
-    gender = GENDER_ALIASES.get(gender_raw)
+    gender_raw = _clean_str(values.get("gender"))
+    gender = GENDER_ALIASES.get(gender_raw.lower())
+    # Сообщения — для администратора без ИТ-подготовки (ТЗ п. 10.4):
+    # значение как есть, без кавычек-repr, и отдельный текст для пустой ячейки.
     if gender is None:
-        errors.append(f"не удалось разобрать пол ребёнка: {gender_raw!r}")
+        if gender_raw:
+            errors.append(f"не удалось разобрать пол ребёнка: {gender_raw} (ожидается м/ж)")
+        else:
+            errors.append("не указан пол ребёнка")
     row.gender = gender or ""
 
     parent_name_raw = _clean_str(values.get("parent_name"))
@@ -263,7 +326,10 @@ def build_row(row_number: int, values: dict) -> ImportRow:
         if normalized not in normalized_phones:
             normalized_phones.append(normalized)
     if not normalized_phones:
-        errors.append(f"не похоже на телефон: {phone_raw!r}")
+        if phone_raw:
+            errors.append(f"не удалось разобрать телефон: {phone_raw}")
+        else:
+            errors.append("не заполнен телефон")
         row.phone = phone_raw
     else:
         row.phone = normalized_phones[0]
@@ -278,12 +344,34 @@ def build_row(row_number: int, values: dict) -> ImportRow:
     row.medical_notes = _clean_str(values.get("medical_notes"))
     row.reported_balance = _clean_str(values.get("reported_balance"))
 
+    row.direction_name = _clean_str(values.get("direction"))
+    if row.direction_name and row.direction_name.lower() not in known_direction_names:
+        warnings.append(
+            f"направление «{row.direction_name}» не найдено — при импорте не создаётся "
+            "автоматически, заведите его в справочнике направлений"
+        )
+
+    row.group_name = _clean_str(values.get("group"))
+    if row.group_name and row.group_name.lower() not in known_group_names:
+        warnings.append(
+            f"группа «{row.group_name}» не найдена — при импорте не создаётся автоматически, "
+            "заведите её и добавьте ребёнка вручную"
+        )
+
     row.errors = errors
+    row.warnings = warnings
     return row
 
 
-def build_rows(mapped_rows: list[tuple[int, dict]]) -> list[ImportRow]:
-    return [build_row(row_number, values) for row_number, values in mapped_rows]
+def build_rows(
+    mapped_rows: list[tuple[int, dict]],
+    known_direction_names: frozenset[str] = frozenset(),
+    known_group_names: frozenset[str] = frozenset(),
+) -> list[ImportRow]:
+    return [
+        build_row(row_number, values, known_direction_names, known_group_names)
+        for row_number, values in mapped_rows
+    ]
 
 
 class _PhoneResolutionMap:
@@ -329,6 +417,10 @@ def resolve_rows(organization, rows: list[ImportRow]) -> None:
                 # этом файле — повтор строки, не второй ребёнок.
                 row.action = RowAction.SKIP
                 row.reason = DuplicateReason.PHONE
+                row.warnings.append(
+                    f"дубликат внутри файла — такая же строка уже была в строке "
+                    f"{remembered['row_number']}, при импорте будет пропущена"
+                )
             else:
                 row.action = RowAction.ATTACH_EXISTING
                 row.reason = DuplicateReason.EXISTING_PARENT_NEW_CHILD
@@ -369,6 +461,11 @@ def resolve_rows(organization, rows: list[ImportRow]) -> None:
             row.action = RowAction.SKIP
             row.reason = DuplicateReason.PHONE
             row.matched_child = phone_match.child
+            row.warnings.append(
+                f"дубликат — такой ребёнок уже есть в базе "
+                f"({phone_match.child.full_name}, {phone_match.child.birth_date:%d.%m.%Y}), "
+                "при импорте будет пропущена"
+            )
         elif family_match:
             row.action = RowAction.ATTACH_EXISTING
             row.reason = DuplicateReason.EXISTING_PARENT_NEW_CHILD
@@ -389,12 +486,64 @@ def resolve_rows(organization, rows: list[ImportRow]) -> None:
                 # блокирует и не меняет действие по умолчанию.
                 row.reason = weak_match.reason
                 row.matched_child = weak_match.child
+                row.warnings.append(
+                    f"похоже на уже существующего ребёнка "
+                    f"({weak_match.child.full_name}, {weak_match.child.birth_date:%d.%m.%Y}), "
+                    "но совпадения недостаточно для автоматической привязки — будет создана "
+                    "новая запись, проверьте вручную"
+                )
             phone_map.remember(
                 row.phone,
                 parent_id=None,
                 row_number=row.row_number,
                 child_keys=[_PhoneResolutionMap.child_key(row.child_name, row.birth_date)],
             )
+
+
+class ReportLevel:
+    READY = "ready"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+@dataclass
+class DryRunReport:
+    ready_count: int = 0
+    warning_count: int = 0
+    error_count: int = 0
+    # [{row_number, level, child_name, messages}, ...] — по номеру строки
+    # исходного файла (не внутреннему индексу, ТЗ п. 10.4), используется и
+    # для экрана отчёта, и для выгрузки файлом (см. reporting.py).
+    rows: list[dict] = field(default_factory=list)
+
+
+def build_dry_run_report(rows: list[ImportRow]) -> DryRunReport:
+    """Классифицирует каждую строку в готова/предупреждение/ошибка — не
+    пишет в базу (сухой прогон, ТЗ п. 4.1): вызывается ПОСЛЕ resolve_rows,
+    но никогда execute_import."""
+    report = DryRunReport()
+    for row in rows:
+        if not row.is_valid:
+            level = ReportLevel.ERROR
+            messages = row.errors
+            report.error_count += 1
+        elif row.warnings:
+            level = ReportLevel.WARNING
+            messages = row.warnings
+            report.warning_count += 1
+        else:
+            level = ReportLevel.READY
+            messages = []
+            report.ready_count += 1
+        report.rows.append(
+            {
+                "row_number": row.row_number,
+                "level": level,
+                "child_name": row.child_name,
+                "messages": messages,
+            }
+        )
+    return report
 
 
 @dataclass

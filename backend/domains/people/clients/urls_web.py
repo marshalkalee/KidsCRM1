@@ -17,11 +17,20 @@ urlpatterns = [
         import_views.child_import_mapping_confirm,
         name="child-import-mapping-confirm",
     ),
-    path("clients/import/start/", import_views.child_import_start, name="child-import-start"),
     path(
         "clients/import/jobs/<uuid:job_id>/",
         import_views.child_import_job_status,
         name="child-import-job-status",
+    ),
+    path(
+        "clients/import/jobs/<uuid:job_id>/report.xlsx",
+        import_views.child_import_report_download,
+        name="child-import-report-download",
+    ),
+    path(
+        "clients/import/jobs/<uuid:job_id>/execute/",
+        import_views.child_import_execute,
+        name="child-import-execute",
     ),
     path("clients/children/", web_views.child_list, name="child-list"),
     path("clients/children/data/", web_views.child_list_data, name="child-list-data"),

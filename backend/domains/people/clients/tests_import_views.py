@@ -2,8 +2,9 @@
 Веб-экраны импорта (import_views.py) через настоящий HTTP-клиент
 (multipart-загрузка файла), не только юниты сервисов (см.
 tests_import_service.py/tests_column_mapping.py/tests_tasks.py).
-Три шага: загрузка -> маппинг -> сводка -> запуск фоновой задачи ->
-статус задачи (ТЗ п. 4.1, п. 10.1).
+Шаги: загрузка -> маппинг -> сухой прогон (фоновая задача) -> отчёт ->
+запуск настоящего импорта из отчёта (ещё одна фоновая задача) -> статус
+(ТЗ п. 4.1, п. 10.1).
 """
 
 import io
@@ -18,7 +19,7 @@ from django.urls import reverse
 from domains.platform.tenants.models import Organization
 
 from .models import Child, ImportColumnMapping, ImportJob
-from .tasks import run_import_job
+from .tasks import run_dry_run_job, run_import_job
 
 User = get_user_model()
 
@@ -50,6 +51,25 @@ def _xlsx_file(rows, headers=HEADERS, filename="import.xlsx"):
 
 def _mapping_dict(mapping_rows):
     return {key: current for key, _, _, current in mapping_rows}
+
+
+def _run_celery_tasks_synchronously():
+    """.delay() требует брокера (Redis) — в тестах обе задачи выполняются
+    синхронно в процессе через apply(), без брокера и без изменения кода
+    вьюх/задач (сам run_dry_run_job/run_import_job — см. tests_tasks.py)."""
+    patchers = [
+        mock.patch.object(
+            run_dry_run_job,
+            "delay",
+            side_effect=lambda job_id: run_dry_run_job.apply(args=[job_id]),
+        ),
+        mock.patch.object(
+            run_import_job, "delay", side_effect=lambda job_id: run_import_job.apply(args=[job_id])
+        ),
+    ]
+    for patcher in patchers:
+        patcher.start()
+    return patchers
 
 
 class ChildImportUploadViewTests(TestCase):
@@ -157,7 +177,8 @@ class ChildImportUploadViewTests(TestCase):
             "mapping_phone": "Contact Data",
             "mapping_role": "Relation",
         }
-        self.client.post(reverse("clients_web:child-import-mapping-confirm"), confirm_data)
+        with mock.patch.object(run_dry_run_job, "delay"):
+            self.client.post(reverse("clients_web:child-import-mapping-confirm"), confirm_data)
 
         second_file = _xlsx_file(
             [["Айгерим", "01.01.2020", "ж", "Иванова Марина", "+77011234567", "мама"]],
@@ -182,6 +203,8 @@ class ChildImportMappingConfirmViewTests(TestCase):
             role=User.Role.OWNER,
         )
         self.client.force_login(self.owner)
+        for patcher in _run_celery_tasks_synchronously():
+            self.addCleanup(patcher.stop)
 
     def _upload(self, rows, headers=HEADERS):
         return self.client.post(
@@ -199,7 +222,7 @@ class ChildImportMappingConfirmViewTests(TestCase):
                 data[f"mapping_{key}"] = current
         return data
 
-    def test_confirm_with_full_mapping_shows_summary(self):
+    def test_confirm_with_full_mapping_starts_a_dry_run_job(self):
         upload = self._upload(
             [["Данияр", "10.03.2018", "м", "Иванова Марина", "+77011234567", "мама"]]
         )
@@ -208,11 +231,16 @@ class ChildImportMappingConfirmViewTests(TestCase):
             reverse("clients_web:child-import-mapping-confirm"), self._full_mapping_data(upload)
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["valid_count"], 1)
-        self.assertEqual(response.context["error_count"], 0)
+        job = ImportJob.objects.for_tenant(self.org).get()
+        self.assertRedirects(
+            response, reverse("clients_web:child-import-job-status", args=[job.id])
+        )
+        self.assertEqual(job.job_type, ImportJob.JobType.DRY_RUN)
+        self.assertEqual(job.status, ImportJob.Status.DONE)
+        self.assertEqual(job.ready_count, 1)
+        self.assertEqual(job.error_count, 0)
 
-    def test_confirm_reports_invalid_rows_separately(self):
+    def test_confirm_reports_invalid_rows_as_errors_in_the_dry_run(self):
         upload = self._upload(
             [
                 ["Данияр", "10.03.2018", "м", "Иванова Марина", "+77011234567", "мама"],
@@ -220,12 +248,13 @@ class ChildImportMappingConfirmViewTests(TestCase):
             ]
         )
 
-        response = self.client.post(
+        self.client.post(
             reverse("clients_web:child-import-mapping-confirm"), self._full_mapping_data(upload)
         )
 
-        self.assertEqual(response.context["valid_count"], 1)
-        self.assertEqual(response.context["error_count"], 1)
+        job = ImportJob.objects.for_tenant(self.org).get()
+        self.assertEqual(job.ready_count, 1)
+        self.assertEqual(job.error_count, 1)
 
     def test_confirm_missing_required_field_rerenders_mapping_with_error(self):
         upload = self._upload(
@@ -243,6 +272,7 @@ class ChildImportMappingConfirmViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Телефон родителя", response.context["missing_required"])
         self.assertEqual(Child.objects.for_tenant(self.org).count(), 0)
+        self.assertFalse(ImportJob.objects.for_tenant(self.org).exists())
 
     def test_confirm_saves_mapping_for_reuse(self):
         upload = self._upload(
@@ -262,8 +292,37 @@ class ChildImportMappingConfirmViewTests(TestCase):
 
         self.assertRedirects(response, reverse("clients_web:child-import-upload"))
 
+    def test_unknown_direction_is_a_warning_not_an_error(self):
+        headers = [*HEADERS, "Направление"]
+        upload = self._upload(
+            [["Данияр", "10.03.2018", "м", "Иванова Марина", "+77011234567", "мама", "Балет"]],
+            headers=headers,
+        )
 
-class ChildImportStartViewTests(TestCase):
+        self.client.post(
+            reverse("clients_web:child-import-mapping-confirm"), self._full_mapping_data(upload)
+        )
+
+        job = ImportJob.objects.for_tenant(self.org).get()
+        self.assertEqual(job.ready_count, 0)
+        self.assertEqual(job.warning_count, 1)
+        self.assertEqual(job.error_count, 0)
+        self.assertTrue(any("направление" in w for w in job.report_rows[0]["messages"]))
+
+    def test_no_child_or_parent_records_are_created_by_a_dry_run(self):
+        # Критерий приёмки: сухой прогон не создаёт ни одной записи.
+        upload = self._upload(
+            [["Данияр", "10.03.2018", "м", "Иванова Марина", "+77011234567", "мама"]]
+        )
+
+        self.client.post(
+            reverse("clients_web:child-import-mapping-confirm"), self._full_mapping_data(upload)
+        )
+
+        self.assertEqual(Child.objects.for_tenant(self.org).count(), 0)
+
+
+class ChildImportExecuteViewTests(TestCase):
     def setUp(self):
         self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
         self.owner = User.objects.create_user(
@@ -274,19 +333,13 @@ class ChildImportStartViewTests(TestCase):
             role=User.Role.OWNER,
         )
         self.client.force_login(self.owner)
-        # .delay() требует брокера (Redis) — здесь задача выполняется
-        # синхронно в процессе теста через apply(), без брокера и без
-        # изменения кода вьюхи/задачи (см. tests_tasks.py про сам
-        # run_import_job, а настоящий проход через воркер — curl-проверка).
-        patcher = mock.patch.object(
-            run_import_job, "delay", side_effect=lambda job_id: run_import_job.apply(args=[job_id])
-        )
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for patcher in _run_celery_tasks_synchronously():
+            self.addCleanup(patcher.stop)
 
-    def _summary_response(self, rows, headers=HEADERS):
+    def _dry_run_job(self, rows, headers=HEADERS):
         upload = self.client.post(
-            reverse("clients_web:child-import-upload"), {"file": _xlsx_file(rows, headers=headers)}
+            reverse("clients_web:child-import-upload"),
+            {"file": _xlsx_file(rows, headers=headers)},
         )
         data = {
             "headers_json": upload.context["headers_json"],
@@ -296,45 +349,84 @@ class ChildImportStartViewTests(TestCase):
         for key, current in _mapping_dict(upload.context["mapping_rows"]).items():
             if current:
                 data[f"mapping_{key}"] = current
-        return self.client.post(reverse("clients_web:child-import-mapping-confirm"), data)
+        self.client.post(reverse("clients_web:child-import-mapping-confirm"), data)
+        return ImportJob.objects.for_tenant(self.org).get(job_type=ImportJob.JobType.DRY_RUN)
 
-    def test_start_creates_job_and_redirects_to_status(self):
-        summary = self._summary_response(
+    def test_execute_creates_an_execute_job_and_redirects_to_its_status(self):
+        dry_run_job = self._dry_run_job(
             [["Данияр", "10.03.2018", "м", "Иванова Марина", "+77011234567", "мама"]]
         )
 
         response = self.client.post(
-            reverse("clients_web:child-import-start"),
-            {"valid_rows_json": summary.context["valid_rows_json"]},
+            reverse("clients_web:child-import-execute", args=[dry_run_job.id])
         )
 
-        job = ImportJob.objects.for_tenant(self.org).get()
+        execute_job = ImportJob.objects.for_tenant(self.org).get(job_type=ImportJob.JobType.EXECUTE)
         self.assertRedirects(
-            response, reverse("clients_web:child-import-job-status", args=[job.id])
+            response, reverse("clients_web:child-import-job-status", args=[execute_job.id])
         )
-        self.assertEqual(job.total_rows, 1)
-
-    def test_started_job_runs_and_creates_the_child(self):
-        summary = self._summary_response(
-            [["Данияр", "10.03.2018", "м", "Иванова Марина", "+77011234567", "мама"]]
-        )
-
-        self.client.post(
-            reverse("clients_web:child-import-start"),
-            {"valid_rows_json": summary.context["valid_rows_json"]},
-        )
-
-        job = ImportJob.objects.for_tenant(self.org).get()
-        self.assertEqual(job.status, ImportJob.Status.DONE)
-        self.assertEqual(job.created_count, 1)
+        self.assertEqual(execute_job.status, ImportJob.Status.DONE)
+        self.assertEqual(execute_job.created_count, 1)
         self.assertEqual(Child.objects.for_tenant(self.org).count(), 1)
 
-    def test_invalid_json_redirects_to_upload(self):
-        response = self.client.post(
-            reverse("clients_web:child-import-start"), {"valid_rows_json": "not json"}
+    def test_execute_excludes_error_rows(self):
+        dry_run_job = self._dry_run_job(
+            [
+                ["Данияр", "10.03.2018", "м", "Иванова Марина", "+77011234567", "мама"],
+                ["", "не дата", "?", "", "не телефон", ""],
+            ]
         )
 
-        self.assertRedirects(response, reverse("clients_web:child-import-upload"))
+        self.client.post(reverse("clients_web:child-import-execute", args=[dry_run_job.id]))
+
+        execute_job = ImportJob.objects.for_tenant(self.org).get(job_type=ImportJob.JobType.EXECUTE)
+        self.assertEqual(execute_job.total_rows, 1)
+        self.assertEqual(Child.objects.for_tenant(self.org).count(), 1)
+
+    def test_repeated_execute_does_not_start_a_second_import(self):
+        dry_run_job = self._dry_run_job(
+            [["Данияр", "10.03.2018", "м", "Иванова Марина", "+77011234567", "мама"]]
+        )
+        url = reverse("clients_web:child-import-execute", args=[dry_run_job.id])
+
+        self.client.post(url)
+        response = self.client.post(url)
+
+        execute_job = ImportJob.objects.for_tenant(self.org).get(job_type=ImportJob.JobType.EXECUTE)
+        self.assertRedirects(
+            response, reverse("clients_web:child-import-job-status", args=[execute_job.id])
+        )
+        dry_run_job.refresh_from_db()
+        self.assertEqual(dry_run_job.executed_job, execute_job)
+        self.assertEqual(Child.objects.for_tenant(self.org).count(), 1)
+
+    def test_execute_on_pending_dry_run_job_returns_404(self):
+        job = ImportJob.objects.create(
+            organization=self.org,
+            created_by=self.owner,
+            job_type=ImportJob.JobType.DRY_RUN,
+            total_rows=0,
+            rows_payload=[],
+        )
+
+        response = self.client.post(reverse("clients_web:child-import-execute", args=[job.id]))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_execute_on_another_organizations_job_returns_404(self):
+        other_org = Organization.objects.create(name="Other Studio", slug="other-studio")
+        job = ImportJob.objects.create(
+            organization=other_org,
+            created_by=self.owner,
+            job_type=ImportJob.JobType.DRY_RUN,
+            status=ImportJob.Status.DONE,
+            total_rows=0,
+            rows_payload=[],
+        )
+
+        response = self.client.post(reverse("clients_web:child-import-execute", args=[job.id]))
+
+        self.assertEqual(response.status_code, 404)
 
 
 class ChildImportJobStatusViewTests(TestCase):
@@ -360,10 +452,11 @@ class ChildImportJobStatusViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Ожидает")
 
-    def test_done_job_shows_result_counts(self):
+    def test_done_execute_job_shows_result_counts(self):
         job = ImportJob.objects.create(
             organization=self.org,
             created_by=self.owner,
+            job_type=ImportJob.JobType.EXECUTE,
             total_rows=1,
             rows_payload=[],
             status=ImportJob.Status.DONE,
@@ -373,6 +466,82 @@ class ChildImportJobStatusViewTests(TestCase):
         response = self.client.get(reverse("clients_web:child-import-job-status", args=[job.id]))
 
         self.assertContains(response, "Готово")
+
+    def test_done_dry_run_job_shows_report_and_execute_button(self):
+        job = ImportJob.objects.create(
+            organization=self.org,
+            created_by=self.owner,
+            job_type=ImportJob.JobType.DRY_RUN,
+            total_rows=2,
+            rows_payload=[],
+            status=ImportJob.Status.DONE,
+            ready_count=1,
+            warning_count=1,
+            error_count=0,
+            report_rows=[
+                {"row_number": 2, "level": "ready", "child_name": "Данияр", "messages": []},
+                {
+                    "row_number": 3,
+                    "level": "warning",
+                    "child_name": "Айгерим",
+                    "messages": ["дубликат — уже есть в базе"],
+                },
+            ],
+        )
+
+        response = self.client.get(reverse("clients_web:child-import-job-status", args=[job.id]))
+
+        self.assertContains(response, "дубликат")
+        self.assertContains(response, reverse("clients_web:child-import-execute", args=[job.id]))
+        self.assertContains(
+            response, reverse("clients_web:child-import-report-download", args=[job.id])
+        )
+
+    def test_done_dry_run_job_with_no_ready_rows_hides_execute_button(self):
+        job = ImportJob.objects.create(
+            organization=self.org,
+            created_by=self.owner,
+            job_type=ImportJob.JobType.DRY_RUN,
+            total_rows=1,
+            rows_payload=[],
+            status=ImportJob.Status.DONE,
+            ready_count=0,
+            warning_count=0,
+            error_count=1,
+            report_rows=[
+                {"row_number": 2, "level": "error", "child_name": "", "messages": ["ошибка"]}
+            ],
+        )
+
+        response = self.client.get(reverse("clients_web:child-import-job-status", args=[job.id]))
+
+        self.assertNotContains(response, reverse("clients_web:child-import-execute", args=[job.id]))
+
+    def test_already_executed_dry_run_job_links_to_import_instead_of_button(self):
+        execute_job = ImportJob.objects.create(
+            organization=self.org,
+            created_by=self.owner,
+            job_type=ImportJob.JobType.EXECUTE,
+            total_rows=1,
+            rows_payload=[],
+        )
+        job = ImportJob.objects.create(
+            organization=self.org,
+            created_by=self.owner,
+            job_type=ImportJob.JobType.DRY_RUN,
+            total_rows=1,
+            rows_payload=[],
+            status=ImportJob.Status.DONE,
+            ready_count=1,
+            executed_job=execute_job,
+        )
+
+        response = self.client.get(reverse("clients_web:child-import-job-status", args=[job.id]))
+
+        self.assertNotContains(response, reverse("clients_web:child-import-execute", args=[job.id]))
+        self.assertContains(
+            response, reverse("clients_web:child-import-job-status", args=[execute_job.id])
+        )
 
     def test_failed_job_shows_error_message(self):
         job = ImportJob.objects.create(
@@ -394,5 +563,96 @@ class ChildImportJobStatusViewTests(TestCase):
         )
 
         response = self.client.get(reverse("clients_web:child-import-job-status", args=[job.id]))
+
+        self.assertEqual(response.status_code, 404)
+
+
+class ChildImportReportDownloadViewTests(TestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.other_org = Organization.objects.create(name="Other Studio", slug="other-studio")
+        self.owner = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.client.force_login(self.owner)
+
+    def _done_dry_run_job(self, organization=None):
+        return ImportJob.objects.create(
+            organization=organization or self.org,
+            created_by=self.owner,
+            job_type=ImportJob.JobType.DRY_RUN,
+            status=ImportJob.Status.DONE,
+            total_rows=1,
+            rows_payload=[],
+            report_rows=[
+                {
+                    "row_number": 147,
+                    "level": "error",
+                    "child_name": "",
+                    "messages": ["не разобран телефон"],
+                }
+            ],
+        )
+
+    def test_download_returns_a_readable_xlsx_with_the_report(self):
+        job = self._done_dry_run_job()
+
+        response = self.client.get(
+            reverse("clients_web:child-import-report-download", args=[job.id])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        workbook = openpyxl.load_workbook(io.BytesIO(response.content))
+        sheet = workbook.active
+        rows = list(sheet.iter_rows(values_only=True))
+        self.assertEqual(rows[0], ("Строка", "Статус", "ФИО ребёнка", "Сообщения"))
+        self.assertEqual(rows[1][0], 147)
+        self.assertIn("не разобран телефон", rows[1][3])
+
+    def test_download_for_pending_job_returns_404(self):
+        job = ImportJob.objects.create(
+            organization=self.org,
+            created_by=self.owner,
+            job_type=ImportJob.JobType.DRY_RUN,
+            total_rows=1,
+            rows_payload=[],
+        )
+
+        response = self.client.get(
+            reverse("clients_web:child-import-report-download", args=[job.id])
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_download_for_execute_job_returns_404(self):
+        job = ImportJob.objects.create(
+            organization=self.org,
+            created_by=self.owner,
+            job_type=ImportJob.JobType.EXECUTE,
+            status=ImportJob.Status.DONE,
+            total_rows=1,
+            rows_payload=[],
+        )
+
+        response = self.client.get(
+            reverse("clients_web:child-import-report-download", args=[job.id])
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_download_for_another_organizations_job_returns_404(self):
+        job = self._done_dry_run_job(organization=self.other_org)
+
+        response = self.client.get(
+            reverse("clients_web:child-import-report-download", args=[job.id])
+        )
 
         self.assertEqual(response.status_code, 404)

@@ -4,9 +4,10 @@
 child_import_template.xlsx) — лист-инструкция + лист с примером
 заполнения. Запуск: python backend/scripts/build_import_template.py.
 
-Колонки должны совпадать с EXPECTED_HEADERS в
-domains/people/clients/import_service.py — при изменении формата
-обновить оба места (и docs/import_format.md).
+Колонки должны совпадать по смыслу с SYSTEM_FIELDS в
+domains/people/clients/column_mapping.py (не обязаны совпадать по
+названию — см. маппинг колонок) — при изменении формата обновить оба
+места (и docs/import_format.md).
 """
 
 from pathlib import Path
@@ -65,6 +66,19 @@ INSTRUCTIONS = [
         "для переноса вручную (см. документацию формата)",
         "5",
     ),
+    (
+        "Направление",
+        "Нет",
+        "Текст. НЕ создаётся автоматически — сухой прогон предупредит, если такого направления "
+        "ещё нет в справочнике",
+        "Балет",
+    ),
+    (
+        "Группа",
+        "Нет",
+        "Текст. НЕ создаётся автоматически — сухой прогон предупредит, если такой группы ещё нет",
+        "Балет-мини вторник/четверг",
+    ),
 ]
 
 DATA_HEADERS = [
@@ -76,6 +90,8 @@ DATA_HEADERS = [
     "Роль родителя",
     "Медицинские заметки",
     "Остаток занятий",
+    "Направление",
+    "Группа",
 ]
 
 EXAMPLE_ROWS = [
@@ -88,6 +104,8 @@ EXAMPLE_ROWS = [
         "мама",
         "",
         "",
+        "Балет",
+        "Балет-мини вторник/четверг",
     ],
     [
         "Серикова Данияр",
@@ -97,6 +115,8 @@ EXAMPLE_ROWS = [
         "+7 701 123 45 67",
         "папа",
         "Аллергия на орехи",
+        "",
+        "",
         "",
     ],
 ]
@@ -134,7 +154,7 @@ def build():
         data.cell(row=1, column=col).font = Font(bold=True)
     for row in EXAMPLE_ROWS:
         data.append(row)
-    _autosize(data, [22, 20, 12, 20, 20, 16, 26, 16])
+    _autosize(data, [22, 20, 12, 20, 20, 16, 26, 16, 16, 26])
 
     wb.active = wb.sheetnames.index("Дети")
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)

@@ -1,42 +1,55 @@
 """
-Веб-экраны импорта детей (ТЗ п. 4.1: загрузка .xlsx/.csv, маппинг
-колонок; п. 10.1: фоновая задача через очередь). Три шага:
+Веб-экраны импорта детей (ТЗ п. 4.1: загрузка .xlsx/.csv, маппинг колонок,
+сухой прогон и отчёт об ошибках; п. 10.1: фоновая задача через очередь).
+Шаги:
 
 1. Загрузка (`child_import_upload`) — читает файл как есть (без
    фиксированных колонок), угадывает маппинг, показывает экран маппинга.
 2. Подтверждение маппинга (`child_import_mapping_confirm`) — применяет
    выбранный маппинг, чистит/валидирует значения (import_service.build_rows),
    сохраняет маппинг на будущее (повторный импорт того же файла не требует
-   настраивать заново), показывает сводку "распознано/не распознано".
-3. Запуск (`child_import_start`) — создаёт ImportJob и ставит в очередь
-   (tasks.run_import_job) — дедуп и создание записей происходят в фоне, не
-   в этом запросе (файл на тысячи строк не должен ронять запрос по
-   таймауту). Статус — `child_import_job_status`.
+   настраивать заново), сразу ставит в очередь СУХОЙ прогон
+   (tasks.run_dry_run_job) — дедуп на файле в тысячи строк не укладывается
+   в бюджет одного запроса, тот же принцип, что и у самого импорта.
+3. Статус/отчёт сухого прогона (`child_import_job_status`) — готово/
+   предупреждения/ошибки по каждой строке (номер — из исходного файла, не
+   внутренний индекс), отчёт можно скачать файлом
+   (`child_import_report_download`).
+4. Запуск настоящего импорта из отчёта (`child_import_execute`) — берёт
+   строки БЕЗ ошибок из уже посчитанного сухого прогона (не пересобирает
+   файл заново) и ставит в очередь `tasks.run_import_job`. Статус — та же
+   `child_import_job_status`, но для job_type=EXECUTE.
 
 Сырые строки файла между шагами 1 и 2 передаются одним скрытым JSON-полем
 (шаг 1 ничего не пишет в базу — можно просто уйти со страницы маппинга).
-Между шагом 2 и 3 — так же, уже очищенными/провалидированными строками.
+Дальше (сухой прогон → выполнение) строки уже лежат в ImportJob.rows_payload
+на сервере — второй раз через форму их гонять незачем и рискованно на
+тысячах строк.
 """
 
 import datetime
 import json
 
+from django.db import transaction
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from domains.platform.core.decorators import role_required
+from domains.platform.tenants.models import Direction
 
 from . import column_mapping
 from .forms import ChildImportUploadForm
 from .import_service import ImportRow, build_rows
 from .models import ImportColumnMapping, ImportJob
-from .tasks import run_import_job
+from .reporting import build_report_workbook
+from .tasks import run_dry_run_job, run_import_job
 from .web_views import CHILD_EDIT_ROLES
 
 PREVIEW_ROW_LIMIT = 5  # сколько сырых строк показать на экране маппинга
-SUMMARY_SAMPLE_LIMIT = 20  # сколько распознанных строк показать в сводке
-SUMMARY_ERROR_LIMIT = 100  # сколько строк с ошибками показать (не тысячи)
+# Сколько строк отчёта показать на странице (не тысячи — для этого выгрузка файлом).
+REPORT_SAMPLE_LIMIT = 200
 
 
 def _json_safe(value):
@@ -78,6 +91,22 @@ def _save_mapping(organization, headers, mapping, meta):
         csv_delimiter=meta.get("delimiter", ""),
         csv_encoding=meta.get("encoding", ""),
     )
+
+
+def _known_names(queryset) -> frozenset[str]:
+    names = queryset.values_list("name", flat=True)
+    return frozenset(name.strip().lower() for name in names if name)
+
+
+def _known_group_names(organization) -> frozenset[str]:
+    # Локальный импорт — clients не держит постоянную зависимость от
+    # домена Дарьи (groups) на уровне модуля, только там, где реально
+    # нужно свериться со справочником (см. докстринг ImportRow в
+    # import_service.py: своей FK на Group этот домен сознательно не
+    # заводит).
+    from domains.scheduling.groups.models import Group
+
+    return _known_names(Group.objects.for_tenant(organization))
 
 
 @role_required(*CHILD_EDIT_ROLES)
@@ -154,50 +183,91 @@ def child_import_mapping_confirm(request):
             },
         )
 
-    _save_mapping(request.user.organization, headers, mapping, meta)
+    org = request.user.organization
+    _save_mapping(org, headers, mapping, meta)
 
     mapped_rows = column_mapping.apply_mapping(
         headers, [(rn, values) for rn, values in raw_rows], mapping
     )
-    rows = build_rows(mapped_rows)
-    valid_rows = [r for r in rows if r.is_valid]
-    error_rows = [r for r in rows if not r.is_valid]
+    # Один запрос на направления/группы на весь файл, не на строку —
+    # 5000 повторов того же SELECT ничего не строке не даёт (ТЗ п. 10.1).
+    known_direction_names = _known_names(Direction.objects.for_tenant(org))
+    known_group_names = _known_group_names(org)
+    rows = build_rows(mapped_rows, known_direction_names, known_group_names)
 
-    return render(
-        request,
-        "clients/child_import_summary.html",
-        {
-            "total_rows": len(rows),
-            "valid_count": len(valid_rows),
-            "error_count": len(error_rows),
-            "sample_rows": valid_rows[:SUMMARY_SAMPLE_LIMIT],
-            "error_rows": error_rows[:SUMMARY_ERROR_LIMIT],
-            "error_rows_truncated": len(error_rows) > SUMMARY_ERROR_LIMIT,
-            "valid_rows_json": json.dumps([r.to_dict() for r in valid_rows]),
-        },
-    )
-
-
-@role_required(*CHILD_EDIT_ROLES)
-@require_http_methods(["POST"])
-def child_import_start(request):
-    try:
-        raw_valid_rows = json.loads(request.POST.get("valid_rows_json", "[]"))
-    except json.JSONDecodeError:
-        return redirect(reverse("clients_web:child-import-upload"))
-
-    rows = [ImportRow.from_dict(data) for data in raw_valid_rows]
     job = ImportJob.objects.create(
-        organization=request.user.organization,
+        organization=org,
         created_by=request.user,
+        job_type=ImportJob.JobType.DRY_RUN,
         total_rows=len(rows),
         rows_payload=[r.to_dict() for r in rows],
     )
-    run_import_job.delay(str(job.id))
+    run_dry_run_job.delay(str(job.id))
     return redirect("clients_web:child-import-job-status", job_id=job.id)
 
 
 @role_required(*CHILD_EDIT_ROLES)
 def child_import_job_status(request, job_id):
     job = get_object_or_404(ImportJob.objects.for_tenant(request.user.organization), pk=job_id)
-    return render(request, "clients/child_import_job_status.html", {"job": job})
+    report_rows = job.report_rows[:REPORT_SAMPLE_LIMIT]
+    return render(
+        request,
+        "clients/child_import_job_status.html",
+        {
+            "job": job,
+            "report_rows": report_rows,
+            "report_rows_truncated": len(job.report_rows) > REPORT_SAMPLE_LIMIT,
+        },
+    )
+
+
+@role_required(*CHILD_EDIT_ROLES)
+def child_import_report_download(request, job_id):
+    job = get_object_or_404(
+        ImportJob.objects.for_tenant(request.user.organization),
+        pk=job_id,
+        job_type=ImportJob.JobType.DRY_RUN,
+        status=ImportJob.Status.DONE,
+    )
+    workbook = build_report_workbook(job.report_rows)
+    response = HttpResponse(
+        workbook.read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="import_report_{job.id}.xlsx"'
+    return response
+
+
+@role_required(*CHILD_EDIT_ROLES)
+@require_http_methods(["POST"])
+def child_import_execute(request, job_id):
+    with transaction.atomic():
+        # select_for_update — двойной клик по «Запустить импорт» не должен
+        # создать две задачи, которые параллельно запишут одних и тех же
+        # детей до того, как дедуп одной из них увидит записи другой.
+        dry_run_job = get_object_or_404(
+            ImportJob.objects.for_tenant(request.user.organization).select_for_update(),
+            pk=job_id,
+            job_type=ImportJob.JobType.DRY_RUN,
+            status=ImportJob.Status.DONE,
+        )
+        if dry_run_job.executed_job_id:
+            return redirect(
+                "clients_web:child-import-job-status", job_id=dry_run_job.executed_job_id
+            )
+
+        rows = [ImportRow.from_dict(data) for data in dry_run_job.rows_payload]
+        ready_rows = [r for r in rows if r.is_valid]  # ошибки блокируют строку — не идут дальше
+
+        job = ImportJob.objects.create(
+            organization=request.user.organization,
+            created_by=request.user,
+            job_type=ImportJob.JobType.EXECUTE,
+            total_rows=len(ready_rows),
+            rows_payload=[r.to_dict() for r in ready_rows],
+        )
+        dry_run_job.executed_job = job
+        dry_run_job.save(update_fields=["executed_job"])
+
+    run_import_job.delay(str(job.id))
+    return redirect("clients_web:child-import-job-status", job_id=job.id)

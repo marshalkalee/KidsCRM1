@@ -27,6 +27,12 @@ SYSTEM_FIELDS = [
     ("role", "Роль родителя", False),
     ("medical_notes", "Медицинские заметки", False),
     ("reported_balance", "Остаток занятий", False),
+    # Не создают Group/Direction при импорте (см. import_service.py) — только
+    # предупреждают в отчёте сухого прогона, если названного направления/
+    # группы ещё нет (ТЗ п. 4.1: "существуют — или будут созданы, и об этом
+    # сказано явно"). Само создание — за пределами этого тикета.
+    ("direction", "Направление", False),
+    ("group", "Группа", False),
 ]
 REQUIRED_FIELDS = {key for key, _, required in SYSTEM_FIELDS if required}
 
@@ -84,6 +90,8 @@ FIELD_ALIASES = {
         "остаток абонемента",
         "осталось занятий",
     ],
+    "direction": ["направление", "секция", "кружок", "direction"],
+    "group": ["группа", "группа занятий", "group"],
 }
 
 

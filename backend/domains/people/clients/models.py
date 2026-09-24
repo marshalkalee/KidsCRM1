@@ -345,7 +345,14 @@ class ImportJob(TenantModel):
     новую семью) и создание записей не укладываются в бюджет одного
     запроса. rows_payload — уже распознанные и провалидированные строки
     (ImportRow.to_dict()) на момент постановки в очередь; сам дедуп
-    (resolve_rows) и создание (execute_import) выполняет tasks.py."""
+    (resolve_rows) и создание (execute_import) выполняет tasks.py.
+
+    Два вида задачи (job_type) — сухой прогон (ТЗ п. 4.1, тикет
+    «валидация, сухой прогон и отчёт об ошибках») и настоящее выполнение.
+    Общая модель, а не две разные: оба вида парсят один и тот же
+    rows_payload и проходят один и тот же resolve_rows — расхождение
+    логики дедупа между "проверить" и "сделать" было бы худшим исходом,
+    чем небольшое дублирование пары полей результата."""
 
     class Status(models.TextChoices):
         PENDING = "pending", "Ожидает"
@@ -353,6 +360,11 @@ class ImportJob(TenantModel):
         DONE = "done", "Готово"
         FAILED = "failed", "Ошибка"
 
+    class JobType(models.TextChoices):
+        DRY_RUN = "dry_run", "Сухой прогон"
+        EXECUTE = "execute", "Импорт"
+
+    job_type = models.CharField(max_length=10, choices=JobType.choices, default=JobType.EXECUTE)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
@@ -360,11 +372,29 @@ class ImportJob(TenantModel):
     total_rows = models.PositiveIntegerField(default=0)
     rows_payload = models.JSONField()
 
+    # JobType.EXECUTE.
     created_count = models.PositiveIntegerField(default=0)
     attached_count = models.PositiveIntegerField(default=0)
     skipped_count = models.PositiveIntegerField(default=0)
     failed_rows = models.JSONField(default=list, blank=True)  # [[row_number, error], ...]
     unhandled_balances = models.JSONField(default=list, blank=True)
+
+    # JobType.DRY_RUN — см. import_service.build_dry_run_report.
+    ready_count = models.PositiveIntegerField(default=0)
+    warning_count = models.PositiveIntegerField(default=0)
+    error_count = models.PositiveIntegerField(default=0)
+    report_rows = models.JSONField(default=list, blank=True)
+    # Импорт, уже запущенный из этого сухого прогона — один сухой прогон
+    # даёт максимум один импорт (повторное нажатие / двойной клик не
+    # создаёт вторую задачу, см. import_views.child_import_execute).
+    executed_job = models.OneToOneField(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_dry_run",
+    )
+
     error_message = models.TextField(blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 
@@ -372,4 +402,4 @@ class ImportJob(TenantModel):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"Импорт {self.id} ({self.get_status_display()})"
+        return f"{self.get_job_type_display()} {self.id} ({self.get_status_display()})"
