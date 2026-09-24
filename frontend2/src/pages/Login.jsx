@@ -1,155 +1,137 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import { ArrowRight, Phone, Lock, Eye, EyeOff } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff } from 'lucide-react'
+import { useSession } from '../session/SessionContext'
+import { Button, Field, Input } from '../ui'
+
+const FEATURES = [
+  'База детей и родителей без дублей',
+  'Расписание, группы и посещаемость',
+  'Абонементы, оплаты и задолженности',
+]
 
 export default function Login() {
+  const { status, reload } = useSession()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const navigate = useNavigate()
+  const next = location.state?.from || '/dashboard'
+
+  if (status === 'ready') return <Navigate to={next} replace />
 
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      const res = await axios.post('/api/v1/users/auth/login/', {
-        phone: phone.trim(),
-        password,
-      })
+      const res = await axios.post('/api/v1/users/auth/login/', { phone: phone.trim(), password })
       localStorage.setItem('access', res.data.access)
       localStorage.setItem('refresh', res.data.refresh)
-      navigate('/dashboard')
-    } catch {
-      setError('Неверный телефон или пароль')
+      await reload()
+      navigate(next, { replace: true })
+    } catch (err) {
+      setError(err.response?.status === 429 ? 'Слишком много попыток. Подождите минуту.' : 'Неверный телефон или пароль')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div style={{ fontFamily: 'Rubik, sans-serif', minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr', overflow: 'hidden' }}>
-
-      {/* ЛЕВАЯ */}
-      <div style={{ background: '#FDF6F0', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '56px 64px', position: 'relative', overflow: 'hidden' }}>
-        <svg style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }} viewBox="0 0 720 900" preserveAspectRatio="xMidYMid slice">
-          <path d="M-50,300 C150,100 350,500 550,200" fill="none" stroke="#E8998D" strokeWidth="1" opacity="0.08"/>
-          <path d="M-50,500 C150,300 350,700 550,400" fill="none" stroke="#E8998D" strokeWidth="1" opacity="0.06"/>
-          <circle cx="600" cy="150" r="200" fill="none" stroke="#E8998D" strokeWidth="1" opacity="0.05"/>
-          <circle cx="80" cy="700" r="150" fill="none" stroke="#E8998D" strokeWidth="1" opacity="0.05"/>
+    <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
+      <aside className="relative hidden overflow-hidden bg-gradient-to-br from-brand-500 via-brand-400 to-brand-200 p-14 text-white lg:flex lg:flex-col lg:justify-between">
+        <svg className="pointer-events-none absolute inset-0 size-full opacity-15" viewBox="0 0 720 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <path d="M-50,220 C150,20 350,420 550,170 C700,0 780,160 820,100" fill="none" stroke="#fff" strokeWidth="2" />
+          <path d="M-50,470 C150,270 350,670 550,420" fill="none" stroke="#fff" strokeWidth="1.5" />
+          <circle cx="620" cy="120" r="210" fill="none" stroke="#fff" />
+          <circle cx="90" cy="780" r="160" fill="none" stroke="#fff" />
         </svg>
-
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
-            <div style={{ width: 36, height: 36, background: 'linear-gradient(135deg,#E8998D,#C97B6E)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="#fff">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-              </svg>
-            </div>
-            <span style={{ fontSize: 18, fontWeight: 700, color: '#0A0A0A' }}>KidsCRM</span>
-          </div>
-
-          {/* Title */}
-          <div style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.2, letterSpacing: '-0.5px', color: '#0A0A0A', marginBottom: 16 }}>
-            Управляйте<br />центром<br />в одном месте
-          </div>
-
-          <p style={{ fontSize: 15, color: '#6B7280', lineHeight: 1.7, marginBottom: 40, maxWidth: 340 }}>
-            Замените WhatsApp и Excel. Дети, расписание, абонементы и оплаты — всё под контролем.
-          </p>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {['База учеников и родителей', 'Расписание и посещаемость', 'Абонементы и оплаты', 'Аналитика и отчёты'].map(f => (
-              <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#374151', fontWeight: 500 }}>
-                <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'linear-gradient(135deg,#E8998D,#C97B6E)', flexShrink: 0 }} />
-                {f}
-              </div>
-            ))}
-          </div>
+        <div className="relative flex items-center gap-2.5">
+          <span className="flex size-10 items-center justify-center rounded-lg bg-white/20 backdrop-blur">
+            <svg viewBox="0 0 24 24" className="size-5" fill="currentColor" aria-hidden="true">
+              <path d="M12 2 2 7l10 5 10-5-10-5Zm-10 15 10 5 10-5M2 12l10 5 10-5" />
+            </svg>
+          </span>
+          <span className="text-lg font-bold">KidsCRM</span>
         </div>
-      </div>
+        <div className="relative max-w-md">
+          <h1 className="text-4xl font-bold leading-tight tracking-tight">Весь центр —<br />в одном месте</h1>
+          <p className="mt-4 text-base text-white/85">Замените Excel и переписки в WhatsApp: дети, расписание и деньги под контролем.</p>
+          <ul className="mt-8 space-y-3">
+            {FEATURES.map(f => (
+              <li key={f} className="flex items-center gap-3 text-[15px] font-medium">
+                <span className="size-2 rounded-full bg-white" />
+                {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="relative text-xs text-white/70">© 2026 KidsCRM</p>
+      </aside>
 
-      {/* ПРАВАЯ */}
-      <div style={{ background: 'linear-gradient(160deg,#C97B6E 0%,#E8998D 50%,#F5C6BD 100%)', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 64, position: 'relative', overflow: 'hidden' }}>
-        <svg style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0, opacity: 0.08 }} viewBox="0 0 720 900" preserveAspectRatio="xMidYMid slice">
-          <path d="M-50,200 C150,0 350,400 550,150" fill="none" stroke="#fff" strokeWidth="2"/>
-          <path d="M-50,450 C150,250 350,650 550,400" fill="none" stroke="#fff" strokeWidth="1.5"/>
-          <circle cx="600" cy="100" r="200" fill="none" stroke="#fff" strokeWidth="1"/>
-          <circle cx="100" cy="800" r="150" fill="none" stroke="#fff" strokeWidth="1"/>
-        </svg>
+      <main className="flex items-center justify-center px-5 py-12">
+        <div className="w-full max-w-sm">
+          <div className="mb-8 flex items-center gap-2.5 lg:hidden">
+            <span className="flex size-9 items-center justify-center rounded-md bg-gradient-to-br from-brand-400 to-brand-600 text-white">
+              <svg viewBox="0 0 24 24" className="size-[18px]" fill="currentColor" aria-hidden="true">
+                <path d="M12 2 2 7l10 5 10-5-10-5Zm-10 15 10 5 10-5M2 12l10 5 10-5" />
+              </svg>
+            </span>
+            <span className="text-[17px] font-bold">KidsCRM</span>
+          </div>
+          <h2 className="text-2xl font-bold tracking-tight">Вход</h2>
+          <p className="mt-1.5 text-sm text-ink-muted">Телефон и пароль сотрудника центра.</p>
 
-        <div style={{ position: 'relative', zIndex: 1, maxWidth: 380, margin: '0 auto', width: '100%' }}>
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: '#fff', marginBottom: 8, letterSpacing: '-0.3px' }}>Вход в систему</h2>
-          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', marginBottom: 36, lineHeight: 1.6 }}>
-            Введите телефон и пароль. Если у вас нет доступа — обратитесь к администратору.
-          </p>
-
-          <form onSubmit={handleSubmit}>
-            {/* Phone */}
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'rgba(255,255,255,0.6)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                Телефон
-              </label>
-              <div style={{ position: 'relative' }}>
-                <Phone size={15} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
-                <input
+          <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+            <Field label="Телефон">
+              {({ id }) => (
+                <Input
+                  id={id}
                   type="tel"
+                  autoComplete="tel"
                   value={phone}
                   onChange={e => setPhone(e.target.value.replace(/[^\d+\s\-()]/g, ''))}
                   placeholder="+7 701 234 56 78"
                   required
-                  style={{ width: '100%', padding: '13px 14px 13px 42px', background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: 10, fontFamily: 'Rubik', fontSize: 14, color: '#fff', outline: 'none' }}
+                  autoFocus
                 />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'rgba(255,255,255,0.6)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                Пароль
-              </label>
-              <div style={{ position: 'relative' }}>
-                <Lock size={15} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="Введите пароль"
-                  required
-                  style={{ width: '100%', padding: '13px 44px 13px 42px', background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: 10, fontFamily: 'Rubik', fontSize: 14, color: '#fff', outline: 'none' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', display: 'flex', padding: 2 }}
-                >
-                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-            </div>
-
-            {error && (
-              <p style={{ fontSize: 12, color: '#FCA5A5', marginBottom: 8 }}>{error}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              style={{ width: '100%', padding: 14, background: '#fff', color: '#E8998D', border: 'none', borderRadius: 10, fontFamily: 'Rubik', fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: loading ? 0.6 : 1 }}
-            >
-              {loading ? 'Входим...' : <>Войти <ArrowRight size={16} /></>}
-            </button>
+              )}
+            </Field>
+            <Field label="Пароль">
+              {({ id }) => (
+                <div className="relative">
+                  <Input
+                    id={id}
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(v => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-ink-subtle hover:text-ink"
+                    aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                  >
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              )}
+            </Field>
+            {error && <p className="rounded-md bg-danger-50 px-3 py-2 text-sm text-danger-600" role="alert">{error}</p>}
+            <Button type="submit" variant="primary" loading={loading} className="w-full justify-center">
+              Войти {!loading && <ArrowRight className="size-4" />}
+            </Button>
           </form>
-
-          <p style={{ marginTop: 32, fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
-            © 2026 KidsCRM. Все права защищены.
-          </p>
+          <p className="mt-6 text-center text-xs text-ink-subtle">Нет доступа — обратитесь к владельцу центра.</p>
         </div>
-      </div>
+      </main>
     </div>
   )
 }
