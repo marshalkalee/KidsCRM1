@@ -62,9 +62,13 @@ services:
     restart: unless-stopped
 
   nginx:
-    image: nginx:1.27-alpine
+    # React (frontend2) собирается внутри образа — см. infra/nginx/Dockerfile (TRU-79).
+    build:
+      context: .
+      dockerfile: infra/nginx/Dockerfile
+      args:
+        NGINX_CONF: nginx.staging.conf
     volumes:
-      - ./infra/nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
       - certbot_www:/var/www/certbot:ro
       - certbot_certs:/etc/letsencrypt:ro
     ports:

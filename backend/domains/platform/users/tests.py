@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from django.test import TestCase, tag
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
@@ -118,6 +119,7 @@ class UserAPITests(APITestCase):
 
 class AuthTests(TestCase):
     def setUp(self):
+        cache.clear()  # лимит запросов на логин считается в кэше — не тянуть его между тестами
         self.client = APIClient()
         self.org = Organization.objects.create(name="Балет Астана", slug="ballet-astana")
         self.owner = User.objects.create_user(
@@ -151,6 +153,34 @@ class AuthTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("access", response.data)
         self.assertIn("refresh", response.data)
+
+    def _login(self):
+        return self.client.post(
+            "/api/v1/users/auth/login/",
+            {"phone": "77001234567", "password": "StrongPass123!"},
+        ).data
+
+    def test_refresh_gives_access_that_still_carries_organization(self):
+        # frontend2 продлевает access по refresh (TRU-79) — новый access
+        # должен работать на эндпоинтах организации так же, как после входа.
+        tokens = self._login()
+
+        response = self.client.post("/api/v1/users/auth/refresh/", {"refresh": tokens["refresh"]})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
+        me = self.client.get("/api/v1/organization/")
+        self.assertEqual(me.status_code, status.HTTP_200_OK)
+        self.assertEqual(str(me.data["id"]), str(self.org.id))
+
+    def test_used_refresh_token_is_rejected_after_rotation(self):
+        tokens = self._login()
+        first = self.client.post("/api/v1/users/auth/refresh/", {"refresh": tokens["refresh"]})
+        self.assertIn("refresh", first.data)  # ротация — выдан новый refresh
+
+        again = self.client.post("/api/v1/users/auth/refresh/", {"refresh": tokens["refresh"]})
+
+        self.assertEqual(again.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_login_wrong_password_does_not_reveal_user_existence(self):
         response = self.client.post(

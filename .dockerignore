@@ -1,0 +1,8 @@
+# Контекст сборки nginx-образа — корень репозитория (infra/nginx/Dockerfile):
+# в него попадают только frontend2 и infra, без зависимостей и артефактов.
+**/node_modules
+frontend2/dist
+backend
+docs
+.git
+.github
