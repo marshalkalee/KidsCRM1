@@ -12,6 +12,10 @@ const REFRESH_URL = '/api/v1/users/auth/refresh/'
 // На эти адреса 401 — это «неверный пароль»/«протухший refresh», а не повод продлевать.
 const NO_REFRESH = ['/users/auth/login/', '/users/auth/refresh/', '/users/auth/register/']
 
+// Активный филиал из переключателя в шапке (session/SessionContext.jsx) —
+// уходит в API заголовком X-Branch-Id (backend: core/active_branch.py).
+export const ACTIVE_BRANCH_KEY = 'activeBranchId'
+
 let refreshing = null // один запрос продления на все одновременно упавшие запросы
 
 function isApiUrl(config) {
@@ -19,9 +23,13 @@ function isApiUrl(config) {
   return url.startsWith('/api/') || (config.baseURL || '').startsWith('/api/')
 }
 
-function logout() {
+export function clearTokens() {
   localStorage.removeItem('access')
   localStorage.removeItem('refresh')
+}
+
+function logout() {
+  clearTokens()
   if (window.location.pathname !== '/login') window.location.assign('/login')
 }
 
@@ -46,6 +54,8 @@ export function installAuth(instance) {
     const token = localStorage.getItem('access')
     // Всегда текущий токен — даже если страница подставила свой заголовок раньше.
     if (token) config.headers.Authorization = `Bearer ${token}`
+    const branch = localStorage.getItem(ACTIVE_BRANCH_KEY)
+    if (branch) config.headers['X-Branch-Id'] = branch
     return config
   })
 

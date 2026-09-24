@@ -11,6 +11,7 @@ router.register("parents", views.ParentContactViewSet, basename="parent-contact"
 router.register("child-contacts", views.ChildContactViewSet, basename="child-contact")
 
 urlpatterns = [
+    path("search/", views.global_search_api, name="global-search"),
     # Импорт (для frontend2) — тот же жизненный цикл, что у веб-экранов.
     path("children/import/preview/", import_api_views.import_preview, name="import-preview"),
     path("children/import/confirm/", import_api_views.import_confirm, name="import-confirm"),

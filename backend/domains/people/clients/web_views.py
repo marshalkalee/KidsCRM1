@@ -9,7 +9,6 @@
 заглушки, см. child_card_tabs.py (контракт для Дарьи/Bekzat'а).
 """
 
-import re
 import uuid
 from decimal import Decimal
 from pathlib import Path
@@ -17,7 +16,6 @@ from pathlib import Path
 import pytz
 from django.contrib import messages
 from django.core.files.storage import default_storage
-from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -29,11 +27,11 @@ from domains.money.subscriptions.debt import debt_by_child, debtor_child_ids
 from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.renewals import expiring_child_ids
 from domains.platform.core.decorators import role_required
-from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.role_permissions import can_view_client_money, can_view_phone
 from domains.platform.tenants.models import Branch, Direction
 from domains.scheduling.groups.models import Group, GroupMembership
 
+from . import search
 from .child_card_tabs import get_child_card_tabs
 from .forms import (
     ChildContactForm,
@@ -170,158 +168,21 @@ def _batch_child_extras(organization, child_ids):
     return groups_by_child, latest_subscription_by_child, debt_by_child(organization, child_ids)
 
 
-GLOBAL_SEARCH_MIN_LENGTH = 3  # ТЗ п. 4.1: 3 символа имени — уже 4 цифры телефона тоже проходят
-GLOBAL_SEARCH_LIMIT_PER_TYPE = 8  # шапка — быстрый список, не полноценная страница результатов
-
-
-def _phone_digits_and_normalized(raw_query):
-    """
-    digits — для частичного совпадения (последние 4 цифры и т.п., ТЗ
-    п. 4.1); normalized — для точного совпадения по нормализованному
-    номеру, когда запрос сам похож на полный номер (тогда "8 701..." и
-    "+7 701..." находят один и тот же ContactPhone.number, который всегда
-    хранится нормализованным — см. ContactPhone.save()). Без normalized
-    один digits__icontains не поймал бы "8" вместо "+7": это не подстрока
-    друг друга, хотя номер тот же.
-    """
-    digits = re.sub(r"\D", "", raw_query or "")
-    try:
-        normalized = normalize_phone_number(raw_query)
-    except InvalidPhoneNumberError:
-        normalized = None
-    return digits, normalized
-
-
-def _phone_field_matches(value, phone_digits, phone_normalized):
-    if not value:
-        return False
-    if phone_normalized and value == phone_normalized:
-        return True
-    return bool(phone_digits) and phone_digits in re.sub(r"\D", "", value)
-
-
-def _find_matched_phone(parent, phone_digits, phone_normalized):
-    """
-    Что из телефонов родителя реально совпало с запросом — не "просто
-    показать whatsapp, если он есть" (это давало неверный matched_detail:
-    родитель мог совпасть по ContactPhone.number, а в подсказке всё равно
-    показывался бы его несовпавший whatsapp).
-    """
-    if _phone_field_matches(parent.whatsapp, phone_digits, phone_normalized):
-        return parent.whatsapp
-    phone_match = next(
-        (
-            p
-            for p in parent.phones.all()
-            if _phone_field_matches(p.number, phone_digits, phone_normalized)
-        ),
-        None,
-    )
-    return phone_match.number if phone_match else None
-
-
-def _global_search_children(organization, query, phone_digits, phone_normalized):
-    filters = Q(full_name__icontains=query) | Q(
-        contacts__parent_contact__full_name__icontains=query
-    )
-    if phone_digits:
-        filters |= Q(contacts__parent_contact__phones__number__icontains=phone_digits)
-        filters |= Q(contacts__parent_contact__whatsapp__icontains=phone_digits)
-    if phone_normalized:
-        filters |= Q(contacts__parent_contact__phones__number=phone_normalized)
-        filters |= Q(contacts__parent_contact__whatsapp=phone_normalized)
-
-    children = (
-        Child.objects.for_tenant(organization)
-        .filter(filters)
-        .distinct()
-        .order_by("full_name")
-        .prefetch_related("contacts__parent_contact__phones")[:GLOBAL_SEARCH_LIMIT_PER_TYPE]
-    )
-
-    query_lower = query.lower()
-    results = []
-    for child in children:
-        matched_on, matched_detail = "child_name", None
-        if query_lower not in child.full_name.lower():
-            for link in child.contacts.all():
-                parent = link.parent_contact
-                if query_lower in parent.full_name.lower():
-                    matched_on, matched_detail = "parent_name", parent.full_name
-                    break
-                matched_phone = _find_matched_phone(parent, phone_digits, phone_normalized)
-                if matched_phone:
-                    matched_on, matched_detail = "phone", matched_phone
-                    break
-        results.append(
-            {
-                "type": "child",
-                "id": str(child.id),
-                "title": child.full_name,
-                "matched_on": matched_on,
-                "matched_detail": matched_detail,
-                "url": reverse("clients_web:child-card", args=[child.pk]),
-            }
-        )
-    return results
-
-
-def _global_search_parents(organization, query, phone_digits, phone_normalized):
-    filters = Q(full_name__icontains=query)
-    if phone_digits:
-        filters |= Q(whatsapp__icontains=phone_digits) | Q(phones__number__icontains=phone_digits)
-    if phone_normalized:
-        filters |= Q(whatsapp=phone_normalized) | Q(phones__number=phone_normalized)
-
-    # Родитель — своя строка всегда, даже если у него есть дети: иначе
-    # через поиск нельзя попасть в его собственную карточку (контакты,
-    # коммуникации, WhatsApp), только в карточки детей. "Один номер в
-    # разных написаниях — один результат" (ТЗ п. 4.1) — про стабильность
-    # написания номера, а не про то, что родитель и его ребёнок должны
-    # схлопнуться в одну строку; бейджи "Родитель"/"Ребёнок" в выдаче
-    # различают их и так.
-    parents = (
-        ParentContact.objects.for_tenant(organization)
-        .filter(filters)
-        .distinct()
-        .order_by("full_name")
-        .prefetch_related("phones")[:GLOBAL_SEARCH_LIMIT_PER_TYPE]
-    )
-
-    query_lower = query.lower()
-    results = []
-    for parent in parents:
-        if query_lower in parent.full_name.lower():
-            matched_on, matched_detail = "parent_name", None
-        else:
-            matched_on = "phone"
-            matched_detail = _find_matched_phone(parent, phone_digits, phone_normalized)
-        results.append(
-            {
-                "type": "parent",
-                "id": str(parent.id),
-                "title": parent.full_name,
-                "matched_on": matched_on,
-                "matched_detail": matched_detail,
-                "url": reverse("clients_web:parent-card", args=[parent.pk]),
-            }
-        )
-    return results
+_SEARCH_CARD_URLS = {
+    "child": "clients_web:child-card",
+    "parent": "clients_web:parent-card",
+}
 
 
 @role_required()
 def global_search(request):
-    query = (request.GET.get("q") or "").strip()
-    if len(query) < GLOBAL_SEARCH_MIN_LENGTH:
-        return JsonResponse({"results": []})
-
-    organization = request.user.organization
-    phone_digits, phone_normalized = (
-        _phone_digits_and_normalized(query) if can_view_phone(request.user) else (None, None)
+    results = search.global_search(
+        request.user.organization,
+        request.GET.get("q"),
+        can_view_phone=can_view_phone(request.user),
     )
-
-    results = _global_search_children(organization, query, phone_digits, phone_normalized)
-    results += _global_search_parents(organization, query, phone_digits, phone_normalized)
+    for result in results:
+        result["url"] = reverse(_SEARCH_CARD_URLS[result["type"]], args=[result["id"]])
     return JsonResponse({"results": results})
 
 

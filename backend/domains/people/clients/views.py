@@ -1,9 +1,13 @@
 from django.db.models import Q
 from rest_framework import viewsets
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOfOrganization
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.core.role_permissions import can_view_phone
 
+from . import search
 from .models import Child, ChildContact, ParentContact
 from .serializers import ChildContactSerializer, ChildSerializer, ParentContactSerializer
 
@@ -94,3 +98,16 @@ class ChildContactViewSet(viewsets.ModelViewSet):
         if parent_contact_id:
             qs = qs.filter(parent_contact_id=parent_contact_id)
         return qs
+
+
+@api_view(["GET"])
+@permission_classes([IsStaffOfOrganization])
+def global_search_api(request):
+    """Поиск в шапке frontend2 (TRU-80): тот же сервис, что у старого веба
+    (search.global_search). Ссылки строит фронт по type + id."""
+    results = search.global_search(
+        request.user.organization,
+        request.query_params.get("q"),
+        can_view_phone=can_view_phone(request.user),
+    )
+    return Response({"results": results})
