@@ -60,7 +60,7 @@ class AuditLog(UUIDPrimaryKeyModel):
     def record(cls, actor, action, entity, before=None, after=None):
         content_type = ContentType.objects.get_for_model(entity)
         cls.objects.create(
-            organization=actor.organization,
+            organization=actor.organization if actor else entity.organization,
             actor=actor,
             action=action,
             content_type=content_type,

@@ -55,6 +55,9 @@ class TenantManager(models.Manager):
     def for_tenant(self, organization):
         return self.get_queryset().for_tenant(organization)
 
+    def all_with_deleted(self):
+        return TenantQuerySet(self.model, using=self._db)
+
 
 class TimestampedSoftDeleteModel(UUIDPrimaryKeyModel):
     created_at = models.DateTimeField(auto_now_add=True)

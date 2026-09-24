@@ -15,6 +15,7 @@ from domains.platform.tenants.org_settings import (
     get_org_setting,
 )
 
+from .freezes import unfreeze_subscription
 from .models import Subscription
 from .subscriptions import transition_status
 
@@ -79,5 +80,12 @@ def update_all_subscription_statuses() -> int:
     for subscription in still_active.iterator():
         if get_display_status(subscription) == ENDING_SOON:
             suggest_renewal(subscription)
+
+    overdue_freezes = Subscription.objects.filter(
+        status=Subscription.Status.FROZEN,
+        freezes__ends_on__lt=today,
+    ).distinct()
+    for subscription in overdue_freezes.iterator():
+        unfreeze_subscription(subscription, actor=None)
 
     return changed

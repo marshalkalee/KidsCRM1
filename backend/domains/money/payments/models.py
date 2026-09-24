@@ -26,6 +26,7 @@ class Payment(TenantModel):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="payments_received"
     )
     comment = models.CharField(max_length=255, blank=True)
+    cancelled_reason = models.CharField(max_length=255, blank=True)
     paid_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
