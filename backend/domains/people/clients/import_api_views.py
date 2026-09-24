@@ -6,7 +6,8 @@ from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin
 
-from .import_service import ImportRow, RowAction, execute_import, parse_workbook, resolve_rows
+from . import column_mapping
+from .import_service import ImportRow, RowAction, build_rows, execute_import, resolve_rows
 
 ALLOWED_ACTIONS = {RowAction.CREATE_NEW_FAMILY, RowAction.ATTACH_EXISTING, RowAction.SKIP}
 
@@ -49,15 +50,27 @@ def import_preview(request):
     if not file:
         return Response({"file": ["Файл обязателен."]}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        rows, header_errors = parse_workbook(file)
+        headers, raw_rows, _meta = column_mapping.read_uploaded_file(file, file.name)
     except Exception:
         return Response(
-            {"file": ["Не удалось прочитать файл — убедитесь, что это .xlsx."]},
+            {"file": ["Не удалось прочитать файл — убедитесь, что это .xlsx или .csv."]},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if header_errors:
-        return Response({"file": header_errors}, status=status.HTTP_400_BAD_REQUEST)
+    mapping = column_mapping.guess_mapping(headers)
+    missing = [
+        label
+        for key, label, required in column_mapping.SYSTEM_FIELDS
+        if required and not mapping.get(key)
+    ]
+    if missing:
+        return Response(
+            {"file": [f"В файле не найдены обязательные колонки: {', '.join(missing)}"]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    mapped_rows = column_mapping.apply_mapping(headers, raw_rows, mapping)
+    rows = build_rows(mapped_rows)
 
     resolve_rows(request.user.organization, rows)
 
