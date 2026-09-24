@@ -148,6 +148,9 @@ class ParentCardWebViewTests(TestCase):
             child=child,
             subscription_type_version=sub_type.versions.latest(),
             direction=direction,
+            branch=Branch.objects.get_or_create(
+                organization=child.organization, name="Центральный"
+            )[0],
             starts_on=datetime.date.today(),
             ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=Decimal(paid),

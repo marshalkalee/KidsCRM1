@@ -274,6 +274,9 @@ class ChildListDataWebViewTests(TestCase):
             child=child,
             subscription_type_version=version,
             direction=direction,
+            branch=Branch.objects.get_or_create(
+                organization=child.organization, name="Центральный"
+            )[0],
             starts_on=datetime.date.today(),
             ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=Decimal("15000"),
@@ -298,6 +301,9 @@ class ChildListDataWebViewTests(TestCase):
             child=child,
             subscription_type_version=sub_type.versions.latest(),
             direction=direction,
+            branch=Branch.objects.get_or_create(
+                organization=child.organization, name="Центральный"
+            )[0],
             starts_on=datetime.date.today(),
             ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=Decimal("15000"),
@@ -332,6 +338,9 @@ class ChildListDataWebViewTests(TestCase):
             child=child,
             subscription_type_version=version,
             direction=direction,
+            branch=Branch.objects.get_or_create(
+                organization=child.organization, name="Центральный"
+            )[0],
             starts_on=datetime.date.today(),
             ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=Decimal("25000"),
@@ -385,6 +394,9 @@ class ChildListDataWebViewTests(TestCase):
                 child=child,
                 subscription_type_version=version,
                 direction=direction,
+                branch=Branch.objects.get_or_create(
+                    organization=child.organization, name="Центральный"
+                )[0],
                 starts_on=datetime.date.today(),
                 ends_on=datetime.date.today() + datetime.timedelta(days=30),
                 paid_amount=Decimal("10000"),
@@ -509,6 +521,7 @@ class ChildListFiltersWebViewTests(TestCase):
             child=child,
             subscription_type_version=sub_type.versions.latest(),
             direction=self.direction,
+            branch=Branch.objects.get_or_create(organization=self.org, name="Центральный")[0],
             starts_on=datetime.date.today(),
             ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=paid_amount,
@@ -537,6 +550,9 @@ class ChildListFiltersWebViewTests(TestCase):
             child=soon,
             subscription_type_version=sub_type.versions.latest(),
             direction=self.direction,
+            branch=Branch.objects.get_or_create(organization=soon.organization, name="Центральный")[
+                0
+            ],
             starts_on=datetime.date.today(),
             ends_on=datetime.date.today() + datetime.timedelta(days=2),
             paid_amount=Decimal("25000"),
@@ -548,6 +564,9 @@ class ChildListFiltersWebViewTests(TestCase):
             child=far,
             subscription_type_version=sub_type.versions.latest(),
             direction=self.direction,
+            branch=Branch.objects.get_or_create(organization=far.organization, name="Центральный")[
+                0
+            ],
             starts_on=datetime.date.today(),
             ends_on=datetime.date.today() + datetime.timedelta(days=60),
             paid_amount=Decimal("25000"),

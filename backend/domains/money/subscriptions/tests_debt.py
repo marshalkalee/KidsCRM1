@@ -8,7 +8,7 @@ from datetime import date
 from django.test import TestCase
 
 from domains.people.clients.models import Child
-from domains.platform.tenants.models import Direction, Organization
+from domains.platform.tenants.models import Branch, Direction, Organization
 from domains.platform.users.models import User
 
 from .debt import debtor_child_ids
@@ -45,6 +45,9 @@ class DebtorChildIdsTests(TestCase):
             child=child,
             subscription_type_version=self.subscription_type.versions.latest(),
             direction=self.ballet,
+            branch=Branch.objects.get_or_create(
+                organization=child.organization, name="Центральный"
+            )[0],
             starts_on=date.today(),
             ends_on=date.today().replace(day=28),
             paid_amount=paid_amount,
@@ -104,6 +107,9 @@ class DebtorChildIdsTests(TestCase):
             child=other_child,
             subscription_type_version=other_type.versions.latest(),
             direction=other_ballet,
+            branch=Branch.objects.get_or_create(
+                organization=other_child.organization, name="Центральный"
+            )[0],
             starts_on=date.today(),
             ends_on=date.today().replace(day=28),
             paid_amount=0,

@@ -12,14 +12,10 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
-from domains.people.clients import import_api_views
-
 api_v1_patterns = [
     # Organization (только текущая, /organization/), Branch, Room.
     path("", include("domains.platform.tenants.urls")),
     path("users/", include("domains.platform.users.urls")),
-    path("clients/children/import/preview/", import_api_views.import_preview),
-    path("clients/children/import/confirm/", import_api_views.import_confirm),
     path("clients/", include("domains.people.clients.urls")),
     path("schedule/", include("domains.scheduling.schedule.urls")),
     path("groups/", include("domains.scheduling.groups.urls")),
