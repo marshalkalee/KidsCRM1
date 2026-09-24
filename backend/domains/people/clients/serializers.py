@@ -5,7 +5,7 @@ from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone
 from domains.platform.core.role_permissions import can_view_child_sensitive_fields, can_view_phone
 from domains.platform.tenants.models import Direction
 
-from .models import Child, ChildContact, ContactPhone, ParentContact
+from .models import Child, ChildContact, CommunicationLog, ContactPhone, ParentContact
 
 
 class ChildSerializer(serializers.ModelSerializer):
@@ -160,6 +160,13 @@ class ChildContactSerializer(serializers.ModelSerializer):
     parent_contact_full_name = serializers.CharField(
         source="parent_contact.full_name", read_only=True
     )
+    # Телефоны родителя — для вкладки «Контакты» карточки ребёнка, чтобы
+    # не ходить за каждым родителем отдельно. Скрываются так же, как в
+    # ParentContactSerializer (can_view_phone).
+    parent_contact_phones = serializers.SerializerMethodField()
+    parent_contact_whatsapp = serializers.CharField(
+        source="parent_contact.whatsapp", read_only=True
+    )
 
     class Meta:
         model = ChildContact
@@ -168,6 +175,8 @@ class ChildContactSerializer(serializers.ModelSerializer):
             "child",
             "parent_contact",
             "parent_contact_full_name",
+            "parent_contact_phones",
+            "parent_contact_whatsapp",
             "role",
             "is_payer",
             "is_primary_contact",
@@ -199,4 +208,75 @@ class ChildContactSerializer(serializers.ModelSerializer):
                 qs = qs.exclude(pk=self.instance.pk)
             if qs.exists():
                 raise serializers.ValidationError("Этот контакт уже привязан к этому ребёнку.")
+        return attrs
+
+    def get_parent_contact_phones(self, link):
+        # .all() — из prefetch_related("parent_contact__phones") во вьюхе.
+        return [
+            {"number": phone.number, "phone_type": phone.phone_type}
+            for phone in link.parent_contact.phones.all()
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if request is not None and not can_view_phone(request.user):
+            data.pop("parent_contact_phones", None)
+            data.pop("parent_contact_whatsapp", None)
+        return data
+
+
+class CommunicationLogSerializer(serializers.ModelSerializer):
+    """Запись вкладки «Коммуникации» (ТЗ п. 4.1). Только создание и чтение —
+    лог append-only; автор — текущий пользователь, не из запроса."""
+
+    channel_label = serializers.CharField(source="get_channel_display", read_only=True)
+    author_name = serializers.CharField(source="author.full_name", read_only=True)
+    child_name = serializers.CharField(source="child.full_name", read_only=True)
+    parent_contact_full_name = serializers.CharField(
+        source="parent_contact.full_name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = CommunicationLog
+        fields = [
+            "id",
+            "child",
+            "child_name",
+            "parent_contact",
+            "parent_contact_full_name",
+            "channel",
+            "channel_label",
+            "note",
+            "author_name",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            org = request.user.organization
+            self.fields["child"].queryset = Child.objects.for_tenant(org)
+            self.fields["parent_contact"].queryset = ParentContact.objects.for_tenant(org)
+
+    def validate_note(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Напишите, о чём был разговор.")
+        return value.strip()
+
+    def validate(self, attrs):
+        # Как в CommunicationLogForm: контакт — только из привязанных к
+        # этому ребёнку, иначе история родителя получит чужого ребёнка.
+        parent_contact = attrs.get("parent_contact")
+        if (
+            parent_contact
+            and not ChildContact.objects.filter(
+                child=attrs["child"], parent_contact=parent_contact
+            ).exists()
+        ):
+            raise serializers.ValidationError(
+                {"parent_contact": "Этот контакт не привязан к ребёнку."}
+            )
         return attrs
