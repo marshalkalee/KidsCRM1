@@ -206,6 +206,19 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# "default" — как у Django по умолчанию (LocMem), чтобы не менять поведение
+# того, что уже на нём живёт (троттлинг и т.п.). "import_progress" — общий
+# для веба и воркера (Redis): прогресс импорта нельзя писать в ImportJob,
+# пока импорт идёт одной транзакцией — снаружи этих записей не видно
+# (domains/people/clients/progress.py).
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "import_progress": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("REDIS_URL", default="redis://localhost:6379/0"),
+        "KEY_PREFIX": "import_progress",
+    },
+}
 
 CELERY_BEAT_SCHEDULE = {
     "generate-lessons-daily": {

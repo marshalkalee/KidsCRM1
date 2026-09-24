@@ -7,6 +7,7 @@ tests_import_service.py/tests_column_mapping.py/tests_tasks.py).
 (ТЗ п. 4.1, п. 10.1).
 """
 
+import datetime
 import io
 from unittest import mock
 
@@ -18,7 +19,16 @@ from django.urls import reverse
 
 from domains.platform.tenants.models import Organization
 
-from .models import Child, ImportColumnMapping, ImportJob
+from .import_service import Decision, DuplicateKind
+from .models import (
+    Child,
+    ChildContact,
+    CommunicationLog,
+    ContactPhone,
+    ImportColumnMapping,
+    ImportJob,
+    ParentContact,
+)
 from .tasks import run_dry_run_job, run_import_job
 
 User = get_user_model()
@@ -656,3 +666,209 @@ class ChildImportReportDownloadViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+
+class ChildImportDuplicateDecisionsViewTests(TestCase):
+    """Экран решений по дублям: по строке и массово для однотипных."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.owner = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.client.force_login(self.owner)
+        for patcher in _run_celery_tasks_synchronously():
+            self.addCleanup(patcher.stop)
+        # Существующая семья: два новых ребёнка этой мамы в файле — два
+        # совпадения вида «родитель уже есть в базе».
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Данияр",
+            birth_date=datetime.date(2018, 3, 10),
+            gender=Child.Gender.MALE,
+        )
+        parent = ParentContact.objects.create(organization=self.org, full_name="Иванова Марина")
+        ContactPhone.objects.create(
+            organization=self.org, parent_contact=parent, number="+77011234567"
+        )
+        ChildContact.objects.create(
+            organization=self.org, child=child, parent_contact=parent, role="mother"
+        )
+
+    def _dry_run_job(self):
+        upload = self.client.post(
+            reverse("clients_web:child-import-upload"),
+            {
+                "file": _xlsx_file(
+                    [
+                        ["Айгерим", "01.02.2017", "ж", "Иванова Марина", "+77011234567", "мама"],
+                        ["Алия", "05.05.2019", "ж", "Иванова Марина", "+77011234567", "мама"],
+                    ]
+                )
+            },
+        )
+        data = {
+            "headers_json": upload.context["headers_json"],
+            "raw_rows_json": upload.context["raw_rows_json"],
+            "meta_json": upload.context["meta_json"],
+        }
+        for key, current in _mapping_dict(upload.context["mapping_rows"]).items():
+            if current:
+                data[f"mapping_{key}"] = current
+        self.client.post(reverse("clients_web:child-import-mapping-confirm"), data)
+        return ImportJob.objects.for_tenant(self.org).get(job_type=ImportJob.JobType.DRY_RUN)
+
+    def test_status_page_lists_matches_with_decision_choices(self):
+        job = self._dry_run_job()
+
+        response = self.client.get(reverse("clients_web:child-import-job-status", args=[job.id]))
+
+        self.assertEqual(len(response.context["duplicate_rows"]), 2)
+        self.assertContains(response, "Привязать к существующему родителю")
+        self.assertContains(response, 'name="decision_2"')
+        self.assertEqual(response.context["duplicate_kinds"][0]["count"], 2)
+
+    def test_bulk_decision_applies_to_all_rows_of_that_kind(self):
+        job = self._dry_run_job()
+
+        self.client.post(
+            reverse("clients_web:child-import-decisions", args=[job.id]),
+            {"bulk_kind": DuplicateKind.FAMILY, "bulk_decision": Decision.SKIP},
+        )
+
+        job.refresh_from_db()
+        self.assertEqual(job.decisions, {"2": Decision.SKIP, "3": Decision.SKIP})
+
+    def test_per_row_decision_is_saved_and_invalid_one_ignored(self):
+        job = self._dry_run_job()
+
+        self.client.post(
+            reverse("clients_web:child-import-decisions", args=[job.id]),
+            {"decision_2": Decision.CREATE_NEW, "decision_3": "удалить всё"},
+        )
+
+        job.refresh_from_db()
+        self.assertEqual(job.decisions, {"2": Decision.CREATE_NEW})
+
+    def test_execute_applies_decisions_submitted_with_the_form(self):
+        job = self._dry_run_job()
+
+        self.client.post(
+            reverse("clients_web:child-import-execute", args=[job.id]),
+            {"decision_2": Decision.SKIP, "decision_3": Decision.ATTACH},
+        )
+
+        execute_job = ImportJob.objects.for_tenant(self.org).get(job_type=ImportJob.JobType.EXECUTE)
+        self.assertEqual(execute_job.skipped_count, 1)
+        self.assertEqual(execute_job.attached_count, 1)
+        self.assertEqual(ParentContact.objects.for_tenant(self.org).count(), 1)
+        self.assertTrue(Child.objects.for_tenant(self.org).filter(full_name="Алия").exists())
+        self.assertFalse(Child.objects.for_tenant(self.org).filter(full_name="Айгерим").exists())
+
+    def test_decisions_cannot_change_after_import_started(self):
+        job = self._dry_run_job()
+        self.client.post(reverse("clients_web:child-import-execute", args=[job.id]))
+
+        self.client.post(
+            reverse("clients_web:child-import-decisions", args=[job.id]),
+            {"bulk_kind": DuplicateKind.FAMILY, "bulk_decision": Decision.SKIP},
+        )
+
+        job.refresh_from_db()
+        self.assertEqual(job.decisions, {})
+
+
+class ChildImportRollbackViewTests(TestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.owner = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.client.force_login(self.owner)
+        for patcher in _run_celery_tasks_synchronously():
+            self.addCleanup(patcher.stop)
+
+    def _executed_job(self):
+        upload = self.client.post(
+            reverse("clients_web:child-import-upload"),
+            {
+                "file": _xlsx_file(
+                    [["Данияр", "10.03.2018", "м", "Иванова", "+77011234567", "мама"]]
+                )
+            },
+        )
+        data = {
+            "headers_json": upload.context["headers_json"],
+            "raw_rows_json": upload.context["raw_rows_json"],
+            "meta_json": upload.context["meta_json"],
+        }
+        for key, current in _mapping_dict(upload.context["mapping_rows"]).items():
+            if current:
+                data[f"mapping_{key}"] = current
+        self.client.post(reverse("clients_web:child-import-mapping-confirm"), data)
+        dry_run = ImportJob.objects.for_tenant(self.org).get(job_type=ImportJob.JobType.DRY_RUN)
+        self.client.post(reverse("clients_web:child-import-execute", args=[dry_run.id]))
+        return ImportJob.objects.for_tenant(self.org).get(job_type=ImportJob.JobType.EXECUTE)
+
+    def test_done_import_shows_rollback_button_and_counts(self):
+        job = self._executed_job()
+
+        response = self.client.get(reverse("clients_web:child-import-job-status", args=[job.id]))
+
+        self.assertContains(response, reverse("clients_web:child-import-rollback", args=[job.id]))
+        self.assertContains(response, "Создано родителей")
+
+    def test_rollback_removes_imported_records(self):
+        job = self._executed_job()
+        self.assertEqual(Child.objects.for_tenant(self.org).count(), 1)
+
+        response = self.client.post(reverse("clients_web:child-import-rollback", args=[job.id]))
+
+        self.assertRedirects(
+            response, reverse("clients_web:child-import-job-status", args=[job.id])
+        )
+        self.assertEqual(Child.objects.for_tenant(self.org).count(), 0)
+        job.refresh_from_db()
+        self.assertIsNotNone(job.rolled_back_at)
+
+    def test_rollback_blocked_after_work_started_keeps_data_and_explains_why(self):
+        job = self._executed_job()
+        child = Child.objects.for_tenant(self.org).get()
+        CommunicationLog.objects.create(child=child, note="Позвонили", author=self.owner)
+
+        self.client.post(reverse("clients_web:child-import-rollback", args=[job.id]))
+        response = self.client.get(reverse("clients_web:child-import-job-status", args=[job.id]))
+
+        self.assertEqual(Child.objects.for_tenant(self.org).count(), 1)
+        self.assertNotContains(
+            response, reverse("clients_web:child-import-rollback", args=[job.id])
+        )
+        self.assertContains(response, "записи коммуникаций")
+
+    def test_running_job_shows_progress(self):
+        job = ImportJob.objects.create(
+            organization=self.org,
+            created_by=self.owner,
+            total_rows=5000,
+            rows_payload=[],
+            status=ImportJob.Status.RUNNING,
+        )
+
+        with mock.patch(
+            "domains.people.clients.progress.get_progress",
+            return_value={"phase": "writing", "done": 1200, "total": 5000},
+        ):
+            response = self.client.get(
+                reverse("clients_web:child-import-job-status", args=[job.id])
+            )
+
+        self.assertContains(response, "1200 / 5000")
+        self.assertContains(response, "location.reload")

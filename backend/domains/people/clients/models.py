@@ -373,17 +373,38 @@ class ImportJob(TenantModel):
     rows_payload = models.JSONField()
 
     # JobType.EXECUTE.
-    created_count = models.PositiveIntegerField(default=0)
-    attached_count = models.PositiveIntegerField(default=0)
+    created_count = models.PositiveIntegerField(default=0)  # новых детей
+    attached_count = models.PositiveIntegerField(default=0)  # новых детей к существующему родителю
     skipped_count = models.PositiveIntegerField(default=0)
-    failed_rows = models.JSONField(default=list, blank=True)  # [[row_number, error], ...]
+    parents_created_count = models.PositiveIntegerField(default=0)
+    # Строки, привязанные к уже существующему ребёнку (решение администратора
+    # по дублю, см. import_service.Decision.ATTACH) — новый ребёнок не создан.
+    linked_count = models.PositiveIntegerField(default=0)
+    enrolled_count = models.PositiveIntegerField(default=0)  # записано в группы
+    # Строки, которые не удалось импортировать не из-за ошибки данных, а из-за
+    # решения по дублю, которое стало не к чему применить (см. execute_import).
+    failed_rows = models.JSONField(default=list, blank=True)  # [[row_number, reason], ...]
     unhandled_balances = models.JSONField(default=list, blank=True)
+    # id всего, что создал ЭТОТ импорт — по нему работает откат
+    # (import_service.rollback_import): {"children": [...], "parents": [...], ...}.
+    created_objects = models.JSONField(default=dict, blank=True)
+    rolled_back_at = models.DateTimeField(null=True, blank=True)
+    rolled_back_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
 
     # JobType.DRY_RUN — см. import_service.build_dry_run_report.
     ready_count = models.PositiveIntegerField(default=0)
     warning_count = models.PositiveIntegerField(default=0)
     error_count = models.PositiveIntegerField(default=0)
     report_rows = models.JSONField(default=list, blank=True)
+    # Решения администратора по дублям: {"<номер строки>": Decision.*} —
+    # применяются при выполнении поверх действия по умолчанию.
+    decisions = models.JSONField(default=dict, blank=True)
     # Импорт, уже запущенный из этого сухого прогона — один сухой прогон
     # даёт максимум один импорт (повторное нажатие / двойной клик не
     # создаёт вторую задачу, см. import_views.child_import_execute).

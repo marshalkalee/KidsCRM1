@@ -28,9 +28,19 @@ urlpatterns = [
         name="child-import-report-download",
     ),
     path(
+        "clients/import/jobs/<uuid:job_id>/decisions/",
+        import_views.child_import_decisions,
+        name="child-import-decisions",
+    ),
+    path(
         "clients/import/jobs/<uuid:job_id>/execute/",
         import_views.child_import_execute,
         name="child-import-execute",
+    ),
+    path(
+        "clients/import/jobs/<uuid:job_id>/rollback/",
+        import_views.child_import_rollback,
+        name="child-import-rollback",
     ),
     path("clients/children/", web_views.child_list, name="child-list"),
     path("clients/children/data/", web_views.child_list_data, name="child-list-data"),
