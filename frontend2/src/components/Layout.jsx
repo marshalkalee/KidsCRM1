@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, UsersRound, Calendar,
-  CheckSquare, CreditCard, Settings, LogOut,
+  CheckSquare, CreditCard, Building2, Tag, Settings, LogOut,
   Bell, Search
 } from 'lucide-react'
 
@@ -18,9 +18,11 @@ const navGroups = [
     ]
   },
   {
-    label: 'Другое',
+    label: 'Система',
     items: [
-      { to: '/settings', label: 'Настройки', icon: Settings },
+      { to: '/branches', label: 'Филиалы', icon: Building2 },
+      { to: '/directions', label: 'Направления', icon: Tag },
+      { to: '/settings/organization', label: 'Настройки организации', icon: Settings },
     ]
   }
 ]
