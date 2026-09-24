@@ -16,6 +16,7 @@ from datetime import date, timedelta
 from django.contrib.auth import get_user_model
 from django.test import TestCase, tag
 from django.urls import reverse
+from rest_framework.test import APIClient
 
 from domains.money.payments.models import Payment
 from domains.money.subscriptions.models import Subscription
@@ -187,4 +188,25 @@ class ChildListPerformanceTests(TestCase):
             RESPONSE_BUDGET_SECONDS,
             f"фильтр филиал+направление+долг ответил за {elapsed:.3f}с на "
             f"{CHILD_COUNT} детей (бюджет теста {RESPONSE_BUDGET_SECONDS}с)",
+        )
+
+    def test_api_table_responds_within_budget(self):
+        # Тот же бюджет для таблицы frontend2 (TRU-81): активный филиал
+        # из шапки + сортировка + фильтр по долгу.
+        api = APIClient()
+        api.force_authenticate(self.owner)
+        start = time.perf_counter()
+        response = api.get(
+            reverse("clients:child-table"),
+            {"page_size": 50, "sort": "age", "dir": "desc", "has_debt": "1"},
+            HTTP_X_BRANCH_ID=str(self.branch.id),
+        )
+        elapsed = time.perf_counter() - start
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLess(
+            elapsed,
+            RESPONSE_BUDGET_SECONDS,
+            f"API таблицы детей ответило за {elapsed:.3f}с на {CHILD_COUNT} детей "
+            f"(бюджет теста {RESPONSE_BUDGET_SECONDS}с)",
         )

@@ -12,6 +12,8 @@ router.register("child-contacts", views.ChildContactViewSet, basename="child-con
 
 urlpatterns = [
     path("search/", views.global_search_api, name="global-search"),
+    # До router.urls: иначе "table" поймает children/<pk>/.
+    path("children/table/", views.child_table_api, name="child-table"),
     # Импорт (для frontend2) — тот же жизненный цикл, что у веб-экранов.
     path("children/import/preview/", import_api_views.import_preview, name="import-preview"),
     path("children/import/confirm/", import_api_views.import_confirm, name="import-confirm"),

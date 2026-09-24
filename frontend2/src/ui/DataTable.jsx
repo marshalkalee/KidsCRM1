@@ -8,6 +8,9 @@ import { cn } from './cn'
  *
  * columns: [{ key, header, render?(row), sortable?, align?, className?,
  *             primary?  — главная колонка: заголовок карточки на телефоне,
+ *             mobileAside? — на телефоне справа от заголовка (например статус),
+ *             mobileRender?(row) — своя отрисовка для карточки; null — поле
+ *               в карточке не показывается (пустой долг и т.п.),
  *             hideOnMobile? }]
  * sort: { key, dir: 'asc'|'desc' } + onSortChange(next) — сортировка на сервере.
  * pagination: { page, pageSize, total } + onPageChange(page).
@@ -17,7 +20,9 @@ export function DataTable({
   sort, onSortChange, pagination, onPageChange, onRowClick, empty,
 }) {
   const primary = columns.find(c => c.primary) || columns[0]
-  const secondary = columns.filter(c => c !== primary && !c.hideOnMobile)
+  const aside = columns.find(c => c.mobileAside)
+  const secondary = columns.filter(c => c !== primary && c !== aside && !c.hideOnMobile)
+  const mobileCell = (col, row) => (col.mobileRender ? col.mobileRender(row) : cell(col, row))
   const cell = (col, row) => (col.render ? col.render(row) : (row[col.key] ?? '—'))
 
   function toggleSort(col) {
@@ -94,14 +99,21 @@ export function DataTable({
               onClick={onRowClick ? () => onRowClick(row) : undefined}
               className={cn('px-4 py-3.5', onRowClick && 'cursor-pointer active:bg-surface-muted')}
             >
-              <div className="font-semibold text-ink">{cell(primary, row)}</div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 font-semibold text-ink">{cell(primary, row)}</div>
+                {aside && <div className="shrink-0">{cell(aside, row)}</div>}
+              </div>
               <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px]">
-                {secondary.map(col => (
-                  <div key={col.key} className="min-w-0">
-                    <dt className="text-ink-subtle">{col.header}</dt>
-                    <dd className="truncate text-ink">{cell(col, row)}</dd>
-                  </div>
-                ))}
+                {secondary.map(col => {
+                  const value = mobileCell(col, row)
+                  if (value === null) return null
+                  return (
+                    <div key={col.key} className="min-w-0">
+                      <dt className="text-ink-subtle">{col.header}</dt>
+                      <dd className="truncate text-ink">{value}</dd>
+                    </div>
+                  )
+                })}
               </dl>
             </li>
           ))}

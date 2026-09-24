@@ -18,7 +18,7 @@ function authHeaders() {
 
 const statusColors = {
   active: { bg: '#F0FDF4', color: '#16A34A', label: 'Активен' },
-  frozen: { bg: '#EFF6FF', color: '#2563EB', label: 'Заморожен' },
+  paused: { bg: '#FFF7E6', color: '#B7791F', label: 'Приостановлен' },
   left:   { bg: '#F9FAFB', color: '#6B7280', label: 'Ушёл' },
 }
 
