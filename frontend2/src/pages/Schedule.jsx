@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, MapPin, User as UserIcon, Plus, CalendarDays, Rows3 } from 'lucide-react'
+import {
+  ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, MapPin, User as UserIcon,
+  Plus, CalendarDays, Rows3, AlertTriangle,
+} from 'lucide-react'
 import {
   startOfWeek, addDays, toISODate, isToday, formatWeekRange, formatDayLabel,
   localDatePart, localTimePart, timeToMinutes, WEEKDAY_LABELS,
 } from '../utils/calendarDate'
 import {
   fetchLessons, fetchGroups, fetchRooms, fetchTeachers, fetchBranches, fetchDirections, fetchMe,
-  createLesson, cancelLesson, rescheduleLesson,
+  fetchConflicts, createLesson, cancelLesson, rescheduleLesson,
 } from '../api/lessons'
 
 const ACCENT = '#C97B6E'
@@ -104,6 +107,8 @@ export default function Schedule() {
   const [selectedLesson, setSelectedLesson] = useState(null)
   const [createSlot, setCreateSlot] = useState(null)
   const [mobileDay, setMobileDay] = useState(0)
+  const [conflictsCount, setConflictsCount] = useState(0)
+  const [showConflicts, setShowConflicts] = useState(false)
   const isMobile = useIsMobile()
   const navigate = useNavigate()
   const isTeacher = me?.role === 'teacher'
@@ -137,6 +142,12 @@ export default function Schedule() {
   }, [view, date, weekStart, filters])
 
   useEffect(() => { load() }, [load])
+
+  const loadConflicts = useCallback(() => {
+    fetchConflicts(filters).then(list => setConflictsCount(list.length)).catch(console.error)
+  }, [filters])
+
+  useEffect(() => { loadConflicts() }, [loadConflicts])
 
   useEffect(() => {
     fetchMe().then(setMe).catch(console.error)
@@ -200,7 +211,7 @@ export default function Schedule() {
   function goPrev() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? -7 : -1))) }
   function goNext() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? 7 : 1))) }
 
-  function handleActionDone() { setSelectedLesson(null); setCreateSlot(null); load() }
+  function handleActionDone() { setSelectedLesson(null); setCreateSlot(null); load(); loadConflicts() }
 
   const headerLabel = view === 'week' ? formatWeekRange(weekStart) : formatDayLabel(new Date(date))
 
@@ -214,6 +225,8 @@ export default function Schedule() {
         onNext={goNext}
         onToday={goToday}
         loading={loading}
+        conflictsCount={conflictsCount}
+        onShowConflicts={() => setShowConflicts(true)}
       />
 
       <FiltersBar
@@ -290,11 +303,19 @@ export default function Schedule() {
           onDone={handleActionDone}
         />
       )}
+
+      {showConflicts && (
+        <ConflictsModal
+          filters={filters}
+          onClose={() => setShowConflicts(false)}
+          onSelectLesson={lesson => { setShowConflicts(false); setSelectedLesson(lesson) }}
+        />
+      )}
     </div>
   )
 }
 
-function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, loading }) {
+function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, loading, conflictsCount, onShowConflicts }) {
   return (
     <div style={{
       background: '#fff', borderRadius: 16, padding: '16px 24px', marginBottom: 16,
@@ -306,6 +327,18 @@ function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, lo
         <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{label}{loading ? ' · загрузка…' : ''}</p>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {conflictsCount > 0 && (
+          <button
+            onClick={onShowConflicts}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 36,
+              border: '1.5px solid #FDE68A', borderRadius: 10, background: '#FFFBEB', color: '#B45309',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope',
+            }}
+          >
+            <AlertTriangle size={14} /> Конфликты ({conflictsCount})
+          </button>
+        )}
         <div style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2 }}>
           <ViewToggleBtn active={view === 'week'} onClick={() => onViewChange('week')} icon={<Rows3 size={14} />} label="Неделя" />
           <ViewToggleBtn active={view === 'day'} onClick={() => onViewChange('day')} icon={<CalendarDays size={14} />} label="День" />
@@ -480,27 +513,34 @@ function LessonChip({ lesson, style, onClick }) {
   const isCancelled = lesson.status === 'cancelled'
   const isRescheduled = lesson.status === 'rescheduled'
   const dimmed = isCancelled || isRescheduled
+  // Конфликт (TRU-46) — предупреждение, не запрет: занятие остаётся видно
+  // как обычно, просто с жёлтой рамкой/значком, а не перечёркнуто/сером.
+  const hasConflict = lesson.has_conflict && !dimmed
 
   return (
     <div
       onClick={onClick}
       style={{
         position: 'absolute', ...style,
-        background: dimmed ? '#F5F5F7' : `${color}1A`,
-        border: `1.5px ${isRescheduled ? 'dashed' : 'solid'} ${dimmed ? '#D1D5DB' : color}`,
+        background: dimmed ? '#F5F5F7' : hasConflict ? '#FFFBEB' : `${color}1A`,
+        border: `1.5px ${isRescheduled ? 'dashed' : 'solid'} ${dimmed ? '#D1D5DB' : hasConflict ? '#F59E0B' : color}`,
         borderRadius: 8, padding: '4px 8px', overflow: 'hidden', cursor: 'pointer',
         opacity: dimmed ? 0.65 : 1,
         transition: 'box-shadow 0.15s',
       }}
       onMouseEnter={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)'}
       onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
+      title={hasConflict ? 'Пересекается по залу или преподавателю с другим занятием' : undefined}
     >
-      <div style={{
-        fontSize: 11, fontWeight: 700, color: dimmed ? '#9CA3AF' : '#1A1A2E',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        textDecoration: isCancelled ? 'line-through' : 'none',
-      }}>
-        {lesson.group_name || 'Индив. занятие'}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {hasConflict && <AlertTriangle size={10} style={{ color: '#B45309', flexShrink: 0 }} />}
+        <div style={{
+          fontSize: 11, fontWeight: 700, color: dimmed ? '#9CA3AF' : '#1A1A2E',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          textDecoration: isCancelled ? 'line-through' : 'none',
+        }}>
+          {lesson.group_name || 'Индив. занятие'}
+        </div>
       </div>
       <div style={{ fontSize: 10, color: dimmed ? '#9CA3AF' : '#6B7280', whiteSpace: 'nowrap' }}>
         {localTimePart(lesson.starts_at_local)}–{localTimePart(lesson.ends_at_local)}
@@ -510,6 +550,9 @@ function LessonChip({ lesson, style, onClick }) {
         <div style={{ fontSize: 9, fontWeight: 700, color: isCancelled ? '#DC2626' : '#D97706', marginTop: 2 }}>
           {isCancelled ? 'ОТМЕНЕНО' : 'ПЕРЕНЕСЕНО'}
         </div>
+      )}
+      {hasConflict && (
+        <div style={{ fontSize: 9, fontWeight: 700, color: '#B45309', marginTop: 2 }}>КОНФЛИКТ</div>
       )}
     </div>
   )
@@ -710,14 +753,15 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
       {lessons.map(lesson => {
         const color = lesson.direction_color || DEFAULT_COLOR
         const dimmed = lesson.status === 'cancelled' || lesson.status === 'rescheduled'
+        const hasConflict = lesson.has_conflict && !dimmed
         return (
           <div
             key={lesson.id}
             onClick={() => onSelectLesson(lesson)}
             style={{
               display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
-              border: `1px solid ${dimmed ? '#E5E7EB' : color}`,
-              background: dimmed ? '#FAFAFA' : `${color}0D`,
+              border: `1px solid ${dimmed ? '#E5E7EB' : hasConflict ? '#F59E0B' : color}`,
+              background: dimmed ? '#FAFAFA' : hasConflict ? '#FFFBEB' : `${color}0D`,
               opacity: dimmed ? 0.7 : 1,
             }}
           >
@@ -725,8 +769,11 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
               {localTimePart(lesson.starts_at_local)}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', textDecoration: lesson.status === 'cancelled' ? 'line-through' : 'none' }}>
-                {lesson.group_name || 'Индив. занятие'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {hasConflict && <AlertTriangle size={11} style={{ color: '#B45309', flexShrink: 0 }} />}
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', textDecoration: lesson.status === 'cancelled' ? 'line-through' : 'none' }}>
+                  {lesson.group_name || 'Индив. занятие'}
+                </div>
               </div>
               <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
                 {showRoom && `${lesson.room_name || '—'} · `}{lesson.teacher_name || '—'}
@@ -737,10 +784,104 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
                   {STATUS_LABEL[lesson.status]}
                 </div>
               )}
+              {hasConflict && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#B45309', marginTop: 4 }}>КОНФЛИКТ ПО ЗАЛУ/ПРЕПОДАВАТЕЛЮ</div>
+              )}
             </div>
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function ConflictsModal({ filters, onClose, onSelectLesson }) {
+  const [conflicts, setConflicts] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchConflicts(filters)
+      .then(setConflicts)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [filters])
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={{ ...modalBox, maxWidth: 560, maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertTriangle size={16} style={{ color: '#B45309' }} /> Текущие конфликты
+          </h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
+        </div>
+        <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 16px' }}>
+          Занятия, которые пересекаются по залу или преподавателю — от сегодня и дальше.
+        </p>
+
+        {loading ? (
+          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка…</div>
+        ) : conflicts.length === 0 ? (
+          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Конфликтов нет</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {conflicts.map(lesson => (
+              <div
+                key={lesson.id}
+                onClick={() => onSelectLesson(lesson)}
+                style={{
+                  display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
+                  border: '1px solid #F59E0B', background: '#FFFBEB',
+                }}
+              >
+                <div style={{ minWidth: 90, fontSize: 12, fontWeight: 700, color: '#1A1A2E' }}>
+                  {localDatePart(lesson.starts_at_local).split('-').reverse().join('.')} {localTimePart(lesson.starts_at_local)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{lesson.group_name || 'Индив. занятие'}</div>
+                  <div style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
+                    {lesson.room_name || 'без зала'} · {lesson.teacher_name || 'без преподавателя'}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Список занятий, с которыми пересекается создаваемое/переносимое — общий
+// вид для CreateLessonModal и LessonDetailsModal (перенос).
+function ConflictWarning({ conflicts, onConfirm, onBack, saving }) {
+  return (
+    <div style={{ background: '#FFFBEB', border: '1.5px solid #FDE68A', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <AlertTriangle size={15} style={{ color: '#B45309', flexShrink: 0 }} />
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#92400E', fontFamily: 'Manrope' }}>
+          Пересекается с {conflicts.length === 1 ? 'занятием' : 'занятиями'} по залу или преподавателю
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+        {conflicts.map(c => (
+          <div key={c.id} style={{ fontSize: 12, color: '#92400E', fontFamily: 'Manrope' }}>
+            {c.group_name || 'Индив. занятие'} · {localTimePart(c.starts_at_local)}–{localTimePart(c.ends_at_local)}
+            {c.room_name && ` · ${c.room_name}`}{c.teacher_name && ` · ${c.teacher_name}`}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button type="button" onClick={onBack} style={secondaryBtn}>Изменить</button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={saving}
+          style={{ padding: '10px 18px', border: 'none', borderRadius: 8, background: '#D97706', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', opacity: saving ? 0.7 : 1 }}
+        >
+          {saving ? 'Сохранение…' : 'Всё равно сохранить'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -760,6 +901,7 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
   const [newTime, setNewTime] = useState(localTimePart(lesson.starts_at_local))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [conflicts, setConflicts] = useState(null)
 
   const canAct = lesson.status === 'scheduled'
   const durationMs = new Date(lesson.ends_at) - new Date(lesson.starts_at)
@@ -773,7 +915,7 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
     finally { setSaving(false) }
   }
 
-  async function handleReschedule() {
+  async function submitReschedule(extra) {
     setSaving(true); setError('')
     try {
       const startsAt = new Date(`${newDate}T${newTime}:00`)
@@ -784,11 +926,19 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
         teacher: lesson.teacher,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
+        ...extra,
       })
       onDone()
-    } catch (e) { setError(e.response?.data?.detail || 'Не удалось перенести занятие') }
-    finally { setSaving(false) }
+    } catch (e) {
+      if (e.response?.status === 409) {
+        setConflicts(e.response.data.conflicts)
+      } else {
+        setError(e.response?.data?.detail || 'Не удалось перенести занятие')
+      }
+    } finally { setSaving(false) }
   }
+
+  function handleReschedule() { submitReschedule() }
 
   return (
     <div style={modalOverlay} onClick={onClose}>
@@ -853,13 +1003,23 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
                 <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} style={inputStyle} />
               </div>
             </div>
+            {conflicts && (
+              <ConflictWarning
+                conflicts={conflicts}
+                saving={saving}
+                onBack={() => setConflicts(null)}
+                onConfirm={() => submitReschedule({ confirm_conflict: true })}
+              />
+            )}
             {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 10 }}>{error}</p>}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button style={secondaryBtn} onClick={() => setMode('view')}>Назад</button>
-              <button style={primaryBtn} disabled={saving} onClick={handleReschedule}>
-                {saving ? 'Перенос…' : 'Перенести'}
-              </button>
-            </div>
+            {!conflicts && (
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button style={secondaryBtn} onClick={() => setMode('view')}>Назад</button>
+                <button style={primaryBtn} disabled={saving} onClick={handleReschedule}>
+                  {saving ? 'Перенос…' : 'Перенести'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -884,24 +1044,39 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
   const [durationMin, setDurationMin] = useState(60)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [conflicts, setConflicts] = useState(null)
 
-  async function handleSubmit(e) {
-    e.preventDefault()
-    if (!groupId) { setError('Выберите группу'); return }
+  function buildPayload(extra) {
+    const startsAt = new Date(`${slot.date}T${time}:00`)
+    const endsAt = new Date(startsAt.getTime() + durationMin * 60000)
+    return {
+      group: groupId,
+      room: roomId || null,
+      teacher: teacherId || null,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      ...extra,
+    }
+  }
+
+  async function submit(payload) {
     setSaving(true); setError('')
     try {
-      const startsAt = new Date(`${slot.date}T${time}:00`)
-      const endsAt = new Date(startsAt.getTime() + durationMin * 60000)
-      await createLesson({
-        group: groupId,
-        room: roomId || null,
-        teacher: teacherId || null,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
-      })
+      await createLesson(payload)
       onDone()
-    } catch (e2) { setError(e2.response?.data?.detail || 'Не удалось создать занятие') }
-    finally { setSaving(false) }
+    } catch (e2) {
+      if (e2.response?.status === 409) {
+        setConflicts(e2.response.data.conflicts)
+      } else {
+        setError(e2.response?.data?.detail || 'Не удалось создать занятие')
+      }
+    } finally { setSaving(false) }
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault()
+    if (!groupId) { setError('Выберите группу'); return }
+    submit(buildPayload())
   }
 
   return (
@@ -959,13 +1134,23 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
               />
             </div>
           </div>
+          {conflicts && (
+            <ConflictWarning
+              conflicts={conflicts}
+              saving={saving}
+              onBack={() => setConflicts(null)}
+              onConfirm={() => submit(buildPayload({ confirm_conflict: true }))}
+            />
+          )}
           {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 12 }}>{error}</p>}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button type="button" style={secondaryBtn} onClick={onClose}>Отмена</button>
-            <button type="submit" style={primaryBtn} disabled={saving}>
-              {saving ? 'Создание…' : (<><Plus size={14} />Создать</>)}
-            </button>
-          </div>
+          {!conflicts && (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" style={secondaryBtn} onClick={onClose}>Отмена</button>
+              <button type="submit" style={primaryBtn} disabled={saving}>
+                {saving ? 'Создание…' : (<><Plus size={14} />Создать</>)}
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>

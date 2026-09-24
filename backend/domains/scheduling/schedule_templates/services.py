@@ -2,6 +2,7 @@ import datetime
 
 from django.utils import timezone
 
+from domains.scheduling.schedule.conflicts import find_conflicting_lessons
 from domains.scheduling.schedule.models import Lesson
 
 
@@ -16,6 +17,11 @@ def generate_lessons_from_template(template, *, dry_run=False):
 
     created = []
     skipped = 0
+    # Конфликты (TRU-46, ТЗ п. 4.2) не блокируют генерацию — попадают сюда
+    # для лога задачи и остаются видны в /api/v1/schedule/conflicts/ как
+    # обычные сохранённые занятия. Только для реальной генерации — сухой
+    # прогон ничего не сохраняет, проверять там нечего.
+    conflicts = []
 
     for slot in template.slots.all():
         current = start_from
@@ -52,6 +58,26 @@ def generate_lessons_from_template(template, *, dry_run=False):
                             is_modified=False,
                         )
                         created.append(lesson)
+
+                        conflicting = find_conflicting_lessons(
+                            template.organization,
+                            starts_at=start_dt,
+                            ends_at=end_dt,
+                            room=slot.room,
+                            teacher=slot.teacher,
+                            exclude_id=lesson.id,
+                        )
+                        conflicting_ids = list(conflicting.values_list("id", flat=True))
+                        if conflicting_ids:
+                            conflicts.append(
+                                {
+                                    "lesson_id": lesson.id,
+                                    "date": lesson_date,
+                                    "room": str(slot.room) if slot.room else None,
+                                    "teacher": str(slot.teacher) if slot.teacher else None,
+                                    "conflicts_with": conflicting_ids,
+                                }
+                            )
                     else:
                         created.append(
                             {
@@ -64,7 +90,7 @@ def generate_lessons_from_template(template, *, dry_run=False):
                         )
             current += datetime.timedelta(days=1)
 
-    return {"created": created, "skipped": skipped}
+    return {"created": created, "skipped": skipped, "conflicts": conflicts}
 
 
 def get_affected_future_lessons(template):

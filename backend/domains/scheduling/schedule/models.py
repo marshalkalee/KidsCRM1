@@ -93,6 +93,9 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
         indexes = [
             models.Index(fields=["group", "starts_at"]),
             models.Index(fields=["teacher", "starts_at"]),
+            # Для conflicts.find_conflicting_lessons (TRU-46) — запрос по
+            # залу + пересечению времени должен идти по индексу, не сканом.
+            models.Index(fields=["room", "starts_at"]),
             models.Index(fields=["organization", "starts_at"]),
             models.Index(fields=["organization", "status", "starts_at"]),
         ]

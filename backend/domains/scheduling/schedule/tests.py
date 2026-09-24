@@ -322,3 +322,260 @@ class LessonCalendarFiltersTest(APITestCase):
         response = client.get("/api/v1/schedule/", {**self.params, "teacher": self.teacher_b.id})
         ids = {row["id"] for row in response.data}
         self.assertEqual(ids, {str(self.lesson_b.id)})
+
+
+class LessonConflictTest(APITestCase):
+    """
+    Детект конфликтов (TRU-46, ТЗ п. 4.2): один зал/преподаватель с
+    пересекающимся временем — предупреждение (409 + список конфликтов),
+    не запрет — confirm_conflict: true сохраняет всё равно.
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.branch = Branch.objects.create(organization=self.org, name="Главный")
+        self.room = Room.objects.create(branch=self.branch, name="Зал 1")
+        self.other_room = Room.objects.create(branch=self.branch, name="Зал 2")
+        self.direction = Direction.objects.create(organization=self.org, name="Балет")
+        self.group = Group.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            direction=self.direction,
+            name="Балет",
+            capacity=10,
+        )
+        self.teacher = User.objects.create_user(
+            phone="+77040000001",
+            full_name="Айгуль",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.other_teacher = User.objects.create_user(
+            phone="+77040000002",
+            full_name="Бекзат",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.owner = User.objects.create_user(
+            phone="+77040000003",
+            full_name="Владелец",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        self.day = datetime.datetime(2026, 9, 24, 18, 0, tzinfo=tz)
+        self.existing = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            teacher=self.teacher,
+            starts_at=self.day,
+            ends_at=self.day + datetime.timedelta(hours=1),
+        )
+
+    def _overlapping_payload(self, **overrides):
+        payload = {
+            "group": str(self.group.id),
+            "room": str(self.room.id),
+            "starts_at": self.day.isoformat(),
+            "ends_at": (self.day + datetime.timedelta(hours=1)).isoformat(),
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_create_with_room_conflict_returns_409_without_confirm(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post("/api/v1/schedule/", self._overlapping_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertTrue(response.data["conflict"])
+        conflict_ids = {c["id"] for c in response.data["conflicts"]}
+        self.assertEqual(conflict_ids, {str(self.existing.id)})
+        # Не сохранилось — предупреждение, а не тихий сейв.
+        self.assertEqual(Lesson.objects.for_tenant(self.org).count(), 1)
+
+    def test_create_with_confirm_conflict_saves_anyway(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/schedule/",
+            self._overlapping_payload(confirm_conflict=True),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Lesson.objects.for_tenant(self.org).count(), 2)
+
+    def test_teacher_conflict_in_different_rooms_still_detected(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/schedule/",
+            self._overlapping_payload(room=str(self.other_room.id), teacher=str(self.teacher.id)),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_non_overlapping_time_has_no_conflict(self):
+        client = _authenticated_client(self.owner)
+        later = self.day + datetime.timedelta(hours=2)
+
+        response = client.post(
+            "/api/v1/schedule/",
+            self._overlapping_payload(
+                starts_at=later.isoformat(),
+                ends_at=(later + datetime.timedelta(hours=1)).isoformat(),
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_cancelled_existing_lesson_does_not_block(self):
+        self.existing.transition_to(Lesson.Status.CANCELLED)
+        client = _authenticated_client(self.owner)
+
+        response = client.post("/api/v1/schedule/", self._overlapping_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_individual_lesson_without_group_counts_as_conflict(self):
+        client = _authenticated_client(self.owner)
+        payload = self._overlapping_payload()
+        del payload["group"]
+
+        response = client.post("/api/v1/schedule/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_reschedule_detects_conflict_and_confirms(self):
+        other = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            starts_at=self.day + datetime.timedelta(days=1),
+            ends_at=self.day + datetime.timedelta(days=1, hours=1),
+        )
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            f"/api/v1/schedule/{other.id}/reschedule/",
+            {
+                "group": str(self.group.id),
+                "room": str(self.room.id),
+                "starts_at": self.day.isoformat(),
+                "ends_at": (self.day + datetime.timedelta(hours=1)).isoformat(),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        other.refresh_from_db()
+        self.assertEqual(other.status, Lesson.Status.SCHEDULED)  # ещё не перенесено
+
+        response = client.post(
+            f"/api/v1/schedule/{other.id}/reschedule/",
+            {
+                "group": str(self.group.id),
+                "room": str(self.room.id),
+                "starts_at": self.day.isoformat(),
+                "ends_at": (self.day + datetime.timedelta(hours=1)).isoformat(),
+                "confirm_conflict": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        other.refresh_from_db()
+        self.assertEqual(other.status, Lesson.Status.RESCHEDULED)
+
+    def test_update_moving_lesson_into_conflict_is_blocked_without_confirm(self):
+        other = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            starts_at=self.day + datetime.timedelta(days=1),
+            ends_at=self.day + datetime.timedelta(days=1, hours=1),
+        )
+        client = _authenticated_client(self.owner)
+
+        response = client.patch(
+            f"/api/v1/schedule/{other.id}/",
+            {
+                "starts_at": self.day.isoformat(),
+                "ends_at": (self.day + datetime.timedelta(hours=1)).isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        other.refresh_from_db()
+        self.assertEqual(other.starts_at, self.day + datetime.timedelta(days=1))
+
+    def test_update_without_moving_out_of_own_slot_does_not_self_conflict(self):
+        # Изменение заметки у self.existing не должно "конфликтовать само с
+        # собой" — exclude_id обязателен при апдейте.
+        client = _authenticated_client(self.owner)
+
+        response = client.patch(
+            f"/api/v1/schedule/{self.existing.id}/", {"note": "новая заметка"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_calendar_list_marks_conflicting_lessons(self):
+        second = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            starts_at=self.day + datetime.timedelta(minutes=30),
+            ends_at=self.day + datetime.timedelta(minutes=90),
+        )
+        unrelated = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.other_room,
+            starts_at=self.day + datetime.timedelta(hours=5),
+            ends_at=self.day + datetime.timedelta(hours=6),
+        )
+        client = _authenticated_client(self.owner)
+
+        response = client.get(
+            "/api/v1/schedule/", {"date_from": "2026-09-24", "date_to": "2026-09-24"}
+        )
+
+        by_id = {row["id"]: row for row in response.data}
+        self.assertTrue(by_id[str(self.existing.id)]["has_conflict"])
+        self.assertTrue(by_id[str(second.id)]["has_conflict"])
+        self.assertEqual(
+            set(by_id[str(self.existing.id)]["conflicting_lesson_ids"]), {str(second.id)}
+        )
+        self.assertFalse(by_id[str(unrelated.id)]["has_conflict"])
+
+    def test_conflicts_endpoint_lists_only_conflicting_lessons(self):
+        second = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            starts_at=self.day + datetime.timedelta(minutes=30),
+            ends_at=self.day + datetime.timedelta(minutes=90),
+        )
+        Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.other_room,
+            starts_at=self.day + datetime.timedelta(hours=5),
+            ends_at=self.day + datetime.timedelta(hours=6),
+        )
+        client = _authenticated_client(self.owner)
+
+        response = client.get(
+            "/api/v1/schedule/conflicts/", {"date_from": "2026-09-24", "date_to": "2026-09-24"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = {row["id"] for row in response.data}
+        self.assertEqual(ids, {str(self.existing.id), str(second.id)})

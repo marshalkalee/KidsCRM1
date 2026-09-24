@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from domains.platform.core.mixins import TenantCreateMixin
 
+from .conflicts import find_conflicting_lessons
 from .models import Lesson
 
 
@@ -11,6 +12,10 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
     ends_at_local = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     rescheduled_to_id = serializers.SerializerMethodField()
+    # TRU-46: конфликт по залу/преподавателю — предупреждение, не запрет,
+    # поэтому виден прямо в календаре (не только в момент создания).
+    has_conflict = serializers.SerializerMethodField()
+    conflicting_lesson_ids = serializers.SerializerMethodField()
 
     # Поля для календаря — считаются из уже загруженных select_related/
     # prefetch_related объектов во view, доп. запросов не делают (см.
@@ -49,6 +54,8 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
             "note",
             "capacity",
             "enrolled_count",
+            "has_conflict",
+            "conflicting_lesson_ids",
             "created_at",
             "updated_at",
         ]
@@ -73,7 +80,16 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
         return obj.group.capacity if obj.group else None
 
     def get_enrolled_count(self, obj):
-        return obj.group.enrolled_count if obj.group else None
+        if not obj.group:
+            return None
+        # В LessonViewSet.get_queryset группа приходит с annotate(enrolled_count=...)
+        # (без доп. запроса на занятие). Но найденные conflicts.find_conflicting_lessons
+        # для карточки предупреждения об конфликте (TRU-46) — обычный queryset без
+        # этой аннотации; там считаем явно — это редкий путь (диалог подтверждения
+        # на 1-2 занятия), не список календаря, лишний запрос тут не критичен.
+        if hasattr(obj.group, "enrolled_count"):
+            return obj.group.enrolled_count
+        return obj.group.memberships.filter(left_at__isnull=True).count()
 
     def get_starts_at_local(self, obj):
         org = self.context["request"].organization
@@ -90,6 +106,31 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
             return str(obj.rescheduled_to.id)
         except Lesson.DoesNotExist:
             return None
+
+    def _conflicting_ids(self, obj):
+        # "conflict_map" — предпосчитанный LessonViewSet.list/conflicts на
+        # уже загруженном окне занятий (без доп. запросов, см. conflicts.py).
+        # Если его нет в контексте (retrieve/create/update одного занятия) —
+        # считаем сами одним индексированным запросом.
+        if "conflict_map" in self.context:
+            return self.context["conflict_map"].get(obj.id, set())
+        if obj.status == Lesson.Status.CANCELLED:
+            return set()
+        conflicts = find_conflicting_lessons(
+            obj.organization,
+            starts_at=obj.starts_at,
+            ends_at=obj.ends_at,
+            room=obj.room,
+            teacher=obj.teacher,
+            exclude_id=obj.id,
+        )
+        return set(conflicts.values_list("id", flat=True))
+
+    def get_has_conflict(self, obj):
+        return bool(self._conflicting_ids(obj))
+
+    def get_conflicting_lesson_ids(self, obj):
+        return [str(i) for i in self._conflicting_ids(obj)]
 
     def validate(self, attrs):
         if attrs.get("ends_at") and attrs.get("starts_at"):

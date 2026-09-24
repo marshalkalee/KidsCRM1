@@ -35,6 +35,15 @@ export function fetchMe() {
   return api.get('users/auth/me/').then(res => res.data)
 }
 
+export function fetchConflicts(filters = {}) {
+  const params = {}
+  if (filters.branch) params.branch = filters.branch
+  if (filters.room) params.room = filters.room
+  if (filters.teacher) params.teacher = filters.teacher
+  if (filters.direction) params.direction = filters.direction
+  return api.get('schedule/conflicts/', { params }).then(res => res.data.results || res.data)
+}
+
 export function createLesson(payload) {
   return api.post('schedule/', payload).then(res => res.data)
 }
