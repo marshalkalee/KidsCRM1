@@ -3,11 +3,13 @@ from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from domains.platform.core.active_branch import get_active_branch
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOfOrganization
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
-from domains.platform.core.role_permissions import can_view_phone
+from domains.platform.core.role_permissions import can_view_client_money, can_view_phone
 
 from . import search
+from .child_list import list_children
 from .models import Child, ChildContact, ParentContact
 from .serializers import ChildContactSerializer, ChildSerializer, ParentContactSerializer
 
@@ -111,3 +113,19 @@ def global_search_api(request):
         can_view_phone=can_view_phone(request.user),
     )
     return Response({"results": results})
+
+
+@api_view(["GET"])
+@permission_classes([IsStaffOfOrganization])
+def child_table_api(request):
+    """Таблица детей frontend2 (TRU-81): фильтры, сортировка и пагинация на
+    сервере — тот же сервис, что у старой веб-страницы (child_list).
+    Без ?branch= берётся активный филиал из шапки (X-Branch-Id)."""
+    params = request.query_params.dict()
+    if not params.get("branch"):
+        active_branch = get_active_branch(request)
+        if active_branch:
+            params["branch"] = str(active_branch.pk)
+    show_money = can_view_client_money(request.user)
+    rows, total = list_children(request.user.organization, params, show_money=show_money)
+    return Response({"results": rows, "count": total, "show_money": show_money})
