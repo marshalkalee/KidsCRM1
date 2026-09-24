@@ -43,8 +43,8 @@ class ChildCardTabsContractTests(TestCase):
         self.assertEqual(len(tabs), 5)
         wired = [tab for tab in tabs if tab.url_name is not None]
         stubs = [tab for tab in tabs if tab.url_name is None]
-        self.assertEqual({tab.slug for tab in wired}, {"contacts", "communications"})
-        self.assertEqual({tab.slug for tab in stubs}, {"subscriptions", "payments", "attendance"})
+        self.assertEqual({tab.slug for tab in wired}, {"contacts", "communications", "payments"})
+        self.assertEqual({tab.slug for tab in stubs}, {"subscriptions", "attendance"})
 
     def test_tabs_are_ordered(self):
         tabs = get_child_card_tabs()
