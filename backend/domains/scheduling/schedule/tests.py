@@ -8,6 +8,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from domains.people.clients.models import Child
 from domains.platform.tenants.models import Branch, Direction, Organization
@@ -147,8 +148,16 @@ class LessonCalendarApiTest(APITestCase):
                 ends_at=self.week_start + datetime.timedelta(days=i % 7, hours=i + 1),
             )
 
+    def _authenticate(self, user):
+        refresh = RefreshToken.for_user(user)
+        refresh["organization_id"] = str(user.organization_id)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
     def test_week_range_returns_calendar_fields_without_pagination(self):
-        self.client.force_authenticate(self.owner)
+        # Настоящий JWT с organization_id: TenantMiddleware берёт организацию
+        # из токена, force_authenticate его не создаёт (request.organization
+        # остался бы None, и календарь вернул бы пустой список).
+        self._authenticate(self.owner)
 
         response = self.client.get(
             "/api/v1/schedule/",
@@ -166,20 +175,25 @@ class LessonCalendarApiTest(APITestCase):
         self.assertEqual(lesson["teacher_name"], "Преподаватель")
 
     def test_query_count_does_not_grow_with_lesson_count(self):
-        self.client.force_authenticate(self.owner)
+        # Настоящий JWT с organization_id: TenantMiddleware берёт организацию
+        # из токена, force_authenticate его не создаёт (request.organization
+        # остался бы None, и календарь вернул бы пустой список).
+        self._authenticate(self.owner)
         params = {"date_from": "2026-09-21", "date_to": "2026-09-27"}
 
         with CaptureQueriesContext(connection) as small:
             self.client.get("/api/v1/schedule/", params)
 
         # Ещё занятия в том же диапазоне — число запросов не должно расти.
+        # hours=i % 12, а не i: при сдвиге до 59 часов часть занятий уезжала
+        # за date_to, и в ответе было меньше 60.
         for i in range(20, 60):
             Lesson.objects.create(
                 organization=self.org,
                 group=self.group,
                 teacher=self.teacher,
-                starts_at=self.week_start + datetime.timedelta(days=i % 7, hours=i),
-                ends_at=self.week_start + datetime.timedelta(days=i % 7, hours=i + 1),
+                starts_at=self.week_start + datetime.timedelta(days=i % 7, hours=i % 12),
+                ends_at=self.week_start + datetime.timedelta(days=i % 7, hours=i % 12 + 1),
             )
 
         with CaptureQueriesContext(connection) as large:

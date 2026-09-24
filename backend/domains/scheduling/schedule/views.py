@@ -40,7 +40,9 @@ class LessonViewSet(TenantModelViewSet):
         # без запроса на каждую строку.
         qs = (
             Lesson.objects.for_tenant(self.request.organization)
-            .select_related("room", "teacher", "schedule_slot")
+            # rescheduled_to — обратная one-to-one: без неё serializer
+            # (get_rescheduled_to_id) делал запрос на каждое занятие.
+            .select_related("room", "teacher", "schedule_slot", "rescheduled_to")
             .prefetch_related(Prefetch("group", queryset=groups_qs))
         )
 
