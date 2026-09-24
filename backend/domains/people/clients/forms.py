@@ -316,15 +316,15 @@ class ChildPhotoUploadForm(forms.Form):
 
 
 class ChildImportUploadForm(KcFormMixin, forms.Form):
-    """Загрузка Excel-файла для импорта детей (import_service.py) —
-    формат/парсинг там, здесь только проверка расширения (быстрая
-    подсказка администратору до попытки разбора, не подмена валидации
-    самого файла)."""
+    """Загрузка файла для импорта детей (.xlsx/.csv, ТЗ п. 4.1) —
+    формат/парсинг в column_mapping.py, здесь только проверка расширения
+    (быстрая подсказка администратору до попытки разбора, не подмена
+    валидации самого файла)."""
 
-    file = forms.FileField(label="Файл (.xlsx)")
+    file = forms.FileField(label="Файл (.xlsx или .csv)")
 
     def clean_file(self):
         uploaded = self.cleaned_data["file"]
-        if not uploaded.name.lower().endswith(".xlsx"):
-            raise forms.ValidationError("Ожидается файл .xlsx.")
+        if not uploaded.name.lower().endswith((".xlsx", ".csv")):
+            raise forms.ValidationError("Ожидается файл .xlsx или .csv.")
         return uploaded

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — импорт детей
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="child_import.mapping_title">Сопоставление колонок</span>
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-card">
+    <p>
+      <span data-i18n="child_import.mapping_total_rows">Строк в файле:</span>
+      <strong>{{ total_rows }}</strong>
+    </p>
+    {% if meta.encoding %}
+      <p>
+        <span data-i18n="child_import.mapping_csv_detected">Определено для CSV: кодировка</span>
+        {{ meta.encoding }}, <span data-i18n="child_import.mapping_csv_delimiter">разделитель</span> «{{ meta.delimiter }}»
+      </p>
+    {% endif %}
+    {% if missing_required %}
+      <div class="kc-field__error">
+        <span data-i18n="child_import.mapping_missing_required">Не сопоставлены обязательные поля:</span>
+        {{ missing_required|join:", " }}
+      </div>
+    {% endif %}
+    <form method="post"
+          action="{% url 'clients_web:child-import-mapping-confirm' %}">
+      {% csrf_token %}
+      <input type="hidden" name="headers_json" value="{{ headers_json }}" />
+      <input type="hidden" name="raw_rows_json" value="{{ raw_rows_json }}" />
+      <input type="hidden" name="meta_json" value="{{ meta_json }}" />
+      <table class="kc-table kc-table--cards">
+        <thead>
+          <tr>
+            <th data-i18n="child_import.th_system_field">Поле системы</th>
+            <th data-i18n="child_import.th_file_column">Колонка файла</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for key, label, required, current in mapping_rows %}
+            <tr>
+              <td data-label="Поле системы">
+                {{ label }}
+                {% if required %}<span class="kc-text-danger">*</span>{% endif %}
+              </td>
+              <td data-label="Колонка файла">
+                <select class="kc-form-input" name="mapping_{{ key }}">
+                  <option value="" data-i18n="child_import.mapping_not_mapped">— не сопоставлено —</option>
+                  {% for header in headers %}
+                    <option value="{{ header }}" {% if header == current %}selected{% endif %}>{{ header }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit"
+              class="kc-btn kc-btn--primary"
+              data-i18n="child_import.mapping_continue">Продолжить</button>
+    </form>
+  </div>
+  <div class="kc-card">
+    <strong data-i18n="child_import.mapping_preview_title">Первые строки файла (для проверки)</strong>
+    <div class="kc-scroll-x">
+      <table class="kc-table">
+        <thead>
+          <tr>
+            {% for header in headers %}<th>{{ header }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row_number, values in preview_rows %}
+            <tr>
+              {% for value in values %}<td>{{ value|default:"—" }}</td>{% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock content %}

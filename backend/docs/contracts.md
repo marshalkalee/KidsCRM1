@@ -25,12 +25,16 @@
 
 ## Сводка
 
-| # | Контракт | Владелец | Потребитель(и) | Код |
-|---|---|---|---|---|
-| 1 | Расписание → Деньги: `SubscriptionService.consume` | Bekzat | Дарья (посещаемость) | [`backend/apps/subscriptions/services.py`](../apps/subscriptions/services.py) |
-| 2 | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` | Анель | импорт Excel, конвертация заявки | [`backend/apps/clients/services.py`](../apps/clients/services.py) |
-| 3 | Расписание → всем: `LessonService.enroll` | Дарья | отработки (M1), пробные (M2) | [`backend/apps/schedule/services.py`](../apps/schedule/services.py) |
-| 4 | Деньги → всем: `AuditLog.record` | Bekzat | все домены | [`backend/apps/core/audit.py`](../apps/core/audit.py) |
+
+| #   | Контракт                                                                       | Владелец | Потребитель(и)                   | Код                                                                                                                                         |
+| --- | ------------------------------------------------------------------------------ | -------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Расписание → Деньги: `SubscriptionService.consume`                             | Bekzat   | Дарья (посещаемость)             | `backend/domains/money/subscriptions/subscription_service.py`(../domains/money/subscriptions/subscription_[service.py](http://service.py)) |
+| 2   | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` | Анель    | импорт Excel, конвертация заявки | [`backend/domains/people/clients/services.py`](../domains/people/clients/services.py)                                                       |
+| 3   | Расписание → всем: `LessonService.enroll`                                      | Дарья    | отработки (M1), пробные (M2)     | `[backend/apps/schedule/services.py](../apps/schedule/services.py)`                                                                         |
+| 4   | Деньги → всем: `AuditLog.record`                                               | Bekzat   | все домены                       | `[backend/apps/core/audit.py](../apps/core/audit.py)`                                                                                       |
+
+
+
 
 ## 1. Расписание → Деньги
 
