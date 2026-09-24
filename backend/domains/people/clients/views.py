@@ -1,17 +1,31 @@
+from decimal import Decimal
+
 from django.db.models import Q
-from rest_framework import viewsets
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework import mixins, viewsets
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 
+from domains.money.subscriptions.debt import debt_by_child
+from domains.money.subscriptions.models import Subscription
 from domains.platform.core.active_branch import get_active_branch
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOfOrganization
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
-from domains.platform.core.role_permissions import can_view_client_money, can_view_phone
+from domains.platform.core.role_permissions import (
+    can_manage_children,
+    can_view_client_money,
+    can_view_phone,
+)
+from domains.scheduling.groups.models import GroupMembership
 
 from . import search
 from .child_list import list_children
-from .models import Child, ChildContact, ParentContact
-from .serializers import ChildContactSerializer, ChildSerializer, ParentContactSerializer
+from .models import Child, ChildContact, CommunicationLog, ParentContact
+from .serializers import (
+    ChildContactSerializer,
+    ChildSerializer,
+    CommunicationLogSerializer,
+    ParentContactSerializer,
+)
 
 
 class ChildViewSet(viewsets.ModelViewSet):
@@ -37,6 +51,68 @@ class ChildViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(organization=self.request.user.organization)
+
+    @action(detail=True, methods=["get"])
+    def card(self, request, pk=None):
+        """Шапка карточки ребёнка во frontend2 (TRU-82): сам ребёнок,
+        филиалы/направления/текущие группы и — для ролей с
+        can_view_client_money — последний абонемент и долг. Одним запросом,
+        чтобы шапка не собиралась из пяти."""
+        child = self.get_object()
+        organization = request.user.organization
+        directions = list(child.directions.all().prefetch_related("branches"))
+        branches = {
+            branch.id: branch.name
+            for direction in directions
+            for branch in direction.branches.all()
+        }
+        memberships = (
+            GroupMembership.objects.for_tenant(organization)
+            .filter(child=child, left_at__isnull=True)
+            .select_related("group")
+        )
+        money = None
+        if can_view_client_money(request.user):
+            subscription = (
+                Subscription.objects.for_tenant(organization)
+                .filter(child=child)
+                .select_related("subscription_type_version")
+                .order_by("-starts_on")
+                .first()
+            )
+            debt = debt_by_child(organization, [child.id]).get(child.id, Decimal(0))
+            money = {
+                "debt": str(debt),
+                "subscription": subscription
+                and {
+                    "id": str(subscription.id),
+                    "name": subscription.subscription_type_version.name,
+                    "starts_on": subscription.starts_on,
+                    "ends_on": subscription.ends_on,
+                    "status": subscription.status,
+                    "sessions_remaining": subscription.sessions_remaining_cache,
+                },
+            }
+        return Response(
+            {
+                "child": self.get_serializer(child).data,
+                "directions": [{"id": str(d.id), "name": d.name} for d in directions],
+                "branches": [
+                    {"id": str(branch_id), "name": name}
+                    for branch_id, name in sorted(branches.items(), key=lambda item: item[1])
+                ],
+                "groups": [
+                    {"id": str(m.group_id), "name": m.group.name, "joined_at": m.joined_at}
+                    for m in memberships
+                ],
+                "money": money,
+                "permissions": {
+                    "can_edit": can_manage_children(request.user),
+                    "can_manage_contacts": can_manage_children(request.user),
+                    "can_log_communications": can_manage_children(request.user),
+                },
+            }
+        )
 
 
 class ParentContactViewSet(viewsets.ModelViewSet):
@@ -90,8 +166,10 @@ class ChildContactViewSet(viewsets.ModelViewSet):
         return [IsStaffOfOrganization()]
 
     def get_queryset(self):
-        qs = ChildContact.objects.for_tenant(self.request.user.organization).select_related(
-            "child", "parent_contact"
+        qs = (
+            ChildContact.objects.for_tenant(self.request.user.organization)
+            .select_related("child", "parent_contact")
+            .prefetch_related("parent_contact__phones")
         )
         child_id = self.request.query_params.get("child")
         if child_id:
@@ -100,6 +178,42 @@ class ChildContactViewSet(viewsets.ModelViewSet):
         if parent_contact_id:
             qs = qs.filter(parent_contact_id=parent_contact_id)
         return qs
+
+
+class CommunicationLogViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    Вкладка «Коммуникации» (ТЗ п. 4.1): ?child=<id> — история ребёнка,
+    ?parent_contact=<id> — сводная история родителя. Append-only: нет
+    update/delete. Читают все сотрудники, пишут владелец/управляющий/
+    администратор (как COMMUNICATION_LOG_MANAGE_ROLES в вебе).
+    """
+
+    serializer_class = CommunicationLogSerializer
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [IsOwnerOrManagerOrAdmin()]
+        return [IsStaffOfOrganization()]
+
+    def get_queryset(self):
+        qs = CommunicationLog.objects.for_tenant(self.request.user.organization).select_related(
+            "author", "child", "parent_contact"
+        )
+        child_id = self.request.query_params.get("child")
+        if child_id:
+            qs = qs.filter(child_id=child_id)
+        parent_contact_id = self.request.query_params.get("parent_contact")
+        if parent_contact_id:
+            qs = qs.filter(parent_contact_id=parent_contact_id)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(author=self.request.user)
 
 
 @api_view(["GET"])

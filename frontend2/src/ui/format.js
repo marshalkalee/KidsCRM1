@@ -29,3 +29,22 @@ export const CHILD_STATUSES = {
   paused: { label: 'Приостановлен', tone: 'warning' },
   left: { label: 'Ушёл', tone: 'neutral' },
 }
+
+const dateTimeFormat = new Intl.DateTimeFormat('ru-RU', {
+  day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+})
+
+/** '2026-09-24T10:15:00+05:00' → '24 сент. 2026 г., 10:15' (время браузера). */
+export function formatDateTime(iso) {
+  if (!iso) return '—'
+  return dateTimeFormat.format(new Date(iso))
+}
+
+// Роли контакта — как ChildContact.Role на бэке.
+export const CONTACT_ROLES = {
+  mother: 'Мама',
+  father: 'Папа',
+  guardian: 'Опекун',
+  grandmother: 'Бабушка',
+  other: 'Другое',
+}

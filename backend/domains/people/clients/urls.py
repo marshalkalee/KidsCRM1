@@ -9,6 +9,7 @@ router = DefaultRouter()
 router.register("children", views.ChildViewSet, basename="child")
 router.register("parents", views.ParentContactViewSet, basename="parent-contact")
 router.register("child-contacts", views.ChildContactViewSet, basename="child-contact")
+router.register("communications", views.CommunicationLogViewSet, basename="communication-log")
 
 urlpatterns = [
     path("search/", views.global_search_api, name="global-search"),

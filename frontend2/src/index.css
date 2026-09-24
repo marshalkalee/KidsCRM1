@@ -66,10 +66,3 @@
     outline-offset: 2px;
   }
 }
-
-/* react-datepicker растягиваем на всю ширину поля. */
-.react-datepicker-wrapper,
-.react-datepicker__input-container {
-  width: 100%;
-  display: block;
-}

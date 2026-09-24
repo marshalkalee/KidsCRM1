@@ -32,6 +32,7 @@
 | 3   | Расписание → всем: `LessonService.enroll` | Дарья | отработки (M1), пробные (M2) | `backend/apps/schedule/services.py` (путь уточнит Дарья) |
 | 4   | Деньги → всем: `AuditLog.record` | Bekzat | все домены | [`backend/domains/platform/core/audit.py`](../domains/platform/core/audit.py) |
 | 5   | Деньги → всем: `debt_for_child` / `debt_for_parent` / `debt_for_subscription` | Bekzat | Анель (список детей, карточка родителя), экраны «Задолженности», вкладка «Оплаты» | [`backend/domains/money/payments/debt.py`](../domains/money/payments/debt.py) |
+| 6   | Люди → всем: вкладки карточки ребёнка (frontend2) | Анель | Bekzat («Абонементы», «Оплаты»), Дарья («Посещения») | [`frontend2/src/components/child-card/tabs.js`](../../frontend2/src/components/child-card/tabs.js) |
 
 
 
@@ -144,3 +145,36 @@ MVP №4 — сверка с бухгалтерией). Долг считает�
 > долг» и карточка родителя). Они расходятся в учёте переплаты, в долге
 > родителя (только где он плательщик или по всем детям) и в статусе
 > оплаты. До закрытия TRU-73 цифры на экранах могут различаться.
+
+## 6. Люди → всем (вкладки карточки ребёнка, frontend2)
+
+Карточка ребёнка во frontend2 (`pages/ChildDetail.jsx`, TRU-82) не знает
+про вкладки других доменов — они подключаются одной строкой в реестре
+`frontend2/src/components/child-card/tabs.js`. Это замена
+`child_card_tabs.py` старого Django-веба (он живёт до TRU-88).
+
+```js
+{ key: 'subscriptions', label: 'Абонементы', order: 30,
+  component: SubscriptionsTab, permission: 'can_view_client_money' }
+```
+
+- `key` — в адресе карточки (`?tab=subscriptions`), не меняется после выпуска.
+- `component` — React-компонент вкладки своего домена (лежит у себя,
+  например `frontend2/src/components/money/SubscriptionsTab.jsx`).
+  Получает props:
+  - `child` — ребёнок (как `ChildSerializer`);
+  - `card` — весь ответ `GET /api/v1/clients/children/<id>/card/`
+    (`branches`, `directions`, `groups`, `money`, `permissions`);
+  - `permissions` — `card.permissions` (`can_edit`, `can_manage_contacts`,
+    `can_log_communications`);
+  - `onCountChange(n)` — необязательно, число в ярлыке вкладки.
+- Данные вкладка грузит сама из API своего домена; права на действия
+  внутри — забота вкладки, API проверяет их повторно.
+- `permission` — флаг из `/users/auth/me/` → `permissions`; без него
+  вкладку не видно. `component: null` — заглушка «скоро появится».
+- Верстка — из общих компонентов `frontend2/src/ui` (см. `frontend2/README.md`).
+
+Сейчас заглушки: «Абонементы», «Оплаты» (Bekzat, TRU-70), «Посещения»
+(Дарья, TRU-55).
+
+Владелец: Анель. Потребители: Bekzat, Дарья.
