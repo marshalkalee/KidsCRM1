@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Branch, Organization, Room
+from .models import Branch, Direction, Organization, Room
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -52,3 +52,10 @@ class RoomSerializer(serializers.ModelSerializer):
             # branch должен быть выбираем только среди филиалов той же
             # организации — иначе можно было бы создать зал в чужом филиале.
             self.fields["branch"].queryset = Branch.objects.for_tenant(request.user.organization)
+
+
+class DirectionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Direction
+        fields = ["id", "name", "color", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
