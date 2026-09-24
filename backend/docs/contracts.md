@@ -31,6 +31,8 @@
 | 2   | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` / `link_parent` | Анель | импорт Excel, конвертация заявки | [`backend/domains/people/clients/services.py`](../domains/people/clients/services.py) |
 | 3   | Расписание → всем: `LessonService.enroll` | Дарья | отработки (M1), пробные (M2) | `backend/apps/schedule/services.py` (путь уточнит Дарья) |
 | 4   | Деньги → всем: `AuditLog.record` | Bekzat | все домены | [`backend/domains/platform/core/audit.py`](../domains/platform/core/audit.py) |
+| 5   | Деньги → всем: `debt_for_child` / `debt_for_parent` / `debt_for_subscription` | Bekzat | Анель (список детей, карточка родителя), экраны «Задолженности», вкладка «Оплаты» | [`backend/domains/money/payments/debt.py`](../domains/money/payments/debt.py) |
+
 
 
 ## 1. Расписание → Деньги
@@ -121,3 +123,24 @@ AuditLog.record(actor, action: str, entity: AuditEntity, before: dict | None, af
 интерфейс принадлежит домену «Деньги».
 
 Владелец: **Bekzat**. Потребители: все домены.
+
+## 5. Деньги → всем (задолженность)
+
+debt_for_subscription(subscription) -> Decimal
+debt_for_child(child) -> Decimal
+debt_for_parent(parent_contact) -> Decimal
+
+Единственный источник правды для долга (ТЗ п. 3.1, критерий приёмки
+MVP №4 — сверка с бухгалтерией). Долг считается от Subscription.price
+(со скидкой), не от цены типа. Отрицательное значение — переплата,
+не ошибка.
+
+Владелец: Bekzat. Потребитель: Анель.
+
+> **Внимание (TRU-73):** в коде пока два расчёта долга —
+> `domains/money/payments/debt.py` (этот контракт) и
+> `domains/money/subscriptions/debt.py` (`debtor_child_ids`,
+> `debt_by_child` — сейчас ими пользуются список детей, фильтр «есть
+> долг» и карточка родителя). Они расходятся в учёте переплаты, в долге
+> родителя (только где он плательщик или по всем детям) и в статусе
+> оплаты. До закрытия TRU-73 цифры на экранах могут различаться.

@@ -6,7 +6,7 @@
 
 from django.db import transaction
 
-from domains.money.payments.models import Payment
+from domains.money.payments.services import record_payment
 from domains.platform.core.audit import AuditLog
 
 from .models import Subscription, SubscriptionLedgerEntry
@@ -20,6 +20,7 @@ def sell_subscription(
     child,
     subscription_type_version,
     direction,
+    branch,
     starts_on,
     ends_on,
     discount_amount=0,
@@ -38,6 +39,7 @@ def sell_subscription(
         child=child,
         subscription_type_version=subscription_type_version,
         direction=direction,
+        branch=branch,
         starts_on=starts_on,
         ends_on=ends_on,
         status=Subscription.Status.ACTIVE,
@@ -55,12 +57,11 @@ def sell_subscription(
             delta=subscription_type_version.quota_sessions,
         )
 
-    payment = Payment.objects.create(
-        organization=child.organization,
+    payment = record_payment(
+        actor=actor,
         subscription=subscription,
         amount=paid_amount,
         method=payment_method,
-        received_by=actor,
         comment=comment,
     )
 
