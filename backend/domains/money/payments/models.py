@@ -15,6 +15,17 @@ class Payment(TenantModel):
         CARD = "card", "Карта"
         OTHER = "other", "Другое"
 
+    class Provider(models.TextChoices):
+        MANUAL = "manual", "Ручная фиксация"
+        # Будущие значения (например KASPI_GATEWAY) добавляются без миграции
+        # модели — TextChoices не меняет схему таблицы (ТЗ п. 4.4, ADR-003).
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ожидает"
+        CONFIRMED = "confirmed", "Подтверждён"
+        REJECTED = "rejected", "Отклонён"
+        REFUNDED = "refunded", "Возвращён"
+
     subscription = models.ForeignKey(
         "subscriptions.Subscription",
         on_delete=models.PROTECT,
@@ -22,8 +33,15 @@ class Payment(TenantModel):
     )
     amount = models.DecimalField(max_digits=12, decimal_places=0)
     method = models.CharField(max_length=20, choices=Method.choices)
+    provider = models.CharField(max_length=20, choices=Provider.choices, default=Provider.MANUAL)
+    provider_transaction_id = models.CharField(max_length=255, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    provider_raw_response = models.JSONField(default=dict, blank=True)
     received_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="payments_received"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="payments_received",
     )
     comment = models.CharField(max_length=255, blank=True)
     cancelled_reason = models.CharField(max_length=255, blank=True)
@@ -31,6 +49,12 @@ class Payment(TenantModel):
 
     class Meta:
         ordering = ["-paid_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider_transaction_id"],
+                name="payment_unique_provider_transaction_id",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.subscription} — {self.amount} ({self.get_method_display()})"

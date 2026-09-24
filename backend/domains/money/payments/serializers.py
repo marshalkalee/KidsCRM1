@@ -11,10 +11,24 @@ class PaymentSerializer(serializers.ModelSerializer):
             "subscription",
             "amount",
             "method",
+            "provider",
+            "provider_transaction_id",
+            "status",
+            "confirmed_at",
             "received_by",
             "comment",
             "paid_at",
             "cancelled_reason",
             "deleted_at",
         ]
-        read_only_fields = ["id", "received_by", "paid_at", "cancelled_reason", "deleted_at"]
+        read_only_fields = [
+            "id",
+            "provider",
+            "provider_transaction_id",
+            "status",
+            "confirmed_at",
+            "received_by",
+            "paid_at",
+            "cancelled_reason",
+            "deleted_at",
+        ]
