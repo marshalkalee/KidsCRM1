@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, MapPin, User as UserIcon,
-  Plus, CalendarDays, Rows3, AlertTriangle,
+  Plus, CalendarDays, Rows3, AlertTriangle, Ban,
 } from 'lucide-react'
 import {
   startOfWeek, addDays, toISODate, isToday, formatWeekRange, formatDayLabel,
@@ -10,7 +10,7 @@ import {
 } from '../utils/calendarDate'
 import {
   fetchLessons, fetchGroups, fetchRooms, fetchTeachers, fetchBranches, fetchDirections, fetchMe,
-  fetchConflicts, searchChildren, createLesson, cancelLesson, rescheduleLesson,
+  fetchConflicts, searchChildren, createLesson, cancelLesson, bulkCancelLessons, rescheduleLesson,
 } from '../api/lessons'
 
 const ACCENT = '#C97B6E'
@@ -26,6 +26,14 @@ const STATUS_LABEL = {
   cancelled: 'Отменено',
   rescheduled: 'Перенесено',
 }
+
+// TRU-48: справочник причин отмены — тот же список, что Lesson.CancelReasonCategory на бэке.
+const CANCEL_REASON_OPTIONS = [
+  ['teacher_illness', 'Болезнь преподавателя'],
+  ['holiday', 'Праздник'],
+  ['room_incident', 'Авария в помещении'],
+  ['other', 'Другое'],
+]
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < MOBILE_BREAKPOINT)
@@ -119,9 +127,11 @@ export default function Schedule() {
   const [mobileDay, setMobileDay] = useState(0)
   const [conflictsCount, setConflictsCount] = useState(0)
   const [showConflicts, setShowConflicts] = useState(false)
+  const [showBulkCancel, setShowBulkCancel] = useState(false)
   const isMobile = useIsMobile()
   const navigate = useNavigate()
   const isTeacher = me?.role === 'teacher'
+  const isOwnerOrManager = me?.role === 'owner' || me?.role === 'manager'
 
   const weekStart = useMemo(() => startOfWeek(new Date(date)), [date])
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
@@ -237,6 +247,8 @@ export default function Schedule() {
         loading={loading}
         conflictsCount={conflictsCount}
         onShowConflicts={() => setShowConflicts(true)}
+        showBulkCancelBtn={isOwnerOrManager}
+        onBulkCancel={() => setShowBulkCancel(true)}
       />
 
       <FiltersBar
@@ -321,11 +333,19 @@ export default function Schedule() {
           onSelectLesson={lesson => { setShowConflicts(false); setSelectedLesson(lesson) }}
         />
       )}
+
+      {showBulkCancel && (
+        <BulkCancelModal
+          filters={filters}
+          onClose={() => setShowBulkCancel(false)}
+          onDone={() => { setShowBulkCancel(false); load(); loadConflicts() }}
+        />
+      )}
     </div>
   )
 }
 
-function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, loading, conflictsCount, onShowConflicts }) {
+function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, loading, conflictsCount, onShowConflicts, showBulkCancelBtn, onBulkCancel }) {
   return (
     <div style={{
       background: '#fff', borderRadius: 16, padding: '16px 24px', marginBottom: 16,
@@ -347,6 +367,19 @@ function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, lo
             }}
           >
             <AlertTriangle size={14} /> Конфликты ({conflictsCount})
+          </button>
+        )}
+        {showBulkCancelBtn && (
+          <button
+            onClick={onBulkCancel}
+            title="Массовая отмена занятий за период"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 36,
+              border: '1px solid #F0F0F5', borderRadius: 10, background: '#fff', color: '#9CA3AF',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'Manrope',
+            }}
+          >
+            <Ban size={13} /> Отменить за период
           </button>
         )}
         <div style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2 }}>
@@ -812,6 +845,98 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
   )
 }
 
+function BulkCancelModal({ filters, onClose, onDone }) {
+  const today = toISODate(new Date())
+  const [dateFrom, setDateFrom] = useState(today)
+  const [dateTo, setDateTo] = useState(today)
+  const [reasonCategory, setReasonCategory] = useState('')
+  const [comment, setComment] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState(null)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!reasonCategory) { setError('Выберите причину отмены'); return }
+    if (reasonCategory === 'other' && !comment.trim()) { setError('Для причины «Другое» нужен комментарий'); return }
+    setSaving(true); setError('')
+    try {
+      const res = await bulkCancelLessons({ dateFrom, dateTo, reasonCategory, comment, filters })
+      setResult(res)
+    } catch (e2) {
+      setError(e2.response?.data?.reason_category?.[0] || e2.response?.data?.comment?.[0] || e2.response?.data?.detail || 'Не удалось отменить занятия')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Ban size={16} style={{ color: '#DC2626' }} /> Массовая отмена
+          </h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
+        </div>
+
+        {result ? (
+          <div>
+            <div style={{ background: '#F0FDF4', border: '1.5px solid #BBF7D0', borderRadius: 10, padding: '14px 16px', marginBottom: 16, fontSize: 13, color: '#166534', fontFamily: 'Manrope' }}>
+              Отменено занятий: <strong>{result.cancelled_count}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button style={primaryBtn} onClick={onDone}>Готово</button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 14px', lineHeight: 1.6 }}>
+              Отменит все запланированные занятия за период — например, на каникулы или праздники.
+              Уже отменённые, проведённые или перенесённые занятия не тронет.
+            </p>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Дата с *</label>
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} required style={inputStyle} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Дата по *</label>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} required style={inputStyle} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Причина отмены *</label>
+              <Dropdown
+                variant="field"
+                width="100%"
+                value={reasonCategory}
+                onChange={setReasonCategory}
+                placeholder="Выберите причину"
+                options={[['', 'Выберите причину'], ...CANCEL_REASON_OPTIONS]}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Комментарий{reasonCategory === 'other' ? ' *' : ''}</label>
+              <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' }} placeholder={reasonCategory === 'other' ? 'Обязательно для причины «Другое»' : 'Необязательно'} />
+            </div>
+            {(filters.branch || filters.room || filters.teacher || filters.direction) && (
+              <p style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 14 }}>
+                Учитываются текущие фильтры календаря (филиал/зал/преподаватель/направление).
+              </p>
+            )}
+            {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 12 }}>{error}</p>}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" style={secondaryBtn} onClick={onClose}>Отмена</button>
+              <button type="submit" disabled={saving} style={{ padding: '10px 18px', border: 'none', borderRadius: 8, background: '#DC2626', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', opacity: saving ? 0.7 : 1 }}>
+                {saving ? 'Отмена…' : 'Отменить занятия'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ConflictsModal({ filters, onClose, onSelectLesson }) {
   const [conflicts, setConflicts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -913,7 +1038,8 @@ const labelStyle = { display: 'block', fontSize: 11, fontWeight: 600, color: '#9
 
 function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
   const [mode, setMode] = useState('view') // view | cancel | reschedule
-  const [reason, setReason] = useState('')
+  const [reasonCategory, setReasonCategory] = useState('')
+  const [comment, setComment] = useState('')
   const [newDate, setNewDate] = useState(localDatePart(lesson.starts_at_local))
   const [newTime, setNewTime] = useState(localTimePart(lesson.starts_at_local))
   const [saving, setSaving] = useState(false)
@@ -921,14 +1047,19 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
   const [conflicts, setConflicts] = useState(null)
 
   const canAct = lesson.status === 'scheduled'
+  // Отменённое/перенесённое занятие не проводилось — отмечать посещаемость
+  // там нечего (перенесённое — это уже новое занятие в другом времени).
+  const canMarkAttendance = lesson.status === 'scheduled' || lesson.status === 'completed'
   const durationMs = new Date(lesson.ends_at) - new Date(lesson.starts_at)
 
   async function handleCancel() {
+    if (!reasonCategory) { setError('Выберите причину отмены'); return }
+    if (reasonCategory === 'other' && !comment.trim()) { setError('Для причины «Другое» нужен комментарий'); return }
     setSaving(true); setError('')
     try {
-      await cancelLesson(lesson.id, reason)
+      await cancelLesson(lesson.id, { reasonCategory, comment })
       onDone()
-    } catch (e) { setError(e.response?.data?.detail || 'Не удалось отменить занятие') }
+    } catch (e) { setError(e.response?.data?.reason_category?.[0] || e.response?.data?.comment?.[0] || e.response?.data?.detail || 'Не удалось отменить занятие') }
     finally { setSaving(false) }
   }
 
@@ -988,14 +1119,22 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
               {lesson.is_individual && (
                 <InfoRow icon={<Users size={14} />} text={lesson.individual_children_names?.length ? lesson.individual_children_names.join(', ') : 'дети не указаны'} />
               )}
-              {lesson.status === 'cancelled' && lesson.cancel_reason && (
+              {lesson.status === 'cancelled' && lesson.cancel_reason_category_display && (
                 <div style={{ fontSize: 12, color: '#DC2626', background: '#FEF2F2', borderRadius: 8, padding: '8px 10px' }}>
-                  Причина отмены: {lesson.cancel_reason}
+                  Причина отмены: {lesson.cancel_reason_category_display}
+                  {lesson.cancel_reason && ` — ${lesson.cancel_reason}`}
                 </div>
               )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <button style={primaryBtn} onClick={() => onAttendance(lesson.id)}>Отметить посещаемость</button>
+              {!canMarkAttendance && !canAct && (
+                <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', margin: '4px 0' }}>
+                  {lesson.status === 'rescheduled' ? 'Занятие перенесено.' : 'Занятие отменено.'}
+                </p>
+              )}
+              {canMarkAttendance && (
+                <button style={primaryBtn} onClick={() => onAttendance(lesson.id)}>Отметить посещаемость</button>
+              )}
               {canAct && (
                 <>
                   <button style={secondaryBtn} onClick={() => setMode('reschedule')}>Перенести</button>
@@ -1008,8 +1147,19 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
 
         {mode === 'cancel' && (
           <div>
-            <label style={labelStyle}>Причина отмены</label>
-            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} style={{ ...inputStyle, marginBottom: 14, resize: 'vertical' }} placeholder="Необязательно" />
+            <label style={labelStyle}>Причина отмены *</label>
+            <div style={{ marginBottom: 14 }}>
+              <Dropdown
+                variant="field"
+                width="100%"
+                value={reasonCategory}
+                onChange={setReasonCategory}
+                placeholder="Выберите причину"
+                options={[['', 'Выберите причину'], ...CANCEL_REASON_OPTIONS]}
+              />
+            </div>
+            <label style={labelStyle}>Комментарий{reasonCategory === 'other' ? ' *' : ''}</label>
+            <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} style={{ ...inputStyle, marginBottom: 14, resize: 'vertical' }} placeholder={reasonCategory === 'other' ? 'Обязательно для причины «Другое»' : 'Необязательно'} />
             {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 10 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button style={secondaryBtn} onClick={() => setMode('view')}>Назад</button>

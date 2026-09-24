@@ -13,6 +13,10 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
     ends_at_local = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     rescheduled_to_id = serializers.SerializerMethodField()
+    # TRU-48: причина отмены — справочник + комментарий.
+    cancel_reason_category_display = serializers.CharField(
+        source="get_cancel_reason_category_display", read_only=True
+    )
     # TRU-46: конфликт по залу/преподавателю — предупреждение, не запрет,
     # поэтому виден прямо в календаре (не только в момент создания).
     has_conflict = serializers.SerializerMethodField()
@@ -58,6 +62,8 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
             "rescheduled_from",
             "rescheduled_to_id",
             "is_modified",
+            "cancel_reason_category",
+            "cancel_reason_category_display",
             "cancel_reason",
             "note",
             "capacity",

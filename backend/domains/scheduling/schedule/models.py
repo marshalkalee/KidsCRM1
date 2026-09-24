@@ -93,7 +93,24 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
             "Такие занятия не пересоздаются при смене шаблона."
         ),
     )
-    cancel_reason = models.TextField(_("Причина отмены"), blank=True)
+
+    class CancelReasonCategory(models.TextChoices):
+        TEACHER_ILLNESS = "teacher_illness", _("Болезнь преподавателя")
+        HOLIDAY = "holiday", _("Праздник")
+        ROOM_INCIDENT = "room_incident", _("Авария в помещении")
+        OTHER = "other", _("Другое")
+
+    # TRU-48: справочник причин отмены — обязателен при отмене (проверяется
+    # во view/сериализаторе, не здесь, т.к. пустое значение допустимо для
+    # всех остальных статусов). cancel_reason остаётся свободным
+    # комментарием — обязателен только когда category=OTHER.
+    cancel_reason_category = models.CharField(
+        _("Причина отмены (категория)"),
+        max_length=32,
+        choices=CancelReasonCategory.choices,
+        blank=True,
+    )
+    cancel_reason = models.TextField(_("Причина отмены (комментарий)"), blank=True)
     note = models.TextField(_("Примечание"), blank=True)
 
     class Meta:
@@ -149,3 +166,47 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
         new_lesson.rescheduled_from = self
         new_lesson.save(update_fields=["rescheduled_from", "updated_at"])
         return new_lesson
+
+    def cancel(self, *, actor, category: str, comment: str = ""):
+        """Отмена с обязательной причиной (TRU-48, ТЗ п. 4.2/4.3).
+
+        Занятие отменил центр — списание с абонемента не производится ни
+        при каких условиях; если оно уже было списано (отмена задним
+        числом — занятие в прошлом, посещаемость уже отмечена), откатываем
+        его для каждого участника. SubscriptionService.revert() идемпотентен:
+        если списания не было (обычный случай — занятие ещё в будущем),
+        просто ничего не делает.
+
+        Пишет запись в аудит-лог: кто отменил, когда, с какой причиной.
+        """
+        from domains.money.subscriptions.subscription_service import SubscriptionService
+        from domains.platform.core.audit import AuditLog
+
+        before = {
+            "status": self.status,
+            "cancel_reason_category": self.cancel_reason_category,
+            "cancel_reason": self.cancel_reason,
+        }
+
+        self.transition_to(self.Status.CANCELLED)
+        self.cancel_reason_category = category
+        self.cancel_reason = comment
+        self.is_modified = True
+        self.save(
+            update_fields=["cancel_reason_category", "cancel_reason", "is_modified", "updated_at"]
+        )
+
+        for child in self.participants():
+            SubscriptionService.revert(child_id=child.id, lesson_id=self.id)
+
+        AuditLog.record(
+            actor=actor,
+            action=AuditLog.Action.CANCEL,
+            entity=self,
+            before=before,
+            after={
+                "status": self.status,
+                "cancel_reason_category": self.cancel_reason_category,
+                "cancel_reason": self.cancel_reason,
+            },
+        )

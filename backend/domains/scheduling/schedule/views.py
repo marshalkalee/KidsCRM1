@@ -2,6 +2,7 @@ from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from rest_framework import filters, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
@@ -22,6 +23,23 @@ def _is_confirmed(request):
     return value in (True, "true", "1", 1)
 
 
+def _cancel_reason_from_request(request):
+    """TRU-48: отмена без причины из справочника невозможна на уровне API
+    (критерий приёмки). category — обязателен всегда; comment — обязателен
+    только для category=OTHER (для остальных категорий сама категория уже
+    достаточно информативна)."""
+    category = request.data.get("reason_category", "")
+    comment = request.data.get("comment", "")
+    valid = {value for value, _ in Lesson.CancelReasonCategory.choices}
+    if category not in valid:
+        raise DRFValidationError(
+            {"reason_category": f"Укажите причину отмены — одну из: {', '.join(sorted(valid))}."}
+        )
+    if category == Lesson.CancelReasonCategory.OTHER and not comment.strip():
+        raise DRFValidationError({"comment": "Для причины «Другое» нужен комментарий."})
+    return category, comment
+
+
 class LessonViewSet(TenantModelViewSet):
     serializer_class = LessonSerializer
     filter_backends = [filters.OrderingFilter]
@@ -33,7 +51,7 @@ class LessonViewSet(TenantModelViewSet):
     pagination_class = None
 
     def get_permissions(self):
-        if self.action in ["create", "update", "partial_update", "destroy"]:
+        if self.action in ["create", "update", "partial_update", "destroy", "bulk_cancel"]:
             return [IsOwnerOrManager()]
         return [IsStaffOfOrganization()]
 
@@ -184,15 +202,64 @@ class LessonViewSet(TenantModelViewSet):
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         lesson = self.get_object()
-        reason = request.data.get("reason", "")
         try:
-            lesson.transition_to(Lesson.Status.CANCELLED)
-            lesson.cancel_reason = reason
-            lesson.is_modified = True
-            lesson.save(update_fields=["cancel_reason", "is_modified", "updated_at"])
+            category, comment = _cancel_reason_from_request(request)
+        except DRFValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            lesson.cancel(actor=request.user, category=category, comment=comment)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(LessonSerializer(lesson, context={"request": request}).data)
+
+    @action(detail=False, methods=["post"])
+    def bulk_cancel(self, request):
+        """
+        Массовая отмена за период (ТЗ п. 4.2) — каникулы/праздники, пока
+        нет отдельного календаря исключений. Отменяет только запланированные
+        занятия (уже отменённые/проведённые/перенесённые не трогает) в
+        [date_from, date_to] включительно; необязательные branch/room/
+        teacher/group/direction сужают охват — например, отменить занятия
+        только одного преподавателя (заболел), а не весь филиал.
+        """
+        date_from = request.data.get("date_from")
+        date_to = request.data.get("date_to")
+        if not date_from or not date_to:
+            return Response(
+                {"detail": "date_from и date_to обязательны."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            category, comment = _cancel_reason_from_request(request)
+        except DRFValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = self.get_queryset().filter(
+            starts_at__date__gte=date_from,
+            starts_at__date__lte=date_to,
+            status=Lesson.Status.SCHEDULED,
+        )
+        branch_id = request.data.get("branch")
+        if branch_id:
+            qs = qs.filter(Q(group__branch_id=branch_id) | Q(room__branch_id=branch_id))
+        direction_id = request.data.get("direction")
+        if direction_id:
+            qs = qs.filter(group__direction_id=direction_id)
+        for field in ("room", "teacher", "group"):
+            value = request.data.get(field)
+            if value:
+                qs = qs.filter(**{f"{field}_id": value})
+
+        lessons = list(qs)
+        for lesson in lessons:
+            lesson.cancel(actor=request.user, category=category, comment=comment)
+
+        return Response(
+            {
+                "cancelled_count": len(lessons),
+                "lesson_ids": [str(lesson.id) for lesson in lessons],
+            }
+        )
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):

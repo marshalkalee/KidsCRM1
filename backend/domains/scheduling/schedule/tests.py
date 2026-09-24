@@ -10,7 +10,16 @@ from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from domains.money.subscriptions.models import (
+    LessonConsumption,
+    Subscription,
+    SubscriptionLedgerEntry,
+)
+from domains.money.subscriptions.subscription_service import SubscriptionService
+from domains.money.subscriptions.subscription_types import create_type
+from domains.money.subscriptions.subscriptions import add_ledger_entry
 from domains.people.clients.models import Child
+from domains.platform.core.audit import AuditLog
 from domains.platform.tenants.models import Branch, Direction, Organization, Room
 from domains.scheduling.groups.models import Group, GroupMembership
 from domains.scheduling.schedule.models import Lesson
@@ -840,3 +849,335 @@ class IndividualLessonTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         new_lesson = Lesson.objects.get(pk=response.data["id"])
         self.assertEqual(list(new_lesson.individual_children.all()), [self.child])
+
+
+class CancelWithReasonTest(APITestCase):
+    """
+    Отмена занятия с причиной (TRU-48, ТЗ п. 4.2/4.3): причина из
+    справочника обязательна на уровне API; отменённое занятие остаётся
+    видно в календаре; действие пишется в аудит-лог; отмена задним числом
+    откатывает уже произведённые списания с абонементов.
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.branch = Branch.objects.create(organization=self.org, name="Главный")
+        self.room = Room.objects.create(branch=self.branch, name="Зал 1")
+        self.direction = Direction.objects.create(organization=self.org, name="Балет")
+        self.group = Group.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            direction=self.direction,
+            name="Балет",
+            capacity=10,
+        )
+        self.teacher = User.objects.create_user(
+            phone="+77060000001",
+            full_name="Айгуль",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.owner = User.objects.create_user(
+            phone="+77060000002",
+            full_name="Владелец",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.child = Child.objects.create(
+            organization=self.org,
+            full_name="Балерина Иванова",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 8),
+            gender=Child.Gender.FEMALE,
+        )
+        GroupMembership.objects.create(
+            organization=self.org,
+            group=self.group,
+            child=self.child,
+            joined_at=datetime.date.today() - datetime.timedelta(days=60),
+        )
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        self.day = datetime.datetime(2026, 9, 24, 18, 0, tzinfo=tz)
+        self.lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            teacher=self.teacher,
+            starts_at=self.day,
+            ends_at=self.day + datetime.timedelta(hours=1),
+        )
+
+    def test_cancel_without_reason_category_is_rejected(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(f"/api/v1/schedule/{self.lesson.id}/cancel/", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("reason_category", response.data)
+        self.lesson.refresh_from_db()
+        self.assertEqual(self.lesson.status, Lesson.Status.SCHEDULED)
+
+    def test_cancel_with_unknown_category_is_rejected(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            f"/api/v1/schedule/{self.lesson.id}/cancel/",
+            {"reason_category": "bad_weather"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_cancel_with_other_category_requires_comment(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            f"/api/v1/schedule/{self.lesson.id}/cancel/",
+            {"reason_category": "other"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("comment", response.data)
+
+    def test_cancel_with_valid_category_succeeds(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            f"/api/v1/schedule/{self.lesson.id}/cancel/",
+            {"reason_category": "holiday"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["status"], "cancelled")
+        self.assertEqual(response.data["cancel_reason_category"], "holiday")
+        self.lesson.refresh_from_db()
+        self.assertEqual(self.lesson.status, Lesson.Status.CANCELLED)
+        self.assertTrue(self.lesson.is_modified)
+
+    def test_cancelled_lesson_remains_visible_in_calendar(self):
+        client = _authenticated_client(self.owner)
+        client.post(
+            f"/api/v1/schedule/{self.lesson.id}/cancel/",
+            {"reason_category": "holiday"},
+            format="json",
+        )
+
+        response = client.get(
+            "/api/v1/schedule/", {"date_from": "2026-09-24", "date_to": "2026-09-24"}
+        )
+
+        ids = {row["id"]: row for row in response.data}
+        self.assertIn(str(self.lesson.id), ids)
+        self.assertEqual(ids[str(self.lesson.id)]["status"], "cancelled")
+
+    def test_audit_log_entry_recorded_on_cancel(self):
+        client = _authenticated_client(self.owner)
+
+        client.post(
+            f"/api/v1/schedule/{self.lesson.id}/cancel/",
+            {"reason_category": "teacher_illness", "comment": "Айгуль заболела"},
+            format="json",
+        )
+
+        entry = AuditLog.objects.get(object_id=self.lesson.id)
+        self.assertEqual(entry.actor, self.owner)
+        self.assertEqual(entry.action, AuditLog.Action.CANCEL)
+        self.assertEqual(entry.before["status"], "scheduled")
+        self.assertEqual(entry.after["status"], "cancelled")
+        self.assertEqual(entry.after["cancel_reason_category"], "teacher_illness")
+
+    def test_retroactive_cancel_reverts_subscription_consumption(self):
+        subscription_type = create_type(
+            self.org,
+            name="8 занятий",
+            price=25000,
+            quota_sessions=8,
+            duration_days=30,
+            directions=[self.direction],
+        )
+        subscription = Subscription.objects.create(
+            organization=self.org,
+            child=self.child,
+            subscription_type_version=subscription_type.versions.latest(),
+            direction=self.direction,
+            starts_on=datetime.date.today(),
+            ends_on=datetime.date.today() + datetime.timedelta(days=30),
+            list_price=25000,
+            price=25000,
+        )
+        add_ledger_entry(subscription, kind=SubscriptionLedgerEntry.Kind.INITIAL_GRANT, delta=8)
+        # Занятие уже провели и списали (в прошлом), а отменяют только сейчас
+        # — отмена задним числом.
+        SubscriptionService.consume(self.child.id, self.lesson.id, self.direction.id)
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.sessions_remaining_cache, 7)
+
+        client = _authenticated_client(self.owner)
+        response = client.post(
+            f"/api/v1/schedule/{self.lesson.id}/cancel/",
+            {"reason_category": "room_incident"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.sessions_remaining_cache, 8)
+        consumption = LessonConsumption.objects.get(child=self.child, lesson_id=self.lesson.id)
+        self.assertIsNotNone(consumption.reverted_at)
+
+    def test_cancel_without_prior_consumption_does_not_error(self):
+        # Обычный случай — занятие в будущем, посещаемость ещё не отмечена,
+        # списания не было. revert() должен молча ничего не делать.
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            f"/api/v1/schedule/{self.lesson.id}/cancel/",
+            {"reason_category": "holiday"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertFalse(LessonConsumption.objects.filter(lesson_id=self.lesson.id).exists())
+
+
+class BulkCancelTest(APITestCase):
+    """Массовая отмена за период (TRU-48) — каникулы/праздники."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.branch = Branch.objects.create(organization=self.org, name="Главный")
+        self.room = Room.objects.create(branch=self.branch, name="Зал 1")
+        self.other_room = Room.objects.create(branch=self.branch, name="Зал 2")
+        self.direction = Direction.objects.create(organization=self.org, name="Балет")
+        self.group = Group.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            direction=self.direction,
+            name="Балет",
+            capacity=10,
+        )
+        self.teacher = User.objects.create_user(
+            phone="+77060000003",
+            full_name="Айгуль",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.owner = User.objects.create_user(
+            phone="+77060000004",
+            full_name="Владелец",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        base = datetime.datetime(2026, 12, 30, 18, 0, tzinfo=tz)
+        self.in_range_room1 = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            starts_at=base,
+            ends_at=base + datetime.timedelta(hours=1),
+        )
+        self.in_range_room2 = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.other_room,
+            starts_at=base + datetime.timedelta(days=1),
+            ends_at=base + datetime.timedelta(days=1, hours=1),
+        )
+        self.out_of_range = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            starts_at=base + datetime.timedelta(days=10),
+            ends_at=base + datetime.timedelta(days=10, hours=1),
+        )
+        already_cancelled_start = base + datetime.timedelta(hours=3)
+        self.already_cancelled = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            starts_at=already_cancelled_start,
+            ends_at=already_cancelled_start + datetime.timedelta(hours=1),
+            status=Lesson.Status.CANCELLED,
+        )
+
+    def test_bulk_cancel_requires_date_range(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/schedule/bulk_cancel/", {"reason_category": "holiday"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_bulk_cancel_requires_reason(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/schedule/bulk_cancel/",
+            {"date_from": "2026-12-30", "date_to": "2027-01-05"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_bulk_cancel_cancels_only_scheduled_lessons_in_range(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/schedule/bulk_cancel/",
+            {"date_from": "2026-12-30", "date_to": "2027-01-05", "reason_category": "holiday"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["cancelled_count"], 2)
+        cancelled_ids = set(response.data["lesson_ids"])
+        self.assertEqual(cancelled_ids, {str(self.in_range_room1.id), str(self.in_range_room2.id)})
+
+        self.in_range_room1.refresh_from_db()
+        self.in_range_room2.refresh_from_db()
+        self.out_of_range.refresh_from_db()
+        self.assertEqual(self.in_range_room1.status, Lesson.Status.CANCELLED)
+        self.assertEqual(self.in_range_room1.cancel_reason_category, "holiday")
+        self.assertEqual(self.in_range_room2.status, Lesson.Status.CANCELLED)
+        self.assertEqual(self.out_of_range.status, Lesson.Status.SCHEDULED)
+
+    def test_bulk_cancel_respects_room_filter(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/schedule/bulk_cancel/",
+            {
+                "date_from": "2026-12-30",
+                "date_to": "2027-01-05",
+                "reason_category": "room_incident",
+                "room": str(self.room.id),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["cancelled_count"], 1)
+        self.in_range_room1.refresh_from_db()
+        self.in_range_room2.refresh_from_db()
+        self.assertEqual(self.in_range_room1.status, Lesson.Status.CANCELLED)
+        self.assertEqual(self.in_range_room2.status, Lesson.Status.SCHEDULED)
+
+    def test_bulk_cancel_forbidden_for_teacher(self):
+        client = _authenticated_client(self.teacher)
+
+        response = client.post(
+            "/api/v1/schedule/bulk_cancel/",
+            {"date_from": "2026-12-30", "date_to": "2027-01-05", "reason_category": "holiday"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.in_range_room1.refresh_from_db()
+        self.assertEqual(self.in_range_room1.status, Lesson.Status.SCHEDULED)

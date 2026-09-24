@@ -54,8 +54,24 @@ export function createLesson(payload) {
   return api.post('schedule/', payload).then(res => res.data)
 }
 
-export function cancelLesson(id, reason) {
-  return api.post(`schedule/${id}/cancel/`, { reason }).then(res => res.data)
+export function cancelLesson(id, { reasonCategory, comment }) {
+  return api
+    .post(`schedule/${id}/cancel/`, { reason_category: reasonCategory, comment })
+    .then(res => res.data)
+}
+
+export function bulkCancelLessons({ dateFrom, dateTo, reasonCategory, comment, filters = {} }) {
+  const payload = {
+    date_from: dateFrom,
+    date_to: dateTo,
+    reason_category: reasonCategory,
+    comment,
+  }
+  if (filters.branch) payload.branch = filters.branch
+  if (filters.room) payload.room = filters.room
+  if (filters.teacher) payload.teacher = filters.teacher
+  if (filters.direction) payload.direction = filters.direction
+  return api.post('schedule/bulk_cancel/', payload).then(res => res.data)
 }
 
 export function rescheduleLesson(id, payload) {
