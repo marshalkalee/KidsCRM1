@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — настройки организации
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="org_settings.title">Настройки организации</span>
+{% endblock page_title %}
+{% block content %}
+  <form method="post" class="kc-org-settings-form">
+    {% csrf_token %}
+    {% include "tenants/_organization_settings_fields.html" %}
+    <button type="submit"
+            class="kc-btn kc-btn--primary"
+            data-i18n="org_settings.save">Сохранить</button>
+  </form>
+{% endblock content %}

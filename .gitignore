@@ -1,0 +1,23 @@
+# Backend (Python/Django)
+backend/.venv/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.env
+backend/db.sqlite3
+backend/staticfiles/
+backend/.ruff_cache/
+backend/media/
+backend/.coverage
+backend/htmlcov/
+# Автогенерируется build_i18n_bundle.py из backend/i18n_src/ — не коммитим.
+backend/static/site/js/i18n-bundle.js
+
+# Staging — реальные дампы БД, не для репозитория
+backend/.env.staging
+infra/backups/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

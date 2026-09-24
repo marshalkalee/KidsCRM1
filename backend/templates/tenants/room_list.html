@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — залы
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="room_list.title">Залы</span> — {{ branch.name }}
+{% endblock page_title %}
+{% block content %}
+  <a href="{% url 'tenants_web:branch-list' %}" class="kc-back-link">
+    <svg viewBox="0 0 24 24">
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+    <span data-i18n="room_list.back_to_branches">Все филиалы</span>
+  </a>
+  <div id="js-rooms-table"></div>
+  {% if kc_permissions.can_manage_branches %}
+    <button type="button"
+            id="js-create-room"
+            class="kc-btn kc-btn--accent kc-fab">
+      <svg viewBox="0 0 24 24">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+      </svg>
+      <span data-i18n="room_list.create">Создать зал</span>
+    </button>
+  {% endif %}
+  {% for room in rooms %}
+    <form method="post"
+          action="{% url 'tenants_web:room-delete' branch.pk room.pk %}"
+          id="js-delete-form-{{ room.id }}"
+          hidden>
+      {% csrf_token %}
+    </form>
+  {% endfor %}
+  {{ rows|json_script:"rooms-data" }}
+{% endblock content %}
+{% block extra_js %}
+  <script>
+    (function () {
+      "use strict";
+      var t = window.KidsCRM.t;
+      var canManage = {{ kc_permissions.can_manage_branches|yesno:"true,false" }};
+      var createUrl = "{% url 'tenants_web:room-create' branch.pk %}";
+      var rows = JSON.parse(document.getElementById("rooms-data").textContent);
+
+      var createBtn = document.getElementById("js-create-room");
+      if (createBtn) {
+        createBtn.addEventListener("click", function () {
+          window.KidsCRM.formModal
+            .open({ url: createUrl, title: t("room_form.title_create") })
+            .then(function (saved) {
+              if (saved) {
+                window.location.reload();
+              }
+            });
+        });
+      }
+
+      var columns = [
+        { key: "name", label: t("room_list.col_name"), sortable: true },
+        { key: "capacity", label: t("room_list.col_capacity"), sortable: true },
+      ];
+
+      var ICONS = {
+        edit: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />',
+        delete:
+          '<polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" />',
+      };
+
+      function iconButton(icon, label, extraClass, onClick) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "kc-btn kc-btn--icon " + extraClass;
+        btn.setAttribute("aria-label", label);
+        btn.title = label;
+        btn.innerHTML = '<svg viewBox="0 0 24 24">' + icon + "</svg>";
+        btn.addEventListener("click", onClick);
+        return btn;
+      }
+
+      if (canManage) {
+        columns.push({
+          key: "actions",
+          label: t("room_list.col_actions"),
+          render: function (row) {
+            var wrap = document.createElement("div");
+            wrap.appendChild(
+              iconButton(ICONS.edit, t("room_list.edit"), "kc-btn--secondary", function () {
+                window.KidsCRM.formModal
+                  .open({ url: row.edit_url, title: t("room_form.title_edit") })
+                  .then(function (saved) {
+                    if (saved) {
+                      window.location.reload();
+                    }
+                  });
+              })
+            );
+            wrap.appendChild(
+              iconButton(ICONS.delete, t("room_list.delete"), "kc-btn--danger", function () {
+                window.KidsCRM.modal
+                  .confirmDanger({
+                    title: t("room_list.confirm_delete_title"),
+                    message: row.name,
+                    confirmText: t("room_list.delete"),
+                  })
+                  .then(function (confirmed) {
+                    if (confirmed) {
+                      document.getElementById("js-delete-form-" + row.id).submit();
+                    }
+                  });
+              })
+            );
+            return wrap;
+          },
+        });
+      }
+
+      var table = window.KidsCRM.table.init("#js-rooms-table", {
+        columns: columns,
+        pageSize: 10,
+        rowKey: function (row) {
+          return row.id;
+        },
+        emptyTextKey: "room_list.empty",
+      });
+      table.setData(rows);
+    })();
+  </script>
+{% endblock extra_js %}

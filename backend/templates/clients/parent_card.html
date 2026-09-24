@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% load kc_format %}
+{% block title %}
+  KidsCRM — {{ parent.full_name }}
+{% endblock title %}
+{% block page_title %}
+  {{ parent.full_name }}
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-card kc-child-header">
+    <div class="kc-child-header__main">
+      <div class="kc-avatar kc-avatar--lg">{{ parent.full_name|kc_initials }}</div>
+      <div>
+        <h2 class="kc-child-header__name">{{ parent.full_name }}</h2>
+      </div>
+      {% if can_manage %}
+        <button type="button"
+                id="js-edit-parent"
+                class="kc-btn kc-btn--icon kc-btn--secondary kc-child-header__edit"
+                data-edit-url="{{ edit_url }}"
+                aria-label="Редактировать"
+                title="Редактировать">
+          <svg viewBox="0 0 24 24">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />
+          </svg>
+        </button>
+      {% endif %}
+    </div>
+    <dl class="kc-child-header__facts">
+      <div>
+        <dt data-i18n="parent_card.phones">Телефоны</dt>
+        <dd>
+          {% if phones %}
+            {% for phone in phones %}
+              {{ phone.number }}
+              {% if not forloop.last %},{% endif %}
+            {% endfor %}
+          {% else %}
+            —
+          {% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt data-i18n="parent_card.whatsapp">WhatsApp</dt>
+        <dd>
+          {{ whatsapp|default:"—" }}
+        </dd>
+      </div>
+      <div>
+        <dt data-i18n="parent_card.email">Email</dt>
+        <dd>
+          {{ parent.email|default:"—" }}
+        </dd>
+      </div>
+    </dl>
+    <div class="kc-quick-actions">
+      {% if call_url %}
+        <a href="{{ call_url }}" class="kc-btn kc-btn--secondary">
+          <svg viewBox="0 0 24 24">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+          </svg>
+          <span data-i18n="parent_card.call">Позвонить</span>
+        </a>
+      {% endif %}
+      {% if whatsapp_url %}
+        <a href="{{ whatsapp_url }}"
+           target="_blank"
+           rel="noopener"
+           class="kc-btn kc-btn--secondary">
+          <svg viewBox="0 0 24 24">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+          </svg>
+          <span data-i18n="parent_card.whatsapp_action">Написать в WhatsApp</span>
+        </a>
+      {% endif %}
+      {% if can_manage %}
+        <button type="button"
+                id="js-log-communication"
+                class="kc-btn kc-btn--secondary"
+                data-url="{{ communication_create_url }}">
+          <svg viewBox="0 0 24 24">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+          </svg>
+          <span data-i18n="parent_card.log_communication">Записать коммуникацию</span>
+        </button>
+      {% endif %}
+    </div>
+  </div>
+  <div class="kc-card">
+    <h3 data-i18n="parent_card.children_title">Дети</h3>
+    <div id="js-parent-children-table"></div>
+  </div>
+  <div class="kc-card" id="js-parent-communications">
+    <h3 data-i18n="parent_card.communications_title">Коммуникации</h3>
+    {% include "includes/communications_feed.html" %}
+  </div>
+  {{ communication_logs|json_script:"parent-communications-data" }}
+  {% if money %}
+    <div class="kc-card">
+      <dl class="kc-child-header__facts">
+        <div>
+          <dt data-i18n="parent_card.debt_title">Задолженность</dt>
+          <dd>
+            <strong class="{% if money.total_debt %}kc-text-danger{% endif %}">{% kc_money money.total_debt %}</strong>
+            <span class="kc-muted" data-i18n="parent_card.debt_hint">по всем детям</span>
+          </dd>
+        </div>
+      </dl>
+      <h3 data-i18n="parent_card.payments_title">История оплат</h3>
+      {% if money.payments %}
+        <table class="kc-table kc-table--cards">
+          <thead>
+            <tr>
+              <th data-i18n="parent_card.payments_col_date">Дата</th>
+              <th data-i18n="parent_card.payments_col_child">Ребёнок</th>
+              <th data-i18n="parent_card.payments_col_subscription">Абонемент</th>
+              <th data-i18n="parent_card.payments_col_amount">Сумма</th>
+              <th data-i18n="parent_card.payments_col_method">Способ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for payment in money.payments %}
+              <tr>
+                <td data-label="Дата">{% kc_datetime payment.paid_at %}</td>
+                <td data-label="Ребёнок">{{ payment.subscription.child.full_name }}</td>
+                <td data-label="Абонемент">{{ payment.subscription.subscription_type_version.name }}</td>
+                <td data-label="Сумма">{% kc_money payment.amount %}</td>
+                <td data-label="Способ">{{ payment.get_method_display }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="kc-muted" data-i18n="parent_card.payments_empty">Оплат пока нет.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+  {{ children_rows|json_script:"parent-children-data" }}
+{% endblock content %}
+{% block extra_js %}
+  <script>
+    (function () {
+      "use strict";
+      var t = window.KidsCRM.t;
+      var rows = JSON.parse(document.getElementById("parent-children-data").textContent);
+
+      var columns = [
+        {
+          key: "full_name",
+          label: t("parent_card.col_child_name"),
+          render: function (row) {
+            var link = document.createElement("a");
+            link.href = row.card_url;
+            link.textContent = row.full_name;
+            return link;
+          },
+        },
+        {
+          key: "role",
+          label: t("parent_card.col_child_role"),
+          render: function (row) {
+            return t("choices.child_contact_role." + row.role_code);
+          },
+        },
+        { key: "branch_names", label: t("parent_card.col_child_branch") },
+      ];
+
+      var table = window.KidsCRM.table.init("#js-parent-children-table", {
+        columns: columns,
+        pageSize: 10,
+        rowKey: function (row) {
+          return row.id;
+        },
+        emptyTextKey: "parent_card.children_empty",
+      });
+      table.setData(rows);
+
+      var logBtn = document.getElementById("js-log-communication");
+      if (logBtn) {
+        logBtn.addEventListener("click", function () {
+          window.KidsCRM.formModal
+            .open({ url: logBtn.dataset.url, title: t("parent_communication_form.title") })
+            .then(function (saved) {
+              if (saved) {
+                // Тост придёт сам из messages (см. base.html) на перезагрузке —
+                // она же подтягивает новую запись в сводную ленту ниже.
+                window.location.reload();
+              }
+            });
+        });
+      }
+
+      var editBtn = document.getElementById("js-edit-parent");
+      if (editBtn) {
+        editBtn.addEventListener("click", function () {
+          window.KidsCRM.formModal
+            .open({ url: editBtn.dataset.editUrl, title: t("parent_form.title_edit"), size: "lg" })
+            .then(function (saved) {
+              if (saved) {
+                window.location.reload();
+              }
+            });
+        });
+      }
+
+      window.KidsCRM.communicationsFeed.init(
+        document.getElementById("js-parent-communications"),
+        JSON.parse(document.getElementById("parent-communications-data").textContent),
+        { showChildName: true, emptyTextKey: "parent_card.communications_empty" }
+      );
+    })();
+  </script>
+{% endblock extra_js %}

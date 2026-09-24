@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — дети
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="child_list.title">Дети</span>
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-filters-toggle-row">
+    <button type="button" class="kc-btn kc-btn--secondary" data-filters-toggle>
+      <span data-i18n="child_list.filters_toggle">Фильтры</span>
+    </button>
+    <span data-filters-count></span>
+  </div>
+  <div class="kc-list-layout">
+    <aside class="kc-filters-panel" id="js-child-filters">
+      <div class="kc-filters-panel__header">
+        <strong data-i18n="child_list.filters_title">Фильтры</strong>
+        <span data-filters-count></span>
+        <button type="button"
+                class="kc-btn kc-btn--icon"
+                data-filters-close
+                aria-label="Закрыть">✕</button>
+      </div>
+      <div class="kc-filters-panel__body">
+        <label>
+          <span data-i18n="child_list.filter_branch">Филиал</span>
+          <select class="kc-form-input" data-filter="branch">
+            <option value="" data-i18n="child_list.filter_any">Все</option>
+            {% for branch in branches %}<option value="{{ branch.id }}">{{ branch.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>
+          <span data-i18n="child_list.filter_direction">Направление</span>
+          <select class="kc-form-input" data-filter="direction">
+            <option value="" data-i18n="child_list.filter_any">Все</option>
+            {% for direction in directions %}<option value="{{ direction.id }}">{{ direction.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>
+          <span data-i18n="child_list.filter_group">Группа</span>
+          <select class="kc-form-input" data-filter="group">
+            <option value="" data-i18n="child_list.filter_any">Все</option>
+            {% for group in groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>
+          <span data-i18n="child_list.filter_status">Статус</span>
+          <select class="kc-form-input"
+                  data-filter="status"
+                  data-i18n-choices="child_status">
+            <option value="" data-i18n="child_list.filter_any">Все</option>
+            {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        {% if kc_permissions.can_view_client_money %}
+          <label class="kc-filters-panel__checkbox">
+            <input type="checkbox" data-filter="has_debt" value="1" />
+            <span data-i18n="child_list.filter_has_debt">Есть задолженность</span>
+          </label>
+          <label class="kc-filters-panel__checkbox">
+            <input type="checkbox" data-filter="expiring" value="1" />
+            <span data-i18n="child_list.filter_expiring">Абонемент скоро заканчивается</span>
+          </label>
+        {% endif %}
+      </div>
+      <div class="kc-filters-panel__footer">
+        <button type="button" class="kc-btn kc-btn--secondary" data-filters-reset>
+          <span data-i18n="child_list.filters_reset">Сбросить</span>
+        </button>
+      </div>
+    </aside>
+    <div class="kc-list-layout__main">
+      <div id="js-children-table"></div>
+    </div>
+  </div>
+  {% if can_manage %}
+    <button type="button"
+            id="js-create-child"
+            class="kc-btn kc-btn--accent kc-fab">
+      <svg viewBox="0 0 24 24">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+      </svg>
+      <span data-i18n="child_list.create">Добавить ребёнка</span>
+    </button>
+  {% endif %}
+{% endblock content %}
+{% block extra_js %}
+  <script>
+    (function () {
+      "use strict";
+      var t = window.KidsCRM.t;
+      var createUrl = "{% url 'clients_web:child-create' %}";
+
+      var createBtn = document.getElementById("js-create-child");
+      if (createBtn) {
+        createBtn.addEventListener("click", function () {
+          window.KidsCRM.formModal
+            .open({ url: createUrl, title: t("child_form.title_create"), size: "lg" })
+            .then(function (saved) {
+              if (saved) {
+                window.location.reload();
+              }
+            });
+        });
+      }
+
+      var STATUS_BADGE = {
+        active: "kc-badge--green",
+        paused: "kc-badge--amber",
+        left: "kc-badge--muted",
+      };
+
+      function formatTenge(value) {
+        var amount = Math.round(Number(value) || 0);
+        var formatted = amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+        return formatted + " ₸";
+      }
+
+      var columns = [
+        {
+          key: "full_name",
+          label: t("child_list.col_name"),
+          sortable: true,
+          render: function (row) {
+            var link = document.createElement("a");
+            link.href = row.card_url;
+            link.textContent = row.full_name;
+            return link;
+          },
+        },
+        { key: "age", label: t("child_list.col_age"), sortable: true },
+        { key: "branch_names", label: t("child_list.col_branch") },
+        { key: "direction_names", label: t("child_list.col_direction") },
+        { key: "group_names", label: t("child_list.col_group") },
+        {
+          key: "status",
+          label: t("child_list.col_status"),
+          sortable: true,
+          render: function (row) {
+            var badge = document.createElement("span");
+            badge.className = "kc-badge " + (STATUS_BADGE[row.status] || "kc-badge--muted");
+            badge.textContent = t("choices.child_status." + row.status);
+            return badge;
+          },
+        },
+        {
+          key: "subscription_name",
+          label: t("child_list.col_subscription"),
+          render: function (row) {
+            return row.subscription_name || "—";
+          },
+        },
+        {
+          key: "debt",
+          label: t("child_list.col_debt"),
+          render: function (row) {
+            var amount = Number(row.debt) || 0;
+            var span = document.createElement("span");
+            if (amount > 0) {
+              span.className = "kc-text-danger";
+            }
+            span.textContent = formatTenge(amount);
+            return span;
+          },
+        },
+        {
+          key: "actions",
+          label: t("child_list.col_actions"),
+          render: function (row) {
+            var link = document.createElement("a");
+            link.href = row.card_url;
+            link.className = "kc-btn kc-btn--secondary kc-btn--sm";
+            link.textContent = t("child_list.open_card");
+            return link;
+          },
+        },
+      ];
+      // Абонемент и долг — не преподавателю (RBAC: can_view_client_money);
+      // сервер их для него и не отдаёт, здесь — чтобы не было пустых колонок.
+      var showMoney = {{ kc_permissions.can_view_client_money|yesno:"true,false" }};
+      if (!showMoney) {
+        columns = columns.filter(function (column) {
+          return column.key !== "subscription_name" && column.key !== "debt";
+        });
+      }
+
+      var table = window.KidsCRM.table.init("#js-children-table", {
+        columns: columns,
+        pageSize: 50,
+        rowKey: function (row) {
+          return row.id;
+        },
+        emptyTextKey: "child_list.empty",
+        remote: { url: "{% url 'clients_web:child-list-data' %}" },
+      });
+
+      var filtersPanel = window.KidsCRM.filtersPanel.init(
+        document.getElementById("js-child-filters"),
+        {
+          storageKey: "child_list_filters",
+          onChange: function (values) {
+            table.setRemoteParams(values);
+          },
+        }
+      );
+      table.on("load", function (data) {
+        filtersPanel.setCount(data.total);
+      });
+    })();
+  </script>
+{% endblock extra_js %}

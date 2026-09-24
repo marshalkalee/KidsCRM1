@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% load kc_format %}
+{% block title %}
+  KidsCRM — главная
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="home.title">Главная страница</span>
+{% endblock page_title %}
+{% block content %}
+  {% if onboarding_progress %}
+    <div class="kc-card">
+      <h2 data-i18n="onboarding.home_title">Настройка центра</h2>
+      <p>
+        <span data-i18n="onboarding.home_progress">Пройдено шагов:</span>
+        <strong>{{ onboarding_progress.done }} / {{ onboarding_progress.total }}</strong>
+      </p>
+      <div class="kc-onboarding-progress">
+        <div class="kc-onboarding-progress__bar"
+             style="width: {{ onboarding_progress.percent }}%"></div>
+      </div>
+      <a href="{% url 'tenants_web:onboarding' %}"
+         class="kc-btn kc-btn--primary"
+         data-i18n="onboarding.home_continue">Продолжить настройку</a>
+    </div>
+  {% endif %}
+  <p data-i18n="home.hint">Экраны доменов — в templates/&lt;домен&gt;/, статика — в static/site/.</p>
+  {% if kc_active_branch %}
+    <p>
+      <span data-i18n="home.active_branch">Активный филиал:</span>
+      <strong>{{ kc_active_branch.name }}</strong>
+    </p>
+  {% endif %}
+  <p class="kc-form-input__hint">
+    <span data-i18n="home.now_label">Сейчас по времени организации:</span>
+    {% kc_datetime now %}
+    &middot;
+    <span data-i18n="home.money_example">Пример суммы:</span>
+    {% kc_money 12500 %}
+  </p>
+  <button type="button" class="kc-btn kc-btn--primary" id="js-ping">
+    <span data-i18n="home.ping_button">Проверить jQuery</span>
+  </button>
+{% endblock content %}

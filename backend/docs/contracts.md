@@ -25,40 +25,84 @@
 
 ## Сводка
 
-| # | Контракт | Владелец | Потребитель(и) | Код |
-|---|---|---|---|---|
-| 1 | Расписание → Деньги: `SubscriptionService.consume` | Bekzat | Дарья (посещаемость) | [`backend/apps/subscriptions/services.py`](../apps/subscriptions/services.py) |
-| 2 | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` | Анель | импорт Excel, конвертация заявки | [`backend/apps/clients/services.py`](../apps/clients/services.py) |
-| 3 | Расписание → всем: `LessonService.enroll` | Дарья | отработки (M1), пробные (M2) | [`backend/apps/schedule/services.py`](../apps/schedule/services.py) |
-| 4 | Деньги → всем: `AuditLog.record` | Bekzat | все домены | [`backend/apps/core/audit.py`](../apps/core/audit.py) |
+
+| #   | Контракт                                                                       | Владелец | Потребитель(и)                   | Код                                                                                                                                         |
+| --- | ------------------------------------------------------------------------------ | -------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Расписание → Деньги: `SubscriptionService.consume`                             | Bekzat   | Дарья (посещаемость)             | `backend/domains/money/subscriptions/subscription_service.py`](../domains/money/subscriptions/subscription_[service.py](http://service.py)) |
+| 2   | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` / `link_parent` | Анель    | импорт Excel, конвертация заявки | [`backend/domains/people/clients/services.py`](../domains/people/clients/services.py)                                                       |
+| 3   | Расписание → всем: `LessonService.enroll`                                      | Дарья    | отработки (M1), пробные (M2)     | `[backend/apps/schedule/services.py](../apps/schedule/services.py)`                                                                         |
+| 4   | Деньги → всем: `AuditLog.record`                                               | Bekzat   | все домены                       | `[backend/apps/core/audit.py](../apps/core/audit.py)`                                                                                       |
+
+
+
 
 ## 1. Расписание → Деньги
 
-```python
-SubscriptionService.consume(child_id: int, lesson_id: int) -> ConsumeResult
-```
+​```python
+
+SubscriptionService.consume(child_id: UUID, lesson_id: UUID, direction_id: UUID) -> ConsumeResult
+
+​```
 
 Вызывается при отметке посещения «пришёл» — списывает занятие с активного
-абонемента ребёнка. `ConsumeResult.status` различает четыре исхода:
-`CONSUMED`, `NO_ACTIVE_SUBSCRIPTION`, `SUBSCRIPTION_EXHAUSTED`,
-`RULE_FORBIDS_CONSUMPTION`. Все четыре — ожидаемые бизнес-исходы, не
-исключения; что делать с `NO_ACTIVE_SUBSCRIPTION` (визуальный флаг + задача
-администратору, ТЗ п. 4.3) решает потребитель, а не сервис.
+
+абонемента ребёнка. `direction_id` добавлен намеренно: при нескольких
+
+активных абонементах ребёнка (разные направления) без него нет способа
+
+выбрать правильный (см. TRU-58/59, Subscription.direction). Обновлено до
+
+появления первого вызывающего кода (TRU-50) — без обратной несовместимости.
+
+`ConsumeResult.outcome` различает пять исходов: `CONSUMED`,
+
+`NO_ACTIVE_SUBSCRIPTION`, `SUBSCRIPTION_EXHAUSTED`, `SUBSCRIPTION_FROZEN`,
+
+`RULE_FORBIDS`. Все пять — ожидаемые бизнес-исходы, не исключения.
 
 Владелец: **Bekzat**. Потребитель: **Дарья**.
 
 ## 2. Люди → Деньги и Продажи
 
 ```python
-ChildService.find_duplicates(phone: str) -> list[Child]
-ChildService.create_with_parent(child_full_name, child_birth_date, parent, branch_id) -> Child
+ChildService.find_duplicates(
+    organization, *, phone=None, child_name=None, birth_date=None
+) -> list[DuplicateMatch]          # DuplicateMatch(reason, child, parent)
+
+ChildService.create_with_parent(
+    organization, *, child_data: dict, parent_data: dict, link_role: str
+) -> Child                         # parent_data={"id": ...} — существующий родитель,
+                                   # иначе {"full_name", "phones": [...]} — новый
+
+ChildService.link_parent(
+    organization, child, *, parent_data: dict, link_role: str
+) -> (ChildContact, ParentContact, created: bool)   # контакт к уже существующему ребёнку
 ```
+
+`DuplicateMatch.reason` — на каком основании совпадение
+(`DuplicateReason`): `phone` (тот же телефон и тот же ребёнок),
+`existing_parent_new_child` (телефон есть, ребёнок другой — это второй
+ребёнок в семье, не дубль: привязывать к существующему родителю),
+`name_and_birth_date` (сильное), `name_only` (слабое). Автоматического
+слияния нет — решает человек.
 
 Нужно и для импорта Excel (ТЗ п. 4.1 — дубли выявляются при импорте), и для
 конвертации заявки (ТЗ п. 5.1 — «Пришёл на пробное» создаёт или связывает
 существующего ребёнка). Поиск дублей — обязанность вызывающей стороны:
 сначала `find_duplicates`, затем осознанное решение создавать новую запись
 или связать с найденной.
+
+**Плательщик и контакты** (связь `ChildContact`, ТЗ п. 1.2.1):
+
+- У ребёнка не больше **одного** активного плательщика одновременно
+  (`is_payer`) и одного основного контакта (`is_primary_contact`);
+  назначение нового автоматически снимает флаг с предыдущего. Плательщик
+  и основной контакт могут быть разными людьми.
+- Отвязка контакта — мягкое удаление связи, не родителя и не ребёнка.
+- Оплата (`Payment`) сегодня ссылается на абонемент, а не на родителя,
+  поэтому отвязка оплаты не удаляет. Но «кто платил» по конкретной оплате
+  не хранится — для истории оплат родителя после смены плательщика нужно
+  поле `Payment.payer → ParentContact` (зона Bekzat).
 
 Владелец: **Анель**. Потребители: импорт Excel, домен «Продажи».
 

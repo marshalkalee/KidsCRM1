@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}
+  KidsCRM — настройка центра
+{% endblock title %}
+{% block page_title %}
+  <span data-i18n="onboarding.title">Настройка центра</span>
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-card">
+    {% if skipped_steps %}
+      <h2 data-i18n="onboarding.done_with_skipped_title">Почти готово</h2>
+      <p data-i18n="onboarding.done_with_skipped_hint">
+        Вы пропустили эти шаги — к ним можно вернуться сейчас или позже с главной:
+      </p>
+      <ul>
+        {% for item in skipped_steps %}
+          <li>
+            <a href="{{ item.url }}">{{ item.title }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <h2 data-i18n="onboarding.done_title">Центр настроен</h2>
+      <p data-i18n="onboarding.done_hint">Все шаги пройдены — можно работать.</p>
+    {% endif %}
+    <form method="post" action="{% url 'tenants_web:onboarding-finish' %}">
+      {% csrf_token %}
+      <button type="submit"
+              class="kc-btn kc-btn--primary"
+              data-i18n="onboarding.finish">Завершить настройку</button>
+    </form>
+  </div>
+{% endblock content %}
