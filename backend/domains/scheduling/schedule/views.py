@@ -35,15 +35,14 @@ class LessonViewSet(TenantModelViewSet):
                 distinct=True,
             )
         )
-        # Одна выборка занятий за период + одна доп. выборка на все
-        # встретившиеся группы (prefetch) — независимо от числа занятий,
-        # без запроса на каждую строку.
+        # Одна выборка занятий за период + доп. выборки на все встретившиеся
+        # группы и на обратную O2O rescheduled_to (иначе LessonSerializer.
+        # get_rescheduled_to_id бьёт в БД на каждое занятие) — независимо
+        # от числа занятий, без запроса на каждую строку.
         qs = (
             Lesson.objects.for_tenant(self.request.organization)
-            # rescheduled_to — обратная one-to-one: без неё serializer
-            # (get_rescheduled_to_id) делал запрос на каждое занятие.
-            .select_related("room", "teacher", "schedule_slot", "rescheduled_to")
-            .prefetch_related(Prefetch("group", queryset=groups_qs))
+            .select_related("room", "teacher", "schedule_slot")
+            .prefetch_related(Prefetch("group", queryset=groups_qs), "rescheduled_to")
         )
 
         # Фильтр по периоду
