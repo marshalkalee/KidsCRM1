@@ -6,7 +6,7 @@ DRF-роутер под /api/v1/, см. config/urls.py). Тот же принц�
 
 from django.urls import path
 
-from . import web_views
+from . import onboarding_views, web_views
 
 app_name = "tenants_web"
 
@@ -40,4 +40,10 @@ urlpatterns = [
         web_views.direction_archive,
         name="direction-archive",
     ),
+    # Мастер онбординга (ТЗ п. 10.4).
+    path("onboarding/", onboarding_views.onboarding_start, name="onboarding"),
+    path("onboarding/done/", onboarding_views.onboarding_done, name="onboarding-done"),
+    path("onboarding/finish/", onboarding_views.onboarding_finish, name="onboarding-finish"),
+    path("onboarding/<slug:step>/", onboarding_views.onboarding_step, name="onboarding-step"),
+    path("onboarding/<slug:step>/skip/", onboarding_views.onboarding_skip, name="onboarding-skip"),
 ]

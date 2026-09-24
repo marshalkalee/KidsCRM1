@@ -19,7 +19,6 @@ from domains.platform.tenants.forms import (
     RoomForm,
 )
 from domains.platform.tenants.models import Branch, Direction, Room
-from domains.platform.tenants.org_settings import DEFAULT_ORG_SETTINGS
 
 OWNER = "owner"
 MANAGER = "manager"
@@ -58,15 +57,7 @@ def organization_settings(request):
             messages.success(request, "Настройки организации сохранены.")
             return redirect("tenants_web:organization-settings")
     else:
-        initial = {
-            "name": organization.name,
-            "timezone": organization.timezone,
-            **{
-                key: organization.settings.get(key, default)
-                for key, default in DEFAULT_ORG_SETTINGS.items()
-            },
-        }
-        form = OrganizationSettingsForm(initial=initial)
+        form = OrganizationSettingsForm.for_organization(organization)
     return render(request, "tenants/organization_settings.html", {"form": form})
 
 
