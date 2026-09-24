@@ -28,6 +28,16 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
         blank=True,
         help_text=_("Null для индивидуального занятия"),
     )
+    # TRU-47: у индивидуального занятия (group=None) нет группового членства,
+    # откуда обычно берутся участники — ребёнок(и) привязываются к самому
+    # занятию напрямую. У группового занятия остаётся пусто — участники
+    # берутся из Group.memberships, как и раньше (см. Lesson.participants).
+    individual_children = models.ManyToManyField(
+        "clients.Child",
+        related_name="individual_lessons",
+        verbose_name=_("Дети (индивидуальное занятие)"),
+        blank=True,
+    )
     schedule_slot = models.ForeignKey(
         "schedule_templates.ScheduleTemplateSlot",
         on_delete=models.SET_NULL,
@@ -102,6 +112,25 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
 
     def __str__(self):
         return f"{self.group or 'Индив.'} — {self.starts_at:%d.%m %H:%M}"
+
+    @property
+    def is_individual(self):
+        return self.group_id is None
+
+    def participants(self):
+        """Дети, которые должны быть на занятии — общий интерфейс
+        независимо от того, групповое занятие или индивидуальное (TRU-47),
+        чтобы будущий экран посещаемости (TRU-56) не разветвлялся по типу
+        занятия. Групповое — активные на сейчас участники группы
+        (left_at=None); индивидуальное — individual_children напрямую."""
+        from domains.people.clients.models import Child
+
+        if self.group_id:
+            return Child.objects.filter(
+                group_memberships__group_id=self.group_id,
+                group_memberships__left_at__isnull=True,
+            ).distinct()
+        return self.individual_children.all()
 
     def transition_to(self, new_status: str):
         allowed = ALLOWED_STATUS_TRANSITIONS.get(self.status, set())

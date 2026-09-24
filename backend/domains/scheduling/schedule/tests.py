@@ -365,6 +365,12 @@ class LessonConflictTest(APITestCase):
             organization=self.org,
             role=User.Role.OWNER,
         )
+        self.child = Child.objects.create(
+            organization=self.org,
+            full_name="Соло Солистова",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 10),
+            gender=Child.Gender.FEMALE,
+        )
         tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
         self.day = datetime.datetime(2026, 9, 24, 18, 0, tzinfo=tz)
         self.existing = Lesson.objects.create(
@@ -446,7 +452,7 @@ class LessonConflictTest(APITestCase):
 
     def test_individual_lesson_without_group_counts_as_conflict(self):
         client = _authenticated_client(self.owner)
-        payload = self._overlapping_payload()
+        payload = self._overlapping_payload(individual_children=[str(self.child.id)])
         del payload["group"]
 
         response = client.post("/api/v1/schedule/", payload, format="json")
@@ -579,3 +585,258 @@ class LessonConflictTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         ids = {row["id"] for row in response.data}
         self.assertEqual(ids, {str(self.existing.id), str(second.id)})
+
+
+class IndividualLessonTest(APITestCase):
+    """
+    Индивидуальные занятия (TRU-47, ТЗ п. 4.2): создание вне группы, с
+    привязкой ребёнка (или нескольких), отличимы в календаре, участвуют в
+    проверке конфликтов наравне с групповыми.
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.branch = Branch.objects.create(organization=self.org, name="Главный")
+        self.room = Room.objects.create(branch=self.branch, name="Зал 1")
+        self.direction = Direction.objects.create(organization=self.org, name="Балет")
+        self.group = Group.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            direction=self.direction,
+            name="Балет",
+            capacity=10,
+        )
+        self.teacher = User.objects.create_user(
+            phone="+77050000001",
+            full_name="Айгуль",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.owner = User.objects.create_user(
+            phone="+77050000002",
+            full_name="Владелец",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.child = Child.objects.create(
+            organization=self.org,
+            full_name="Соло Солистова",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 10),
+            gender=Child.Gender.FEMALE,
+        )
+        self.other_child = Child.objects.create(
+            organization=self.org,
+            full_name="Дуэт Дуэтова",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 11),
+            gender=Child.Gender.FEMALE,
+        )
+        foreign_org = Organization.objects.create(name="Другая студия", slug="other")
+        self.foreign_child = Child.objects.create(
+            organization=foreign_org,
+            full_name="Чужой Ребёнок",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 9),
+            gender=Child.Gender.MALE,
+        )
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        self.day = datetime.datetime(2026, 9, 24, 17, 0, tzinfo=tz)
+
+    def _payload(self, **overrides):
+        payload = {
+            "room": str(self.room.id),
+            "teacher": str(self.teacher.id),
+            "individual_children": [str(self.child.id)],
+            "starts_at": self.day.isoformat(),
+            "ends_at": (self.day + datetime.timedelta(hours=1)).isoformat(),
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_create_individual_lesson_with_one_child(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post("/api/v1/schedule/", self._payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertTrue(response.data["is_individual"])
+        self.assertIsNone(response.data["group"])
+        self.assertEqual(response.data["individual_children_names"], ["Соло Солистова"])
+        lesson = Lesson.objects.get(pk=response.data["id"])
+        self.assertEqual(list(lesson.individual_children.all()), [self.child])
+
+    def test_create_individual_lesson_with_several_children(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/schedule/",
+            self._payload(individual_children=[str(self.child.id), str(self.other_child.id)]),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        lesson = Lesson.objects.get(pk=response.data["id"])
+        self.assertEqual(lesson.individual_children.count(), 2)
+
+    def test_individual_lesson_requires_at_least_one_child(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/schedule/", self._payload(individual_children=[]), format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("individual_children", response.data)
+
+    def test_group_lesson_cannot_also_have_individual_children(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/schedule/",
+            self._payload(group=str(self.group.id)),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("individual_children", response.data)
+
+    def test_cannot_attach_child_from_another_organization(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/schedule/",
+            self._payload(individual_children=[str(self.foreign_child.id)]),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("individual_children", response.data)
+
+    def test_individual_lesson_visible_in_calendar_distinguishable_from_group(self):
+        client = _authenticated_client(self.owner)
+        client.post("/api/v1/schedule/", self._payload(), format="json")
+        Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            starts_at=self.day + datetime.timedelta(hours=3),
+            ends_at=self.day + datetime.timedelta(hours=4),
+        )
+
+        response = client.get(
+            "/api/v1/schedule/", {"date_from": "2026-09-24", "date_to": "2026-09-24"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        individual = next(row for row in response.data if row["is_individual"])
+        group_lesson = next(row for row in response.data if not row["is_individual"])
+        self.assertEqual(individual["individual_children_names"], ["Соло Солистова"])
+        self.assertIsNone(individual["group_name"])
+        self.assertEqual(group_lesson["group_name"], "Балет")
+
+    def test_individual_lesson_participates_in_room_conflict(self):
+        Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            starts_at=self.day,
+            ends_at=self.day + datetime.timedelta(hours=1),
+        )
+        client = _authenticated_client(self.owner)
+
+        response = client.post("/api/v1/schedule/", self._payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_individual_lesson_participates_in_teacher_conflict(self):
+        # Существующее занятие в ДРУГОМ зале, но с тем же преподавателем —
+        # конфликт должен сработать по teacher, не по room.
+        other_room = Room.objects.create(branch=self.branch, name="Зал 2")
+        Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=other_room,
+            teacher=self.teacher,
+            starts_at=self.day,
+            ends_at=self.day + datetime.timedelta(hours=1),
+        )
+        client = _authenticated_client(self.owner)
+
+        # _payload() по умолчанию — self.room (не other_room) и self.teacher.
+        response = client.post("/api/v1/schedule/", self._payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_participants_returns_individual_children(self):
+        lesson = Lesson.objects.create(
+            organization=self.org,
+            room=self.room,
+            teacher=self.teacher,
+            starts_at=self.day,
+            ends_at=self.day + datetime.timedelta(hours=1),
+        )
+        lesson.individual_children.set([self.child, self.other_child])
+
+        participants = list(lesson.participants())
+
+        self.assertEqual(set(participants), {self.child, self.other_child})
+        self.assertTrue(lesson.is_individual)
+
+    def test_participants_returns_active_group_members_for_group_lesson(self):
+        left_child = Child.objects.create(
+            organization=self.org,
+            full_name="Ушедший Ребёнок",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 8),
+            gender=Child.Gender.MALE,
+        )
+        GroupMembership.objects.create(
+            organization=self.org,
+            group=self.group,
+            child=self.child,
+            joined_at=datetime.date.today(),
+        )
+        GroupMembership.objects.create(
+            organization=self.org,
+            group=self.group,
+            child=left_child,
+            joined_at=datetime.date.today() - datetime.timedelta(days=30),
+            left_at=datetime.date.today() - datetime.timedelta(days=1),
+        )
+        lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            starts_at=self.day,
+            ends_at=self.day + datetime.timedelta(hours=1),
+        )
+
+        participants = list(lesson.participants())
+
+        self.assertEqual(participants, [self.child])
+        self.assertFalse(lesson.is_individual)
+
+    def test_reschedule_individual_lesson_preserves_children(self):
+        lesson = Lesson.objects.create(
+            organization=self.org,
+            room=self.room,
+            teacher=self.teacher,
+            starts_at=self.day,
+            ends_at=self.day + datetime.timedelta(hours=1),
+        )
+        lesson.individual_children.set([self.child])
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            f"/api/v1/schedule/{lesson.id}/reschedule/",
+            {
+                "room": str(self.room.id),
+                "teacher": str(self.teacher.id),
+                "individual_children": [str(self.child.id)],
+                "starts_at": (self.day + datetime.timedelta(days=1)).isoformat(),
+                "ends_at": (self.day + datetime.timedelta(days=1, hours=1)).isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        new_lesson = Lesson.objects.get(pk=response.data["id"])
+        self.assertEqual(list(new_lesson.individual_children.all()), [self.child])

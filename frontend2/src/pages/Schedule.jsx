@@ -10,7 +10,7 @@ import {
 } from '../utils/calendarDate'
 import {
   fetchLessons, fetchGroups, fetchRooms, fetchTeachers, fetchBranches, fetchDirections, fetchMe,
-  fetchConflicts, createLesson, cancelLesson, rescheduleLesson,
+  fetchConflicts, searchChildren, createLesson, cancelLesson, rescheduleLesson,
 } from '../api/lessons'
 
 const ACCENT = '#C97B6E'
@@ -70,6 +70,16 @@ function withMinutes(lesson) {
     startMin: timeToMinutes(localTimePart(lesson.starts_at_local)),
     endMin: timeToMinutes(localTimePart(lesson.ends_at_local)),
   }
+}
+
+// TRU-47: у индивидуального занятия нет group_name — заголовок вместо
+// generic "Индив. занятие" показывает, для кого оно.
+function lessonTitle(lesson) {
+  if (lesson.group_name) return lesson.group_name
+  if (lesson.is_individual && lesson.individual_children_names?.length) {
+    return lesson.individual_children_names.join(', ')
+  }
+  return 'Индив. занятие'
 }
 
 function computeHourRange(lessons) {
@@ -516,6 +526,10 @@ function LessonChip({ lesson, style, onClick }) {
   // Конфликт (TRU-46) — предупреждение, не запрет: занятие остаётся видно
   // как обычно, просто с жёлтой рамкой/значком, а не перечёркнуто/сером.
   const hasConflict = lesson.has_conflict && !dimmed
+  // Индивидуальное (TRU-47) — визуально отличимо от группового: точечная
+  // рамка + иконка человека вместо цвета направления (у него его просто
+  // нет — direction приходит через группу).
+  const isIndividual = lesson.is_individual && !dimmed && !hasConflict
 
   return (
     <div
@@ -523,7 +537,7 @@ function LessonChip({ lesson, style, onClick }) {
       style={{
         position: 'absolute', ...style,
         background: dimmed ? '#F5F5F7' : hasConflict ? '#FFFBEB' : `${color}1A`,
-        border: `1.5px ${isRescheduled ? 'dashed' : 'solid'} ${dimmed ? '#D1D5DB' : hasConflict ? '#F59E0B' : color}`,
+        border: `1.5px ${isRescheduled ? 'dashed' : isIndividual ? 'dotted' : 'solid'} ${dimmed ? '#D1D5DB' : hasConflict ? '#F59E0B' : color}`,
         borderRadius: 8, padding: '4px 8px', overflow: 'hidden', cursor: 'pointer',
         opacity: dimmed ? 0.65 : 1,
         transition: 'box-shadow 0.15s',
@@ -534,12 +548,13 @@ function LessonChip({ lesson, style, onClick }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {hasConflict && <AlertTriangle size={10} style={{ color: '#B45309', flexShrink: 0 }} />}
+        {isIndividual && <UserIcon size={9} style={{ color, flexShrink: 0 }} />}
         <div style={{
           fontSize: 11, fontWeight: 700, color: dimmed ? '#9CA3AF' : '#1A1A2E',
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           textDecoration: isCancelled ? 'line-through' : 'none',
         }}>
-          {lesson.group_name || 'Индив. занятие'}
+          {lessonTitle(lesson)}
         </div>
       </div>
       <div style={{ fontSize: 10, color: dimmed ? '#9CA3AF' : '#6B7280', whiteSpace: 'nowrap' }}>
@@ -754,13 +769,14 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
         const color = lesson.direction_color || DEFAULT_COLOR
         const dimmed = lesson.status === 'cancelled' || lesson.status === 'rescheduled'
         const hasConflict = lesson.has_conflict && !dimmed
+        const isIndividual = lesson.is_individual && !dimmed && !hasConflict
         return (
           <div
             key={lesson.id}
             onClick={() => onSelectLesson(lesson)}
             style={{
               display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
-              border: `1px solid ${dimmed ? '#E5E7EB' : hasConflict ? '#F59E0B' : color}`,
+              border: `1px ${isIndividual ? 'dotted' : 'solid'} ${dimmed ? '#E5E7EB' : hasConflict ? '#F59E0B' : color}`,
               background: dimmed ? '#FAFAFA' : hasConflict ? '#FFFBEB' : `${color}0D`,
               opacity: dimmed ? 0.7 : 1,
             }}
@@ -771,8 +787,9 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 {hasConflict && <AlertTriangle size={11} style={{ color: '#B45309', flexShrink: 0 }} />}
+                {isIndividual && <UserIcon size={11} style={{ color, flexShrink: 0 }} />}
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', textDecoration: lesson.status === 'cancelled' ? 'line-through' : 'none' }}>
-                  {lesson.group_name || 'Индив. занятие'}
+                  {lessonTitle(lesson)}
                 </div>
               </div>
               <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
@@ -838,7 +855,7 @@ function ConflictsModal({ filters, onClose, onSelectLesson }) {
                   {localDatePart(lesson.starts_at_local).split('-').reverse().join('.')} {localTimePart(lesson.starts_at_local)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{lesson.group_name || 'Индив. занятие'}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{lessonTitle(lesson)}</div>
                   <div style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
                     {lesson.room_name || 'без зала'} · {lesson.teacher_name || 'без преподавателя'}
                   </div>
@@ -866,7 +883,7 @@ function ConflictWarning({ conflicts, onConfirm, onBack, saving }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
         {conflicts.map(c => (
           <div key={c.id} style={{ fontSize: 12, color: '#92400E', fontFamily: 'Manrope' }}>
-            {c.group_name || 'Индив. занятие'} · {localTimePart(c.starts_at_local)}–{localTimePart(c.ends_at_local)}
+            {lessonTitle(c)} · {localTimePart(c.starts_at_local)}–{localTimePart(c.ends_at_local)}
             {c.room_name && ` · ${c.room_name}`}{c.teacher_name && ` · ${c.teacher_name}`}
           </div>
         ))}
@@ -922,6 +939,10 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
       const endsAt = new Date(startsAt.getTime() + durationMs)
       await rescheduleLesson(lesson.id, {
         group: lesson.group,
+        // TRU-47: у переносимого индивидуального занятия участники не
+        // берутся автоматически — новое занятие создаётся с нуля, нужно
+        // явно перенести тех же детей.
+        individual_children: lesson.is_individual ? lesson.individual_children : [],
         room: lesson.room,
         teacher: lesson.teacher,
         starts_at: startsAt.toISOString(),
@@ -945,8 +966,13 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
       <div style={modalBox} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
-            <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>{lesson.group_name || 'Индив. занятие'}</h2>
-            <p style={{ fontSize: 12, color: '#9CA3AF', margin: '4px 0 0' }}>{STATUS_LABEL[lesson.status]}</p>
+            <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {lesson.is_individual && <UserIcon size={15} style={{ color: DEFAULT_COLOR }} />}
+              {lessonTitle(lesson)}
+            </h2>
+            <p style={{ fontSize: 12, color: '#9CA3AF', margin: '4px 0 0' }}>
+              {lesson.is_individual ? 'Индивидуальное занятие' : 'Групповое занятие'} · {STATUS_LABEL[lesson.status]}
+            </p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
         </div>
@@ -958,6 +984,9 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
               <InfoRow icon={<UserIcon size={14} />} text={lesson.teacher_name || 'преподаватель не назначен'} />
               {lesson.capacity != null && (
                 <InfoRow icon={<Users size={14} />} text={`${lesson.enrolled_count} из ${lesson.capacity} записано`} />
+              )}
+              {lesson.is_individual && (
+                <InfoRow icon={<Users size={14} />} text={lesson.individual_children_names?.length ? lesson.individual_children_names.join(', ') : 'дети не указаны'} />
               )}
               {lesson.status === 'cancelled' && lesson.cancel_reason && (
                 <div style={{ fontSize: 12, color: '#DC2626', background: '#FEF2F2', borderRadius: 8, padding: '8px 10px' }}>
@@ -1036,8 +1065,80 @@ function InfoRow({ icon, text }) {
   )
 }
 
+// Поиск + мультивыбор детей для индивидуального занятия (TRU-47).
+// value: [{id, full_name}]
+function ChildrenMultiSelect({ value, onChange }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const debounceRef = useRef()
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return }
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      searchChildren(query)
+        .then(list => setResults(list.filter(c => !value.some(v => v.id === c.id)).slice(0, 8)))
+        .catch(console.error)
+    }, 300)
+    return () => clearTimeout(debounceRef.current)
+  }, [query, value])
+
+  function add(child) {
+    onChange([...value, { id: child.id, full_name: child.full_name }])
+    setQuery('')
+    setResults([])
+  }
+
+  function remove(id) {
+    onChange(value.filter(c => c.id !== id))
+  }
+
+  return (
+    <div>
+      {value.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {value.map(c => (
+            <span key={c.id} style={{
+              display: 'flex', alignItems: 'center', gap: 5, padding: '4px 8px 4px 10px',
+              background: '#FDF0EE', color: ACCENT, borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: 'Manrope',
+            }}>
+              {c.full_name}
+              <button type="button" onClick={() => remove(c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: ACCENT, display: 'flex', padding: 0 }}>
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div style={{ position: 'relative' }}>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Начните вводить имя..."
+          style={inputStyle}
+        />
+        {results.length > 0 && (
+          <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100, background: '#fff', border: '1.5px solid #F0F0F5', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', overflow: 'hidden' }}>
+            {results.map(c => (
+              <div key={c.id} onClick={() => add(c)}
+                style={{ padding: '9px 12px', fontSize: 13, fontFamily: 'Manrope', cursor: 'pointer' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#FAFAFA'}
+                onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+              >
+                {c.full_name}{c.age != null && <span style={{ color: '#9CA3AF' }}> · {c.age} лет</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
+  const [lessonType, setLessonType] = useState('group') // group | individual (TRU-47)
   const [groupId, setGroupId] = useState('')
+  const [children, setChildren] = useState([]) // [{id, full_name}]
   const [roomId, setRoomId] = useState(slot.room || '')
   const [teacherId, setTeacherId] = useState('')
   const [time, setTime] = useState(slot.time)
@@ -1050,7 +1151,8 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
     const startsAt = new Date(`${slot.date}T${time}:00`)
     const endsAt = new Date(startsAt.getTime() + durationMin * 60000)
     return {
-      group: groupId,
+      group: lessonType === 'group' ? groupId : null,
+      individual_children: lessonType === 'individual' ? children.map(c => c.id) : [],
       room: roomId || null,
       teacher: teacherId || null,
       starts_at: startsAt.toISOString(),
@@ -1075,7 +1177,8 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
 
   function handleSubmit(e) {
     e.preventDefault()
-    if (!groupId) { setError('Выберите группу'); return }
+    if (lessonType === 'group' && !groupId) { setError('Выберите группу'); return }
+    if (lessonType === 'individual' && children.length === 0) { setError('Выберите хотя бы одного ребёнка'); return }
     submit(buildPayload())
   }
 
@@ -1087,17 +1190,29 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 12 }}>
-            <label style={labelStyle}>Группа *</label>
-            <Dropdown
-              variant="field"
-              width="100%"
-              value={groupId}
-              onChange={setGroupId}
-              placeholder="Выберите группу"
-              options={[['', 'Выберите группу'], ...groups.map(g => [String(g.id), g.name])]}
-            />
+          <div style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2, marginBottom: 14 }}>
+            <ViewToggleBtn active={lessonType === 'group'} onClick={() => setLessonType('group')} icon={<Users size={14} />} label="Групповое" />
+            <ViewToggleBtn active={lessonType === 'individual'} onClick={() => setLessonType('individual')} icon={<UserIcon size={14} />} label="Индивидуальное" />
           </div>
+
+          {lessonType === 'group' ? (
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Группа *</label>
+              <Dropdown
+                variant="field"
+                width="100%"
+                value={groupId}
+                onChange={setGroupId}
+                placeholder="Выберите группу"
+                options={[['', 'Выберите группу'], ...groups.map(g => [String(g.id), g.name])]}
+              />
+            </div>
+          ) : (
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Ребёнок (или несколько) *</label>
+              <ChildrenMultiSelect value={children} onChange={setChildren} />
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>Дата</label>

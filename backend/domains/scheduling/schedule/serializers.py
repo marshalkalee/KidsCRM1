@@ -1,6 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
+from domains.people.clients.models import Child
 from domains.platform.core.mixins import TenantCreateMixin
 
 from .conflicts import find_conflicting_lessons
@@ -28,6 +29,10 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
     capacity = serializers.SerializerMethodField()
     enrolled_count = serializers.SerializerMethodField()
 
+    # TRU-47: индивидуальное занятие (group=None) — дети привязаны напрямую.
+    is_individual = serializers.BooleanField(read_only=True)
+    individual_children_names = serializers.SerializerMethodField()
+
     class Meta:
         model = Lesson
         fields = [
@@ -36,6 +41,9 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
             "group_name",
             "direction_id",
             "direction_color",
+            "is_individual",
+            "individual_children",
+            "individual_children_names",
             "schedule_slot",
             "room",
             "room_name",
@@ -61,6 +69,16 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            # Тот же принцип, что у RoomSerializer.branch/DirectionSerializer.branches
+            # — привязать можно только ребёнка своей организации.
+            self.fields["individual_children"].child_relation.queryset = Child.objects.for_tenant(
+                request.user.organization
+            )
+
     def get_group_name(self, obj):
         return obj.group.name if obj.group else None
 
@@ -78,6 +96,13 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
 
     def get_capacity(self, obj):
         return obj.group.capacity if obj.group else None
+
+    def get_individual_children_names(self, obj):
+        if obj.group_id:
+            return []
+        # LessonViewSet.get_queryset прогревает prefetch_related
+        # "individual_children" — без доп. запроса на занятие.
+        return [child.full_name for child in obj.individual_children.all()]
 
     def get_enrolled_count(self, obj):
         if not obj.group:
@@ -138,4 +163,36 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"ends_at": "Конец занятия должен быть позже начала."}
                 )
+
+        # TRU-47: группа и individual_children взаимоисключающие источники
+        # участников — либо групповое (участники из Group.memberships),
+        # либо индивидуальное (участники — сам individual_children).
+        # partial=True (PATCH) может не трогать ни то, ни другое — тогда
+        # берём текущее значение с инстанса, а не считаем, что оно пустое.
+        if "group" in attrs:
+            group = attrs["group"]
+        else:
+            group = getattr(self.instance, "group", None) if self.instance else None
+
+        if "individual_children" in attrs:
+            individual_children = attrs["individual_children"]
+        else:
+            individual_children = (
+                list(self.instance.individual_children.all()) if self.instance else []
+            )
+
+        if group and individual_children:
+            raise serializers.ValidationError(
+                {
+                    "individual_children": "У группового занятия участники берутся из группы — "
+                    "нельзя одновременно указать группу и детей напрямую."
+                }
+            )
+        if not group and not individual_children:
+            raise serializers.ValidationError(
+                {
+                    "individual_children": "Индивидуальное занятие (без группы) должно быть "
+                    "привязано хотя бы к одному ребёнку."
+                }
+            )
         return attrs

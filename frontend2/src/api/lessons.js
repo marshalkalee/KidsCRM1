@@ -35,6 +35,12 @@ export function fetchMe() {
   return api.get('users/auth/me/').then(res => res.data)
 }
 
+export function searchChildren(query) {
+  return api
+    .get('clients/children/', { params: { search: query } })
+    .then(res => res.data.results || res.data)
+}
+
 export function fetchConflicts(filters = {}) {
   const params = {}
   if (filters.branch) params.branch = filters.branch
