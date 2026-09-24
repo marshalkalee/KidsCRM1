@@ -491,5 +491,11 @@
   "parent_card.payments_col_subscription": "Абонемент",
   "parent_card.payments_col_amount": "Сумма",
   "parent_card.payments_col_method": "Способ",
-  "parent_card.payments_empty": "Оплат пока нет."
+  "parent_card.payments_empty": "Оплат пока нет.",
+  "payments.child_tab.no_subscription": "Нет активного абонемента — сначала продайте абонемент.",
+  "payments.child_tab.sessions_left": "Осталось занятий:",
+  "payments.child_tab.debt_label": "Долг:",
+  "payments.child_tab.amount_label": "Сумма",
+  "payments.child_tab.comment_label": "Комментарий",
+  "payments.child_tab.submit": "Принять оплату"
 }
