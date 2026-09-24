@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import Children from './pages/Children'
 import ChildDetail from './pages/ChildDetail'
+import Schedule from './pages/Schedule'
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="children" element={<Children />} />
           <Route path="children/:id" element={<ChildDetail />} />
+          <Route path="schedule" element={<Schedule />} />
         </Route>
       </Routes>
     </BrowserRouter>

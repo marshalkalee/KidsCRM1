@@ -1,3 +1,4 @@
+from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from rest_framework import filters, status
 from rest_framework.decorators import action
@@ -5,6 +6,7 @@ from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
 from domains.platform.core.viewsets import TenantModelViewSet
+from domains.scheduling.groups.models import Group
 
 from .models import Lesson
 from .serializers import LessonSerializer
@@ -15,6 +17,10 @@ class LessonViewSet(TenantModelViewSet):
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ["starts_at", "status"]
     ordering = ["starts_at"]
+    # Календарь читает диапазон дат целиком за один HTTP-запрос (ТЗ п. 10.2:
+    # ≤ 1с при 500 занятиях в неделю) — постраничная выдача заставила бы
+    # фронт делать несколько запросов на одну неделю.
+    pagination_class = None
 
     def get_permissions(self):
         if self.action in ["create", "update", "partial_update", "destroy"]:
@@ -22,8 +28,20 @@ class LessonViewSet(TenantModelViewSet):
         return [IsStaffOfOrganization()]
 
     def get_queryset(self):
-        qs = Lesson.objects.for_tenant(self.request.organization).select_related(
-            "group", "room", "teacher", "schedule_slot"
+        groups_qs = Group.objects.select_related("direction").annotate(
+            enrolled_count=Count(
+                "memberships",
+                filter=Q(memberships__left_at__isnull=True),
+                distinct=True,
+            )
+        )
+        # Одна выборка занятий за период + одна доп. выборка на все
+        # встретившиеся группы (prefetch) — независимо от числа занятий,
+        # без запроса на каждую строку.
+        qs = (
+            Lesson.objects.for_tenant(self.request.organization)
+            .select_related("room", "teacher", "schedule_slot")
+            .prefetch_related(Prefetch("group", queryset=groups_qs))
         )
 
         # Фильтр по периоду

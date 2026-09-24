@@ -448,103 +448,103 @@ export default function Children() {
   )
 }
 
+// Импорт — тот же жизненный цикл, что у веб-экрана импорта (backend:
+// domains/people/clients/import_jobs.py): файл → сухой прогон в фоне (без
+// записи в базу) → отчёт и решения по найденным дублям → импорт одной
+// транзакцией → итог. Значения строк здесь не правятся: ошибки исправляются
+// в самом файле и он загружается заново (ТЗ п. 4.1, TRU-36).
+const IMPORT_API = '/api/v1/clients/children/import'
+const LEVEL_STYLE = {
+  ready:   ['#F0FDF4', '#16A34A', 'Готово'],
+  warning: ['#FEF3C7', '#D97706', 'Предупреждение'],
+  error:   ['#FEE2E2', '#DC2626', 'Ошибка'],
+}
+
 function ImportModal({ onClose, onSaved }) {
   const [file, setFile]             = useState(null)
-  const [preview, setPreview]       = useState(null)
-  const [editedRows, setEditedRows] = useState({})
-  const [loading, setLoading]       = useState(false)
-  const [confirming, setConfirming] = useState(false)
-  const [result, setResult]         = useState(null)
+  const [dryRun, setDryRun]         = useState(null)   // готовый сухой прогон
+  const [decisions, setDecisions]   = useState({})     // {номер строки: create_new|attach|skip}
+  const [waiting, setWaiting]       = useState('')     // текст ожидания фоновой задачи
+  const [result, setResult]         = useState(null)   // итог импорта
   const [error, setError]           = useState('')
-  const [actions, setActions]       = useState({})
   const fileRef = useRef()
 
   function authHeaders() {
     return { Authorization: `Bearer ${localStorage.getItem('access')}` }
   }
 
-  function formatDate(str) {
-    if (!str) return '—'
-    const [y, m, d] = str.split('-')
-    return `${d}.${m}.${y}`
+  // Сухой прогон и импорт идут в фоне — опрашиваем статус задачи.
+  async function waitForJob(jobId, label) {
+    for (;;) {
+      const res = await axios.get(`${IMPORT_API}/jobs/${jobId}/`, { headers: authHeaders() })
+      const job = res.data
+      if (job.status === 'done') return job
+      if (job.status === 'failed') throw new Error(job.error_message || 'Ошибка задачи импорта')
+      const p = job.progress
+      setWaiting(p ? `${label}: ${p.done} / ${p.total}` : `${label}...`)
+      await new Promise(resolve => setTimeout(resolve, 1500))
+    }
   }
 
   async function handleUpload(e) {
     e.preventDefault()
     if (!file) return
-    setLoading(true); setError('')
+    setError(''); setWaiting('Загрузка файла...')
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const res = await axios.post('/api/v1/clients/children/import/preview/', fd, {
-        headers: { ...authHeaders(), 'Content-Type': 'multipart/form-data' }
+      const res = await axios.post(`${IMPORT_API}/preview/`, fd, {
+        headers: { ...authHeaders(), 'Content-Type': 'multipart/form-data' },
       })
-      setPreview(res.data)
-      const defaultActions = {}
-      const defaultEdits = {}
-      ;(res.data.rows || []).forEach(r => {
-        defaultActions[r.row_number] = r.action
-        defaultEdits[r.row_number] = {
-          child_name: r.child_name || '',
-          birth_date: r.birth_date || '',
-          gender: r.gender || '',
-          parent_name: r.parent_name || '',
-          phone: r.phone || '',
-        }
-      })
-      setActions(defaultActions)
-      setEditedRows(defaultEdits)
-    } catch(err) {
-      setError(err.response?.data?.detail || err.response?.data?.file?.[0] || 'Ошибка загрузки файла')
-    } finally { setLoading(false) }
+      const job = await waitForJob(res.data.job_id, 'Проверка файла')
+      const defaults = {}
+      job.rows.forEach(r => { if (r.duplicate) defaults[r.row_number] = r.duplicate.options[0] })
+      setDecisions(defaults)
+      setDryRun(job)
+    } catch (err) {
+      setError(err.response?.data?.detail || err.response?.data?.file?.[0] || err.message || 'Ошибка загрузки файла')
+    } finally { setWaiting('') }
   }
 
   async function handleConfirm() {
-    setConfirming(true); setError('')
+    setError(''); setWaiting('Запуск импорта...')
     try {
-      const rows = (preview.rows || []).map(r => ({
-        ...r,
-        ...editedRows[r.row_number],
-        action: actions[r.row_number] || r.action,
-      }))
-      const res = await axios.post('/api/v1/clients/children/import/confirm/', { rows }, { headers: authHeaders() })
-      setResult(res.data)
-    } catch(err) {
-      setError(err.response?.data?.detail || 'Ошибка импорта')
-    } finally { setConfirming(false) }
-  }
-
-  function setEdit(rowNum, key, val) {
-    setEditedRows(prev => ({ ...prev, [rowNum]: { ...prev[rowNum], [key]: val } }))
-  }
-
-  const cellInp = {
-    padding: '5px 8px', border: '1.5px solid #EBEBF0', borderRadius: 6,
-    fontSize: 12, fontFamily: 'Manrope', outline: 'none', background: '#FAFAFA',
-    width: '100%', boxSizing: 'border-box',
+      const res = await axios.post(`${IMPORT_API}/confirm/`,
+        { job_id: dryRun.job_id, decisions }, { headers: authHeaders() })
+      setResult(await waitForJob(res.data.job_id, 'Запись в базу'))
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || 'Ошибка импорта')
+    } finally { setWaiting('') }
   }
 
   const lbl = { display: 'block', fontSize: 11, fontWeight: 600, color: '#9CA3AF', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }
+  const btnPrimary = { padding: '10px 22px', border: 'none', borderRadius: 8, background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope' }
+  const btnSecondary = { padding: '10px 22px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'Manrope', color: '#6B7280' }
+  const importable = dryRun ? dryRun.ready_count + dryRun.warning_count : 0
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: result ? 480 : preview ? 960 : 560, maxHeight: '92vh', overflowY: 'auto', padding: '28px 28px 24px' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: result ? 480 : dryRun ? 960 : 560, maxHeight: '92vh', overflowY: 'auto', padding: '28px 28px 24px' }} onClick={e => e.stopPropagation()}>
 
-        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1A1A2E', margin: 0, fontFamily: 'Manrope' }}>
-            {result ? 'Результат импорта' : preview ? 'Предпросмотр' : 'Импорт из Excel'}
+            {result ? 'Результат импорта' : dryRun ? 'Проверка файла' : 'Импорт из Excel'}
           </h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', display: 'flex' }}><X size={20} /></button>
         </div>
+
+        {waiting && <p style={{ fontSize: 13, fontFamily: 'Manrope', color: '#6B7280', marginBottom: 16 }}>{waiting}</p>}
 
         {/* Результат */}
         {result && (
           <div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
               {[
-                ['Создано новых детей', result.created, '#F0FDF4', '#16A34A'],
-                ['Привязано к семье', result.attached_to_existing_family, '#EFF6FF', '#2563EB'],
+                ['Создано детей', result.children_created, '#F0FDF4', '#16A34A'],
+                ['Создано родителей', result.parents_created, '#F0FDF4', '#16A34A'],
+                ['Привязано к существующим родителям', result.attached_to_existing_parent, '#EFF6FF', '#2563EB'],
+                ['Привязано к существующим детям', result.linked_to_existing_child, '#EFF6FF', '#2563EB'],
+                ['Записано в группы', result.enrolled_in_groups, '#EFF6FF', '#2563EB'],
                 ['Пропущено', result.skipped, '#F9FAFB', '#6B7280'],
               ].map(([label, val, bg, color]) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: bg, borderRadius: 10 }}>
@@ -554,147 +554,79 @@ function ImportModal({ onClose, onSaved }) {
               ))}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button onClick={onSaved} style={{ padding: '10px 22px', border: 'none', borderRadius: 8, background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope' }}>
-                Готово
-              </button>
+              <button onClick={onSaved} style={btnPrimary}>Готово</button>
             </div>
           </div>
         )}
 
-        {/* Предпросмотр */}
-        {!result && preview && (
+        {/* Отчёт сухого прогона и решения по дублям */}
+        {!result && dryRun && (
           <div>
-            {(preview.error_rows || []).length > 0 && (
-              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#DC2626', fontFamily: 'Manrope', marginBottom: 8 }}>Строки с ошибками (не будут импортированы)</div>
-                {preview.error_rows.map(r => (
-                  <div key={r.row_number} style={{ fontSize: 12, color: '#DC2626', fontFamily: 'Manrope', marginBottom: 4 }}>
-                    Строка {r.row_number}: {r.child_name || '—'} — {r.errors?.join('; ')}
-                  </div>
-                ))}
-              </div>
-            )}
-            {(preview.rows || []).length > 0 && (
-              <div style={{ overflowX: 'auto', marginBottom: 20 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: 'Manrope' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #F0F0F5', background: '#FAFAFA' }}>
-                      {['№', 'ФИО ребёнка', 'Дата рождения', 'Пол', 'Родитель', 'Телефон', 'Совпадение', 'Действие'].map(h => (
-                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.rows.map(row => {
-                      const edited = editedRows[row.row_number] || {}
-                      return (
-                        <tr key={row.row_number} style={{ borderBottom: '1px solid #F0F0F5' }}>
-                          <td style={{ padding: '8px 10px', color: '#9CA3AF', fontSize: 11 }}>{row.row_number}</td>
-                          <td style={{ padding: '8px 10px', minWidth: 140 }}>
-                            <input
-                              value={edited.child_name ?? row.child_name}
-                              onChange={e => setEdit(row.row_number, 'child_name', e.target.value)}
-                              style={cellInp}
-                            />
-                          </td>
-                          <td style={{ padding: '8px 10px', minWidth: 110 }}>
-                            <input
-                              value={edited.birth_date ? formatDate(edited.birth_date) : formatDate(row.birth_date)}
-                              onChange={e => {
-                                let val = e.target.value.replace(/\D/g, '')
-                                if (val.length > 2) val = val.slice(0,2) + '.' + val.slice(2)
-                                if (val.length > 5) val = val.slice(0,5) + '.' + val.slice(5)
-                                if (val.length > 10) val = val.slice(0,10)
-                                const parts = val.split('.')
-                                if (parts.length === 3 && parts[2].length === 4) {
-                                  setEdit(row.row_number, 'birth_date', `${parts[2]}-${parts[1]}-${parts[0]}`)
-                                }
-                              }}
-                              placeholder="ДД.ММ.ГГГГ"
-                              maxLength={10}
-                              style={cellInp}
-                            />
-                          </td>
-                          <td style={{ padding: '8px 10px', minWidth: 90 }}>
-                            <select
-                              value={edited.gender ?? row.gender ?? ''}
-                              onChange={e => setEdit(row.row_number, 'gender', e.target.value)}
-                              style={{ ...cellInp, cursor: 'pointer' }}
-                            >
-                              <option value="">—</option>
-                              <option value="male">М</option>
-                              <option value="female">Ж</option>
-                            </select>
-                          </td>
-                          <td style={{ padding: '8px 10px', minWidth: 130 }}>
-                            <input
-                              value={edited.parent_name ?? row.parent_name}
-                              onChange={e => setEdit(row.row_number, 'parent_name', e.target.value)}
-                              style={cellInp}
-                            />
-                          </td>
-                          <td style={{ padding: '8px 10px', minWidth: 120 }}>
-                            <input
-                              value={edited.phone ?? row.phone}
-                              onChange={e => setEdit(row.row_number, 'phone', e.target.value)}
-                              style={cellInp}
-                            />
-                          </td>
-                          <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                            {(actions[row.row_number] || row.action) === 'skip'
-                              ? <span style={{ padding: '2px 8px', borderRadius: 5, background: '#FEE2E2', color: '#DC2626', fontSize: 11, fontWeight: 600 }}>Дубль</span>
-                              : (actions[row.row_number] || row.action) === 'attach_existing'
-                              ? <span style={{ padding: '2px 8px', borderRadius: 5, background: '#EDE9FE', color: '#7C3AED', fontSize: 11, fontWeight: 600 }}>Есть в базе</span>
-                              : row.reason
-                              ? <span style={{ padding: '2px 8px', borderRadius: 5, background: '#FEF3C7', color: '#D97706', fontSize: 11, fontWeight: 600 }}>Похоже</span>
-                              : <span style={{ padding: '2px 8px', borderRadius: 5, background: '#F0FDF4', color: '#16A34A', fontSize: 11, fontWeight: 600 }}>Новый</span>
-                            }
-                          </td>
-                          <td style={{ padding: '8px 10px', minWidth: 160 }}>
+            <p style={{ fontSize: 13, fontFamily: 'Manrope', color: '#374151', marginBottom: 16 }}>
+              Готово: <b>{dryRun.ready_count}</b> · С предупреждениями: <b>{dryRun.warning_count}</b> · С ошибками (не будут импортированы): <b>{dryRun.error_count}</b>
+            </p>
+            <div style={{ overflowX: 'auto', marginBottom: 20 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: 'Manrope' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #F0F0F5', background: '#FAFAFA' }}>
+                    {['Строка', 'Статус', 'ФИО ребёнка', 'Сообщения', 'Совпадение', 'Решение'].map(h => (
+                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {dryRun.rows.map(row => {
+                    const [bg, color, label] = LEVEL_STYLE[row.level]
+                    const dup = row.duplicate
+                    return (
+                      <tr key={row.row_number} style={{ borderBottom: '1px solid #F0F0F5' }}>
+                        <td style={{ padding: '8px 10px', color: '#9CA3AF', fontSize: 11 }}>{row.row_number}</td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <span style={{ padding: '2px 8px', borderRadius: 5, background: bg, color, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
+                        </td>
+                        <td style={{ padding: '8px 10px' }}>{row.child_name || '—'}</td>
+                        <td style={{ padding: '8px 10px', color: '#6B7280' }}>{row.messages.join('; ')}</td>
+                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{dup ? `${dup.kind_label}: ${dup.matched}` : '—'}</td>
+                        <td style={{ padding: '8px 10px', minWidth: 200 }}>
+                          {dup && (
                             <CustomSelect
-                              value={actions[row.row_number] || row.action}
-                              onChange={v => setActions(a => ({ ...a, [row.row_number]: v }))}
-                              options={[
-                                ['create_new_family', 'Создать'],
-                                ['attach_existing',   'Привязать к семье'],
-                                ['skip',              'Пропустить'],
-                              ]}
+                              value={decisions[row.row_number]}
+                              onChange={v => setDecisions(d => ({ ...d, [row.row_number]: v }))}
+                              options={dup.options.map(o => [o, dup.option_labels[o]])}
                             />
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
             {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 12 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setPreview(null)} style={{ padding: '10px 22px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'Manrope', color: '#6B7280' }}>Назад</button>
-              <button onClick={handleConfirm} disabled={confirming} style={{ padding: '10px 22px', border: 'none', borderRadius: 8, background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', opacity: confirming ? 0.7 : 1 }}>
-                {confirming ? 'Импорт...' : 'Импортировать'}
+              <button onClick={() => setDryRun(null)} style={btnSecondary}>Назад</button>
+              <button onClick={handleConfirm} disabled={!!waiting || !importable} style={{ ...btnPrimary, opacity: (waiting || !importable) ? 0.7 : 1 }}>
+                {`Импортировать (${importable})`}
               </button>
             </div>
           </div>
         )}
 
         {/* Загрузка файла */}
-        {!result && !preview && (
+        {!result && !dryRun && (
           <form onSubmit={handleUpload}>
             <div style={{ background: '#F8F9FF', border: '1px solid #E5E7EB', borderRadius: 10, padding: '14px 16px', marginBottom: 20, fontSize: 13, color: '#6B7280', fontFamily: 'Manrope', lineHeight: 1.8 }}>
-              Файл .xlsx с колонками (первая строка — заголовки):
+              Файл .xlsx или .csv (первая строка — заголовки). Колонки узнаются по названию:
               <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-                <li>ФИО ребёнка — обязательно</li>
-                <li>Дата рождения ребёнка — обязательно, ДД.ММ.ГГГГ</li>
-                <li>Пол ребёнка — обязательно, М/Ж</li>
-                <li>ФИО родителя — обязательно</li>
-                <li>Телефон родителя — обязательно</li>
-                <li>Роль родителя — необязательно (мама/папа/опекун/бабушка)</li>
+                <li>ФИО ребёнка, дата рождения, пол — обязательно</li>
+                <li>ФИО родителя, телефон родителя — обязательно</li>
+                <li>Роль родителя, медицинские заметки, направление, группа — необязательно</li>
               </ul>
+              Сначала файл проверяется без записи в базу — вы увидите ошибки и найденные дубли.
             </div>
 
             <div style={{ marginBottom: 20 }}>
-              <label style={lbl}>Файл (.xlsx) *</label>
+              <label style={lbl}>Файл (.xlsx, .csv) *</label>
               <div
                 onClick={() => fileRef.current.click()}
                 style={{
@@ -709,17 +641,16 @@ function ImportModal({ onClose, onSaved }) {
                 <div style={{ fontSize: 13, fontFamily: 'Manrope', color: file ? '#C97B6E' : '#6B7280', fontWeight: file ? 600 : 400 }}>
                   {file ? file.name : 'Нажмите чтобы выбрать файл'}
                 </div>
-                {!file && <div style={{ fontSize: 11, color: '#9CA3AF', fontFamily: 'Manrope', marginTop: 4 }}>Только .xlsx</div>}
               </div>
-              <input ref={fileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
+              <input ref={fileRef} type="file" accept=".xlsx,.csv" style={{ display: 'none' }} onChange={e => setFile(e.target.files[0])} />
             </div>
 
             {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 12 }}>{error}</p>}
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={onClose} style={{ padding: '10px 22px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'Manrope', color: '#6B7280' }}>Отмена</button>
-              <button type="submit" disabled={!file || loading} style={{ padding: '10px 22px', border: 'none', borderRadius: 8, background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', opacity: (!file || loading) ? 0.7 : 1 }}>
-                {loading ? 'Загрузка...' : 'Загрузить и проверить'}
+              <button type="button" onClick={onClose} style={btnSecondary}>Отмена</button>
+              <button type="submit" disabled={!file || !!waiting} style={{ ...btnPrimary, opacity: (!file || waiting) ? 0.7 : 1 }}>
+                {waiting ? 'Проверка...' : 'Загрузить и проверить'}
               </button>
             </div>
           </form>
