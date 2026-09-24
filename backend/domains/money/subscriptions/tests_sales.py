@@ -5,7 +5,7 @@ from django.test import TestCase
 from domains.money.payments.models import Payment
 from domains.people.clients.models import Child
 from domains.platform.core.audit import AuditLog
-from domains.platform.tenants.models import Direction, Organization
+from domains.platform.tenants.models import Branch, Direction, Organization
 from domains.platform.users.models import User
 
 from .models import Subscription
@@ -16,6 +16,7 @@ from .subscription_types import create_type
 class SellSubscriptionTests(TestCase):
     def setUp(self):
         self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.branch = Branch.objects.create(organization=self.org, name="Филиал на Абая")
         self.ballet = Direction.objects.create(organization=self.org, name="Балет")
         self.child = Child.objects.create(
             organization=self.org,
@@ -45,6 +46,7 @@ class SellSubscriptionTests(TestCase):
             child=self.child,
             subscription_type_version=self.st.versions.latest(),
             direction=self.ballet,
+            branch=self.branch,
             starts_on=date.today(),
             ends_on=date.today() + timedelta(days=30),
             paid_amount=25000,

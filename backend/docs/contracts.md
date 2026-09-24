@@ -32,7 +32,7 @@
 | 2   | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` | Анель    | импорт Excel, конвертация заявки | `[backend/apps/clients/services.py](../apps/clients/services.py)`                                                                           |
 | 3   | Расписание → всем: `LessonService.enroll`                                      | Дарья    | отработки (M1), пробные (M2)     | `[backend/apps/schedule/services.py](../apps/schedule/services.py)`                                                                         |
 | 4   | Деньги → всем: `AuditLog.record`                                               | Bekzat   | все домены                       | `[backend/apps/core/audit.py](../apps/core/audit.py)`                                                                                       |
-
+| 5 | Деньги → всем: debt.debt_for_child / debt_for_subscription | Bekzat | Анель (список детей, карточка родителя) | [backend/domains/money/payments/debt.py](../domains/money/payments/debt.py) |
 
 
 
@@ -106,3 +106,16 @@ AuditLog.record(actor, action: str, entity: AuditEntity, before: dict | None, af
 интерфейс принадлежит домену «Деньги».
 
 Владелец: **Bekzat**. Потребители: все домены.
+
+## 5. Деньги → всем (задолженность)
+
+debt_for_subscription(subscription) -> Decimal
+debt_for_child(child) -> Decimal
+debt_for_parent(parent_contact) -> Decimal
+
+Единственный источник правды для долга (ТЗ п. 3.1, критерий приёмки
+MVP №4 — сверка с бухгалтерией). Долг считается от Subscription.price
+(со скидкой), не от цены типа. Отрицательное значение — переплата,
+не ошибка.
+
+Владелец: Bekzat. Потребитель: Анель.
