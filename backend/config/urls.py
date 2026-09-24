@@ -33,4 +33,5 @@ urlpatterns = [
     # не заводятся заранее пустыми.
     path("", include("domains.platform.core.urls")),
     path("", include("domains.platform.tenants.urls_web")),
+    path("", include("domains.people.clients.urls_web")),
 ]

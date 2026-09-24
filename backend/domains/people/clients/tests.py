@@ -17,7 +17,7 @@ from rest_framework.test import APITestCase
 
 from domains.platform.tenants.models import Direction, Organization
 
-from .models import Child
+from .models import Child, ContactPhone, ParentContact
 
 User = get_user_model()
 
@@ -298,3 +298,228 @@ class ChildTenantIsolationTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("directions", response.data)
+
+
+class ParentContactModelTests(TestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+
+    def test_phone_number_is_stored_normalized(self):
+        parent = ParentContact.objects.create(organization=self.org, full_name="Айгуль")
+        phone = ContactPhone.objects.create(
+            organization=self.org, parent_contact=parent, number="+7 701 123-45-67"
+        )
+        self.assertEqual(phone.number, "+77011234567")
+
+    def test_whatsapp_is_stored_normalized(self):
+        parent = ParentContact.objects.create(
+            organization=self.org, full_name="Айгуль", whatsapp="87011234567"
+        )
+        self.assertEqual(parent.whatsapp, "+77011234567")
+
+    def test_phone_organization_is_derived_from_parent_contact(self):
+        parent = ParentContact.objects.create(organization=self.org, full_name="Айгуль")
+        phone = ContactPhone.objects.create(
+            organization=self.org, parent_contact=parent, number="77011234567"
+        )
+        self.assertEqual(phone.organization_id, self.org.id)
+
+    def test_soft_delete_hides_from_default_manager_but_keeps_row(self):
+        parent = ParentContact.objects.create(organization=self.org, full_name="Айгуль")
+
+        parent.delete()
+
+        self.assertFalse(ParentContact.objects.filter(pk=parent.pk).exists())
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT deleted_at FROM clients_parentcontact WHERE id = %s", [str(parent.pk)]
+            )
+            row = cursor.fetchone()
+        self.assertIsNotNone(row[0])
+
+
+class ParentContactAPITests(APITestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.owner = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.teacher = User.objects.create_user(
+            phone="+77010000002",
+            full_name="Teacher",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+
+    def test_owner_creates_parent_with_two_phones(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/clients/parents/",
+            {
+                "full_name": "Айгуль Касымова",
+                "phones": [
+                    {"number": "+7 701 123-45-67", "phone_type": "mobile"},
+                    {"number": "8 (727) 222-33-44", "phone_type": "work"},
+                ],
+                "email": "aigul@example.com",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        parent = ParentContact.objects.get(pk=response.data["id"])
+        numbers = sorted(parent.phones.values_list("number", flat=True))
+        self.assertEqual(numbers, ["+77011234567", "+77272223344"])
+
+    def test_creating_parent_without_phones_is_rejected(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/clients/parents/", {"full_name": "Айгуль", "phones": []}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("phones", response.data)
+
+    def test_invalid_phone_number_is_rejected(self):
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.post(
+            "/api/v1/clients/parents/",
+            {"full_name": "Айгуль", "phones": [{"number": "123"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_search_finds_parent_by_either_of_two_phones(self):
+        self.client.force_authenticate(self.owner)
+        self.client.post(
+            "/api/v1/clients/parents/",
+            {
+                "full_name": "Айгуль Касымова",
+                "phones": [
+                    {"number": "+77011234567", "phone_type": "mobile"},
+                    {"number": "+77272223344", "phone_type": "work"},
+                ],
+            },
+            format="json",
+        )
+
+        # Разное написание того же второго номера — поиск всё равно находит.
+        response = self.client.get("/api/v1/clients/parents/?phone=8+(727)+222-33-44")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = [p["full_name"] for p in response.data["results"]]
+        self.assertEqual(names, ["Айгуль Касымова"])
+
+    def test_updating_phones_replaces_old_ones(self):
+        self.client.force_authenticate(self.owner)
+        create_response = self.client.post(
+            "/api/v1/clients/parents/",
+            {"full_name": "Айгуль", "phones": [{"number": "+77011234567"}]},
+            format="json",
+        )
+        parent_id = create_response.data["id"]
+
+        response = self.client.patch(
+            f"/api/v1/clients/parents/{parent_id}/",
+            {"phones": [{"number": "+77019999999"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        parent = ParentContact.objects.get(pk=parent_id)
+        self.assertEqual(list(parent.phones.values_list("number", flat=True)), ["+77019999999"])
+
+    def test_teacher_does_not_see_phones(self):
+        self.client.force_authenticate(self.owner)
+        create_response = self.client.post(
+            "/api/v1/clients/parents/",
+            {
+                "full_name": "Айгуль",
+                "phones": [{"number": "+77011234567"}],
+                "whatsapp": "+77011234567",
+            },
+            format="json",
+        )
+        parent_id = create_response.data["id"]
+
+        self.client.force_authenticate(self.teacher)
+        response = self.client.get(f"/api/v1/clients/parents/{parent_id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["full_name"], "Айгуль")
+        self.assertNotIn("phones", response.data)
+        self.assertNotIn("whatsapp", response.data)
+
+    def test_owner_sees_phones(self):
+        self.client.force_authenticate(self.owner)
+        create_response = self.client.post(
+            "/api/v1/clients/parents/",
+            {"full_name": "Айгуль", "phones": [{"number": "+77011234567"}]},
+            format="json",
+        )
+
+        response = self.client.get(f"/api/v1/clients/parents/{create_response.data['id']}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["phones"]), 1)
+
+    def test_teacher_cannot_create_parent(self):
+        self.client.force_authenticate(self.teacher)
+
+        response = self.client.post(
+            "/api/v1/clients/parents/",
+            {"full_name": "Айгуль", "phones": [{"number": "+77011234567"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+@tag("tenant_isolation")
+class ParentContactTenantIsolationTests(APITestCase):
+    def setUp(self):
+        self.org_a = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.org_b = Organization.objects.create(name="Другая студия", slug="another-studio")
+        self.parent_b = ParentContact.objects.create(
+            organization=self.org_b, full_name="Чужая мама"
+        )
+        ContactPhone.objects.create(
+            organization=self.org_b, parent_contact=self.parent_b, number="+77011110000"
+        )
+        self.owner_a = User.objects.create_user(
+            phone="+77010000001",
+            full_name="Owner A",
+            password="pass12345",
+            organization=self.org_a,
+            role=User.Role.OWNER,
+        )
+        self.client.force_authenticate(self.owner_a)
+
+    def test_parent_list_is_scoped_to_own_organization(self):
+        response = self.client.get("/api/v1/clients/parents/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = [p["full_name"] for p in response.data["results"]]
+        self.assertEqual(names, [])
+
+    def test_cannot_retrieve_another_organizations_parent(self):
+        response = self.client.get(f"/api/v1/clients/parents/{self.parent_b.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_phone_search_does_not_leak_another_organizations_parent(self):
+        response = self.client.get("/api/v1/clients/parents/?phone=+77011110000")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["results"], [])
