@@ -321,9 +321,7 @@
   "parent_card.col_child_branch": "Филиал",
   "parent_card.children_empty": "Детей пока нет",
   "parent_card.debt_title": "Задолженность",
-  "parent_card.debt_placeholder": "Появится, когда подключат модуль оплат",
   "parent_card.payments_title": "История оплат",
-  "parent_card.payments_placeholder": "Появится, когда подключат модуль оплат",
   "parent_communication_form.title": "Новая коммуникация",
   "parent_communication_form.child": "Ребёнок",
   "parent_communication_form.channel": "Канал",
@@ -486,5 +484,12 @@
   "onboarding.done_hint": "Все шаги пройдены — можно работать.",
   "onboarding.done_with_skipped_title": "Почти готово",
   "onboarding.done_with_skipped_hint": "Вы пропустили эти шаги — к ним можно вернуться сейчас или позже с главной:",
-  "onboarding.finish": "Завершить настройку"
+  "onboarding.finish": "Завершить настройку",
+  "parent_card.debt_hint": "по всем детям",
+  "parent_card.payments_col_date": "Дата",
+  "parent_card.payments_col_child": "Ребёнок",
+  "parent_card.payments_col_subscription": "Абонемент",
+  "parent_card.payments_col_amount": "Сумма",
+  "parent_card.payments_col_method": "Способ",
+  "parent_card.payments_empty": "Оплат пока нет."
 }

@@ -321,9 +321,7 @@
   "parent_card.col_child_branch": "Branch",
   "parent_card.children_empty": "No children yet",
   "parent_card.debt_title": "Debt",
-  "parent_card.debt_placeholder": "Will appear once the payments module is connected",
   "parent_card.payments_title": "Payment history",
-  "parent_card.payments_placeholder": "Will appear once the payments module is connected",
   "parent_communication_form.title": "New communication",
   "parent_communication_form.child": "Child",
   "parent_communication_form.channel": "Channel",
@@ -486,5 +484,12 @@
   "onboarding.done_hint": "All steps are done — you're ready to go.",
   "onboarding.done_with_skipped_title": "Almost done",
   "onboarding.done_with_skipped_hint": "You skipped these steps — you can return to them now or later from the home page:",
-  "onboarding.finish": "Finish setup"
+  "onboarding.finish": "Finish setup",
+  "parent_card.debt_hint": "across all children",
+  "parent_card.payments_col_date": "Date",
+  "parent_card.payments_col_child": "Child",
+  "parent_card.payments_col_subscription": "Subscription",
+  "parent_card.payments_col_amount": "Amount",
+  "parent_card.payments_col_method": "Method",
+  "parent_card.payments_empty": "No payments yet."
 }

@@ -66,6 +66,17 @@ CHILD_SENSITIVE_FIELDS_ROLES = {
     User.Role.ACCOUNTANT,
 }
 
+# Деньги по конкретным детям и родителям — абонемент, долг, оплаты в
+# списке детей и карточке родителя. Шире FINANCE_ROLES (там финансовые
+# отчёты — владелец и бухгалтер): долг — ежедневный рабочий список
+# администратора (ТЗ п. 4.1), а преподавателю в работе не нужен.
+CLIENT_MONEY_VIEW_ROLES = {
+    User.Role.OWNER,
+    User.Role.MANAGER,
+    User.Role.ADMIN,
+    User.Role.ACCOUNTANT,
+}
+
 
 def can_view_financials(user) -> bool:
     return user.role in FINANCE_ROLES
@@ -107,6 +118,10 @@ def can_view_child_sensitive_fields(user) -> bool:
     return user.role in CHILD_SENSITIVE_FIELDS_ROLES
 
 
+def can_view_client_money(user) -> bool:
+    return user.role in CLIENT_MONEY_VIEW_ROLES
+
+
 def get_user_permissions(user) -> dict:
     return {
         "can_view_financials": can_view_financials(user),
@@ -119,4 +134,5 @@ def get_user_permissions(user) -> dict:
         "can_view_phone": can_view_phone(user),
         "can_view_child_sensitive_fields": can_view_child_sensitive_fields(user),
         "can_manage_groups": can_manage_groups(user),
+        "can_view_client_money": can_view_client_money(user),
     }

@@ -97,22 +97,46 @@
     {% include "includes/communications_feed.html" %}
   </div>
   {{ communication_logs|json_script:"parent-communications-data" }}
-  <div class="kc-card">
-    <dl class="kc-child-header__facts">
-      <div>
-        <dt data-i18n="parent_card.debt_title">Задолженность</dt>
-        <dd class="kc-muted" data-i18n="parent_card.debt_placeholder">
-          Появится, когда подключат модуль оплат
-        </dd>
-      </div>
-      <div>
-        <dt data-i18n="parent_card.payments_title">История оплат</dt>
-        <dd class="kc-muted" data-i18n="parent_card.payments_placeholder">
-          Появится, когда подключат модуль оплат
-        </dd>
-      </div>
-    </dl>
-  </div>
+  {% if money %}
+    <div class="kc-card">
+      <dl class="kc-child-header__facts">
+        <div>
+          <dt data-i18n="parent_card.debt_title">Задолженность</dt>
+          <dd>
+            <strong class="{% if money.total_debt %}kc-text-danger{% endif %}">{% kc_money money.total_debt %}</strong>
+            <span class="kc-muted" data-i18n="parent_card.debt_hint">по всем детям</span>
+          </dd>
+        </div>
+      </dl>
+      <h3 data-i18n="parent_card.payments_title">История оплат</h3>
+      {% if money.payments %}
+        <table class="kc-table kc-table--cards">
+          <thead>
+            <tr>
+              <th data-i18n="parent_card.payments_col_date">Дата</th>
+              <th data-i18n="parent_card.payments_col_child">Ребёнок</th>
+              <th data-i18n="parent_card.payments_col_subscription">Абонемент</th>
+              <th data-i18n="parent_card.payments_col_amount">Сумма</th>
+              <th data-i18n="parent_card.payments_col_method">Способ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for payment in money.payments %}
+              <tr>
+                <td data-label="Дата">{% kc_datetime payment.paid_at %}</td>
+                <td data-label="Ребёнок">{{ payment.subscription.child.full_name }}</td>
+                <td data-label="Абонемент">{{ payment.subscription.subscription_type_version.name }}</td>
+                <td data-label="Сумма">{% kc_money payment.amount %}</td>
+                <td data-label="Способ">{{ payment.get_method_display }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="kc-muted" data-i18n="parent_card.payments_empty">Оплат пока нет.</p>
+      {% endif %}
+    </div>
+  {% endif %}
   {{ children_rows|json_script:"parent-children-data" }}
 {% endblock content %}
 {% block extra_js %}

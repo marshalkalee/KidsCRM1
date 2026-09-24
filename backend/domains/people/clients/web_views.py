@@ -17,7 +17,7 @@ from pathlib import Path
 import pytz
 from django.contrib import messages
 from django.core.files.storage import default_storage
-from django.db.models import Q, Sum
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -25,12 +25,12 @@ from django.utils import timezone as dj_timezone
 from django.views.decorators.http import require_http_methods
 
 from domains.money.payments.models import Payment
-from domains.money.subscriptions.debt import debtor_child_ids
+from domains.money.subscriptions.debt import debt_by_child, debtor_child_ids
 from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.renewals import expiring_child_ids
 from domains.platform.core.decorators import role_required
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
-from domains.platform.core.role_permissions import can_view_phone
+from domains.platform.core.role_permissions import can_view_client_money, can_view_phone
 from domains.platform.tenants.models import Branch, Direction
 from domains.scheduling.groups.models import Group, GroupMembership
 
@@ -153,32 +153,21 @@ def _batch_child_extras(organization, child_ids):
     for membership in memberships:
         groups_by_child.setdefault(membership.child_id, []).append(membership.group.name)
 
-    subscriptions = list(
+    subscriptions = (
         Subscription.objects.for_tenant(organization)
         .filter(child_id__in=child_ids)
         .select_related("subscription_type_version")
         .order_by("child_id", "-starts_on")
     )
-    paid_by_subscription = dict(
-        Payment.objects.for_tenant(organization)
-        .filter(subscription_id__in=[sub.id for sub in subscriptions])
-        .values("subscription_id")
-        .annotate(total=Sum("amount"))
-        .values_list("subscription_id", "total")
-    )
-
-    # subscriptions уже отсортированы по (child_id, -starts_on) — первое
-    # вхождение на child_id — самый свежий абонемент, без лишнего запроса
-    # с MAX(starts_on)/DISTINCT.
+    # Отсортированы по (child_id, -starts_on) — первое вхождение на child_id
+    # — самый свежий абонемент, без лишнего запроса с MAX(starts_on)/DISTINCT.
     latest_subscription_by_child = {}
-    debt_by_child = {}
     for sub in subscriptions:
         latest_subscription_by_child.setdefault(sub.child_id, sub)
-        paid = paid_by_subscription.get(sub.id) or Decimal(0)
-        owed = max(Decimal(0), sub.price - paid)
-        debt_by_child[sub.child_id] = debt_by_child.get(sub.child_id, Decimal(0)) + owed
 
-    return groups_by_child, latest_subscription_by_child, debt_by_child
+    # Сумма долга — сервисом домена «Деньги», не своим подсчётом: та же
+    # цифра в карточке родителя и на экране задолженностей.
+    return groups_by_child, latest_subscription_by_child, debt_by_child(organization, child_ids)
 
 
 GLOBAL_SEARCH_MIN_LENGTH = 3  # ТЗ п. 4.1: 3 символа имени — уже 4 цифры телефона тоже проходят
@@ -442,8 +431,15 @@ def child_list(request):
 @role_required()
 def child_list_data(request):
     organization = request.user.organization
+    show_money = can_view_client_money(request.user)
+    params = request.GET
+    if not show_money:
+        # Фильтр по долгу — тоже раскрытие денег, пусть и без суммы.
+        params = params.copy()
+        params.pop("has_debt", None)
+        params.pop("expiring", None)
     qs = Child.objects.for_tenant(organization).prefetch_related("directions__branches")
-    qs = _filter_child_queryset(qs, organization, request.GET)
+    qs = _filter_child_queryset(qs, organization, params)
     qs = _sort_child_queryset(
         qs, request.GET.get("sort", "full_name"), request.GET.get("dir", "asc")
     )
@@ -464,9 +460,7 @@ def child_list_data(request):
     children = list(qs[start : start + page_size])
 
     child_ids = [child.id for child in children]
-    groups_by_child, subscription_by_child, debt_by_child = _batch_child_extras(
-        organization, child_ids
-    )
+    groups_by_child, subscription_by_child, debts = _batch_child_extras(organization, child_ids)
 
     rows = [
         {
@@ -479,10 +473,10 @@ def child_list_data(request):
             "status": child.status,
             "subscription_name": (
                 subscription_by_child[child.id].subscription_type_version.name
-                if child.id in subscription_by_child
+                if show_money and child.id in subscription_by_child
                 else None
             ),
-            "debt": str(debt_by_child.get(child.id, Decimal(0))),
+            "debt": str(debts.get(child.id, Decimal(0))) if show_money else None,
             "card_url": reverse("clients_web:child-card", args=[child.pk]),
         }
         for child in children
@@ -827,6 +821,29 @@ def _parent_communication_logs(request, parent):
     return _serialize_communication_logs(logs, parent.organization)
 
 
+# Сколько последних оплат показать в карточке родителя.
+PARENT_PAYMENTS_LIMIT = 50
+
+
+def _parent_money(organization, parent):
+    """Сводно по всем детям родителя (ТЗ п. 4.1): суммарный долг — сервисом
+    домена «Деньги» (debt_by_child — та же цифра, что в списке детей), и
+    последние оплаты по абонементам всех его детей."""
+    child_ids = list(
+        ChildContact.objects.for_tenant(organization)
+        .filter(parent_contact=parent)
+        .values_list("child_id", flat=True)
+    )
+    total_debt = sum(debt_by_child(organization, child_ids).values(), Decimal(0))
+    payments = (
+        Payment.objects.for_tenant(organization)
+        .filter(subscription__child_id__in=child_ids)
+        .select_related("subscription__child", "subscription__subscription_type_version")
+        .order_by("-paid_at")[:PARENT_PAYMENTS_LIMIT]
+    )
+    return {"total_debt": total_debt, "payments": list(payments)}
+
+
 @role_required()
 def parent_card(request, pk):
     parent = get_object_or_404(ParentContact.objects.for_tenant(request.user.organization), pk=pk)
@@ -837,6 +854,11 @@ def parent_card(request, pk):
     # хочет только цифры без "+" (ТЗ п. 4.5 — deep-link). show_phones — та
     # же проверка, что скрывает сам номер: иначе номер утекал бы через
     # href кнопки WhatsApp тому, кому нельзя видеть его текстом.
+    money = (
+        _parent_money(request.user.organization, parent)
+        if can_view_client_money(request.user)
+        else None
+    )
     call_url = f"tel:{phones[0].number}" if phones else None
     whatsapp_url = (
         f"https://wa.me/{parent.whatsapp.lstrip('+')}" if show_phones and parent.whatsapp else None
@@ -853,6 +875,7 @@ def parent_card(request, pk):
             "call_url": call_url,
             "whatsapp_url": whatsapp_url,
             "can_manage": can_manage,
+            "money": money,
             "edit_url": reverse("clients_web:parent-edit", args=[parent.pk]),
             "communication_create_url": reverse(
                 "clients_web:parent-communication-create", args=[parent.pk]

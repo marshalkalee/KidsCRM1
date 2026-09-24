@@ -321,9 +321,7 @@
   "parent_card.col_child_branch": "Филиал",
   "parent_card.children_empty": "Балалар жоқ",
   "parent_card.debt_title": "Берешек",
-  "parent_card.debt_placeholder": "Төлем модулі қосылғанда пайда болады",
   "parent_card.payments_title": "Төлемдер тарихы",
-  "parent_card.payments_placeholder": "Төлем модулі қосылғанда пайда болады",
   "parent_communication_form.title": "Жаңа байланыс",
   "parent_communication_form.child": "Бала",
   "parent_communication_form.channel": "Арна",
@@ -486,5 +484,12 @@
   "onboarding.done_hint": "Барлық қадамдар өтті — жұмыс істеуге болады.",
   "onboarding.done_with_skipped_title": "Дайын дерлік",
   "onboarding.done_with_skipped_hint": "Сіз бұл қадамдарды өткізіп жібердіңіз — оларға қазір немесе кейін басты беттен оралуға болады:",
-  "onboarding.finish": "Баптауды аяқтау"
+  "onboarding.finish": "Баптауды аяқтау",
+  "parent_card.debt_hint": "барлық балалар бойынша",
+  "parent_card.payments_col_date": "Күні",
+  "parent_card.payments_col_child": "Бала",
+  "parent_card.payments_col_subscription": "Абонемент",
+  "parent_card.payments_col_amount": "Сома",
+  "parent_card.payments_col_method": "Тәсілі",
+  "parent_card.payments_empty": "Әзірге төлемдер жоқ."
 }

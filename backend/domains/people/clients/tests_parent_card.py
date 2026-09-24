@@ -10,11 +10,14 @@
 """
 
 import datetime
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from domains.money.subscriptions.sales import sell_subscription
+from domains.money.subscriptions.subscription_types import create_type
 from domains.platform.tenants.models import Branch, Direction, Organization
 
 from .models import Child, ChildContact, CommunicationLog, ContactPhone, ParentContact
@@ -135,14 +138,63 @@ class ParentCardWebViewTests(TestCase):
         self.assertIn("Филиал А", content)
         self.assertIn("Филиал Б", content)
 
-    def test_debt_and_payments_show_placeholder_not_a_computed_number(self):
-        # Модуль оплат (domains/money) пока пустая заглушка — карточка не
-        # должна считать сумму сама, только показывать, что раздел появится.
+    def _sell(self, child, price, paid):
+        direction = Direction.objects.get_or_create(organization=self.org, name="Балет")[0]
+        sub_type = create_type(
+            self.org, name=f"Абонемент {price}", price=price, quota_sessions=8, duration_days=30
+        )
+        sell_subscription(
+            actor=self.owner,
+            child=child,
+            subscription_type_version=sub_type.versions.latest(),
+            direction=direction,
+            starts_on=datetime.date.today(),
+            ends_on=datetime.date.today() + datetime.timedelta(days=30),
+            paid_amount=Decimal(paid),
+            payment_method="cash",
+        )
+
+    def _two_children_with_money(self):
+        child_a = _make_child(self.org, "Аружан")
+        child_b = _make_child(self.org, "Данияр")
+        for child in (child_a, child_b):
+            ChildContact.objects.create(
+                organization=self.org, child=child, parent_contact=self.parent, role="mother"
+            )
+        self._sell(child_a, 25000, "15000")  # долг 10000
+        self._sell(child_b, 20000, "20000")  # оплачен полностью
+        return child_a, child_b
+
+    def test_total_debt_across_all_children_matches_child_list(self):
+        child_a, _ = self._two_children_with_money()
+        self.client.force_login(self.owner)
+
+        response = self.client.get(reverse("clients_web:parent-card", args=[self.parent.pk]))
+        list_rows = self.client.get(reverse("clients_web:child-list-data")).json()["rows"]
+
+        self.assertEqual(response.context["money"]["total_debt"], Decimal("10000"))
+        # Та же цифра, что в колонке «Долг» списка детей — один сервис.
+        list_debt = sum(Decimal(row["debt"]) for row in list_rows)
+        self.assertEqual(response.context["money"]["total_debt"], list_debt)
+
+    def test_payment_history_is_combined_for_all_children(self):
+        self._two_children_with_money()
         self.client.force_login(self.owner)
 
         response = self.client.get(reverse("clients_web:parent-card", args=[self.parent.pk]))
 
-        self.assertContains(response, "parent_card.debt_placeholder")
+        payments = response.context["money"]["payments"]
+        self.assertEqual({p.subscription.child.full_name for p in payments}, {"Аружан", "Данияр"})
+        self.assertContains(response, "Данияр")
+
+    def test_teacher_does_not_see_money(self):
+        self._two_children_with_money()
+        self.client.force_login(self.teacher)
+
+        response = self.client.get(reverse("clients_web:parent-card", args=[self.parent.pk]))
+
+        self.assertIsNone(response.context["money"])
+        self.assertNotContains(response, "История оплат")
 
     def test_communications_feed_aggregates_across_all_children(self):
         # Тот же принцип, что у критерия "два филиала на одной карточке" —

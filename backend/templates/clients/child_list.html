@@ -53,14 +53,16 @@
             {% for value, label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
           </select>
         </label>
-        <label class="kc-filters-panel__checkbox">
-          <input type="checkbox" data-filter="has_debt" value="1" />
-          <span data-i18n="child_list.filter_has_debt">Есть задолженность</span>
-        </label>
-        <label class="kc-filters-panel__checkbox">
-          <input type="checkbox" data-filter="expiring" value="1" />
-          <span data-i18n="child_list.filter_expiring">Абонемент скоро заканчивается</span>
-        </label>
+        {% if kc_permissions.can_view_client_money %}
+          <label class="kc-filters-panel__checkbox">
+            <input type="checkbox" data-filter="has_debt" value="1" />
+            <span data-i18n="child_list.filter_has_debt">Есть задолженность</span>
+          </label>
+          <label class="kc-filters-panel__checkbox">
+            <input type="checkbox" data-filter="expiring" value="1" />
+            <span data-i18n="child_list.filter_expiring">Абонемент скоро заканчивается</span>
+          </label>
+        {% endif %}
       </div>
       <div class="kc-filters-panel__footer">
         <button type="button" class="kc-btn kc-btn--secondary" data-filters-reset>
@@ -175,6 +177,14 @@
           },
         },
       ];
+      // Абонемент и долг — не преподавателю (RBAC: can_view_client_money);
+      // сервер их для него и не отдаёт, здесь — чтобы не было пустых колонок.
+      var showMoney = {{ kc_permissions.can_view_client_money|yesno:"true,false" }};
+      if (!showMoney) {
+        columns = columns.filter(function (column) {
+          return column.key !== "subscription_name" && column.key !== "debt";
+        });
+      }
 
       var table = window.KidsCRM.table.init("#js-children-table", {
         columns: columns,

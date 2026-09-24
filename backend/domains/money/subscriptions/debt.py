@@ -30,3 +30,22 @@ def debtor_child_ids(organization):
         .filter(price__gt=F("paid"))
         .values("child_id")
     )
+
+
+def debt_by_child(organization, child_ids) -> dict:
+    """{child_id: сумма долга} — по тому же определению, что
+    debtor_child_ids: по каждому абонементу max(0, цена − оплачено),
+    переплата по одному абонементу не гасит долг по другому. Одним
+    запросом на весь набор детей (список детей, карточка родителя) —
+    в двух экранах одна и та же цифра."""
+    rows = (
+        Subscription.objects.for_tenant(organization)
+        .filter(child_id__in=child_ids)
+        .annotate(paid=Coalesce(Sum("payments__amount"), Decimal(0)))
+        .filter(price__gt=F("paid"))
+        .values_list("child_id", "price", "paid")
+    )
+    debts = {}
+    for child_id, price, paid in rows:
+        debts[child_id] = debts.get(child_id, Decimal(0)) + (price - paid)
+    return debts
