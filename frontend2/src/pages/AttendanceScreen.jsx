@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ArrowLeft, Check, X, RotateCcw, AlertTriangle, Loader2, Users, MapPin, Clock, ChevronRight, WifiOff,
+  ArrowLeft, Check, X, RotateCcw, AlertTriangle, Loader2, Users, MapPin, Clock, ChevronRight, WifiOff, History,
 } from 'lucide-react'
 import { localDatePart, localTimePart } from '../utils/calendarDate'
 import { fetchTodayLessons } from '../api/lessons'
@@ -362,6 +362,14 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark }) {
       {isAbsent && row.absence_reason && (
         <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
           {ABSENCE_REASONS.find(([v]) => v === row.absence_reason)?.[1]}
+        </div>
+      )}
+      {row.is_retroactive_edit && (
+        <div
+          style={{ fontSize: 11, color: '#7C6FF7', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}
+          title="Отметку поменяли после того, как занятие уже прошло"
+        >
+          <History size={11} /> Изменено задним числом
         </div>
       )}
     </>

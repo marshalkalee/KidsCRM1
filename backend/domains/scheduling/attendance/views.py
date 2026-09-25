@@ -1,3 +1,6 @@
+import datetime
+
+from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -149,3 +152,46 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
                 ).data,
             }
         )
+
+    @action(detail=False, methods=["get"], url_path="unmarked-yesterday")
+    def unmarked_yesterday(self, request):
+        """TRU-52, ТЗ п. 4.5: вчерашние занятия, посещаемость по которым
+        отмечена не полностью (в т.ч. вообще не отмечена) — сырая выборка
+        для центра уведомлений сотруднику (TRU-72, делает Bekzat). Здесь
+        только отдаём данные, само уведомление — не наша часть. Учитель
+        видит только свои занятия — тот же принцип RBAC, что и в roster."""
+        tz = timezone.zoneinfo.ZoneInfo(request.organization.timezone or "Asia/Almaty")
+        yesterday = (timezone.now().astimezone(tz) - datetime.timedelta(days=1)).date()
+
+        lessons = (
+            Lesson.objects.for_tenant(request.organization)
+            .exclude(status__in=[Lesson.Status.CANCELLED, Lesson.Status.RESCHEDULED])
+            .filter(starts_at__date=yesterday)
+            .select_related("group", "room", "teacher")
+        )
+        if request.user.role == "teacher":
+            lessons = lessons.filter(teacher=request.user)
+
+        results = []
+        for lesson in lessons:
+            participants = list(lesson.participants())
+            if not participants:
+                continue
+            marked_count = (
+                Attendance.objects.for_tenant(request.organization)
+                .filter(lesson=lesson, child__in=participants)
+                .count()
+            )
+            if marked_count < len(participants):
+                results.append(
+                    {
+                        "lesson": str(lesson.id),
+                        "group_name": lesson.group.name if lesson.group else None,
+                        "room_name": lesson.room.name if lesson.room else None,
+                        "teacher_id": str(lesson.teacher_id) if lesson.teacher_id else None,
+                        "starts_at": lesson.starts_at.isoformat(),
+                        "participants_count": len(participants),
+                        "marked_count": marked_count,
+                    }
+                )
+        return Response({"date": yesterday.isoformat(), "results": results})

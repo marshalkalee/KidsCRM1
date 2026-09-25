@@ -31,6 +31,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
             "subscription_id",
             "consume_outcome",
             "no_subscription_flag",
+            "is_retroactive_edit",
             "marked_by",
             "marked_by_name",
             "marked_at",
@@ -43,6 +44,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
             "subscription_id",
             "consume_outcome",
             "no_subscription_flag",
+            "is_retroactive_edit",
             "marked_by",
             "marked_at",
             "created_at",
@@ -94,6 +96,7 @@ class AttendanceRosterEntrySerializer(serializers.Serializer):
     absence_reason = serializers.SerializerMethodField()
     consumed_from_subscription = serializers.SerializerMethodField()
     no_subscription_flag = serializers.SerializerMethodField()
+    is_retroactive_edit = serializers.SerializerMethodField()
     marked_at = serializers.SerializerMethodField()
 
     def get_attendance_id(self, obj):
@@ -119,6 +122,10 @@ class AttendanceRosterEntrySerializer(serializers.Serializer):
     def get_no_subscription_flag(self, obj):
         attendance = obj["attendance"]
         return bool(attendance and attendance.no_subscription_flag)
+
+    def get_is_retroactive_edit(self, obj):
+        attendance = obj["attendance"]
+        return bool(attendance and attendance.is_retroactive_edit)
 
     def get_marked_at(self, obj):
         attendance = obj["attendance"]

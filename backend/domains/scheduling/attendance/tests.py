@@ -556,3 +556,253 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AttendanceRetroactiveEditTest(AttendanceFixtureMixin, TestCase):
+    """TRU-52: правка отметки за занятие, которое уже прошло, должна быть
+    видна отдельно от обычной первой отметки. self.lesson (из фикстуры) —
+    2026-09-21, в прошлом относительно текущей даты теста."""
+
+    def test_first_mark_is_not_retroactive(self):
+        attendance = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        )
+
+        attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
+
+        self.assertFalse(attendance.is_retroactive_edit)
+
+    def test_editing_past_lesson_flags_retroactive(self):
+        attendance = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        )
+        attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
+
+        attendance.mark(
+            Attendance.Status.ABSENT,
+            actor=self.owner,
+            absence_reason=Attendance.AbsenceReason.ILLNESS,
+        )
+
+        self.assertTrue(attendance.is_retroactive_edit)
+
+    def test_resubmitting_same_status_does_not_flag_retroactive(self):
+        attendance = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        )
+        attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
+
+        attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
+
+        self.assertFalse(attendance.is_retroactive_edit)
+
+    def test_editing_same_day_lesson_is_not_retroactive(self):
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        now = timezone.now().astimezone(tz)
+        todays_lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            starts_at=now.replace(hour=8, minute=0, second=0, microsecond=0),
+            ends_at=now.replace(hour=9, minute=0, second=0, microsecond=0),
+        )
+        attendance = Attendance.objects.create(
+            organization=self.org,
+            lesson=todays_lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        )
+        attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
+
+        attendance.mark(Attendance.Status.ABSENT, actor=self.owner)
+
+        self.assertFalse(attendance.is_retroactive_edit)
+
+    def test_retroactive_flag_is_sticky(self):
+        """Один раз выставленный флаг не снимается последующими правками —
+        это исторический факт про запись, не текущее состояние."""
+        attendance = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        )
+        attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
+        attendance.mark(Attendance.Status.ABSENT, actor=self.owner)
+        self.assertTrue(attendance.is_retroactive_edit)
+
+        attendance.mark(Attendance.Status.MAKEUP, actor=self.owner)
+
+        self.assertTrue(attendance.is_retroactive_edit)
+
+    def test_retroactive_edit_recalculates_consumption(self):
+        """Критерий приёмки: откат «пришёл» возвращает занятие на
+        абонемент — в т.ч. когда это правка задним числом."""
+        sub = self._create_subscription(sessions=8)
+        attendance = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        )
+        attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
+        sub.refresh_from_db()
+        self.assertEqual(sub.sessions_remaining_cache, 7)
+
+        # Родитель оспорил отметку через несколько дней — администратор
+        # правит на «не был».
+        attendance.mark(
+            Attendance.Status.ABSENT,
+            actor=self.owner,
+            absence_reason=Attendance.AbsenceReason.FAMILY,
+        )
+
+        self.assertTrue(attendance.is_retroactive_edit)
+        sub.refresh_from_db()
+        self.assertEqual(sub.sessions_remaining_cache, 8)
+
+    def test_audit_log_records_old_and_new_values_on_retroactive_edit(self):
+        attendance = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        )
+        attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
+
+        attendance.mark(
+            Attendance.Status.ABSENT,
+            actor=self.owner,
+            absence_reason=Attendance.AbsenceReason.ILLNESS,
+        )
+
+        log = AuditLog.objects.filter(action=AuditLog.Action.MARK_ATTENDANCE).latest("created_at")
+        self.assertEqual(log.before["status"], Attendance.Status.PRESENT)
+        self.assertEqual(log.after["status"], Attendance.Status.ABSENT)
+        self.assertTrue(log.after["is_retroactive_edit"])
+
+
+class AttendanceUnmarkedYesterdayApiTest(APITestCase):
+    """TRU-52, ТЗ п. 4.5: выборка вчерашних занятий без полной отметки —
+    для центра уведомлений (TRU-72)."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.branch = Branch.objects.create(organization=self.org, name="Главный")
+        self.direction = Direction.objects.create(organization=self.org, name="Балет")
+        self.group = Group.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            direction=self.direction,
+            name="Балет — Младшая",
+            capacity=12,
+        )
+        self.owner = User.objects.create_user(
+            phone="+77010000006",
+            full_name="Владелец",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+        self.teacher = User.objects.create_user(
+            phone="+77010000007",
+            full_name="Преподавательница",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.other_teacher = User.objects.create_user(
+            phone="+77010000008",
+            full_name="Другой преподаватель",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.child = Child.objects.create(
+            organization=self.org,
+            full_name="Ребёнок",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 7),
+            gender=Child.Gender.FEMALE,
+        )
+        GroupMembership.objects.create(
+            organization=self.org,
+            group=self.group,
+            child=self.child,
+            joined_at=datetime.date.today(),
+        )
+
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        yesterday_noon = (timezone.now().astimezone(tz) - datetime.timedelta(days=1)).replace(
+            hour=12, minute=0, second=0, microsecond=0
+        )
+        self.unmarked_lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            teacher=self.teacher,
+            starts_at=yesterday_noon,
+            ends_at=yesterday_noon + datetime.timedelta(hours=1),
+        )
+        self.fully_marked_lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            teacher=self.teacher,
+            starts_at=yesterday_noon + datetime.timedelta(hours=2),
+            ends_at=yesterday_noon + datetime.timedelta(hours=3),
+        )
+        Attendance.objects.create(
+            organization=self.org,
+            lesson=self.fully_marked_lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        ).mark(Attendance.Status.PRESENT, actor=self.owner)
+
+        today_noon = (
+            timezone.now().astimezone(tz).replace(hour=12, minute=0, second=0, microsecond=0)
+        )
+        self.todays_lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            teacher=self.teacher,
+            starts_at=today_noon,
+            ends_at=today_noon + datetime.timedelta(hours=1),
+        )
+
+    def test_lists_unmarked_yesterday_lesson(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.get("/api/v1/attendance/unmarked-yesterday/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        lesson_ids = {r["lesson"] for r in response.data["results"]}
+        self.assertIn(str(self.unmarked_lesson.id), lesson_ids)
+
+    def test_excludes_fully_marked_lesson(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.get("/api/v1/attendance/unmarked-yesterday/")
+
+        lesson_ids = {r["lesson"] for r in response.data["results"]}
+        self.assertNotIn(str(self.fully_marked_lesson.id), lesson_ids)
+
+    def test_excludes_todays_lesson(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.get("/api/v1/attendance/unmarked-yesterday/")
+
+        lesson_ids = {r["lesson"] for r in response.data["results"]}
+        self.assertNotIn(str(self.todays_lesson.id), lesson_ids)
+
+    def test_teacher_sees_only_own_unmarked_lessons(self):
+        client = _authenticated_client(self.other_teacher)
+
+        response = client.get("/api/v1/attendance/unmarked-yesterday/")
+
+        self.assertEqual(response.data["results"], [])

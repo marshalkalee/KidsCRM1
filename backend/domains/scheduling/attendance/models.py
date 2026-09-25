@@ -56,6 +56,12 @@ class Attendance(TenantModel):
         "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
     marked_at = models.DateTimeField(null=True, blank=True)
+    # TRU-52: правку отметки за занятие, которое уже прошло (не первую
+    # отметку сразу после урока, а именно повторное изменение), нужно
+    # уметь показать в журнале отдельно от обычных отметок (ТЗ п. 4.3,
+    # 11.8) — ставится один раз в Attendance.mark() и не снимается: это
+    # исторический факт об этой записи, а не текущее состояние.
+    is_retroactive_edit = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["-created_at"]
@@ -92,17 +98,28 @@ class Attendance(TenantModel):
         if status not in Attendance.Status.values:
             raise ValueError(f"Неизвестный статус посещаемости: {status}")
 
+        new_absence_reason = absence_reason if status == Attendance.Status.ABSENT else ""
         before = {
             "status": self.status,
+            "absence_reason": self.absence_reason,
             "consumed_from_subscription": self.consumed_from_subscription,
         }
 
+        # TRU-52: это правка (не первая отметка) занятия, которое уже
+        # прошло — не совпадает с обычным сценарием «отметили сразу после
+        # урока» (тогда marked_at ещё None). Совпадение значений — не
+        # правка (повторный клик по той же кнопке), флаг не ставим.
+        is_edit = self.marked_at is not None and (
+            self.status != status or self.absence_reason != new_absence_reason
+        )
+        if is_edit and self._lesson_already_happened():
+            self.is_retroactive_edit = True
+
         if status == Attendance.Status.PRESENT:
             self._consume()
-            self.absence_reason = ""
         else:
             self._revert()
-            self.absence_reason = absence_reason if status == Attendance.Status.ABSENT else ""
+        self.absence_reason = new_absence_reason
 
         self.status = status
         self.marked_by = actor
@@ -116,11 +133,19 @@ class Attendance(TenantModel):
             before=before,
             after={
                 "status": self.status,
+                "absence_reason": self.absence_reason,
                 "consumed_from_subscription": self.consumed_from_subscription,
                 "no_subscription_flag": self.no_subscription_flag,
+                "is_retroactive_edit": self.is_retroactive_edit,
             },
         )
         return self
+
+    def _lesson_already_happened(self):
+        tz = timezone.zoneinfo.ZoneInfo(self.organization.timezone or "Asia/Almaty")
+        today = timezone.now().astimezone(tz).date()
+        lesson_date = self.lesson.starts_at.astimezone(tz).date()
+        return lesson_date < today
 
     def _consume(self):
         """Списание при отметке «пришёл». SubscriptionService.consume()
