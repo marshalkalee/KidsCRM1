@@ -223,3 +223,24 @@ class GlobalSearchPerformanceTests(TestCase):
             f"global-search ответил за {elapsed:.3f}с на {self.CHILD_COUNT} детей "
             f"(бюджет теста {self.RESPONSE_BUDGET_SECONDS}с, целевой бюджет ТЗ п. 10.2 — 1с)",
         )
+
+
+class GlobalSearchApiTests(GlobalSearchWebViewTests):
+    """Те же проверки через API для frontend2 (TRU-80) — один сервис
+    search.global_search, одинаковые правила в обоих интерфейсах."""
+
+    def _search(self, query, user=None):
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        client.force_authenticate(user or self.owner)
+        response = client.get(reverse("clients:global-search"), {"q": query})
+        self.assertEqual(response.status_code, 200)
+        return response.json()["results"]
+
+    def test_anonymous_gets_401(self):
+        from rest_framework.test import APIClient
+
+        response = APIClient().get(reverse("clients:global-search"), {"q": "Айг"})
+
+        self.assertEqual(response.status_code, 401)

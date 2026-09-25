@@ -9,7 +9,9 @@
 | № | Название | Статус |
 |---|---|---|
 | 0001 | Модель мультитенантности | на ветке `feature/ADR-001-multitenancy` — перенести сюда при мерже |
-| 0002 | Стек, структура репозитория и формат API | на ветке `feature/ADR-002-stack-repo-api` — перенести сюда при мерже |
+| 0002 | Стек, структура репозитория и формат API | `backend/docs/adr-002-stack-repo-api`; раздел «Frontend» заменён ADR-004 |
+| 0003 | Абстракция провайдера оплаты | `backend/docs/adr-003-payment-provider-abstraction.md` |
+| 0004 | Фронтенд — React SPA (frontend2) поверх REST API | `backend/docs/adr-004-frontend-spa.md` — принято |
 
 ADR-001 и ADR-002 пока лежат в `backend/docs/` на своих ветках (это было
 до появления соглашения о единой папке `docs/adr/` в корне). При мерже

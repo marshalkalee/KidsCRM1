@@ -166,17 +166,52 @@ jobs:
         working-directory: backend
         run: python manage.py test --tag=tenant_isolation
 
+  frontend:
+    name: Frontend (frontend2 — lint, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend2/package-lock.json
+
+      - run: npm ci
+
+      # oxlint: ошибки валят джоб, предупреждения — видны в логе (их пока
+      # хватает в старых страницах, чистятся по мере переноса, TRU-78).
+      - run: npm run lint
+
+      - run: npm run build
+
   build:
-    name: Build backend (нет отдельного frontend — веб внутри backend, ADR-002)
+    name: Build images (backend, nginx + frontend2)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
-      - uses: docker/build-push-action@v6
+      - name: backend
+        uses: docker/build-push-action@v6
         with:
           context: backend
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      # nginx собирает frontend2 внутри образа (infra/nginx/Dockerfile) —
+      # тот же образ, что поднимается локально и на staging.
+      - name: nginx + frontend2
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/nginx/Dockerfile
+          push: false
+          cache-from: type=gha,scope=nginx
+          cache-to: type=gha,mode=max,scope=nginx

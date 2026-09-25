@@ -81,6 +81,17 @@ class RBACTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertFalse(response.data["permissions"]["can_edit_schedule"])
 
+    def test_can_manage_children_flag(self):
+        for user, expected in [
+            (self.owner, True),
+            (self.manager, True),
+            (self.admin, True),
+            (self.teacher, False),
+            (self.accountant, False),
+        ]:
+            response = make_client(user).get("/api/v1/users/auth/me/")
+            self.assertEqual(response.data["permissions"]["can_manage_children"], expected)
+
     def test_unauthenticated_request_is_rejected(self):
         client = APIClient()
         response = client.get("/api/v1/users/auth/me/")

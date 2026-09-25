@@ -10,9 +10,54 @@
 
 from django.db import transaction
 
-from .import_service import DECISION_OPTIONS, ImportRow
-from .models import ImportJob
+from .import_service import DECISION_LABELS, DECISION_OPTIONS, DUPLICATE_KIND_LABELS, ImportRow
+from .models import ImportColumnMapping, ImportJob
 from .tasks import run_dry_run_job, run_import_job
+
+
+def saved_mapping(organization, headers) -> ImportColumnMapping | None:
+    """Маппинг, сохранённый для точно такого же набора заголовков (ТЗ п. 4.1:
+    повторный импорт того же файла не требует настраивать заново)."""
+    return (
+        ImportColumnMapping.objects.for_tenant(organization)
+        .filter(headers_key="|".join(headers))
+        .first()
+    )
+
+
+def save_mapping(organization, headers, mapping, meta) -> None:
+    headers_key = "|".join(headers)
+    ImportColumnMapping.objects.for_tenant(organization).filter(headers_key=headers_key).delete()
+    ImportColumnMapping.objects.create(
+        organization=organization,
+        headers_key=headers_key,
+        file_headers=headers,
+        mapping=mapping,
+        csv_delimiter=meta.get("delimiter", ""),
+        csv_encoding=meta.get("encoding", ""),
+    )
+
+
+def duplicate_kinds(job: ImportJob) -> list[dict]:
+    """Сводка по видам совпадений — для массового решения «для всех
+    однотипных» (сотню дублей по одной никто не прокликает)."""
+    rows = duplicate_rows(job)
+    kinds = []
+    for kind, label in DUPLICATE_KIND_LABELS.items():
+        count = sum(1 for row in rows if row["duplicate"]["kind"] == kind)
+        if count:
+            kinds.append(
+                {
+                    "kind": kind,
+                    "label": label,
+                    "count": count,
+                    "options": [
+                        {"value": value, "label": DECISION_LABELS[kind][value]}
+                        for value in DECISION_OPTIONS[kind]
+                    ],
+                }
+            )
+    return kinds
 
 
 def start_dry_run(organization, user, rows: list[ImportRow]) -> ImportJob:

@@ -1,6 +1,9 @@
+import secrets
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
+from django.utils.text import slugify
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -72,9 +75,18 @@ class CustomTokenObtainSerializer(TokenObtainPairSerializer):
         return data
 
 
+def unique_org_slug(name: str) -> str:
+    # slug — технический идентификатор организации (в API), владелец его не
+    # вводит: кириллица в slugify даёт пустую строку, поэтому суффикс всегда.
+    base = slugify(name)[:80] or "center"
+    return f"{base}-{secrets.token_hex(3)}"
+
+
 class OrganizationRegisterSerializer(serializers.Serializer):
     org_name = serializers.CharField(max_length=255)
-    org_slug = serializers.SlugField(max_length=100)
+    # Необязателен: регистрация с сайта и из frontend2 его не спрашивает —
+    # генерируется из названия (unique_org_slug).
+    org_slug = serializers.SlugField(max_length=100, required=False)
     full_name = serializers.CharField(max_length=255)
     phone = serializers.CharField(max_length=20)
     password = serializers.CharField(write_only=True)
@@ -107,7 +119,7 @@ class OrganizationRegisterSerializer(serializers.Serializer):
         # организацию без единого пользователя.
         org = Organization.objects.create(
             name=validated_data["org_name"],
-            slug=validated_data["org_slug"],
+            slug=validated_data.get("org_slug") or unique_org_slug(validated_data["org_name"]),
         )
         user = User.objects.create_user(
             phone=validated_data["phone"],

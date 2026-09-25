@@ -9,32 +9,26 @@
 заглушки, см. child_card_tabs.py (контракт для Дарьи/Bekzat'а).
 """
 
-import re
 import uuid
-from decimal import Decimal
 from pathlib import Path
 
 import pytz
 from django.contrib import messages
 from django.core.files.storage import default_storage
-from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone as dj_timezone
 from django.views.decorators.http import require_http_methods
 
-from domains.money.payments.models import Payment
-from domains.money.subscriptions.debt import debt_by_child, debtor_child_ids
-from domains.money.subscriptions.models import Subscription
-from domains.money.subscriptions.renewals import expiring_child_ids
 from domains.platform.core.decorators import role_required
-from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.role_permissions import can_view_client_money, can_view_phone
 from domains.platform.tenants.models import Branch, Direction
-from domains.scheduling.groups.models import Group, GroupMembership
+from domains.scheduling.groups.models import Group
 
+from . import search
 from .child_card_tabs import get_child_card_tabs
+from .child_list import branch_names, list_children
 from .forms import (
     ChildContactForm,
     ChildForm,
@@ -45,6 +39,7 @@ from .forms import (
     ParentContactForm,
 )
 from .models import Child, ChildContact, CommunicationLog, ParentContact
+from .parents import DELETE_BLOCKED_MESSAGE, can_delete_parent, parent_money
 
 OWNER = "owner"
 MANAGER = "manager"
@@ -60,268 +55,21 @@ def _is_ajax(request):
     return request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
 
-def _branch_names(child):
-    # Филиал не хранится на Child напрямую — выводится из филиалов, где
-    # доступны направления ребёнка (Direction.branches, M2M). Не идеально
-    # для ребёнка без направлений, но не требует новой связи на модели
-    # ради одной строчки в шапке.
-    branch_names = {
-        branch.name for direction in child.directions.all() for branch in direction.branches.all()
-    }
-    return ", ".join(sorted(branch_names)) if branch_names else None
-
-
-def _direction_names(child):
-    names = {direction.name for direction in child.directions.all()}
-    return ", ".join(sorted(names)) if names else None
-
-
-CHILD_SORT_FIELDS = {
-    "full_name": "full_name",
-    "age": "birth_date",
-    "status": "status",
+_SEARCH_CARD_URLS = {
+    "child": "clients_web:child-card",
+    "parent": "clients_web:parent-card",
 }
-
-
-def _sort_child_queryset(qs, sort, direction):
-    # Только скалярные поля Child — филиал/направление/группа/абонемент/
-    # долг многозначны (M2M/через другую таблицу) или требуют коррелирующих
-    # подзапросов, сортировка по ним сюда не входит в этой задаче (JS-колонки
-    # с этими ключами не помечены sortable, см. child_list.html).
-    field = CHILD_SORT_FIELDS.get(sort, "full_name")
-    descending = direction == "desc"
-    if sort == "age":
-        # Возраст не хранится (Child.age — вычисляемое свойство, не
-        # колонка БД) — сортируем по birth_date, направление обратное:
-        # старше = раньше родился, т.е. "возраст по убыванию" — это
-        # "дата рождения по возрастанию".
-        descending = not descending
-    ordering = f"-{field}" if descending else field
-    # pk — стабильный tie-break: без него строки с одинаковым значением
-    # сортируемого поля могут менять порядок между запросами соседних
-    # страниц (LIMIT/OFFSET без полного порядка не гарантирует стабильность).
-    return qs.order_by(ordering, "pk")
-
-
-def _filter_child_queryset(qs, organization, params):
-    """Шесть фильтров ТЗ п. 4.1, комбинируются между собой (AND). Долг/
-    абонемент — через domains.money.subscriptions (debtor_child_ids/
-    expiring_child_ids), не своей копией арифметики: иначе этот список и
-    будущие экраны Bekzat'а («Задолженности»/«Продления») разойдутся."""
-    needs_distinct = False
-
-    branch_id = params.get("branch")
-    if branch_id:
-        qs = qs.filter(directions__branches__id=branch_id)
-        needs_distinct = True
-
-    direction_id = params.get("direction")
-    if direction_id:
-        qs = qs.filter(directions__id=direction_id)
-        needs_distinct = True
-
-    group_id = params.get("group")
-    if group_id:
-        qs = qs.filter(
-            group_memberships__group_id=group_id, group_memberships__left_at__isnull=True
-        )
-        needs_distinct = True
-
-    status = params.get("status")
-    if status in Child.Status.values:
-        qs = qs.filter(status=status)
-
-    if params.get("has_debt") == "1":
-        qs = qs.filter(id__in=debtor_child_ids(organization))
-
-    if params.get("expiring") == "1":
-        qs = qs.filter(id__in=expiring_child_ids(organization))
-
-    return qs.distinct() if needs_distinct else qs
-
-
-def _batch_child_extras(organization, child_ids):
-    """Группа/абонемент/долг для страницы детей — батчем на весь список
-    child_ids, не запросом на каждую строку (ТЗ п. 10.2: иначе 50 строк на
-    странице превращаются в 100+ запросов, и бюджет ≤1с не выдерживается)."""
-    memberships = (
-        GroupMembership.objects.for_tenant(organization)
-        .filter(child_id__in=child_ids, left_at__isnull=True)
-        .select_related("group")
-    )
-    groups_by_child = {}
-    for membership in memberships:
-        groups_by_child.setdefault(membership.child_id, []).append(membership.group.name)
-
-    subscriptions = (
-        Subscription.objects.for_tenant(organization)
-        .filter(child_id__in=child_ids)
-        .select_related("subscription_type_version")
-        .order_by("child_id", "-starts_on")
-    )
-    # Отсортированы по (child_id, -starts_on) — первое вхождение на child_id
-    # — самый свежий абонемент, без лишнего запроса с MAX(starts_on)/DISTINCT.
-    latest_subscription_by_child = {}
-    for sub in subscriptions:
-        latest_subscription_by_child.setdefault(sub.child_id, sub)
-
-    # Сумма долга — сервисом домена «Деньги», не своим подсчётом: та же
-    # цифра в карточке родителя и на экране задолженностей.
-    return groups_by_child, latest_subscription_by_child, debt_by_child(organization, child_ids)
-
-
-GLOBAL_SEARCH_MIN_LENGTH = 3  # ТЗ п. 4.1: 3 символа имени — уже 4 цифры телефона тоже проходят
-GLOBAL_SEARCH_LIMIT_PER_TYPE = 8  # шапка — быстрый список, не полноценная страница результатов
-
-
-def _phone_digits_and_normalized(raw_query):
-    """
-    digits — для частичного совпадения (последние 4 цифры и т.п., ТЗ
-    п. 4.1); normalized — для точного совпадения по нормализованному
-    номеру, когда запрос сам похож на полный номер (тогда "8 701..." и
-    "+7 701..." находят один и тот же ContactPhone.number, который всегда
-    хранится нормализованным — см. ContactPhone.save()). Без normalized
-    один digits__icontains не поймал бы "8" вместо "+7": это не подстрока
-    друг друга, хотя номер тот же.
-    """
-    digits = re.sub(r"\D", "", raw_query or "")
-    try:
-        normalized = normalize_phone_number(raw_query)
-    except InvalidPhoneNumberError:
-        normalized = None
-    return digits, normalized
-
-
-def _phone_field_matches(value, phone_digits, phone_normalized):
-    if not value:
-        return False
-    if phone_normalized and value == phone_normalized:
-        return True
-    return bool(phone_digits) and phone_digits in re.sub(r"\D", "", value)
-
-
-def _find_matched_phone(parent, phone_digits, phone_normalized):
-    """
-    Что из телефонов родителя реально совпало с запросом — не "просто
-    показать whatsapp, если он есть" (это давало неверный matched_detail:
-    родитель мог совпасть по ContactPhone.number, а в подсказке всё равно
-    показывался бы его несовпавший whatsapp).
-    """
-    if _phone_field_matches(parent.whatsapp, phone_digits, phone_normalized):
-        return parent.whatsapp
-    phone_match = next(
-        (
-            p
-            for p in parent.phones.all()
-            if _phone_field_matches(p.number, phone_digits, phone_normalized)
-        ),
-        None,
-    )
-    return phone_match.number if phone_match else None
-
-
-def _global_search_children(organization, query, phone_digits, phone_normalized):
-    filters = Q(full_name__icontains=query) | Q(
-        contacts__parent_contact__full_name__icontains=query
-    )
-    if phone_digits:
-        filters |= Q(contacts__parent_contact__phones__number__icontains=phone_digits)
-        filters |= Q(contacts__parent_contact__whatsapp__icontains=phone_digits)
-    if phone_normalized:
-        filters |= Q(contacts__parent_contact__phones__number=phone_normalized)
-        filters |= Q(contacts__parent_contact__whatsapp=phone_normalized)
-
-    children = (
-        Child.objects.for_tenant(organization)
-        .filter(filters)
-        .distinct()
-        .order_by("full_name")
-        .prefetch_related("contacts__parent_contact__phones")[:GLOBAL_SEARCH_LIMIT_PER_TYPE]
-    )
-
-    query_lower = query.lower()
-    results = []
-    for child in children:
-        matched_on, matched_detail = "child_name", None
-        if query_lower not in child.full_name.lower():
-            for link in child.contacts.all():
-                parent = link.parent_contact
-                if query_lower in parent.full_name.lower():
-                    matched_on, matched_detail = "parent_name", parent.full_name
-                    break
-                matched_phone = _find_matched_phone(parent, phone_digits, phone_normalized)
-                if matched_phone:
-                    matched_on, matched_detail = "phone", matched_phone
-                    break
-        results.append(
-            {
-                "type": "child",
-                "id": str(child.id),
-                "title": child.full_name,
-                "matched_on": matched_on,
-                "matched_detail": matched_detail,
-                "url": reverse("clients_web:child-card", args=[child.pk]),
-            }
-        )
-    return results
-
-
-def _global_search_parents(organization, query, phone_digits, phone_normalized):
-    filters = Q(full_name__icontains=query)
-    if phone_digits:
-        filters |= Q(whatsapp__icontains=phone_digits) | Q(phones__number__icontains=phone_digits)
-    if phone_normalized:
-        filters |= Q(whatsapp=phone_normalized) | Q(phones__number=phone_normalized)
-
-    # Родитель — своя строка всегда, даже если у него есть дети: иначе
-    # через поиск нельзя попасть в его собственную карточку (контакты,
-    # коммуникации, WhatsApp), только в карточки детей. "Один номер в
-    # разных написаниях — один результат" (ТЗ п. 4.1) — про стабильность
-    # написания номера, а не про то, что родитель и его ребёнок должны
-    # схлопнуться в одну строку; бейджи "Родитель"/"Ребёнок" в выдаче
-    # различают их и так.
-    parents = (
-        ParentContact.objects.for_tenant(organization)
-        .filter(filters)
-        .distinct()
-        .order_by("full_name")
-        .prefetch_related("phones")[:GLOBAL_SEARCH_LIMIT_PER_TYPE]
-    )
-
-    query_lower = query.lower()
-    results = []
-    for parent in parents:
-        if query_lower in parent.full_name.lower():
-            matched_on, matched_detail = "parent_name", None
-        else:
-            matched_on = "phone"
-            matched_detail = _find_matched_phone(parent, phone_digits, phone_normalized)
-        results.append(
-            {
-                "type": "parent",
-                "id": str(parent.id),
-                "title": parent.full_name,
-                "matched_on": matched_on,
-                "matched_detail": matched_detail,
-                "url": reverse("clients_web:parent-card", args=[parent.pk]),
-            }
-        )
-    return results
 
 
 @role_required()
 def global_search(request):
-    query = (request.GET.get("q") or "").strip()
-    if len(query) < GLOBAL_SEARCH_MIN_LENGTH:
-        return JsonResponse({"results": []})
-
-    organization = request.user.organization
-    phone_digits, phone_normalized = (
-        _phone_digits_and_normalized(query) if can_view_phone(request.user) else (None, None)
+    results = search.global_search(
+        request.user.organization,
+        request.GET.get("q"),
+        can_view_phone=can_view_phone(request.user),
     )
-
-    results = _global_search_children(organization, query, phone_digits, phone_normalized)
-    results += _global_search_parents(organization, query, phone_digits, phone_normalized)
+    for result in results:
+        result["url"] = reverse(_SEARCH_CARD_URLS[result["type"]], args=[result["id"]])
     return JsonResponse({"results": results})
 
 
@@ -430,57 +178,11 @@ def child_list(request):
 
 @role_required()
 def child_list_data(request):
-    organization = request.user.organization
-    show_money = can_view_client_money(request.user)
-    params = request.GET
-    if not show_money:
-        # Фильтр по долгу — тоже раскрытие денег, пусть и без суммы.
-        params = params.copy()
-        params.pop("has_debt", None)
-        params.pop("expiring", None)
-    qs = Child.objects.for_tenant(organization).prefetch_related("directions__branches")
-    qs = _filter_child_queryset(qs, organization, params)
-    qs = _sort_child_queryset(
-        qs, request.GET.get("sort", "full_name"), request.GET.get("dir", "asc")
+    rows, total = list_children(
+        request.user.organization, request.GET, show_money=can_view_client_money(request.user)
     )
-
-    try:
-        page = max(1, int(request.GET.get("page", 1)))
-    except ValueError:
-        page = 1
-    try:
-        # Верхняя граница — не даёт с фронта произвольным page_size вернуться
-        # к "отдать всё разом" тем же способом, который этот тикет убирает.
-        page_size = min(max(1, int(request.GET.get("page_size", 50))), 200)
-    except ValueError:
-        page_size = 50
-
-    total = qs.count()
-    start = (page - 1) * page_size
-    children = list(qs[start : start + page_size])
-
-    child_ids = [child.id for child in children]
-    groups_by_child, subscription_by_child, debts = _batch_child_extras(organization, child_ids)
-
-    rows = [
-        {
-            "id": str(child.id),
-            "full_name": child.full_name,
-            "age": child.age,
-            "branch_names": _branch_names(child) or "—",
-            "direction_names": _direction_names(child) or "—",
-            "group_names": ", ".join(groups_by_child.get(child.id, [])) or "—",
-            "status": child.status,
-            "subscription_name": (
-                subscription_by_child[child.id].subscription_type_version.name
-                if show_money and child.id in subscription_by_child
-                else None
-            ),
-            "debt": str(debts.get(child.id, Decimal(0))) if show_money else None,
-            "card_url": reverse("clients_web:child-card", args=[child.pk]),
-        }
-        for child in children
-    ]
+    for row in rows:
+        row["card_url"] = reverse("clients_web:child-card", args=[row["id"]])
     return JsonResponse({"rows": rows, "total": total})
 
 
@@ -546,7 +248,7 @@ def child_card(request, child_id):
         "clients/child_card.html",
         {
             "child": child,
-            "branch_names": _branch_names(child),
+            "branch_names": branch_names(child),
             "tabs": tabs,
             "can_edit": request.user.role in CHILD_EDIT_ROLES,
             "edit_url": reverse("clients_web:child-edit", args=[child.pk]),
@@ -780,6 +482,9 @@ def parent_edit(request, pk):
 @require_http_methods(["POST"])
 def parent_delete(request, pk):
     parent = get_object_or_404(ParentContact.objects.for_tenant(request.user.organization), pk=pk)
+    if not can_delete_parent(request.user.organization, parent):
+        messages.error(request, DELETE_BLOCKED_MESSAGE)
+        return redirect("clients_web:parent-card", pk=parent.pk)
     parent.delete()
     messages.success(request, "Родитель удалён.")
     return redirect("clients_web:parent-list")
@@ -798,7 +503,7 @@ def _parent_children_rows(request, parent):
             "full_name": link.child.full_name,
             "role": link.get_role_display(),
             "role_code": link.role,
-            "branch_names": _branch_names(link.child) or "—",
+            "branch_names": branch_names(link.child) or "—",
             "card_url": reverse("clients_web:child-card", args=[link.child.pk]),
         }
         for link in links
@@ -821,29 +526,6 @@ def _parent_communication_logs(request, parent):
     return _serialize_communication_logs(logs, parent.organization)
 
 
-# Сколько последних оплат показать в карточке родителя.
-PARENT_PAYMENTS_LIMIT = 50
-
-
-def _parent_money(organization, parent):
-    """Сводно по всем детям родителя (ТЗ п. 4.1): суммарный долг — сервисом
-    домена «Деньги» (debt_by_child — та же цифра, что в списке детей), и
-    последние оплаты по абонементам всех его детей."""
-    child_ids = list(
-        ChildContact.objects.for_tenant(organization)
-        .filter(parent_contact=parent)
-        .values_list("child_id", flat=True)
-    )
-    total_debt = sum(debt_by_child(organization, child_ids).values(), Decimal(0))
-    payments = (
-        Payment.objects.for_tenant(organization)
-        .filter(subscription__child_id__in=child_ids)
-        .select_related("subscription__child", "subscription__subscription_type_version")
-        .order_by("-paid_at")[:PARENT_PAYMENTS_LIMIT]
-    )
-    return {"total_debt": total_debt, "payments": list(payments)}
-
-
 @role_required()
 def parent_card(request, pk):
     parent = get_object_or_404(ParentContact.objects.for_tenant(request.user.organization), pk=pk)
@@ -855,7 +537,7 @@ def parent_card(request, pk):
     # же проверка, что скрывает сам номер: иначе номер утекал бы через
     # href кнопки WhatsApp тому, кому нельзя видеть его текстом.
     money = (
-        _parent_money(request.user.organization, parent)
+        parent_money(request.user.organization, parent)
         if can_view_client_money(request.user)
         else None
     )

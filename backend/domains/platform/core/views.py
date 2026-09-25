@@ -1,11 +1,8 @@
-import secrets
-
 from django.contrib.auth import authenticate, login, logout
 from django.db import connection
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
-from django.utils.text import slugify
 from django.views.decorators.http import require_http_methods
 from django_ratelimit.decorators import ratelimit
 
@@ -74,13 +71,6 @@ def login_view(request):
     return render(request, "platform/login.html", context)
 
 
-def _unique_org_slug(name: str) -> str:
-    # slug — технический идентификатор организации (в API), владелец его не
-    # вводит: кириллица в slugify даёт пустую строку, поэтому суффикс всегда.
-    base = slugify(name)[:80] or "center"
-    return f"{base}-{secrets.token_hex(3)}"
-
-
 SIGNUP_FIELDS = ("org_name", "full_name", "phone")
 
 
@@ -106,7 +96,6 @@ def signup_view(request):
         serializer = OrganizationRegisterSerializer(
             data={
                 **values,
-                "org_slug": _unique_org_slug(values["org_name"]),
                 "password": request.POST.get("password", ""),
             }
         )

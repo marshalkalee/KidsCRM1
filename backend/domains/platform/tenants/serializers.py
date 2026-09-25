@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import Branch, Direction, Organization, Room
+from .working_hours import default_working_hours, normalize_working_hours
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -18,10 +19,28 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        # Тариф, статус подписки, slug и settings целиком клиенту не
+        # доверяем: иначе владелец PATCH-ем сменил бы себе тариф или затёр
+        # settings["onboarding"]. Название, часовой пояс и пороги
+        # автостатусов меняются через organization/settings/ — тем же путём,
+        # что веб (OrganizationSettingsForm).
+        read_only_fields = [
+            "id",
+            "slug",
+            "plan",
+            "subscription_status",
+            "is_active",
+            "settings",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class BranchSerializer(serializers.ModelSerializer):
+    # Аннотация из BranchViewSet.get_queryset — для карточек филиалов в
+    # настройках frontend2, без запроса залов на каждый филиал.
+    rooms_count = serializers.IntegerField(read_only=True, default=0)
+
     class Meta:
         model = Branch
         fields = [
@@ -32,6 +51,7 @@ class BranchSerializer(serializers.ModelSerializer):
             "phone",
             "working_hours",
             "is_active",
+            "rooms_count",
             "created_at",
             "updated_at",
         ]
@@ -43,6 +63,17 @@ class BranchSerializer(serializers.ModelSerializer):
         # for_tenant() совсем — архивный филиал должен там оставаться,
         # см. web_views.branch_archive).
         read_only_fields = ["id", "organization", "created_at", "updated_at"]
+
+    def validate_working_hours(self, value):
+        working_hours, errors = normalize_working_hours(value)
+        if errors:
+            raise serializers.ValidationError(errors)
+        return working_hours
+
+    def create(self, validated_data):
+        # Как у веб-формы: без явного расписания — пн–пт 09:00–20:00.
+        validated_data.setdefault("working_hours", default_working_hours())
+        return super().create(validated_data)
 
 
 class RoomSerializer(serializers.ModelSerializer):

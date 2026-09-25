@@ -77,6 +77,14 @@ CLIENT_MONEY_VIEW_ROLES = {
     User.Role.ACCOUNTANT,
 }
 
+# Создать/изменить ребёнка, родителя, запустить импорт — те же роли, что
+# у IsOwnerOrManagerOrAdmin на ChildViewSet/ParentContactViewSet.
+CHILD_MANAGE_ROLES = {
+    User.Role.OWNER,
+    User.Role.MANAGER,
+    User.Role.ADMIN,
+}
+
 
 def can_view_financials(user) -> bool:
     return user.role in FINANCE_ROLES
@@ -122,6 +130,10 @@ def can_view_client_money(user) -> bool:
     return user.role in CLIENT_MONEY_VIEW_ROLES
 
 
+def can_manage_children(user) -> bool:
+    return user.role in CHILD_MANAGE_ROLES
+
+
 def get_user_permissions(user) -> dict:
     return {
         "can_view_financials": can_view_financials(user),
@@ -135,4 +147,5 @@ def get_user_permissions(user) -> dict:
         "can_view_child_sensitive_fields": can_view_child_sensitive_fields(user),
         "can_manage_groups": can_manage_groups(user),
         "can_view_client_money": can_view_client_money(user),
+        "can_manage_children": can_manage_children(user),
     }

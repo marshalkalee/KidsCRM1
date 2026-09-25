@@ -12,7 +12,10 @@ router.register("", views.UserViewSet, basename="user")
 urlpatterns = router.urls + [
     path("auth/register/", views.RegisterView.as_view(), name="register"),
     path("auth/login/", views.LoginView.as_view(), name="login"),
-    path("auth/refresh/", TokenRefreshView.as_view(), name="refresh"),
+    # Продление access-токена (frontend2, TRU-79): refresh ротируется, старый
+    # попадает в blacklist (SIMPLE_JWT в settings). organization_id/role
+    # копируются из refresh в новый access — TenantMiddleware их увидит.
+    path("auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("auth/logout/", views.LogoutView.as_view(), name="logout"),
     path("auth/logout-all/", views.LogoutAllView.as_view(), name="logout-all"),
     path("auth/invite/", views.InviteStaffView.as_view(), name="invite"),
