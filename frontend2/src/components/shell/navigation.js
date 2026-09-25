@@ -19,6 +19,7 @@ export const NAV_SECTIONS = [
       { to: '/parents', get label() { return t('Родители') }, icon: Contact },
       { to: '/groups', get label() { return t('Группы') }, icon: UsersRound },
       { to: '/schedule', get label() { return t('Расписание') }, icon: CalendarDays },
+      { to: '/attendance', get label() { return t('Посещаемость') }, icon: CheckSquare },
     ],
   },
   {
