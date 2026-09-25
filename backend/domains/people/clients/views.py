@@ -1,7 +1,8 @@
+import uuid
 from decimal import Decimal
 
 from django.db.models import Q
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 
@@ -18,8 +19,9 @@ from domains.platform.core.role_permissions import (
 from domains.scheduling.groups.models import GroupMembership
 
 from . import search
-from .child_list import list_children
+from .child_list import branch_names, list_children
 from .models import Child, ChildContact, CommunicationLog, ParentContact
+from .parents import DELETE_BLOCKED_MESSAGE, can_delete_parent, parent_money
 from .serializers import (
     ChildContactSerializer,
     ChildSerializer,
@@ -132,8 +134,17 @@ class ParentContactViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = ParentContact.objects.for_tenant(self.request.user.organization).prefetch_related(
-            "phones"
+            "phones", "child_links__child"
         )
+        # ?q= — поиск в списке родителей frontend2: по имени или по цифрам
+        # телефона (как глобальный поиск, от 3 символов цифр).
+        query = (self.request.query_params.get("q") or "").strip()
+        if query:
+            digits = "".join(ch for ch in query if ch.isdigit())
+            condition = Q(full_name__icontains=query)
+            if len(digits) >= 3:
+                condition |= Q(phones__number__contains=digits) | Q(whatsapp__contains=digits)
+            qs = qs.filter(condition).distinct()
         # ?phone= — поиск по любому из телефонов родителя или по WhatsApp
         # (ТЗ п. 4.1: телефон — фактический идентификатор клиента).
         phone_query = self.request.query_params.get("phone")
@@ -147,6 +158,71 @@ class ParentContactViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(organization=self.request.user.organization)
+
+    def destroy(self, request, *args, **kwargs):
+        parent = self.get_object()
+        if not can_delete_parent(request.user.organization, parent):
+            return Response({"detail": DELETE_BLOCKED_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["get"])
+    def card(self, request, pk=None):
+        """Карточка родителя во frontend2 (TRU-83): родитель, его дети
+        (из всех филиалов) с ролями и — для can_view_client_money —
+        суммарный долг и последние оплаты по всем детям."""
+        parent = self.get_object()
+        organization = request.user.organization
+        links = (
+            ChildContact.objects.for_tenant(organization)
+            .filter(parent_contact=parent, child__deleted_at__isnull=True)
+            .select_related("child")
+            .prefetch_related("child__directions__branches")
+        )
+        money = None
+        if can_view_client_money(request.user):
+            summary = parent_money(organization, parent)
+            money = {
+                "total_debt": str(summary["total_debt"]),
+                "payments": [
+                    {
+                        "id": str(payment.id),
+                        "paid_at": payment.paid_at,
+                        "amount": str(payment.amount),
+                        "method": payment.method,
+                        "method_label": payment.get_method_display(),
+                        "status": payment.status,
+                        "child_id": str(payment.subscription.child_id),
+                        "child_name": payment.subscription.child.full_name,
+                        "subscription_name": payment.subscription.subscription_type_version.name,
+                    }
+                    for payment in summary["payments"]
+                ],
+            }
+        return Response(
+            {
+                "parent": self.get_serializer(parent).data,
+                "children": [
+                    {
+                        "id": str(link.child_id),
+                        "link_id": str(link.id),
+                        "full_name": link.child.full_name,
+                        "age": link.child.age,
+                        "status": link.child.status,
+                        "role": link.role,
+                        "is_payer": link.is_payer,
+                        "is_primary_contact": link.is_primary_contact,
+                        "branch_names": branch_names(link.child),
+                    }
+                    for link in links
+                ],
+                "money": money,
+                "permissions": {
+                    "can_edit": can_manage_children(request.user),
+                    "can_delete": can_manage_children(request.user),
+                    "can_log_communications": can_manage_children(request.user),
+                },
+            }
+        )
 
 
 class ChildContactViewSet(viewsets.ModelViewSet):
@@ -210,6 +286,19 @@ class CommunicationLogViewSet(
         parent_contact_id = self.request.query_params.get("parent_contact")
         if parent_contact_id:
             qs = qs.filter(parent_contact_id=parent_contact_id)
+        # ?family=<parent_id> — сводная лента карточки родителя: всё по
+        # любому из его детей, не только записи с явно отмеченным им
+        # контактом (как parent_card в вебе).
+        family_id = self.request.query_params.get("family")
+        if family_id:
+            try:
+                family_id = uuid.UUID(family_id)
+            except ValueError:
+                return qs.none()
+            qs = qs.filter(
+                child__contacts__parent_contact_id=family_id,
+                child__contacts__deleted_at__isnull=True,
+            ).distinct()
         return qs
 
     def perform_create(self, serializer):

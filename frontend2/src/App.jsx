@@ -5,7 +5,8 @@ import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
-import ParentPlaceholder from './pages/ParentPlaceholder'
+import ParentDetail from './pages/ParentDetail'
+import Parents from './pages/Parents'
 import Children from './pages/Children'
 import ChildDetail from './pages/ChildDetail'
 import Schedule from './pages/Schedule'
@@ -29,7 +30,8 @@ function App() {
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="children" element={<Children />} />
                 <Route path="children/:id" element={<ChildDetail />} />
-                <Route path="parents/:id" element={<ParentPlaceholder />} />
+                <Route path="parents" element={<Parents />} />
+                <Route path="parents/:id" element={<ParentDetail />} />
                 <Route path="schedule" element={<Schedule />} />
                 <Route path="groups" element={<Groups />} />
                 <Route path="groups/:id" element={<GroupDetail />} />
