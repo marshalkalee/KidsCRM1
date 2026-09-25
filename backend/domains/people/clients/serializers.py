@@ -95,6 +95,9 @@ class ParentContactSerializer(serializers.ModelSerializer):
     # Не ModelSerializer-относительное поле, а вложенный список — телефоны
     # создаются/заменяются вместе с родителем одним запросом (см. create/update).
     phones = ContactPhoneSerializer(many=True)
+    # Дети родителя — для списка родителей frontend2 (TRU-83); из
+    # prefetch_related("child_links__child") во вьюхе.
+    children = serializers.SerializerMethodField()
 
     class Meta:
         model = ParentContact
@@ -105,6 +108,7 @@ class ParentContactSerializer(serializers.ModelSerializer):
             "phones",
             "whatsapp",
             "email",
+            "children",
             "created_at",
             "updated_at",
         ]
@@ -122,6 +126,13 @@ class ParentContactSerializer(serializers.ModelSerializer):
         if not value:
             raise serializers.ValidationError("У родителя должен быть хотя бы один телефон.")
         return value
+
+    def get_children(self, parent):
+        return [
+            {"id": str(link.child_id), "full_name": link.child.full_name, "role": link.role}
+            for link in parent.child_links.all()
+            if link.child.deleted_at is None
+        ]
 
     def create(self, validated_data):
         phones_data = validated_data.pop("phones")

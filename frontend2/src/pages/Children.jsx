@@ -6,7 +6,7 @@ import ChildModal from '../components/ChildModal'
 import ImportModal from '../components/ImportModal'
 import { useSession } from '../session/SessionContext'
 import {
-  Avatar, Badge, Button, CHILD_STATUSES, DataTable, EmptyState, Input, Modal, PageHeader, Select,
+  Avatar, Badge, Button, CHILD_STATUSES, DataTable, EmptyState, Modal, PageHeader, SearchInput, Select,
   ageLabel, cn, formatDate, money, plural,
 } from '../ui'
 
@@ -107,6 +107,7 @@ export default function Children() {
   )
   const activeFilters = FILTER_KEYS.filter(key => key !== 'q' && params.get(key) && (showMoney || !MONEY_KEYS.includes(key))).length
   const hasAnyFilter = activeFilters > 0 || Boolean(params.get('q'))
+  const setQuery = useCallback(q => update({ q }), [update])
   const resetFilters = () => update(Object.fromEntries(FILTER_KEYS.map(key => [key, ''])))
 
   const columns = [
@@ -188,7 +189,7 @@ export default function Children() {
 
       <div className="mb-4 space-y-3">
         <div className="flex gap-2">
-          <SearchBox value={params.get('q') || ''} onChange={q => update({ q })} />
+          <SearchInput className="flex-1" value={params.get('q') || ''} onChange={setQuery} placeholder="Поиск по имени ребёнка" />
           <Button className="lg:hidden" icon={SlidersHorizontal} onClick={() => setFiltersOpen(true)}>
             <span className="hidden sm:inline">Фильтры</span>
             {activeFilters > 0 && (
@@ -265,36 +266,6 @@ export default function Children() {
           onImported={() => { setModal(null); setReloadKey(k => k + 1) }}
         />
       )}
-    </div>
-  )
-}
-
-/** Поиск по имени: URL обновляется с задержкой, а не на каждую букву. */
-function SearchBox({ value, onChange }) {
-  const [text, setText] = useState(value)
-  const [synced, setSynced] = useState(value)
-  if (value !== synced) {
-    // Сброс фильтров/«назад» поменяли q снаружи — показываем его.
-    setSynced(value)
-    setText(value)
-  }
-  useEffect(() => {
-    if (text === value) return undefined
-    const timer = setTimeout(() => onChange(text.trim()), 300)
-    return () => clearTimeout(timer)
-  }, [text, value, onChange])
-
-  return (
-    <div className="relative flex-1">
-      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-subtle" />
-      <Input
-        type="search"
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder="Поиск по имени ребёнка"
-        aria-label="Поиск по имени ребёнка"
-        className="pl-9"
-      />
     </div>
   )
 }

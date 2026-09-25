@@ -10,7 +10,6 @@
 """
 
 import uuid
-from decimal import Decimal
 from pathlib import Path
 
 import pytz
@@ -22,8 +21,6 @@ from django.urls import reverse
 from django.utils import timezone as dj_timezone
 from django.views.decorators.http import require_http_methods
 
-from domains.money.payments.models import Payment
-from domains.money.subscriptions.debt import debt_by_child
 from domains.platform.core.decorators import role_required
 from domains.platform.core.role_permissions import can_view_client_money, can_view_phone
 from domains.platform.tenants.models import Branch, Direction
@@ -42,6 +39,7 @@ from .forms import (
     ParentContactForm,
 )
 from .models import Child, ChildContact, CommunicationLog, ParentContact
+from .parents import DELETE_BLOCKED_MESSAGE, can_delete_parent, parent_money
 
 OWNER = "owner"
 MANAGER = "manager"
@@ -484,6 +482,9 @@ def parent_edit(request, pk):
 @require_http_methods(["POST"])
 def parent_delete(request, pk):
     parent = get_object_or_404(ParentContact.objects.for_tenant(request.user.organization), pk=pk)
+    if not can_delete_parent(request.user.organization, parent):
+        messages.error(request, DELETE_BLOCKED_MESSAGE)
+        return redirect("clients_web:parent-card", pk=parent.pk)
     parent.delete()
     messages.success(request, "Родитель удалён.")
     return redirect("clients_web:parent-list")
@@ -525,29 +526,6 @@ def _parent_communication_logs(request, parent):
     return _serialize_communication_logs(logs, parent.organization)
 
 
-# Сколько последних оплат показать в карточке родителя.
-PARENT_PAYMENTS_LIMIT = 50
-
-
-def _parent_money(organization, parent):
-    """Сводно по всем детям родителя (ТЗ п. 4.1): суммарный долг — сервисом
-    домена «Деньги» (debt_by_child — та же цифра, что в списке детей), и
-    последние оплаты по абонементам всех его детей."""
-    child_ids = list(
-        ChildContact.objects.for_tenant(organization)
-        .filter(parent_contact=parent)
-        .values_list("child_id", flat=True)
-    )
-    total_debt = sum(debt_by_child(organization, child_ids).values(), Decimal(0))
-    payments = (
-        Payment.objects.for_tenant(organization)
-        .filter(subscription__child_id__in=child_ids)
-        .select_related("subscription__child", "subscription__subscription_type_version")
-        .order_by("-paid_at")[:PARENT_PAYMENTS_LIMIT]
-    )
-    return {"total_debt": total_debt, "payments": list(payments)}
-
-
 @role_required()
 def parent_card(request, pk):
     parent = get_object_or_404(ParentContact.objects.for_tenant(request.user.organization), pk=pk)
@@ -559,7 +537,7 @@ def parent_card(request, pk):
     # же проверка, что скрывает сам номер: иначе номер утекал бы через
     # href кнопки WhatsApp тому, кому нельзя видеть его текстом.
     money = (
-        _parent_money(request.user.organization, parent)
+        parent_money(request.user.organization, parent)
         if can_view_client_money(request.user)
         else None
     )
