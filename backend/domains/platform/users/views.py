@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from domains.platform.core.permissions import IsStaffOfOrganization
+from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
 from domains.platform.core.role_permissions import get_user_permissions
 from domains.platform.users.serializers import (
     ChangePasswordSerializer,
@@ -21,11 +21,36 @@ from .serializers import UserSerializer
 
 
 class UserViewSet(viewsets.ModelViewSet):
+    """
+    Сотрудники организации. Смотреть — всем сотрудникам (выбор
+    преподавателя в группе и расписании). Заводить, менять, удалять — только
+    владелец и управляющий (TRU-90: раньше это мог любой сотрудник, включая
+    смену себе роли на «владелец»). Ролевые ограничения — check_role_change.
+    """
+
     serializer_class = UserSerializer
     permission_classes = [IsStaffOfOrganization]
 
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsOwnerOrManager()]
+        return [IsStaffOfOrganization()]
+
     def get_queryset(self):
-        return User.objects.filter(organization=self.request.user.organization)
+        qs = User.objects.filter(organization=self.request.user.organization)
+        role = self.request.query_params.get("role")
+        if role:
+            qs = qs.filter(role=role)
+        return qs.order_by("full_name")
+
+    def perform_destroy(self, instance):
+        from rest_framework.exceptions import ValidationError
+
+        if instance.pk == self.request.user.pk:
+            raise ValidationError({"detail": "Нельзя удалить самого себя."})
+        if instance.role == User.Role.OWNER and self.request.user.role != User.Role.OWNER:
+            raise ValidationError({"detail": "Удалить владельца может только владелец."})
+        instance.delete()
 
     def perform_create(self, serializer):
         serializer.save(organization=self.request.user.organization)
@@ -84,7 +109,8 @@ class LogoutAllView(APIView):
 
 
 class InviteStaffView(APIView):
-    permission_classes = [IsAuthenticated]
+    # Раньше — любой вошедший пользователь с любой ролью в запросе (TRU-90).
+    permission_classes = [IsOwnerOrManager]
 
     def post(self, request):
         serializer = InviteStaffSerializer(data=request.data, context={"request": request})
