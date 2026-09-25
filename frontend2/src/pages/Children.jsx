@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertCircle, Plus, Search, SlidersHorizontal, Upload, Users, X } from 'lucide-react'
 import api from '../api/axios'
 import ChildModal from '../components/ChildModal'
-import ImportModal from '../components/ImportModal'
 import { useSession } from '../session/SessionContext'
 import {
   Avatar, Badge, Button, CHILD_STATUSES, DataTable, EmptyState, Modal, PageHeader, SearchInput, Select,
@@ -40,7 +39,7 @@ export default function Children() {
   const [directions, setDirections] = useState([])
   const [groups, setGroups] = useState([])
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const [modal, setModal] = useState(null) // 'create' | 'import'
+  const [creating, setCreating] = useState(false)
 
   const page = Math.max(1, Number(params.get('page')) || 1)
   const sort = { key: params.get('sort') || 'full_name', dir: params.get('dir') || 'asc' }
@@ -181,8 +180,8 @@ export default function Children() {
         description={loading && !data.count ? 'Загрузка…' : `${countLabel}${hasAnyFilter ? ' по фильтрам' : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
         actions={canManage && (
           <>
-            <Button icon={Upload} onClick={() => setModal('import')}>Импорт</Button>
-            <Button variant="primary" icon={Plus} onClick={() => setModal('create')}>Добавить ребёнка</Button>
+            <Button icon={Upload} onClick={() => navigate('/children/import')}>Импорт</Button>
+            <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Добавить ребёнка</Button>
           </>
         )}
       />
@@ -230,8 +229,8 @@ export default function Children() {
             description={canManage ? 'Добавьте первого ребёнка вручную или загрузите список из Excel.' : 'Когда администратор добавит детей, они появятся здесь.'}
             action={canManage && (
               <div className="flex flex-wrap justify-center gap-2">
-                <Button size="sm" icon={Upload} onClick={() => setModal('import')}>Импорт из Excel</Button>
-                <Button size="sm" variant="primary" icon={Plus} onClick={() => setModal('create')}>Добавить ребёнка</Button>
+                <Button size="sm" icon={Upload} onClick={() => navigate('/children/import')}>Импорт из Excel</Button>
+                <Button size="sm" variant="primary" icon={Plus} onClick={() => setCreating(true)}>Добавить ребёнка</Button>
               </div>
             )}
           />
@@ -254,16 +253,10 @@ export default function Children() {
         </div>
       </Modal>
 
-      {modal === 'create' && (
+      {creating && (
         <ChildModal
-          onClose={() => setModal(null)}
-          onSaved={child => { setModal(null); navigate(`/children/${child.id}`) }}
-        />
-      )}
-      {modal === 'import' && (
-        <ImportModal
-          onClose={() => setModal(null)}
-          onImported={() => { setModal(null); setReloadKey(k => k + 1) }}
+          onClose={() => setCreating(false)}
+          onSaved={child => { setCreating(false); navigate(`/children/${child.id}`) }}
         />
       )}
     </div>
