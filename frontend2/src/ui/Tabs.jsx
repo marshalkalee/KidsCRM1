@@ -26,12 +26,12 @@ export function Tabs({ tabs, value, onChange, className }) {
               onClick={() => onChange(tab.key)}
               className={cn(
                 '-mb-px inline-flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-semibold transition-colors',
-                active ? 'border-brand-600 text-ink' : 'border-transparent text-ink-muted hover:text-ink',
+                active ? 'border-brand-600 text-brand-600' : 'border-transparent text-ink-muted hover:text-ink',
               )}
             >
               {tab.label}
               {tab.count != null && (
-                <span className={cn('rounded-full px-1.5 text-[11px]', active ? 'bg-brand-50 text-brand-700' : 'bg-surface-muted text-ink-subtle')}>
+                <span className={cn('rounded-full px-1.5 text-[11px]', active ? 'bg-brand-50 text-brand-600' : 'bg-line text-ink-muted')}>
                   {tab.count}
                 </span>
               )}

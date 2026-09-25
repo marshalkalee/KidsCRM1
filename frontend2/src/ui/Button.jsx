@@ -3,16 +3,19 @@ import { Link } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { cn } from './cn'
 
+// Стиль первого React, ярче (TRU-91): главная — градиент с тенью, обычная —
+// белая с рамкой 1.5px, как «Импорт» и «Отмена» в первой версии.
 const VARIANTS = {
-  primary: 'bg-brand-600 text-white hover:bg-brand-700 shadow-card',
-  secondary: 'bg-surface text-ink border border-line-strong hover:bg-surface-muted',
-  ghost: 'text-ink-muted hover:bg-surface-muted hover:text-ink',
-  danger: 'bg-danger-600 text-white hover:brightness-95 shadow-card',
+  primary: 'bg-brand-gradient text-white shadow-brand hover:brightness-105 active:brightness-95',
+  secondary: 'bg-surface text-ink-muted border-[1.5px] border-line-strong hover:border-brand-300 hover:text-ink',
+  ghost: 'text-ink-muted hover:bg-brand-50 hover:text-brand-600',
+  danger: 'bg-danger-600 text-white hover:brightness-95',
   'danger-ghost': 'text-danger-600 hover:bg-danger-50',
+  success: 'bg-success-50 text-success-600 hover:brightness-95',
 }
 const SIZES = {
-  sm: 'h-8 px-3 text-[13px] gap-1.5',
-  md: 'h-10 px-4 text-sm gap-2',
+  sm: 'h-8 px-3.5 text-xs gap-1.5',
+  md: 'h-9 px-4 text-[13px] gap-1.5',
   icon: 'h-9 w-9 justify-center',
 }
 
@@ -25,7 +28,7 @@ export const Button = forwardRef(function Button(
   ref,
 ) {
   const classes = cn(
-    'inline-flex shrink-0 items-center rounded-md font-semibold transition-colors',
+    'font-btn inline-flex shrink-0 items-center rounded-md font-semibold whitespace-nowrap transition',
     'disabled:cursor-not-allowed disabled:opacity-60',
     VARIANTS[variant],
     SIZES[size],

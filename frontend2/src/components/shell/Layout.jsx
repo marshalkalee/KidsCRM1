@@ -36,7 +36,7 @@ export default function Layout() {
         </div>
       )}
 
-      <header className="sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
         <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
           <button type="button" onClick={() => setDrawerOpen(true)} className="-ml-1 rounded-md p-2 text-ink-muted hover:bg-surface-muted lg:hidden" aria-label="Меню">
             <Menu className="size-5" />
@@ -59,8 +59,8 @@ function Sidebar({ onNavigate }) {
   const { can } = useSession()
   return (
     <>
-      <div className="flex h-16 items-center gap-2.5 px-5">
-        <span className="flex size-9 items-center justify-center rounded-md bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-card">
+      <div className="flex h-[72px] shrink-0 items-center gap-2.5 border-b border-line px-5">
+        <span className="bg-brand-gradient flex size-9 items-center justify-center rounded-[10px] text-white shadow-brand">
           <svg viewBox="0 0 24 24" className="size-[18px]" fill="currentColor" aria-hidden="true">
             <path d="M12 2 2 7l10 5 10-5-10-5Zm-10 15 10 5 10-5M2 12l10 5 10-5" />
           </svg>
@@ -79,8 +79,10 @@ function Sidebar({ onNavigate }) {
                     to={item.to}
                     onClick={onNavigate}
                     className={({ isActive }) => cn(
-                      'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                      isActive ? 'bg-brand-50 text-brand-700' : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
+                      'relative flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm transition-colors',
+                      isActive
+                        ? 'bg-gradient-to-r from-brand-50 to-[#fff4ee] font-semibold text-brand-600 before:absolute before:-left-3 before:inset-y-2 before:w-[3px] before:rounded-r before:bg-brand-500'
+                        : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
                     )}
                   >
                     <item.icon className="size-[18px]" />
@@ -103,7 +105,7 @@ function UserMenu() {
   return (
     <div className="border-t border-line p-3">
       <div className="flex items-center gap-3 rounded-md px-2 py-2">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[13px] font-bold text-brand-700">
+        <span className="bg-brand-gradient flex size-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white">
           {initials(user?.full_name)}
         </span>
         <div className="min-w-0 flex-1">
@@ -149,7 +151,7 @@ function BranchSwitcher() {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex h-10 max-w-[220px] items-center gap-2 rounded-md border border-line bg-surface px-3 text-sm font-medium text-ink hover:border-line-strong"
+        className="flex h-10 max-w-[220px] items-center gap-2 rounded-[10px] border border-line bg-surface px-3 text-sm font-medium text-ink hover:border-brand-300"
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -168,7 +170,7 @@ function BranchSwitcher() {
                 onClick={() => choose(branch.id)}
                 className={cn(
                   'w-full truncate px-4 py-2 text-left text-sm hover:bg-surface-muted',
-                  (branch.id ? String(branch.id) === String(activeBranchId) : !activeBranchId) ? 'font-semibold text-brand-700' : 'text-ink',
+                  (branch.id ? String(branch.id) === String(activeBranchId) : !activeBranchId) ? 'bg-brand-50 font-semibold text-brand-600' : 'text-ink',
                 )}
               >
                 {branch.name}

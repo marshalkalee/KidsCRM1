@@ -79,7 +79,7 @@ export function DataTable({
               <tr
                 key={rowKey(row)}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={cn('border-b border-line last:border-0', onRowClick && 'cursor-pointer hover:bg-surface-muted/60')}
+                className={cn('border-b border-line last:border-0', onRowClick && 'cursor-pointer hover:bg-brand-50/40')}
               >
                 {columns.map(col => (
                   <td key={col.key} className={cn('px-4 py-3 align-middle text-ink', col.align === 'right' && 'text-right', col.className)}>

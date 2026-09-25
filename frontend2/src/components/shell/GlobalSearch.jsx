@@ -78,7 +78,7 @@ export function GlobalSearch({ className }) {
 
   return (
     <div className={cn('relative', className)}>
-      <div className="flex h-10 items-center gap-2 rounded-md border border-line bg-surface-muted px-3 focus-within:border-brand-400 focus-within:bg-surface focus-within:ring-3 focus-within:ring-brand-100">
+      <div className="flex h-10 items-center gap-2 rounded-[10px] border border-line bg-surface-muted px-3 focus-within:border-brand-400 focus-within:bg-surface focus-within:ring-3 focus-within:ring-brand-100">
         <Search className="size-4 shrink-0 text-ink-subtle" />
         <input
           ref={inputRef}

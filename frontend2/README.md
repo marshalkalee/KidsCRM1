@@ -25,6 +25,16 @@ React 19 + Vite + Tailwind v4 + react-router. Ходит только в REST AP
   карточки, серверные сортировка и пагинация), `Modal`, `useConfirm()`,
   `useToast()` + `apiErrorMessage(error)`, `EmptyState`, `ErrorState`,
   `Spinner`, `Skeleton`, `plural(n, ['ребёнок', 'ребёнка', 'детей'])`.
+- **Стиль — «первый React, ярче»** (TRU-91, выбран по пробнику
+  https://claude.ai/artifact/PZh4BAqXXGc85YPwdTeX4x): шрифт Rubik, на кнопках
+  Manrope; главная кнопка — `Button variant="primary"` (коралловый
+  градиент `bg-brand-gradient`), обычная — белая с рамкой; шапка страницы —
+  `PageHeader` (белая карточка); подписи полей капсом.
+- **Списки** — как в первом React: `PageHeader` → `FilterBar` (поиск +
+  «Фильтры») → `FilterPanel` с `FilterSelect` / `FilterCheck` и черновиком
+  `useFilterDraft` (применяется кнопкой «Применить», значения — в адресе) →
+  `DataTable`. **Карточки** (ребёнок, родитель, группа) — раскладка по
+  блокам. **Формы** — `Modal` + `Field`.
 - **Права:** скрывать пункты и кнопки по `can(...)` — удобство, а не
   защита. Проверка обязательно на API.
 - **Новый экран в меню** — только когда он реально есть (`navigation.js`).

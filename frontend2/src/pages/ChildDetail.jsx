@@ -99,7 +99,7 @@ export default function ChildDetail() {
             {card.money && <SubscriptionTile subscription={card.money.subscription} />}
             {card.money && <DebtTile debt={card.money.debt} />}
             {child.medical_notes && (
-              <div className="flex gap-3 rounded-lg bg-warning-50 p-3.5">
+              <div className="flex gap-3 rounded-lg bg-[linear-gradient(135deg,#fff3d6,#fffbeb)] p-3.5">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning-600" />
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-wide text-warning-600">Здоровье</p>
@@ -145,10 +145,11 @@ function Fact({ icon: Icon, label, values }) {
   )
 }
 
+// Яркие плитки, как в пробнике (TRU-91).
 const TILE_TONES = {
-  neutral: ['bg-surface-muted', 'text-ink-subtle'],
-  danger: ['bg-danger-50', 'text-danger-600'],
-  success: ['bg-success-50', 'text-success-600'],
+  neutral: ['bg-[linear-gradient(135deg,#eef2ff,#f7f5ff)]', 'text-info-600'],
+  danger: ['bg-[linear-gradient(135deg,#ffe4e6,#fff1f2)]', 'text-danger-600'],
+  success: ['bg-[linear-gradient(135deg,#dcfce7,#f0fdf4)]', 'text-success-600'],
 }
 
 function Tile({ icon: Icon, label, tone = 'neutral', children }) {

@@ -1,45 +1,44 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { Clock, Plus, UsersRound } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Plus, Search, UsersRound } from 'lucide-react'
 import api from '../api/axios'
 import GroupModal from '../components/GroupModal'
-import { useSession } from '../session/SessionContext'
-import { Avatar, Badge, Button, Card, Checkbox, EmptyState, ErrorState, PageHeader, Select, Skeleton, cn, plural } from '../ui'
-import FillBar from '../components/groups/FillBar'
 import { GROUP_STATUSES, scheduleSummary } from '../components/groups/format'
+import { useSession } from '../session/SessionContext'
+import {
+  Avatar, Badge, Button, DataTable, EmptyState, FilterBar, FilterCheck, FilterPanel, FilterSelect, PageHeader,
+  SearchInput, cn, plural, useFilterDraft,
+} from '../ui'
 
-const STATUS_TABS = [['active', 'Набирают'], ['paused', 'Приостановлены'], ['closed', 'Закрытые'], ['', 'Все']]
+const PANEL_KEYS = ['branch', 'direction', 'teacher', 'status', 'underfilled']
+const STATUS_OPTIONS = [['', 'Все статусы'], ...Object.entries(GROUP_STATUSES).map(([v, s]) => [v, s.label])]
 const listOf = r => r.data.results || r.data
 
 /**
- * Группы (TRU-87): карточки с цветом направления, расписанием и
- * заполняемостью. «Недобор» — по порогу из настроек организации (сервер
- * считает is_underfilled). Фильтры — в адресе; филиал — из шапки.
+ * Группы (TRU-87, вид первого React — TRU-91): таблица с панелью фильтров.
+ * «Недобор» — по порогу из настроек организации (сервер считает
+ * is_underfilled). Фильтры в адресе; без своего филиала — филиал из шапки.
  */
 export default function Groups() {
-  const { can, activeBranchId, activeBranch } = useSession()
+  const navigate = useNavigate()
+  const { can, activeBranchId, activeBranch, branches } = useSession()
   const canManage = can('can_manage_groups')
   const [params, setParams] = useSearchParams()
-  const [groups, setGroups] = useState(null)
-  const [error, setError] = useState(false)
+  const [loaded, setLoaded] = useState({ key: null, rows: [], error: false })
   const [directions, setDirections] = useState([])
   const [teachers, setTeachers] = useState([])
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
 
-  const status = params.has('status') ? params.get('status') : 'active'
-  const direction = params.get('direction') || ''
-  const teacher = params.get('teacher') || ''
-  const underfilledOnly = params.get('underfilled') === '1'
-
+  const applied = Object.fromEntries(PANEL_KEYS.map(key => [key, params.get(key) || '']))
+  const q = params.get('q') || ''
   const update = useCallback(changes => setParams(current => {
     const next = new URLSearchParams(current)
-    Object.entries(changes).forEach(([key, value]) => {
-      if (value === null || value === false || (value === '' && key !== 'status')) next.delete(key)
-      else next.set(key, value === true ? '1' : value)
-    })
+    Object.entries(changes).forEach(([key, value]) => (value ? next.set(key, value) : next.delete(key)))
     return next
   }, { replace: true }), [setParams])
+  const setQuery = useCallback(value => update({ q: value }), [update])
 
   useEffect(() => {
     Promise.all([api.get('directions/'), api.get('users/', { params: { role: 'teacher' } })])
@@ -47,74 +46,124 @@ export default function Groups() {
       .catch(() => {})
   }, [])
 
-  const requestKey = `${status}|${direction}|${teacher}|${activeBranchId}|${reloadKey}`
+  const branch = applied.branch || activeBranchId || ''
+  const requestKey = `${applied.direction}|${applied.teacher}|${applied.status}|${branch}|${q}|${reloadKey}`
   useEffect(() => {
     const controller = new AbortController()
-    const query = { status: status || undefined, direction: direction || undefined, teacher: teacher || undefined, branch: activeBranchId || undefined }
+    const query = {
+      status: applied.status || undefined,
+      direction: applied.direction || undefined,
+      teacher: applied.teacher || undefined,
+      branch: branch || undefined,
+      search: q || undefined,
+    }
     api.get('groups/', { params: query, signal: controller.signal })
-      .then(r => { setGroups({ key: requestKey, rows: listOf(r) }); setError(false) })
-      .catch(err => { if (err.name !== 'CanceledError') setError(true) })
+      .then(r => setLoaded({ key: requestKey, rows: listOf(r), error: false }))
+      .catch(err => { if (err.name !== 'CanceledError') setLoaded(prev => ({ ...prev, key: requestKey, error: true })) })
     return () => controller.abort()
-  }, [status, direction, teacher, activeBranchId, requestKey])
+  }, [applied.status, applied.direction, applied.teacher, branch, q, requestKey])
 
-  const loading = groups?.key !== requestKey
-  const rows = (groups?.rows || []).filter(g => !underfilledOnly || g.is_underfilled)
-  const underfilledCount = (groups?.rows || []).filter(g => g.is_underfilled).length
+  const loading = loaded.key !== requestKey
+  const rows = loaded.rows.filter(g => applied.underfilled !== '1' || g.is_underfilled)
+  const underfilledCount = loaded.rows.filter(g => g.is_underfilled).length
+  const activeCount = PANEL_KEYS.filter(key => applied[key]).length
+  const reset = () => update(Object.fromEntries(PANEL_KEYS.map(key => [key, ''])))
+
+  const columns = [
+    {
+      key: 'name',
+      header: 'Название',
+      primary: true,
+      render: g => (
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: g.direction_color || '#9a93a8' }} />
+          <span className="min-w-0">
+            <span className="block truncate font-semibold text-ink">{g.name}</span>
+            {g.age_min != null && g.age_max != null && <span className="block text-xs text-ink-subtle">{g.age_min}–{g.age_max} лет</span>}
+          </span>
+        </span>
+      ),
+    },
+    ...(activeBranch ? [] : [{ key: 'branch_name', header: 'Филиал', className: 'text-ink-muted whitespace-nowrap' }]),
+    {
+      key: 'direction',
+      header: 'Направление',
+      hideOnMobile: true,
+      render: g => (
+        <span
+          className="inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold"
+          style={{ backgroundColor: `color-mix(in srgb, ${g.direction_color || '#9a93a8'} 16%, #fff)`, color: `color-mix(in srgb, ${g.direction_color || '#9a93a8'} 75%, #1f1b2e)` }}
+        >
+          {g.direction_name}
+        </span>
+      ),
+    },
+    {
+      key: 'teachers',
+      header: 'Преподаватели',
+      render: g => (g.teachers_detail.length ? (
+        <span className="flex items-center gap-2">
+          <span className="flex -space-x-2">
+            {g.teachers_detail.slice(0, 3).map(t => <Avatar key={t.id} name={t.full_name} className="size-7 text-[10px] ring-2 ring-surface" />)}
+          </span>
+          <span className="truncate text-ink-muted">{g.teachers_detail.map(t => t.full_name.split(' ')[0]).join(', ')}</span>
+        </span>
+      ) : <span className="text-ink-subtle">не назначен</span>),
+    },
+    { key: 'schedule', header: 'Расписание', hideOnMobile: true, className: 'text-ink-muted whitespace-nowrap', render: g => scheduleSummary(g.schedule) || <span className="text-ink-subtle">—</span> },
+    { key: 'fill', header: 'Записано', render: g => <Fill group={g} /> },
+    {
+      key: 'status',
+      header: 'Статус',
+      mobileAside: true,
+      render: g => {
+        const full = g.members_count >= g.capacity
+        if (g.status !== 'active') return <Badge tone={GROUP_STATUSES[g.status].tone}>{GROUP_STATUSES[g.status].label}</Badge>
+        if (full) return <Badge tone="danger">Мест нет</Badge>
+        if (g.is_underfilled) return <Badge tone="warning">Недобор</Badge>
+        return <Badge tone="success">Набирает</Badge>
+      },
+    },
+  ]
 
   return (
     <div>
       <PageHeader
         title="Группы"
-        description={groups ? `${rows.length} ${plural(rows.length, ['группа', 'группы', 'групп'])}${activeBranch ? ` · ${activeBranch.name}` : ''}${underfilledCount ? ` · с недобором: ${underfilledCount}` : ''}` : 'Загрузка…'}
-        actions={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Создать группу</Button>}
+        description={`${rows.length} ${plural(rows.length, ['группа', 'группы', 'групп'])}${activeBranch ? ` · ${activeBranch.name}` : ''}${underfilledCount ? ` · с недобором: ${underfilledCount}` : ''}`}
+        actions={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Новая группа</Button>}
       />
 
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <div className="flex rounded-md border border-line bg-surface p-0.5" role="group" aria-label="Статус">
-          {STATUS_TABS.map(([value, label]) => (
-            <button
-              key={value || 'all'}
-              type="button"
-              aria-pressed={status === value}
-              onClick={() => update({ status: value })}
-              className={cn('h-8 whitespace-nowrap rounded px-3 text-[13px] font-medium', status === value ? 'bg-brand-50 text-brand-700 shadow-card' : 'text-ink-muted hover:text-ink')}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <Select aria-label="Направление" className="h-9 w-48" value={direction} onChange={e => update({ direction: e.target.value })}>
-          <option value="">Все направления</option>
-          {directions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </Select>
-        {teachers.length > 0 && (
-          <Select aria-label="Преподаватель" className="h-9 w-48" value={teacher} onChange={e => update({ teacher: e.target.value })}>
-            <option value="">Все преподаватели</option>
-            {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-          </Select>
+      <div className="mb-4 space-y-3">
+        <FilterBar
+          search={<SearchInput value={q} onChange={setQuery} placeholder="Поиск по названию, направлению, филиалу" />}
+          filtersOpen={filtersOpen}
+          onToggleFilters={() => setFiltersOpen(o => !o)}
+          activeCount={activeCount}
+        />
+        {filtersOpen && (
+          <GroupFilters applied={applied} onApply={update} onReset={reset} branches={branches} directions={directions} teachers={teachers} />
         )}
-        <Checkbox className="ml-1" label="Только с недобором" checked={underfilledOnly} onChange={e => update({ underfilled: e.target.checked })} />
       </div>
 
-      {error && <Card><ErrorState onRetry={() => setReloadKey(k => k + 1)} /></Card>}
-      {!error && !groups && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map(i => <Skeleton key={i} className="h-52" />)}</div>
-      )}
-      {!error && groups && rows.length === 0 && (
-        <Card>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        loading={loading}
+        error={loaded.error}
+        onRetry={() => setReloadKey(k => k + 1)}
+        onRowClick={g => navigate(`/groups/${g.id}`)}
+        empty={activeCount || q ? (
+          <EmptyState icon={Search} title="Групп не нашли" description="Измените поиск или сбросьте фильтры." action={<Button size="sm" onClick={reset}>Сбросить фильтры</Button>} />
+        ) : (
           <EmptyState
             icon={UsersRound}
-            title={underfilledOnly ? 'Групп с недобором нет' : 'Групп нет'}
-            description={underfilledOnly ? 'Все группы заполнены выше порога из настроек.' : 'Создайте группу — в неё записываются дети, по ней строится расписание.'}
-            action={canManage && !underfilledOnly && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Создать группу</Button>}
+            title="Групп пока нет"
+            description="Создайте группу — в неё записываются дети, по ней строится расписание."
+            action={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Новая группа</Button>}
           />
-        </Card>
-      )}
-      {rows.length > 0 && (
-        <div className={cn('grid gap-4 md:grid-cols-2 xl:grid-cols-3', loading && 'opacity-60')}>
-          {rows.map(group => <GroupCard key={group.id} group={group} />)}
-        </div>
-      )}
+        )}
+      />
 
       {creating && (
         <GroupModal onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setReloadKey(k => k + 1) }} />
@@ -123,43 +172,36 @@ export default function Groups() {
   )
 }
 
-function GroupCard({ group }) {
-  const status = GROUP_STATUSES[group.status]
-  const full = group.members_count >= group.capacity
-  const schedule = scheduleSummary(group.schedule)
+function GroupFilters({ applied, onApply, onReset, branches, directions, teachers }) {
+  const { draft, set, dirty } = useFilterDraft(applied)
   return (
-    <Link to={`/groups/${group.id}`} className="group relative flex flex-col overflow-hidden rounded-lg border border-line bg-surface p-5 pl-6 shadow-card transition-shadow hover:shadow-pop">
-      <span className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: group.direction_color || '#9aa3ad' }} />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-base font-bold text-ink group-hover:text-brand-700">{group.name}</p>
-          <p className="mt-0.5 truncate text-[13px] text-ink-muted">
-            {group.direction_name} · {group.branch_name}
-            {group.age_min != null && group.age_max != null && ` · ${group.age_min}–${group.age_max} лет`}
-          </p>
-        </div>
-        {group.status !== 'active' ? <Badge tone={status.tone}>{status.label}</Badge>
-          : full ? <Badge tone="danger">Мест нет</Badge>
-            : group.is_underfilled ? <Badge tone="warning">Недобор</Badge> : null}
-      </div>
+    <FilterPanel
+      dirty={dirty}
+      canReset={PANEL_KEYS.some(key => applied[key])}
+      onApply={() => onApply(draft)}
+      onReset={onReset}
+      checks={<FilterCheck label="Только с недобором" checked={draft.underfilled === '1'} onChange={v => set('underfilled', v ? '1' : '')} />}
+    >
+      {branches.length > 1 && (
+        <FilterSelect label="Филиал" value={draft.branch} onChange={v => set('branch', v)} options={[['', 'Как в шапке'], ...branches.map(b => [String(b.id), b.name])]} />
+      )}
+      <FilterSelect label="Направление" value={draft.direction} onChange={v => set('direction', v)} options={[['', 'Все направления'], ...directions.map(d => [String(d.id), d.name])]} />
+      <FilterSelect label="Преподаватель" value={draft.teacher} onChange={v => set('teacher', v)} options={[['', 'Все преподаватели'], ...teachers.map(t => [String(t.id), t.full_name])]} />
+      <FilterSelect label="Статус" value={draft.status} onChange={v => set('status', v)} options={STATUS_OPTIONS} />
+    </FilterPanel>
+  )
+}
 
-      <p className="mt-3 flex items-center gap-1.5 text-[13px] text-ink-muted">
-        <Clock className="size-3.5 shrink-0" />
-        {schedule || <span className="text-ink-subtle">расписание не задано</span>}
-      </p>
-
-      <div className="mt-3 flex min-h-7 items-center gap-2">
-        {group.teachers_detail.length ? (
-          <>
-            <div className="flex -space-x-2">
-              {group.teachers_detail.slice(0, 3).map(t => <Avatar key={t.id} name={t.full_name} className="size-7 text-[10px] ring-2 ring-surface" />)}
-            </div>
-            <span className="truncate text-[13px] text-ink-muted">{group.teachers_detail.map(t => t.full_name.split(' ')[0]).join(', ')}</span>
-          </>
-        ) : <span className="text-[13px] text-ink-subtle">Преподаватель не назначен</span>}
-      </div>
-
-      <FillBar group={group} className="mt-auto pt-4" />
-    </Link>
+/** «8 / 12» с мини-полосой: красная — мест нет, оранжевая — недобор. */
+function Fill({ group }) {
+  const full = group.members_count >= group.capacity
+  const color = full ? 'bg-danger-600' : group.is_underfilled ? 'bg-warning-600' : 'bg-success-600'
+  return (
+    <span className="flex items-center gap-2.5">
+      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-line">
+        <span className={cn('block h-full rounded-full', color)} style={{ width: `${Math.min(100, Math.max(group.fill_percent ?? 0, 4))}%` }} />
+      </span>
+      <span className="whitespace-nowrap font-semibold text-ink">{group.members_count}<span className="font-normal text-ink-subtle"> / {group.capacity}</span></span>
+    </span>
   )
 }
