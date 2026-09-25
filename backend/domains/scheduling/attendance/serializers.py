@@ -85,8 +85,10 @@ class AttendanceMarkSerializer(serializers.Serializer):
 
 class AttendanceRosterEntrySerializer(serializers.Serializer):
     """TRU-56: строка ростера занятия — {"child": Child, "attendance":
-    Attendance | None} (см. AttendanceViewSet.roster). Ребёнок без
-    Attendance ещё не отмечен — это НЕ то же самое, что status="absent"."""
+    Attendance | None, "enrollment_kind": "makeup"|"trial"|None} (см.
+    AttendanceViewSet.roster). Ребёнок без Attendance ещё не отмечен — это
+    НЕ то же самое, что status="absent". enrollment_kind — пометка типа
+    для записанных «поверх» группы (TRU-53); None — обычный участник."""
 
     child = serializers.UUIDField(source="child.id")
     child_name = serializers.CharField(source="child.full_name")
@@ -98,6 +100,10 @@ class AttendanceRosterEntrySerializer(serializers.Serializer):
     no_subscription_flag = serializers.SerializerMethodField()
     is_retroactive_edit = serializers.SerializerMethodField()
     marked_at = serializers.SerializerMethodField()
+    enrollment_kind = serializers.SerializerMethodField()
+
+    def get_enrollment_kind(self, obj):
+        return obj.get("enrollment_kind")
 
     def get_attendance_id(self, obj):
         attendance = obj["attendance"]

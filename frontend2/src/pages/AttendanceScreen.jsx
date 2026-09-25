@@ -23,6 +23,14 @@ const CONSUME_OUTCOME_LABEL = {
   rule_forbids: 'Абонемент не позволяет списание',
 }
 
+// TRU-53: дети, записанные «поверх» состава группы (отработка/пробное) —
+// пометка типа рядом с именем, чтобы было видно, что это не обычный
+// участник группы.
+const ENROLLMENT_KIND_LABEL = {
+  makeup: 'Отработка',
+  trial: 'Пробное',
+}
+
 function lessonLabel(lesson) {
   if (!lesson) return ''
   if (lesson.group_name) return lesson.group_name
@@ -375,12 +383,23 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark }) {
     </>
   )
 
+  const enrollmentBadge = ENROLLMENT_KIND_LABEL[row.enrollment_kind] && (
+    <span style={{
+      fontSize: 10, fontWeight: 700, color: ACCENT, background: `${ACCENT}14`,
+      borderRadius: 6, padding: '2px 6px', marginLeft: 6, whiteSpace: 'nowrap',
+    }}>
+      {ENROLLMENT_KIND_LABEL[row.enrollment_kind]}
+    </span>
+  )
+
   if (mobile) {
     // Вертикально: имя — крупные кнопки на всю ширину под ней (под палец,
     // не под мышь), никакого горизонтального сжатия при длинном имени.
     return (
       <div style={{ background: '#fff', border: '1px solid #F0F0F5', borderRadius: 14, padding: 14 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#1A1A2E' }}>{row.child_name}</div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#1A1A2E', display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+          {row.child_name}{enrollmentBadge}
+        </div>
         {statusNote}
         <div style={{ marginTop: 10 }}>{statusButtons}</div>
       </div>
@@ -391,8 +410,8 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark }) {
     <div style={{ background: '#fff', border: '1px solid #F0F0F5', borderRadius: 14, padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#1A1A2E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {row.child_name}
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1A1A2E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center' }}>
+            {row.child_name}{enrollmentBadge}
           </div>
           {statusNote}
         </div>

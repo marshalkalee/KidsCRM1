@@ -5,7 +5,7 @@ from domains.people.clients.models import Child
 from domains.platform.core.mixins import TenantCreateMixin
 
 from .conflicts import find_conflicting_lessons
-from .models import Lesson
+from .models import Lesson, LessonEnrollment
 
 
 class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
@@ -202,3 +202,48 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
                 }
             )
         return attrs
+
+
+class LessonEnrollmentSerializer(serializers.ModelSerializer):
+    """Ответ на запись/список записей «поверх» группы (TRU-53)."""
+
+    child_name = serializers.CharField(source="child.full_name", read_only=True)
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    enrolled_by_name = serializers.CharField(
+        source="enrolled_by.full_name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = LessonEnrollment
+        fields = [
+            "id",
+            "lesson",
+            "child",
+            "child_name",
+            "kind",
+            "kind_display",
+            "enrolled_by",
+            "enrolled_by_name",
+            "cancelled_at",
+            "created_at",
+        ]
+        read_only_fields = ["id", "enrolled_by", "cancelled_at", "created_at"]
+
+
+class LessonEnrollSerializer(serializers.Serializer):
+    """Вход для LessonService.enroll() — сам вызов сервиса делает view
+    (нужен доступ к organization из request и обработка EnrollResult),
+    здесь только валидация и скоуп по организации."""
+
+    lesson = serializers.PrimaryKeyRelatedField(queryset=Lesson.objects.none())
+    child = serializers.PrimaryKeyRelatedField(queryset=Child.objects.none())
+    kind = serializers.ChoiceField(choices=LessonEnrollment.Kind.choices)
+    confirm_capacity = serializers.BooleanField(required=False, default=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            org = request.organization
+            self.fields["lesson"].queryset = Lesson.objects.for_tenant(org)
+            self.fields["child"].queryset = Child.objects.for_tenant(org)

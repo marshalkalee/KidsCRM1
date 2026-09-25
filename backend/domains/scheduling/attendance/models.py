@@ -157,6 +157,22 @@ class Attendance(TenantModel):
             ConsumeOutcome,
             SubscriptionService,
         )
+        from domains.scheduling.schedule.models import LessonEnrollment
+
+        # TRU-53 (M1, до согласования с Bekzat): ребёнок, записанный
+        # «поверх» группы (отработка/пробное), новый сеанс не списывает —
+        # отработка уже оплачена пропущенным занятием, пробное бесплатно.
+        # consume_outcome здесь не значение ConsumeOutcome (тот словарь —
+        # только для обычного списания), а маркер именно этого случая.
+        enrollment = LessonEnrollment.objects.filter(
+            lesson_id=self.lesson_id, child_id=self.child_id, cancelled_at__isnull=True
+        ).first()
+        if enrollment is not None:
+            self.consumed_from_subscription = False
+            self.subscription_id = None
+            self.consume_outcome = f"{enrollment.kind}_no_charge"
+            self.no_subscription_flag = False
+            return
 
         direction_id = self._resolve_direction_id()
         if direction_id is None:
