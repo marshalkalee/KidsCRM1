@@ -45,6 +45,32 @@ def _cancel_reason_from_request(request):
     return category, comment
 
 
+def _is_confirmed(request):
+    # Фронт шлёт confirm_conflict: true вторым запросом после того, как
+    # администратор увидел предупреждение и подтвердил сохранение (ТЗ п.
+    # 4.2: предупреждение, не запрет). Строка "true"/"1" — на случай
+    # multipart/form-data, где всё приходит строками.
+    value = request.data.get("confirm_conflict")
+    return value in (True, "true", "1", 1)
+
+
+def _cancel_reason_from_request(request):
+    """TRU-48: отмена без причины из справочника невозможна на уровне API
+    (критерий приёмки). category — обязателен всегда; comment — обязателен
+    только для category=OTHER (для остальных категорий сама категория уже
+    достаточно информативна)."""
+    category = request.data.get("reason_category", "")
+    comment = request.data.get("comment", "")
+    valid = {value for value, _ in Lesson.CancelReasonCategory.choices}
+    if category not in valid:
+        raise DRFValidationError(
+            {"reason_category": f"Укажите причину отмены — одну из: {', '.join(sorted(valid))}."}
+        )
+    if category == Lesson.CancelReasonCategory.OTHER and not comment.strip():
+        raise DRFValidationError({"comment": "Для причины «Другое» нужен комментарий."})
+    return category, comment
+
+
 class LessonViewSet(TenantModelViewSet):
     serializer_class = LessonSerializer
     filter_backends = [filters.OrderingFilter]

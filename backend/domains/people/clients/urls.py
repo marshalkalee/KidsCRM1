@@ -15,6 +15,7 @@ urlpatterns = [
     path("search/", views.global_search_api, name="global-search"),
     # До router.urls: иначе "table" поймает children/<pk>/.
     path("children/table/", views.child_table_api, name="child-table"),
+    path("children/photo/", views.child_photo_api, name="child-photo"),
     # Импорт (для frontend2) — тот же жизненный цикл, что у веб-экранов.
     path("children/import/analyze/", import_api_views.import_analyze, name="import-analyze"),
     path("children/import/preview/", import_api_views.import_preview, name="import-preview"),

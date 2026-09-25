@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { t } from '../i18n'
 
 // Авторизация для всех запросов к API (TRU-79): токен из localStorage и
 // автоматическое продление access-токена при 401.
@@ -36,7 +37,7 @@ function logout() {
 function refreshAccessToken() {
   if (!refreshing) {
     const refresh = localStorage.getItem('refresh')
-    refreshing = (refresh ? axios.post(REFRESH_URL, { refresh }, { skipAuthRefresh: true }) : Promise.reject(new Error('нет refresh-токена')))
+    refreshing = (refresh ? axios.post(REFRESH_URL, { refresh }, { skipAuthRefresh: true }) : Promise.reject(new Error(t('нет refresh-токена'))))
       .then(res => {
         localStorage.setItem('access', res.data.access)
         // Ротация включена — вместе с access приходит новый refresh, старый уже в blacklist.

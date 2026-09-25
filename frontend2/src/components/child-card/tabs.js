@@ -1,6 +1,7 @@
 import AttendanceTab from './AttendanceTab'
 import CommunicationsTab from './CommunicationsTab'
 import ContactsTab from './ContactsTab'
+import { t } from '../../i18n'
 
 /**
  * Контракт вкладок карточки ребёнка (TRU-82) — замена child_card_tabs.py
@@ -24,8 +25,8 @@ import ContactsTab from './ContactsTab'
  * Подробнее — docs/contracts.md, раздел «Вкладки карточки ребёнка».
  */
 export const CHILD_CARD_TABS = [
-  { key: 'contacts', label: 'Контакты', order: 10, component: ContactsTab },
-  { key: 'communications', label: 'Коммуникации', order: 20, component: CommunicationsTab },
+  { key: 'contacts', get label() { return t('Контакты') }, order: 10, component: ContactsTab },
+  { key: 'communications', get label() { return t('Коммуникации') }, order: 20, component: CommunicationsTab },
   // Деньги (Bekzat, TRU-70) — заглушки до подключения.
   { key: 'subscriptions', label: 'Абонементы', order: 30, component: null, permission: 'can_view_client_money' },
   { key: 'payments', label: 'Оплаты', order: 40, component: null, permission: 'can_view_client_money' },

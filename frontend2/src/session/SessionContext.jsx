@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { Navigate, useLocation } from 'react-router-dom'
 import api, { ACTIVE_BRANCH_KEY, clearTokens } from '../api/axios'
 import { Spinner } from '../ui'
+import { t } from '../i18n'
 
 /**
  * Кто вошёл и что ему можно (TRU-80): пользователь и permissions из
@@ -15,11 +16,11 @@ import { Spinner } from '../ui'
 const SessionContext = createContext(null)
 
 export const ROLE_LABELS = {
-  owner: 'Владелец',
-  manager: 'Управляющий',
-  admin: 'Администратор',
-  teacher: 'Преподаватель',
-  accountant: 'Бухгалтер',
+  get owner() { return t('Владелец') },
+  get manager() { return t('Управляющий') },
+  get admin() { return t('Администратор') },
+  get teacher() { return t('Преподаватель') },
+  get accountant() { return t('Бухгалтер') },
 }
 
 function readStoredBranch() {
@@ -112,8 +113,8 @@ export function RequirePermission({ permission, children }) {
   if (!can(permission)) {
     return (
       <div className="py-20 text-center">
-        <p className="font-semibold text-ink">Нет доступа</p>
-        <p className="mt-1 text-sm text-ink-muted">Этот раздел недоступен для вашей роли.</p>
+        <p className="font-semibold text-ink">{t('Нет доступа')}</p>
+        <p className="mt-1 text-sm text-ink-muted">{t('Этот раздел недоступен для вашей роли.')}</p>
       </div>
     )
   }

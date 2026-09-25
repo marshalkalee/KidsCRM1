@@ -8,6 +8,7 @@ import {
   Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Select, Spinner, apiErrorMessage, cn,
   formatDateTime, plural, useConfirm, useToast,
 } from '../ui'
+import { t } from '../i18n'
 
 // Импорт детей из Excel (TRU-84) — тот же жизненный цикл, что у старого
 // веба (backend: import_api_views.py): файл → маппинг колонок → сухой
@@ -17,9 +18,9 @@ import {
 const IMPORT_API = 'clients/children/import'
 const STEPS = ['Файл', 'Колонки', 'Проверка', 'Импорт']
 const LEVELS = {
-  ready: { tone: 'success', label: 'Готово' },
-  warning: { tone: 'warning', label: 'Предупреждение' },
-  error: { tone: 'danger', label: 'Ошибка' },
+  ready: { tone: 'success', get label() { return t('Готово') } },
+  warning: { tone: 'warning', get label() { return t('Предупреждение') } },
+  error: { tone: 'danger', get label() { return t('Ошибка') } },
 }
 const REPORT_PAGE = 50
 
@@ -50,9 +51,9 @@ export default function ChildImport() {
   return (
     <div>
       <PageHeader
-        back={{ to: '/children', label: 'Дети' }}
-        title="Импорт из Excel"
-        description="Сначала файл проверяется без записи в базу — вы увидите ошибки и возможные дубли."
+        back={{ to: '/children', label: t('Дети') }}
+        title={t('Импорт из Excel')}
+        description={t('Сначала файл проверяется без записи в базу — вы увидите ошибки и возможные дубли.')}
       />
       <JobStepper step={step} />
       {body}
@@ -62,7 +63,7 @@ export default function ChildImport() {
 
 function JobStepper({ step }) {
   return (
-    <ol className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-2 text-[13px]" aria-label="Шаги импорта">
+    <ol className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-2 text-[13px]" aria-label={t('Шаги импорта')}>
       {STEPS.map((label, index) => {
         const done = index < step
         const current = index === step
@@ -74,7 +75,7 @@ function JobStepper({ step }) {
             )}>
               {done ? <CheckCircle2 className="size-4" /> : index + 1}
             </span>
-            <span className={cn('font-semibold', current ? 'text-ink' : 'text-ink-muted')}>{label}</span>
+            <span className={cn('font-semibold', current ? 'text-ink' : 'text-ink-muted')}>{t(label)}</span>
             {index < STEPS.length - 1 && <span className="mx-1 h-px w-6 bg-line-strong" />}
           </li>
         )
@@ -109,7 +110,7 @@ function FileStep({ onAnalyzed, openJob }) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
       <Card>
         <button
           type="button"
@@ -130,19 +131,19 @@ function FileStep({ onAnalyzed, openJob }) {
           <span className="flex size-14 items-center justify-center rounded-full bg-brand-50 text-brand-600">
             {loading ? <Spinner className="py-0" label="" /> : <Upload className="size-6" />}
           </span>
-          <span className="text-base font-semibold text-ink">{file ? file.name : 'Перетащите файл сюда или выберите'}</span>
-          <span className="text-sm text-ink-muted">.xlsx или .csv, первая строка — заголовки</span>
+          <span className="text-base font-semibold text-ink">{file ? file.name : t('Перетащите файл сюда или выберите')}</span>
+          <span className="text-sm text-ink-muted">{t('.xlsx или .csv, первая строка — заголовки')}</span>
         </button>
         <input ref={fileRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={e => e.target.files[0] && analyze(e.target.files[0])} />
         {error && <p className="mt-3 rounded-md bg-danger-50 px-3 py-2 text-sm text-danger-600">{error}</p>}
         <div className="mt-5 rounded-lg bg-surface-muted px-4 py-3 text-[13px] leading-relaxed text-ink-muted">
-          <p className="font-semibold text-ink">Что должно быть в файле</p>
+          <p className="font-semibold text-ink">{t('Что должно быть в файле')}</p>
           <ul className="mt-1 list-disc pl-5">
-            <li>ФИО ребёнка, дата рождения, пол — обязательно</li>
-            <li>ФИО и телефон родителя — обязательно</li>
-            <li>Роль родителя, мед. заметки, остаток занятий, направление, группа — по желанию</li>
+            <li>{t('ФИО ребёнка, дата рождения, пол — обязательно')}</li>
+            <li>{t('ФИО и телефон родителя — обязательно')}</li>
+            <li>{t('Роль родителя, мед. заметки, остаток занятий, направление, группа — по желанию')}</li>
           </ul>
-          <p className="mt-2">Названия колонок могут быть любыми — на следующем шаге вы сопоставите их с полями.</p>
+          <p className="mt-2">{t('Названия колонок могут быть любыми — на следующем шаге вы сопоставите их с полями.')}</p>
         </div>
       </Card>
       <ImportHistory openJob={openJob} />
@@ -157,9 +158,9 @@ function ImportHistory({ openJob }) {
   }, [])
   return (
     <Card>
-      <CardHeader title="Прошлые импорты" description="Откатить можно, пока с данными не начали работать" />
+      <CardHeader title={t('Прошлые импорты')} description={t('Откатить можно, пока с данными не начали работать')} />
       {!jobs && <Spinner className="py-4" />}
-      {jobs && jobs.length === 0 && <p className="text-sm text-ink-muted">Импортов ещё не было.</p>}
+      {jobs && jobs.length === 0 && <p className="text-sm text-ink-muted">{t('Импортов ещё не было.')}</p>}
       {jobs && jobs.length > 0 && (
         <ul className="-mx-2 space-y-1">
           {jobs.map(job => (
@@ -172,7 +173,7 @@ function ImportHistory({ openJob }) {
                   </span>
                   <span className="block truncate text-xs text-ink-subtle">{formatDateTime(job.created_at)} · {job.created_by}</span>
                 </span>
-                {job.rolled_back_at ? <Badge>Откатан</Badge> : job.status === 'failed' ? <Badge tone="danger">Ошибка</Badge> : null}
+                {job.rolled_back_at ? <Badge>{t('Откатан')}</Badge> : job.status === 'failed' ? <Badge tone="danger">{t('Ошибка')}</Badge> : null}
               </button>
             </li>
           ))}
@@ -223,10 +224,10 @@ function MappingStep({ draft, onBack, onStarted }) {
     <div className="space-y-4">
       <Card>
         <CardHeader
-          title="Какая колонка что означает"
+          title={t('Какая колонка что означает')}
           description={analysis.mapping_saved
-            ? 'Для файла с такими колонками маппинг уже сохранён — проверьте и продолжайте.'
-            : 'Мы угадали, что смогли. Поправьте, если что-то не так — выбор запомнится для таких файлов.'}
+            ? t('Для файла с такими колонками маппинг уже сохранён — проверьте и продолжайте.')
+            : t('Мы угадали, что смогли. Поправьте, если что-то не так — выбор запомнится для таких файлов.')}
           actions={<Badge>{file.name} · {analysis.total_rows} {plural(analysis.total_rows, ['строка', 'строки', 'строк'])}</Badge>}
         />
         <div className="divide-y divide-line rounded-lg border border-line">
@@ -236,21 +237,21 @@ function MappingStep({ draft, onBack, onStarted }) {
             return (
               <div key={field.key} className="grid items-center gap-2 px-4 py-3 sm:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)] sm:gap-4">
                 <span className="text-sm font-semibold text-ink">
-                  {field.label}
+                  {t(field.label)}
                   {field.required && <span className="ml-0.5 text-danger-600">*</span>}
                 </span>
                 <Select
-                  aria-label={field.label}
+                  aria-label={t(field.label)}
                   invalid={invalid}
                   className="h-9"
                   value={mapping[field.key] || ''}
                   onChange={e => choose(field.key, e.target.value || null)}
                 >
-                  <option value="">— не импортировать —</option>
+                  <option value="">{t('— не импортировать —')}</option>
                   {analysis.headers.map(header => <option key={header} value={header}>{header}</option>)}
                 </Select>
                 <span className="truncate text-[13px] text-ink-muted">
-                  {value != null ? <>например: <span className="text-ink">{String(value)}</span></> : <span className="text-ink-subtle">—</span>}
+                  {value != null ? <>{t('например:')} <span className="text-ink">{String(value)}</span></> : <span className="text-ink-subtle">—</span>}
                 </span>
               </div>
             )
@@ -259,7 +260,7 @@ function MappingStep({ draft, onBack, onStarted }) {
       </Card>
 
       <Card padded={false}>
-        <CardHeader className="mb-0 px-5 pt-5" title="Первые строки файла" />
+        <CardHeader className="mb-0 px-5 pt-5" title={t('Первые строки файла')} />
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[640px] text-[13px]">
             <thead className="bg-surface-muted text-left text-xs text-ink-subtle">
@@ -281,11 +282,11 @@ function MappingStep({ draft, onBack, onStarted }) {
       </Card>
 
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Button onClick={onBack}>Другой файл</Button>
+        <Button onClick={onBack}>{t('Другой файл')}</Button>
         <div className="flex flex-col items-stretch gap-2 sm:items-end">
-          {missing.length > 0 && <p className="text-sm text-danger-600">Выберите колонки: {missing.map(f => f.label).join(', ')}</p>}
+          {missing.length > 0 && <p className="text-sm text-danger-600">{t('Выберите колонки:')} {missing.map(f => t(f.label)).join(', ')}</p>}
           {error && <p className="text-sm text-danger-600">{error}</p>}
-          <Button variant="primary" icon={ArrowRight} loading={saving} disabled={missing.length > 0} onClick={start}>Проверить файл</Button>
+          <Button variant="primary" icon={ArrowRight} loading={saving} disabled={missing.length > 0} onClick={start}>{t('Проверить файл')}</Button>
         </div>
       </div>
     </div>
@@ -314,7 +315,7 @@ function JobView({ jobId, openJob, onLoaded }) {
     return () => { cancelled = true; clearTimeout(timer) }
   }, [load])
 
-  if (error) return <Card><ErrorState title="Задача импорта не найдена" onRetry={() => openJob(null)} /></Card>
+  if (error) return <Card><ErrorState title={t('Задача импорта не найдена')} onRetry={() => openJob(null)} /></Card>
   if (!job) return <Spinner />
   if (job.status === 'pending' || job.status === 'running') {
     return <ProgressCard job={job} />
@@ -322,7 +323,7 @@ function JobView({ jobId, openJob, onLoaded }) {
   if (job.status === 'failed') {
     return (
       <Card>
-        <EmptyState icon={XCircle} title="Не получилось" description={job.error_message || 'Задача завершилась с ошибкой. Ничего не записано.'} action={<Button onClick={() => openJob(null)}>Начать заново</Button>} />
+        <EmptyState icon={XCircle} title={t('Не получилось')} description={job.error_message || t('Задача завершилась с ошибкой. Ничего не записано.')} action={<Button onClick={() => openJob(null)}>{t('Начать заново')}</Button>} />
       </Card>
     )
   }
@@ -336,12 +337,12 @@ function ProgressCard({ job }) {
   const percent = total ? Math.round((done / total) * 100) : 0
   return (
     <Card className="mx-auto max-w-xl text-center">
-      <p className="text-base font-semibold text-ink">{job.job_type === 'dry_run' ? 'Проверяем файл…' : 'Записываем в базу…'}</p>
-      <p className="mt-1 text-sm text-ink-muted">Можно не ждать на этой странице — прогресс сохранится.</p>
+      <p className="text-base font-semibold text-ink">{job.job_type === 'dry_run' ? t('Проверяем файл…') : t('Записываем в базу…')}</p>
+      <p className="mt-1 text-sm text-ink-muted">{t('Можно не ждать на этой странице — прогресс сохранится.')}</p>
       <div className="mt-5 h-2 overflow-hidden rounded-full bg-surface-muted" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
         <div className="h-full rounded-full bg-brand-600 transition-all" style={{ width: `${Math.max(percent, 4)}%` }} />
       </div>
-      <p className="mt-2 text-[13px] text-ink-muted">{done} из {total}</p>
+      <p className="mt-2 text-[13px] text-ink-muted">{done} {t('из')} {total}</p>
     </Card>
   )
 }
@@ -376,7 +377,7 @@ function DryRunReport({ job, setJob, openJob }) {
       const { data } = await api.post(`${IMPORT_API}/jobs/${job.job_id}/decisions/`, { bulk_kind: kind.kind, bulk_decision: decision })
       setJob(data)
       setDecisions(data.decisions)
-      toast.success(`Решение применено к ${kind.count} ${plural(kind.count, ['строке', 'строкам', 'строкам'])}`)
+      toast.success(t('Решение применено: {count}', { count: `${kind.count} ${plural(kind.count, ['строка', 'строки', 'строк'])}` }))
     } catch (err) {
       toast.error(apiErrorMessage(err))
     }
@@ -408,7 +409,7 @@ function DryRunReport({ job, setJob, openJob }) {
   if (job.executed_job_id) {
     return (
       <Card>
-        <EmptyState icon={CheckCircle2} title="Из этой проверки уже запущен импорт" action={<Button variant="primary" onClick={() => openJob(job.executed_job_id)}>Открыть импорт</Button>} />
+        <EmptyState icon={CheckCircle2} title={t('Из этой проверки уже запущен импорт')} action={<Button variant="primary" onClick={() => openJob(job.executed_job_id)}>{t('Открыть импорт')}</Button>} />
       </Card>
     )
   }
@@ -416,23 +417,23 @@ function DryRunReport({ job, setJob, openJob }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat tone="success" icon={CheckCircle2} label="Готовы к импорту" value={job.ready_count} />
-        <Stat tone="warning" icon={AlertTriangle} label="С предупреждениями" value={job.warning_count} hint="будут импортированы" />
-        <Stat tone="danger" icon={XCircle} label="С ошибками" value={job.error_count} hint="пропустим — исправьте в файле" />
+        <Stat tone="success" icon={CheckCircle2} label={t('Готовы к импорту')} value={job.ready_count} />
+        <Stat tone="warning" icon={AlertTriangle} label={t('С предупреждениями')} value={job.warning_count} hint={t('будут импортированы')} />
+        <Stat tone="danger" icon={XCircle} label={t('С ошибками')} value={job.error_count} hint={t('пропустим — исправьте в файле')} />
       </div>
 
       {job.duplicate_kinds?.length > 0 && (
         <Card>
-          <CardHeader title="Найдены совпадения" description="Решите сразу для всех строк одного вида — или по отдельности в таблице ниже." />
+          <CardHeader title={t('Найдены совпадения')} description={t('Решите сразу для всех строк одного вида — или по отдельности в таблице ниже.')} />
           <div className="grid gap-3 md:grid-cols-2">
             {job.duplicate_kinds.map(kind => (
               <div key={kind.kind} className="rounded-lg border border-line p-4">
-                <p className="text-sm font-semibold text-ink">{kind.label} <span className="font-normal text-ink-muted">· {kind.count}</span></p>
+                <p className="text-sm font-semibold text-ink">{t(kind.label)} <span className="font-normal text-ink-muted">· {kind.count}</span></p>
                 <div className="mt-2 flex gap-2">
-                  <Select aria-label={`Решение: ${kind.label}`} className="h-9" value={bulk[kind.kind] || kind.options[0].value} onChange={e => setBulk(b => ({ ...b, [kind.kind]: e.target.value }))}>
-                    {kind.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  <Select aria-label={t('Решение: {kind}', { kind: t(kind.label) })} className="h-9" value={bulk[kind.kind] || kind.options[0].value} onChange={e => setBulk(b => ({ ...b, [kind.kind]: e.target.value }))}>
+                    {kind.options.map(option => <option key={option.value} value={option.value}>{t(option.label)}</option>)}
                   </Select>
-                  <Button size="sm" className="h-9" onClick={() => applyBulk(kind)}>Для всех</Button>
+                  <Button size="sm" className="h-9" onClick={() => applyBulk(kind)}>{t('Для всех')}</Button>
                 </div>
               </div>
             ))}
@@ -442,7 +443,7 @@ function DryRunReport({ job, setJob, openJob }) {
 
       <Card padded={false}>
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5">
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Фильтр строк">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('Фильтр строк')}>
             {FILTERS.map(([value, label]) => {
               const count = value === 'all' ? job.rows.length : value === 'duplicate' ? duplicates : job[`${value}_count`]
               return (
@@ -456,18 +457,18 @@ function DryRunReport({ job, setJob, openJob }) {
                     filter === value ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line text-ink-muted hover:text-ink',
                   )}
                 >
-                  {label} <span className="text-ink-subtle">{count}</span>
+                  {t(label)} <span className="text-ink-subtle">{count}</span>
                 </button>
               )
             })}
           </div>
-          <Button size="sm" icon={Download} onClick={download}>Скачать отчёт</Button>
+          <Button size="sm" icon={Download} onClick={download}>{t('Скачать отчёт')}</Button>
         </div>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[760px] text-[13px]">
             <thead className="bg-surface-muted text-left text-xs uppercase tracking-wide text-ink-subtle">
               <tr>
-                {['Строка', 'Статус', 'Ребёнок', 'Что не так', 'Совпадение', 'Решение'].map(h => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}
+                {[t('Строка'), t('Статус'), t('Ребёнок'), t('Что не так'), t('Совпадение'), t('Решение')].map(h => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -480,16 +481,16 @@ function DryRunReport({ job, setJob, openJob }) {
                     <td className="px-3 py-2"><Badge tone={level.tone}>{level.label}</Badge></td>
                     <td className="px-3 py-2 font-medium text-ink">{row.child_name || '—'}</td>
                     <td className="px-3 py-2 text-ink-muted">{row.messages.join('; ') || '—'}</td>
-                    <td className="px-3 py-2 text-ink-muted">{dup ? <><span className="text-ink">{dup.kind_label}</span><br />{dup.matched}</> : '—'}</td>
+                    <td className="px-3 py-2 text-ink-muted">{dup ? <><span className="text-ink">{t(dup.kind_label)}</span><br />{dup.matched}</> : '—'}</td>
                     <td className="min-w-56 px-3 py-2">
                       {dup && (
                         <Select
-                          aria-label={`Решение для строки ${row.row_number}`}
+                          aria-label={t('Решение для строки {n}', { n: row.row_number })}
                           className="h-9"
                           value={decisions[row.row_number] || dup.options[0]}
                           onChange={e => setDecisions(d => ({ ...d, [row.row_number]: e.target.value }))}
                         >
-                          {dup.options.map(option => <option key={option} value={option}>{dup.option_labels[option]}</option>)}
+                          {dup.options.map(option => <option key={option} value={option}>{t(dup.option_labels[option])}</option>)}
                         </Select>
                       )}
                     </td>
@@ -498,19 +499,19 @@ function DryRunReport({ job, setJob, openJob }) {
               })}
             </tbody>
           </table>
-          {rows.length === 0 && <p className="px-5 py-6 text-center text-sm text-ink-muted">Таких строк нет.</p>}
+          {rows.length === 0 && <p className="px-5 py-6 text-center text-sm text-ink-muted">{t('Таких строк нет.')}</p>}
         </div>
         {rows.length > shown && (
           <div className="border-t border-line px-5 py-3 text-center">
-            <Button variant="ghost" size="sm" onClick={() => setShown(s => s + REPORT_PAGE)}>Показать ещё ({rows.length - shown})</Button>
+            <Button variant="ghost" size="sm" onClick={() => setShown(s => s + REPORT_PAGE)}>{t('Показать ещё (')}{rows.length - shown})</Button>
           </div>
         )}
       </Card>
 
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-        <Button onClick={() => openJob(null)}>Загрузить другой файл</Button>
+        <Button onClick={() => openJob(null)}>{t('Загрузить другой файл')}</Button>
         <Button variant="primary" icon={ArrowRight} loading={starting} disabled={!importable} onClick={start}>
-          Импортировать {importable} {plural(importable, ['строку', 'строки', 'строк'])}
+          {t('Импортировать {count}', { count: `${importable} ${plural(importable, ['строку', 'строки', 'строк'])}` })}
         </Button>
       </div>
     </div>
@@ -551,16 +552,16 @@ function ImportResult({ job, reload, openJob }) {
 
   async function rollback() {
     const ok = await confirm({
-      title: 'Откатить импорт?',
-      message: 'Все дети, родители и связи, созданные этим импортом, будут удалены.',
-      confirmText: 'Откатить',
+      title: t('Откатить импорт?'),
+      message: t('Все дети, родители и связи, созданные этим импортом, будут удалены.'),
+      confirmText: t('Откатить'),
       danger: true,
     })
     if (!ok) return
     setRolling(true)
     try {
       await api.post(`${IMPORT_API}/jobs/${job.job_id}/rollback/`)
-      toast.success('Импорт откатан')
+      toast.success(t('Импорт откатан'))
       await reload()
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -570,51 +571,51 @@ function ImportResult({ job, reload, openJob }) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
       <Card>
         <div className="mb-4 flex items-center gap-3">
           <span className={cn('flex size-11 items-center justify-center rounded-full', job.rolled_back_at ? 'bg-surface-muted text-ink-muted' : 'bg-success-50 text-success-600')}>
             {job.rolled_back_at ? <RotateCcw className="size-5" /> : <CheckCircle2 className="size-5" />}
           </span>
           <div>
-            <p className="text-base font-bold text-ink">{job.rolled_back_at ? 'Импорт откатан' : 'Импорт завершён'}</p>
+            <p className="text-base font-bold text-ink">{job.rolled_back_at ? t('Импорт откатан') : t('Импорт завершён')}</p>
             {job.rolled_back_at && <p className="text-[13px] text-ink-muted">{formatDateTime(job.rolled_back_at)}</p>}
           </div>
         </div>
         <dl className="divide-y divide-line rounded-lg border border-line">
           {RESULT_ROWS.map(([key, label]) => (
             <div key={key} className="flex items-center justify-between px-4 py-2.5 text-sm">
-              <dt className="text-ink-muted">{label}</dt>
+              <dt className="text-ink-muted">{t(label)}</dt>
               <dd className="font-bold text-ink">{job[key] ?? 0}</dd>
             </div>
           ))}
         </dl>
         {job.not_imported?.length > 0 && (
           <div className="mt-4 rounded-lg bg-warning-50 p-4 text-sm">
-            <p className="font-semibold text-warning-600">Не импортированы: {job.not_imported.length}</p>
+            <p className="font-semibold text-warning-600">{t('Не импортированы:')} {job.not_imported.length}</p>
             <ul className="mt-1 list-disc pl-5 text-ink">
-              {job.not_imported.slice(0, 20).map(([row, reason]) => <li key={row}>строка {row}: {reason}</li>)}
+              {job.not_imported.slice(0, 20).map(([row, reason]) => <li key={row}>{t('строка')} {row}: {reason}</li>)}
             </ul>
           </div>
         )}
         <div className="mt-5 flex flex-wrap gap-2">
-          <Button variant="primary" onClick={() => navigate('/children')}>К списку детей</Button>
-          <Button onClick={() => openJob(null)}>Ещё один файл</Button>
+          <Button variant="primary" onClick={() => navigate('/children')}>{t('К списку детей')}</Button>
+          <Button onClick={() => openJob(null)}>{t('Ещё один файл')}</Button>
         </div>
       </Card>
 
       {!job.rolled_back_at && (
         <Card>
-          <CardHeader title="Откат" description="Удаляет всё, что создал этот импорт — если что-то пошло не так." />
+          <CardHeader title={t('Откат')} description={t('Удаляет всё, что создал этот импорт — если что-то пошло не так.')} />
           {job.rollback_blockers?.length ? (
             <div className="rounded-lg bg-surface-muted p-3 text-[13px] text-ink-muted">
-              <p className="font-semibold text-ink">Откатить уже нельзя:</p>
+              <p className="font-semibold text-ink">{t('Откатить уже нельзя:')}</p>
               <ul className="mt-1 list-disc pl-5">
                 {job.rollback_blockers.map(reason => <li key={reason}>{reason}</li>)}
               </ul>
             </div>
           ) : (
-            <Button variant="danger-ghost" icon={RotateCcw} loading={rolling} onClick={rollback}>Откатить импорт</Button>
+            <Button variant="danger-ghost" icon={RotateCcw} loading={rolling} onClick={rollback}>{t('Откатить импорт')}</Button>
           )}
         </Card>
       )}

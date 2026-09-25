@@ -9,8 +9,9 @@ import {
   Avatar, Badge, Button, CHILD_STATUSES, Card, EmptyState, ErrorState, PageHeader, Skeleton, Tabs,
   ageLabel, cn, formatDate, money,
 } from '../ui'
+import { t } from '../i18n'
 
-const GENDERS = { female: 'Девочка', male: 'Мальчик' }
+const GENDERS = { get female() { return t('Девочка') }, get male() { return t('Мальчик') } }
 
 /**
  * Карточка ребёнка (TRU-82): шапка из GET children/<id>/card/ и вкладки из
@@ -35,8 +36,8 @@ export default function ChildDetail() {
   useEffect(() => { load() }, [load])
 
   const tabs = useMemo(() => visibleChildCardTabs(can), [can])
-  const activeKey = tabs.some(t => t.key === params.get('tab')) ? params.get('tab') : tabs[0].key
-  const activeTab = tabs.find(t => t.key === activeKey)
+  const activeKey = tabs.some(tab => tab.key === params.get('tab')) ? params.get('tab') : tabs[0].key
+  const activeTab = tabs.find(tab => tab.key === activeKey)
   // Стабильные колбэки на вкладку — иначе вкладка перезагружала бы данные
   // на каждый рендер карточки.
   const countSetters = useMemo(
@@ -44,7 +45,7 @@ export default function ChildDetail() {
     [tabs],
   )
 
-  const back = { to: '/children', label: 'Дети' }
+  const back = { to: '/children', label: t('Дети') }
   if (status === 'loading') {
     return (
       <div>
@@ -56,7 +57,7 @@ export default function ChildDetail() {
   if (status === 'missing') {
     return (
       <Card>
-        <EmptyState icon={SearchX} title="Ребёнок не найден" description="Возможно, запись удалили или ссылка неверная." action={<Button to="/children">К списку детей</Button>} />
+        <EmptyState icon={SearchX} title={t('Ребёнок не найден')} description={t('Возможно, запись удалили или ссылка неверная.')} action={<Button to="/children">{t('К списку детей')}</Button>} />
       </Card>
     )
   }
@@ -71,7 +72,7 @@ export default function ChildDetail() {
       <PageHeader
         back={back}
         title={child.full_name}
-        actions={permissions.can_edit && <Button icon={Pencil} onClick={() => setEditing(true)}>Редактировать</Button>}
+        actions={permissions.can_edit && <Button icon={Pencil} onClick={() => setEditing(true)}>{t('Редактировать')}</Button>}
       />
 
       <Card className="mb-6">
@@ -84,12 +85,12 @@ export default function ChildDetail() {
               {GENDERS[child.gender] && <span>{GENDERS[child.gender]}</span>}
             </div>
             <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
-              <Fact icon={Building2} label="Филиал" values={card.branches.map(b => b.name)} />
-              <Fact icon={Layers} label="Направления" values={card.directions.map(d => d.name)} />
-              <Fact icon={Users} label="Группы" values={card.groups.map(g => g.name)} />
+              <Fact icon={Building2} label={t('Филиал')} values={card.branches.map(b => b.name)} />
+              <Fact icon={Layers} label={t('Направления')} values={card.directions.map(d => d.name)} />
+              <Fact icon={Users} label={t('Группы')} values={card.groups.map(g => g.name)} />
             </dl>
             {child.status === 'left' && child.leave_reason && (
-              <p className="text-sm text-ink-muted"><span className="font-semibold text-ink">Причина ухода:</span> {child.leave_reason}</p>
+              <p className="text-sm text-ink-muted"><span className="font-semibold text-ink">{t('Причина ухода:')}</span> {child.leave_reason}</p>
             )}
           </div>
         </div>
@@ -99,10 +100,10 @@ export default function ChildDetail() {
             {card.money && <SubscriptionTile subscription={card.money.subscription} />}
             {card.money && <DebtTile debt={card.money.debt} />}
             {child.medical_notes && (
-              <div className="flex gap-3 rounded-lg bg-warning-50 p-3.5">
+              <div className="flex gap-3 rounded-lg bg-[linear-gradient(135deg,#fff3d6,#fffbeb)] p-3.5">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning-600" />
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-warning-600">Здоровье</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-warning-600">{t('Здоровье')}</p>
                   <p className="mt-0.5 whitespace-pre-line text-sm text-ink">{child.medical_notes}</p>
                 </div>
               </div>
@@ -121,7 +122,7 @@ export default function ChildDetail() {
         <TabComponent key={activeKey} child={child} card={card} permissions={permissions} onCountChange={countSetters[activeKey]} />
       ) : (
         <Card>
-          <EmptyState icon={Sparkles} title={`Раздел «${activeTab.label}» скоро появится`} description="Мы уже работаем над ним — данные подтянутся сюда автоматически." />
+          <EmptyState icon={Sparkles} title={t('Раздел «{name}» скоро появится', { name: t(activeTab.label) })} description={t('Мы уже работаем над ним — данные подтянутся сюда автоматически.')} />
         </Card>
       )}
 
@@ -145,10 +146,11 @@ function Fact({ icon: Icon, label, values }) {
   )
 }
 
+// Яркие плитки, как в пробнике (TRU-91).
 const TILE_TONES = {
-  neutral: ['bg-surface-muted', 'text-ink-subtle'],
-  danger: ['bg-danger-50', 'text-danger-600'],
-  success: ['bg-success-50', 'text-success-600'],
+  neutral: ['bg-[linear-gradient(135deg,#eef2ff,#f7f5ff)]', 'text-info-600'],
+  danger: ['bg-[linear-gradient(135deg,#ffe4e6,#fff1f2)]', 'text-danger-600'],
+  success: ['bg-[linear-gradient(135deg,#dcfce7,#f0fdf4)]', 'text-success-600'],
 }
 
 function Tile({ icon: Icon, label, tone = 'neutral', children }) {
@@ -167,17 +169,17 @@ function Tile({ icon: Icon, label, tone = 'neutral', children }) {
 function SubscriptionTile({ subscription }) {
   if (!subscription) {
     return (
-      <Tile icon={CalendarClock} label="Абонемент">
-        <p className="mt-0.5 text-sm text-ink-muted">Нет абонемента</p>
+      <Tile icon={CalendarClock} label={t('Абонемент')}>
+        <p className="mt-0.5 text-sm text-ink-muted">{t('Нет абонемента')}</p>
       </Tile>
     )
   }
   return (
-    <Tile icon={CalendarClock} label="Абонемент">
+    <Tile icon={CalendarClock} label={t('Абонемент')}>
       <p className="mt-0.5 truncate text-sm font-semibold text-ink">{subscription.name}</p>
       <p className="text-[13px] text-ink-muted">
-        до {formatDate(subscription.ends_on)}
-        {subscription.sessions_remaining != null && ` · осталось ${subscription.sessions_remaining}`}
+        {t('до {date}', { date: formatDate(subscription.ends_on) })}
+        {subscription.sessions_remaining != null && ` · ${t('осталось {n}', { n: subscription.sessions_remaining })}`}
       </p>
     </Tile>
   )
@@ -186,9 +188,9 @@ function SubscriptionTile({ subscription }) {
 function DebtTile({ debt }) {
   const hasDebt = Number(debt) > 0
   return (
-    <Tile icon={hasDebt ? Wallet : Clock3} label="Долг" tone={hasDebt ? 'danger' : 'success'}>
+    <Tile icon={hasDebt ? Wallet : Clock3} label={t('Долг')} tone={hasDebt ? 'danger' : 'success'}>
       <p className={cn('mt-0.5 text-lg font-bold', hasDebt ? 'text-danger-600' : 'text-success-600')}>
-        {hasDebt ? money(debt) : 'Нет долга'}
+        {hasDebt ? money(debt) : t('Нет долга')}
       </p>
     </Tile>
   )

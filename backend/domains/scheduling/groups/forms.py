@@ -1,8 +1,6 @@
 from django import forms
 
-from domains.platform.tenants.models import Branch, Direction
-from domains.platform.users.models import User
-
+from . import queries
 from .models import Group
 
 
@@ -33,12 +31,13 @@ class GroupForm(forms.ModelForm):
     def __init__(self, *args, organization=None, **kwargs):
         super().__init__(*args, **kwargs)
         if organization:
-            self.fields["branch"].queryset = Branch.objects.for_tenant(organization).filter(
-                is_active=True
+            # Архивные филиал/направление — только уже выбранные у этой
+            # группы (TRU-77), общий код с API — queries.py.
+            current = None if self.instance._state.adding else self.instance
+            self.fields["branch"].queryset = queries.branch_choices(
+                organization, current.branch if current else None
             )
-            self.fields["direction"].queryset = Direction.objects.for_tenant(organization).filter(
-                is_active=True
+            self.fields["direction"].queryset = queries.direction_choices(
+                organization, current.direction if current else None
             )
-            self.fields["teachers"].queryset = User.objects.filter(
-                organization=organization, role="teacher"
-            )
+            self.fields["teachers"].queryset = queries.teacher_choices(organization)

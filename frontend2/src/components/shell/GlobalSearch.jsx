@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { Search, User, Users } from 'lucide-react'
 import api from '../../api/axios'
 import { cn } from '../../ui'
+import { t } from '../../i18n'
 
 const MIN_LENGTH = 3 // как на сервере (search.GLOBAL_SEARCH_MIN_LENGTH)
 const DEBOUNCE_MS = 250
 
 const MATCHED_ON = {
   child_name: null,
-  parent_name: 'родитель',
-  phone: 'телефон',
+  get parent_name() { return t('родитель') },
+  get phone() { return t('телефон') },
 }
 
 function resultUrl(result) {
@@ -78,7 +79,7 @@ export function GlobalSearch({ className }) {
 
   return (
     <div className={cn('relative', className)}>
-      <div className="flex h-10 items-center gap-2 rounded-md border border-line bg-surface-muted px-3 focus-within:border-brand-400 focus-within:bg-surface focus-within:ring-3 focus-within:ring-brand-100">
+      <div className="flex h-10 items-center gap-2 rounded-[10px] border border-line bg-surface-muted px-3 focus-within:border-brand-400 focus-within:bg-surface focus-within:ring-3 focus-within:ring-brand-100">
         <Search className="size-4 shrink-0 text-ink-subtle" />
         <input
           ref={inputRef}
@@ -87,19 +88,18 @@ export function GlobalSearch({ className }) {
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onKeyDown={onKeyDown}
-          placeholder="Ребёнок, родитель или телефон"
+          placeholder={t('Ребёнок, родитель или телефон')}
           className="w-full bg-transparent text-sm text-ink placeholder:text-ink-subtle focus:outline-none"
-          aria-label="Поиск"
+          aria-label={t('Поиск')}
           role="combobox"
           aria-expanded={showPanel}
         />
-        <kbd className="hidden whitespace-nowrap rounded border border-line bg-surface px-1.5 font-sans text-[11px] text-ink-subtle lg:inline">Ctrl K</kbd>
       </div>
 
       {showPanel && (
         <div className="absolute left-0 right-0 top-12 z-40 overflow-hidden rounded-lg border border-line bg-surface shadow-pop" role="listbox">
-          {loading && <p className="px-4 py-3 text-sm text-ink-muted">Ищем…</p>}
-          {!loading && !results.length && <p className="px-4 py-3 text-sm text-ink-muted">Ничего не нашлось</p>}
+          {loading && <p className="px-4 py-3 text-sm text-ink-muted">{t('Ищем…')}</p>}
+          {!loading && !results.length && <p className="px-4 py-3 text-sm text-ink-muted">{t('Ничего не нашлось')}</p>}
           {results.map((result, i) => {
             const Icon = result.type === 'child' ? User : Users
             const hint = MATCHED_ON[result.matched_on]
@@ -120,7 +120,7 @@ export function GlobalSearch({ className }) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-ink">{result.title}</span>
                   <span className="block truncate text-xs text-ink-muted">
-                    {result.type === 'child' ? 'Ребёнок' : 'Родитель'}
+                    {result.type === 'child' ? t('Ребёнок') : t('Родитель')}
                     {hint && result.matched_detail ? ` · ${hint}: ${result.matched_detail}` : ''}
                   </span>
                 </span>

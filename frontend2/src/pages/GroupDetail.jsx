@@ -1,333 +1,287 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import axios from 'axios'
-import { ArrowLeft, Edit2, Plus, Trash2, Users, MapPin } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { ArchiveRestore, CalendarClock, DoorOpen, Lock, Pencil, SearchX, UserMinus, UserPlus, UsersRound } from 'lucide-react'
+import api from '../api/axios'
 import GroupModal from '../components/GroupModal'
+import FillBar from '../components/groups/FillBar'
+import { GROUP_STATUSES, WEEKDAYS_SHORT } from '../components/groups/format'
+import { useSession } from '../session/SessionContext'
+import {
+  Avatar, Badge, Button, CHILD_STATUSES, Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, SearchInput,
+  Skeleton, Tabs, ageLabel, apiErrorMessage, cn, formatDate, plural, useConfirm, useToast,
+} from '../ui'
+import { t } from '../i18n'
 
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('access')}` }
-}
+const WEEKDAYS_FULL = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 
-const STATUS_STYLE = {
-  active: { bg: '#F0FDF4', color: '#16A34A', label: 'Активна' },
-  paused: { bg: '#FFFBEB', color: '#D97706', label: 'Приостановлена' },
-  closed: { bg: '#F9FAFB', color: '#6B7280', label: 'Закрыта' },
-}
-
-function formatDate(str) {
-  if (!str) return '—'
-  const [y, m, d] = str.slice(0, 10).split('-')
-  return `${d}.${m}.${y}`
-}
-
-function Badge({ bg, color, children }) {
-  return <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: bg, color }}>{children}</span>
-}
-
-function InfoRow({ label, value }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', fontFamily: 'Manrope' }}>{label}</span>
-      <span style={{ fontSize: 13, color: '#1A1A2E', fontFamily: 'Manrope' }}>{value || '—'}</span>
-    </div>
-  )
-}
-
-// ── вкладка: Состав ──────────────────────────────────────────────────────────
-
-function AddMemberForm({ groupId, onAdded, onCancel }) {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState([])
-  const [selectedChild, setSelectedChild] = useState(null)
-  const [joinedAt, setJoinedAt] = useState(() => new Date().toISOString().slice(0, 10))
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const debounceRef = useRef()
-
-  useEffect(() => {
-    if (selectedChild || !query.trim()) { setResults([]); return }
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      axios.get('/api/v1/clients/children/', { headers: authHeaders(), params: { search: query } })
-        .then(res => setResults((res.data.results || res.data).slice(0, 8)))
-        .catch(console.error)
-    }, 300)
-    return () => clearTimeout(debounceRef.current)
-  }, [query, selectedChild])
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    if (!selectedChild) { setError('Выберите ребёнка из списка'); return }
-    setSaving(true); setError('')
-    try {
-      await axios.post(`/api/v1/groups/${groupId}/add_member/`, {
-        child: selectedChild.id,
-        joined_at: joinedAt,
-      }, { headers: authHeaders() })
-      onAdded()
-    } catch (err) {
-      setError(err.response?.data?.detail || err.response?.data?.non_field_errors?.[0] || 'Не удалось добавить ребёнка')
-    } finally { setSaving(false) }
-  }
-
-  const inputStyle = { width: '100%', padding: '9px 12px', border: '1.5px solid #EBEBF0', borderRadius: 8, fontSize: 13, fontFamily: 'Manrope', outline: 'none', boxSizing: 'border-box' }
-
-  return (
-    <div style={{ background: '#FAFAFA', border: '1.5px solid #EBEBF0', borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
-      <form onSubmit={handleSubmit}>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 5, fontFamily: 'Manrope' }}>Ребёнок *</div>
-            <input
-              value={selectedChild ? selectedChild.full_name : query}
-              onChange={e => { setSelectedChild(null); setQuery(e.target.value) }}
-              placeholder="Начните вводить имя..."
-              style={{ ...inputStyle, background: selectedChild ? '#FDF0EE' : '#fff', color: selectedChild ? '#C97B6E' : '#1A1A2E', fontWeight: selectedChild ? 600 : 400 }}
-            />
-            {results.length > 0 && !selectedChild && (
-              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100, background: '#fff', border: '1.5px solid #F0F0F5', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', overflow: 'hidden' }}>
-                {results.map(c => (
-                  <div key={c.id} onClick={() => { setSelectedChild(c); setResults([]) }}
-                    style={{ padding: '9px 12px', fontSize: 13, fontFamily: 'Manrope', cursor: 'pointer' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#FAFAFA'}
-                    onMouseLeave={e => e.currentTarget.style.background = '#fff'}
-                  >
-                    {c.full_name} {c.age ? <span style={{ color: '#9CA3AF' }}>· {c.age} лет</span> : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div style={{ width: 160 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 5, fontFamily: 'Manrope' }}>Дата вступления</div>
-            <input type="date" value={joinedAt} onChange={e => setJoinedAt(e.target.value)} style={inputStyle} />
-          </div>
-        </div>
-        {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 10 }}>{error}</p>}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} style={{ padding: '8px 16px', border: '1.5px solid #EBEBF0', borderRadius: 8, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'Manrope', color: '#6B7280' }}>Отмена</button>
-          <button type="submit" disabled={saving} style={{ padding: '8px 16px', background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', opacity: saving ? 0.7 : 1 }}>
-            {saving ? 'Добавление...' : 'Добавить'}
-          </button>
-        </div>
-      </form>
-    </div>
-  )
-}
-
-function TabMembers({ groupId, full }) {
+/**
+ * Карточка группы (TRU-87): заполняемость, расписание, преподаватели,
+ * состав с датами и история (кто и когда уходил). Добавить/убрать ребёнка,
+ * редактировать, закрыть — владелец и управляющий.
+ */
+export default function GroupDetail() {
+  const { id } = useParams()
+  const { can } = useSession()
+  const toast = useToast()
+  const confirm = useConfirm()
+  const canManage = can('can_manage_groups')
+  const [params, setParams] = useSearchParams()
+  const [group, setGroup] = useState(null)
   const [members, setMembers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showAdd, setShowAdd] = useState(false)
+  const [history, setHistory] = useState([])
+  const [status, setStatus] = useState('loading')
+  const [editing, setEditing] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const tab = params.get('tab') === 'history' ? 'history' : 'members'
 
-  const load = useCallback(() => {
-    setLoading(true)
-    axios.get(`/api/v1/groups/${groupId}/members/`, { headers: authHeaders() })
-      .then(res => setMembers(res.data.results || res.data))
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [groupId])
+  const load = useCallback(() => Promise.all([
+    api.get(`groups/${id}/`), api.get(`groups/${id}/members/`), api.get(`groups/${id}/history/`),
+  ])
+    .then(([g, m, h]) => { setGroup(g.data); setMembers(m.data); setHistory(h.data); setStatus('ready') })
+    .catch(err => setStatus(err.response?.status === 404 ? 'missing' : 'error')), [id])
 
   useEffect(() => { load() }, [load])
 
-  async function handleRemove(childId, childName) {
-    if (!window.confirm(`Убрать «${childName}» из группы?`)) return
+  const back = { to: '/groups', label: t('Группы') }
+  if (status === 'loading') return <><PageHeader title={<Skeleton className="h-8 w-56" />} back={back} /><Skeleton className="h-64" /></>
+  if (status === 'missing') {
+    return <Card><EmptyState icon={SearchX} title={t('Группа не найдена')} action={<Button to="/groups">{t('К списку групп')}</Button>} /></Card>
+  }
+  if (status === 'error') return <Card><ErrorState onRetry={load} /></Card>
+
+  const groupStatus = GROUP_STATUSES[group.status]
+  const closed = group.status === 'closed'
+
+  async function toggleClosed() {
+    if (!closed) {
+      const ok = await confirm({
+        title: t('Закрыть «{name}»?', { name: group.name }),
+        message: t('Группа перестанет набирать и пропадёт из выбора. Состав и история сохранятся, группу можно вернуть.'),
+        confirmText: t('Закрыть группу'),
+        danger: true,
+      })
+      if (!ok) return
+    }
     try {
-      await axios.post(`/api/v1/groups/${groupId}/remove_member/`, {
-        child_id: childId,
-        left_at: new Date().toISOString().slice(0, 10),
-      }, { headers: authHeaders() })
+      await api.patch(`groups/${group.id}/`, { status: closed ? 'active' : 'closed' })
+      toast.success(closed ? t('Группа снова набирает') : t('Группа закрыта'))
       load()
-    } catch (e) { console.error(e) }
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    }
   }
 
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-        {!showAdd && (
-          <button
-            onClick={() => setShowAdd(true)}
-            disabled={full}
-            title={full ? 'Группа заполнена — сначала увеличьте вместимость или освободите место' : undefined}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: full ? '#F0F0F5' : 'linear-gradient(135deg, #E8998D, #C97B6E)', color: full ? '#9CA3AF' : '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: full ? 'default' : 'pointer', fontFamily: 'Manrope' }}
-          >
-            <Plus size={13} /> Добавить ребёнка
-          </button>
-        )}
-      </div>
+  async function remove(member) {
+    const ok = await confirm({
+      title: t('Убрать {name} из группы?', { name: member.child_name }),
+      message: t('Запись останется в истории группы с сегодняшней датой выхода.'),
+      confirmText: t('Убрать'),
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      await api.post(`groups/${group.id}/remove_member/`, { child_id: member.child })
+      toast.success(t('Ребёнок убран из группы'))
+      load()
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    }
+  }
 
-      {showAdd && (
-        <AddMemberForm groupId={groupId} onAdded={() => { setShowAdd(false); load() }} onCancel={() => setShowAdd(false)} />
-      )}
-
-      {loading ? (
-        <p style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', padding: 32 }}>Загрузка...</p>
-      ) : members.length === 0 ? (
-        <p style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', padding: 32 }}>В группе пока никого нет</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {members.map(m => (
-            <div key={m.id} style={{ background: '#FAFAFA', border: '1px solid #F0F0F5', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, #E8998D, #C97B6E)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <span style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>{m.child_name?.charAt(0)}</span>
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', fontFamily: 'Manrope' }}>{m.child_name}</div>
-                <div style={{ fontSize: 11, color: '#9CA3AF', fontFamily: 'Manrope', marginTop: 2 }}>с {formatDate(m.joined_at)}</div>
-              </div>
-              <button onClick={() => handleRemove(m.child, m.child_name)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D1D5DB', padding: 4 }} title="Убрать из группы">
-                <Trash2 size={15} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── вкладка: История ─────────────────────────────────────────────────────────
-
-function TabHistory({ groupId }) {
-  const [history, setHistory] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    setLoading(true)
-    axios.get(`/api/v1/groups/${groupId}/history/`, { headers: authHeaders() })
-      .then(res => setHistory(res.data.results || res.data))
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [groupId])
-
-  if (loading) return <p style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', padding: 32 }}>Загрузка...</p>
-  if (history.length === 0) return <p style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', padding: 32 }}>Истории пока нет</p>
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {history.map(m => {
-        const active = !m.left_at
-        return (
-          <div key={m.id} style={{ background: '#FAFAFA', border: '1px solid #F0F0F5', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', fontFamily: 'Manrope' }}>{m.child_name}</div>
-              <div style={{ fontSize: 11, color: '#9CA3AF', fontFamily: 'Manrope', marginTop: 2 }}>
-                {formatDate(m.joined_at)} — {m.left_at ? formatDate(m.left_at) : 'по настоящее время'}
-              </div>
-            </div>
-            <Badge bg={active ? '#F0FDF4' : '#F9FAFB'} color={active ? '#16A34A' : '#6B7280'}>{active ? 'В группе' : 'Вышел'}</Badge>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── main ──────────────────────────────────────────────────────────────────────
-
-const TABS = [
-  { slug: 'members', label: 'Состав' },
-  { slug: 'history', label: 'История' },
-]
-
-export default function GroupDetail() {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const [group, setGroup] = useState(null)
-  const [branches, setBranches] = useState([])
-  const [directions, setDirections] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('members')
-  const [showEdit, setShowEdit] = useState(false)
-
-  const loadGroup = useCallback(() => {
-    setLoading(true)
-    Promise.all([
-      axios.get(`/api/v1/groups/${id}/`, { headers: authHeaders() }),
-      axios.get('/api/v1/branches/', { headers: authHeaders() }),
-      axios.get('/api/v1/directions/', { headers: authHeaders() }),
-    ]).then(([g, b, d]) => {
-      setGroup(g.data)
-      setBranches(b.data.results || b.data)
-      setDirections(d.data.results || d.data)
-    }).catch(console.error)
-      .finally(() => setLoading(false))
-  }, [id])
-
-  useEffect(() => { loadGroup() }, [loadGroup])
-
-  if (loading) return <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка...</div>
-  if (!group) return <div style={{ padding: 32, textAlign: 'center', color: '#DC2626', fontSize: 13 }}>Группа не найдена</div>
-
-  const st = STATUS_STYLE[group.status] || STATUS_STYLE.active
-  const branch = branches.find(b => String(b.id) === String(group.branch))
-  const direction = directions.find(d => String(d.id) === String(group.direction))
   const full = group.members_count >= group.capacity
 
   return (
     <div>
-      <button onClick={() => navigate('/groups')}
-        style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 13, fontFamily: 'Manrope', marginBottom: 16, padding: 0 }}>
-        <ArrowLeft size={14} /> К списку групп
-      </button>
+      <PageHeader
+        back={back}
+        title={
+          <span className="flex items-center gap-3">
+            <span className="size-3.5 shrink-0 rounded-full" style={{ backgroundColor: group.direction_color || '#9aa3ad' }} />
+            {group.name}
+          </span>
+        }
+        description={[group.direction_name, group.branch_name, group.age_min != null && group.age_max != null ? t('{from}–{to} лет', { from: group.age_min, to: group.age_max }) : null].filter(Boolean).join(' · ')}
+        actions={canManage && (
+          <>
+            <Button icon={Pencil} onClick={() => setEditing(true)}>{t('Редактировать')}</Button>
+            <Button variant={closed ? 'secondary' : 'danger-ghost'} icon={closed ? ArchiveRestore : Lock} onClick={toggleClosed}>
+              {closed ? t('Вернуть в набор') : t('Закрыть')}
+            </Button>
+          </>
+        )}
+      />
 
-      <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', marginBottom: 16, border: '1px solid #F0F0F5' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 12, background: 'linear-gradient(135deg, #E8998D, #C97B6E)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Users size={20} style={{ color: '#fff' }} />
+      <div className="mb-6 grid gap-4 md:grid-cols-3">
+        <Card>
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-[15px] font-bold text-ink">{t('Заполняемость')}</p>
+            {group.status !== 'active' ? <Badge tone={groupStatus.tone}>{groupStatus.label}</Badge>
+              : full ? <Badge tone="danger">{t('Мест нет')}</Badge>
+                : group.is_underfilled ? <Badge tone="warning">{t('Недобор')}</Badge> : <Badge tone="success">{t('Норма')}</Badge>}
           </div>
-          <div style={{ flex: 1 }}>
-            <h1 style={{ fontSize: 18, fontWeight: 700, color: '#1A1A2E', margin: 0, fontFamily: 'Manrope' }}>{group.name}</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-              <Badge bg={st.bg} color={st.color}>{st.label}</Badge>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: full ? '#D97706' : '#6B7280', fontFamily: 'Manrope', fontWeight: full ? 600 : 400 }}>
-                <Users size={13} /> {group.members_count} / {group.capacity} {full && '(заполнена)'}
-              </span>
-              {branch && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: '#6B7280', fontFamily: 'Manrope' }}>
-                  <MapPin size={13} /> {branch.name}
+          <FillBar group={group} />
+          <p className="mt-2 text-[13px] text-ink-muted">
+            {full ? t('Свободных мест нет') : t('Свободно: {count}', { count: `${group.capacity - group.members_count} ${plural(group.capacity - group.members_count, ['место', 'места', 'мест'])}` })}
+          </p>
+        </Card>
+        <Card>
+          <p className="mb-3 text-[15px] font-bold text-ink">{t('Расписание')}</p>
+          {group.schedule.length ? (
+            <ul className="space-y-2">
+              {group.schedule.map(slot => (
+                <li key={`${slot.weekday}-${slot.start_time}`} className="flex items-center gap-3 text-sm">
+                  <span className="flex w-9 justify-center rounded-md bg-brand-50 py-1 text-xs font-bold text-brand-700" title={t(WEEKDAYS_FULL[slot.weekday])}>{t(WEEKDAYS_SHORT[slot.weekday])}</span>
+                  <span className="font-semibold text-ink">{slot.start_time}</span>
+                  <span className="text-ink-muted">{slot.duration_minutes} {t('мин')}</span>
+                  {slot.room && <span className="ml-auto flex items-center gap-1 text-[13px] text-ink-subtle"><DoorOpen className="size-3.5" />{slot.room}</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="flex items-center gap-2 text-sm text-ink-subtle"><CalendarClock className="size-4" /> {t('Расписание не задано')}</p>
+          )}
+        </Card>
+        <Card>
+          <p className="mb-3 text-[15px] font-bold text-ink">{t('Преподаватели')}</p>
+          {group.teachers_detail.length ? (
+            <ul className="space-y-2.5">
+              {group.teachers_detail.map(tch => (
+                <li key={tch.id} className="flex items-center gap-3 text-sm font-medium text-ink"><Avatar name={tch.full_name} />{tch.full_name}</li>
+              ))}
+            </ul>
+          ) : <p className="text-sm text-ink-subtle">{t('Не назначены')}</p>}
+        </Card>
+      </div>
+
+      <Tabs
+        className="mb-4"
+        tabs={[{ key: 'members', label: t('Состав'), count: members.length }, { key: 'history', label: t('История'), count: history.length }]}
+        value={tab}
+        onChange={key => setParams(key === 'members' ? {} : { tab: key }, { replace: true })}
+      />
+
+      {tab === 'members' ? (
+        <Card padded={false}>
+          <CardHeader
+            className="mb-0 px-5 pt-5"
+            title={`${members.length} ${plural(members.length, ['ребёнок', 'ребёнка', 'детей'])}`}
+            actions={canManage && !closed && (
+              <Button size="sm" icon={UserPlus} disabled={full} onClick={() => setAdding(true)} title={full ? t('В группе нет мест') : undefined}>
+                {t('Добавить ребёнка')}
+              </Button>
+            )}
+          />
+          {members.length === 0 ? (
+            <EmptyState icon={UsersRound} title={t('В группе пока никого')} description={t('Добавьте детей — они появятся в журнале посещений.')} />
+          ) : (
+            <ul className="mt-3 divide-y divide-line border-t border-line">
+              {members.map(member => {
+                const childStatus = CHILD_STATUSES[member.child_status]
+                return (
+                  <li key={member.id} className="flex items-center gap-3 px-5 py-3">
+                    <Avatar name={member.child_name} />
+                    <div className="min-w-0 flex-1">
+                      <Link to={`/children/${member.child}`} className="font-semibold text-ink hover:text-brand-700">{member.child_name}</Link>
+                      <p className="text-[13px] text-ink-muted">{ageLabel(member.child_age)} {t('· в группе с')} {formatDate(member.joined_at)}</p>
+                    </div>
+                    {member.child_status !== 'active' && childStatus && <Badge tone={childStatus.tone}>{childStatus.label}</Badge>}
+                    {canManage && (
+                      <Button variant="ghost" size="icon" aria-label={t('Убрать {name}', { name: member.child_name })} onClick={() => remove(member)}>
+                        <UserMinus className="size-4" />
+                      </Button>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </Card>
+      ) : (
+        <Card padded={false}>
+          <ul className="divide-y divide-line">
+            {history.map(entry => (
+              <li key={entry.id} className="flex items-center gap-3 px-5 py-3 text-sm">
+                <span className={cn('size-2 shrink-0 rounded-full', entry.left_at ? 'bg-line-strong' : 'bg-success-600')} />
+                <Link to={`/children/${entry.child}`} className="min-w-0 flex-1 truncate font-medium text-ink hover:text-brand-700">{entry.child_name}</Link>
+                <span className="whitespace-nowrap text-ink-muted">
+                  {formatDate(entry.joined_at)} — {entry.left_at ? formatDate(entry.left_at) : <span className="text-success-600">{t('сейчас')}</span>}
                 </span>
-              )}
-            </div>
-          </div>
-          <button onClick={() => setShowEdit(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: '1.5px solid #EBEBF0', borderRadius: 8, background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', color: '#6B7280' }}>
-            <Edit2 size={13} /> Редактировать
-          </button>
-        </div>
-        <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', paddingTop: 16, borderTop: '1px solid #F0F0F5' }}>
-          <InfoRow label="Направление" value={direction?.name} />
-          <InfoRow label="Возраст" value={group.age_min || group.age_max ? `${group.age_min ?? '—'}–${group.age_max ?? '—'} лет` : null} />
-          <InfoRow label="Преподаватели" value={group.teachers_count ? `${group.teachers_count}` : 'не назначены'} />
-        </div>
-      </div>
+              </li>
+            ))}
+            {history.length === 0 && <li className="px-5 py-6 text-center text-sm text-ink-muted">{t('История пуста.')}</li>}
+          </ul>
+        </Card>
+      )}
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: '#fff', borderRadius: 10, padding: 4, border: '1px solid #F0F0F5', width: 'fit-content' }}>
-        {TABS.map(tab => (
-          <button key={tab.slug} onClick={() => setActiveTab(tab.slug)}
-            style={{
-              padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, fontFamily: 'Manrope',
-              background: activeTab === tab.slug ? 'linear-gradient(135deg, #E8998D, #C97B6E)' : 'transparent',
-              color: activeTab === tab.slug ? '#fff' : '#6B7280',
-              transition: 'all 0.15s',
-            }}
-          >{tab.label}</button>
-        ))}
-      </div>
-
-      <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', border: '1px solid #F0F0F5' }}>
-        {activeTab === 'members' && <TabMembers groupId={id} full={full} />}
-        {activeTab === 'history' && <TabHistory groupId={id} />}
-      </div>
-
-      {showEdit && (
-        <GroupModal
+      {editing && <GroupModal group={group} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
+      {adding && (
+        <AddMemberModal
           group={group}
-          onClose={() => setShowEdit(false)}
-          onSaved={() => { setShowEdit(false); loadGroup() }}
+          memberIds={members.map(m => String(m.child))}
+          onClose={() => setAdding(false)}
+          onAdded={() => { setAdding(false); load() }}
         />
       )}
     </div>
+  )
+}
+
+/** Поиск ребёнка по имени и запись в группу; подходит ли по возрасту — видно сразу. */
+function AddMemberModal({ group, memberIds, onClose, onAdded }) {
+  const toast = useToast()
+  const [query, setQuery] = useState('')
+  const [found, setFound] = useState(null)
+  const [savingId, setSavingId] = useState(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    api.get('clients/children/table/', { params: { q: query || undefined, status: 'active', page_size: 20 }, signal: controller.signal })
+      .then(r => setFound(r.data.results))
+      .catch(() => {})
+    return () => controller.abort()
+  }, [query])
+
+  async function add(child) {
+    setSavingId(child.id)
+    try {
+      await api.post(`groups/${group.id}/add_member/`, { child: child.id })
+      toast.success(t('{name} в группе', { name: child.full_name }))
+      onAdded()
+    } catch (err) {
+      const data = err.response?.data
+      toast.error(data?.group?.[0] || data?.child?.[0] || apiErrorMessage(err))
+      setSavingId(null)
+    }
+  }
+
+  const fits = age => (group.age_min == null || age >= group.age_min) && (group.age_max == null || age <= group.age_max)
+
+  return (
+    <Modal open onClose={onClose} title={t('Добавить в «{name}»', { name: group.name })} description={t('Свободно мест: {n}', { n: group.capacity - group.members_count })}>
+      <SearchInput value={query} onChange={setQuery} placeholder={t('Имя ребёнка')} />
+      <ul className="mt-3 max-h-80 divide-y divide-line overflow-y-auto rounded-lg border border-line">
+        {!found && <li className="px-4 py-3 text-sm text-ink-muted">{t('Загрузка…')}</li>}
+        {found?.length === 0 && <li className="px-4 py-3 text-sm text-ink-muted">{t('Никого не нашли')}</li>}
+        {found?.map(child => {
+          const inGroup = memberIds.includes(String(child.id))
+          return (
+            <li key={child.id} className="flex items-center gap-3 px-4 py-2.5">
+              <Avatar name={child.full_name} src={child.photo_url} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-ink">{child.full_name}</p>
+                <p className="truncate text-xs text-ink-muted">
+                  {ageLabel(child.age)}
+                  {!fits(child.age) && <span className="text-warning-600"> {t('· не по возрасту группы')}</span>}
+                  {child.group_names !== '—' && ` · ${child.group_names}`}
+                </p>
+              </div>
+              {inGroup ? <Badge>{t('Уже в группе')}</Badge> : (
+                <Button size="sm" loading={savingId === child.id} disabled={Boolean(savingId)} onClick={() => add(child)}>{t('Добавить')}</Button>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </Modal>
   )
 }
