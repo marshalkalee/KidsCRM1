@@ -4,6 +4,7 @@ import { Check, DoorOpen, Pencil, Plus, Trash2, X } from 'lucide-react'
 import api from '../api/axios'
 import { useSession } from '../session/SessionContext'
 import { Button, Card, EmptyState, ErrorState, Input, PageHeader, Skeleton, apiErrorMessage, useConfirm, useToast } from '../ui'
+import { t } from '../i18n'
 
 /**
  * Залы филиала (TRU-85) — нужны для проверки конфликтов расписания.
@@ -32,7 +33,7 @@ export default function BranchRooms() {
     try {
       if (room) await api.patch(`rooms/${room.id}/`, values)
       else await api.post('rooms/', { ...values, branch: id })
-      toast.success(room ? 'Зал сохранён' : 'Зал добавлен')
+      toast.success(room ? t('Зал сохранён') : t('Зал добавлен'))
       setEditingId(null)
       load()
       return true
@@ -44,26 +45,26 @@ export default function BranchRooms() {
   }
 
   async function remove(room) {
-    const ok = await confirm({ title: `Удалить зал «${room.name}»?`, message: 'Прошедшие занятия в этом зале останутся в истории.', confirmText: 'Удалить', danger: true })
+    const ok = await confirm({ title: t('Удалить зал «{name}»?', { name: room.name }), message: t('Прошедшие занятия в этом зале останутся в истории.'), confirmText: t('Удалить'), danger: true })
     if (!ok) return
     try {
       await api.delete(`rooms/${room.id}/`)
-      toast.success('Зал удалён')
+      toast.success(t('Зал удалён'))
       load()
     } catch (err) {
       toast.error(apiErrorMessage(err))
     }
   }
 
-  const back = { to: '/branches', label: 'Филиалы' }
-  if (error) return <><PageHeader title="Залы" back={back} /><Card><ErrorState onRetry={load} /></Card></>
+  const back = { to: '/branches', label: t('Филиалы') }
+  if (error) return <><PageHeader title={t('Залы')} back={back} /><Card><ErrorState onRetry={load} /></Card></>
   if (!rooms) return <><PageHeader title={<Skeleton className="h-8 w-56" />} back={back} /><Skeleton className="h-48 max-w-2xl" /></>
 
   return (
     <div>
-      <PageHeader title={`Залы — ${branch.name}`} description="По залам система ловит накладки в расписании." back={back} />
+      <PageHeader title={t('Залы — {name}', { name: branch.name })} description={t('По залам система ловит накладки в расписании.')} back={back} />
       <Card padded={false} className="max-w-2xl">
-        {rooms.length === 0 && !canManage && <EmptyState icon={DoorOpen} title="Залов пока нет" />}
+        {rooms.length === 0 && !canManage && <EmptyState icon={DoorOpen} title={t('Залов пока нет')} />}
         <ul className="divide-y divide-line">
           {rooms.map(room => (
             <li key={room.id} className="px-5 py-3">
@@ -73,11 +74,11 @@ export default function BranchRooms() {
                 <div className="flex items-center gap-3">
                   <DoorOpen className="size-4 shrink-0 text-ink-subtle" />
                   <span className="flex-1 font-medium text-ink">{room.name}</span>
-                  <span className="text-sm text-ink-muted">{room.capacity ? `до ${room.capacity} чел.` : 'вместимость не указана'}</span>
+                  <span className="text-sm text-ink-muted">{room.capacity ? t('до {n} чел.', { n: room.capacity }) : t('вместимость не указана')}</span>
                   {canManage && (
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" aria-label="Изменить" onClick={() => setEditingId(room.id)}><Pencil className="size-4" /></Button>
-                      <Button variant="danger-ghost" size="icon" aria-label="Удалить" onClick={() => remove(room)}><Trash2 className="size-4" /></Button>
+                      <Button variant="ghost" size="icon" aria-label={t('Изменить')} onClick={() => setEditingId(room.id)}><Pencil className="size-4" /></Button>
+                      <Button variant="danger-ghost" size="icon" aria-label={t('Удалить')} onClick={() => remove(room)}><Trash2 className="size-4" /></Button>
                     </div>
                   )}
                 </div>
@@ -111,15 +112,15 @@ function RoomForm({ room, onSave, onCancel }) {
 
   return (
     <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
-      <Input aria-label="Название зала" placeholder={room ? '' : 'Новый зал, например «Большой»'} className="h-9 min-w-40 flex-1" value={name} onChange={e => setName(e.target.value)} autoFocus={Boolean(room)} />
-      <Input aria-label="Вместимость" type="number" min={1} placeholder="Мест" className="h-9 w-24" value={capacity} onChange={e => setCapacity(e.target.value)} />
+      <Input aria-label={t('Название зала')} placeholder={room ? '' : t('Новый зал, например «Большой»')} className="h-9 min-w-40 flex-1" value={name} onChange={e => setName(e.target.value)} autoFocus={Boolean(room)} />
+      <Input aria-label={t('Вместимость')} type="number" min={1} placeholder={t('Мест')} className="h-9 w-24" value={capacity} onChange={e => setCapacity(e.target.value)} />
       {room ? (
         <>
-          <Button variant="primary" size="icon" type="submit" aria-label="Сохранить" loading={saving}><Check className="size-4" /></Button>
-          <Button variant="ghost" size="icon" aria-label="Отмена" onClick={onCancel}><X className="size-4" /></Button>
+          <Button variant="primary" size="icon" type="submit" aria-label={t('Сохранить')} loading={saving}><Check className="size-4" /></Button>
+          <Button variant="ghost" size="icon" aria-label={t('Отмена')} onClick={onCancel}><X className="size-4" /></Button>
         </>
       ) : (
-        <Button variant="primary" size="sm" className="h-9" type="submit" icon={Plus} loading={saving} disabled={!name.trim()}>Добавить</Button>
+        <Button variant="primary" size="sm" className="h-9" type="submit" icon={Plus} loading={saving} disabled={!name.trim()}>{t('Добавить')}</Button>
       )}
     </form>
   )

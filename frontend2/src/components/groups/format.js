@@ -1,12 +1,13 @@
+import { t } from '../../i18n'
 // Общее для страниц групп (TRU-87).
 
 export const GROUP_STATUSES = {
-  active: { label: 'Набирает', tone: 'success' },
-  paused: { label: 'Приостановлена', tone: 'warning' },
-  closed: { label: 'Закрыта', tone: 'neutral' },
+  active: { label: t('Набирает'), tone: 'success' },
+  paused: { label: t('Приостановлена'), tone: 'warning' },
+  closed: { label: t('Закрыта'), tone: 'neutral' },
 }
 
-export const WEEKDAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+export const WEEKDAYS_SHORT = [t('Пн'), t('Вт'), t('Ср'), t('Чт'), t('Пт'), t('Сб'), t('Вс')]
 
 /** [{weekday: 0, start_time: '15:00'}, {weekday: 2, …}] → «Пн, Ср · 15:00». */
 export function scheduleSummary(slots = []) {

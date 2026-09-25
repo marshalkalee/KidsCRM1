@@ -1,5 +1,6 @@
 import { cn } from './cn'
 import { Select } from './Field'
+import { t } from '../i18n'
 
 /**
  * Вкладки: на десктопе — полоса вкладок, на телефоне — выпадающий список
@@ -10,7 +11,7 @@ export function Tabs({ tabs, value, onChange, className }) {
   return (
     <div className={className}>
       <div className="sm:hidden">
-        <Select aria-label="Раздел" value={value} onChange={e => onChange(e.target.value)}>
+        <Select aria-label={t('Раздел')} value={value} onChange={e => onChange(e.target.value)}>
           {tabs.map(tab => <option key={tab.key} value={tab.key}>{tab.label}</option>)}
         </Select>
       </div>

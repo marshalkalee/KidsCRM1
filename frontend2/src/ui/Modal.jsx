@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Button } from './Button'
 import { cn } from './cn'
+import { t } from '../i18n'
 
 // Ширины — как у модалок первого React: 480 / 520 / 560, большая — для отчётов.
 const SIZES = { sm: 'max-w-[480px]', md: 'max-w-[520px]', lg: 'max-w-[560px]', xl: 'max-w-4xl' }
@@ -44,7 +45,7 @@ export function Modal({ open, onClose, title, description, size = 'md', footer, 
             <h2 className="font-btn text-[17px] font-bold text-ink">{title}</h2>
             {description && <p className="mt-0.5 text-[13px] text-ink-muted">{description}</p>}
           </div>
-          <button type="button" onClick={onClose} className="-mr-1 rounded-md p-1 text-ink-subtle hover:bg-surface-muted hover:text-ink" aria-label="Закрыть">
+          <button type="button" onClick={onClose} className="-mr-1 rounded-md p-1 text-ink-subtle hover:bg-surface-muted hover:text-ink" aria-label={t('Закрыть')}>
             <X className="size-5" />
           </button>
         </div>
@@ -82,9 +83,9 @@ export function ConfirmProvider({ children }) {
         size="sm"
         footer={
           <>
-            <Button onClick={() => close(false)}>{state?.cancelText || 'Отмена'}</Button>
+            <Button onClick={() => close(false)}>{state?.cancelText || t('Отмена')}</Button>
             <Button variant={state?.danger ? 'danger' : 'primary'} onClick={() => close(true)}>
-              {state?.confirmText || 'Подтвердить'}
+              {state?.confirmText || t('Подтвердить')}
             </Button>
           </>
         }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Camera, Loader2, Upload } from 'lucide-react'
 import api from '../api/axios'
 import { Button, Checkbox, DateInput, Field, Input, Modal, Select, Textarea, apiErrorMessage, cn, useToast } from '../ui'
+import { t } from '../i18n'
 
 const EMPTY = {
   full_name: '',
@@ -51,7 +52,7 @@ export default function ChildModal({ child, onClose, onSaved }) {
       const response = isEdit
         ? await api.patch(`clients/children/${child.id}/`, form)
         : await api.post('clients/children/', form)
-      toast.success(isEdit ? 'Изменения сохранены' : 'Ребёнок добавлен')
+      toast.success(isEdit ? t('Изменения сохранены') : t('Ребёнок добавлен'))
       onSaved(response.data)
     } catch (err) {
       const data = err.response?.data
@@ -67,48 +68,48 @@ export default function ChildModal({ child, onClose, onSaved }) {
       open
       onClose={onClose}
       size="lg"
-      title={isEdit ? 'Редактировать ребёнка' : 'Новый ребёнок'}
+      title={isEdit ? t('Редактировать ребёнка') : t('Новый ребёнок')}
       footer={
         <>
-          <Button onClick={onClose}>Отмена</Button>
+          <Button onClick={onClose}>{t('Отмена')}</Button>
           <Button variant="primary" type="submit" form="child-form" loading={saving}>
-            {isEdit ? 'Сохранить' : 'Создать ребёнка'}
+            {isEdit ? t('Сохранить') : t('Создать ребёнка')}
           </Button>
         </>
       }
     >
       <form id="child-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
         <PhotoPicker value={form.photo_url} onChange={url => set('photo_url', url)} error={errors.photo_url} />
-        <Field label="ФИО" required error={errors.full_name}>
+        <Field label={t('ФИО')} required error={errors.full_name}>
           {({ id, invalid }) => (
-            <Input id={id} invalid={invalid} value={form.full_name} onChange={e => set('full_name', e.target.value)} placeholder="Введите ФИО" required autoFocus />
+            <Input id={id} invalid={invalid} value={form.full_name} onChange={e => set('full_name', e.target.value)} placeholder={t('Введите ФИО')} required autoFocus />
           )}
         </Field>
-        <Field label="Дата рождения" required error={errors.birth_date}>
+        <Field label={t('Дата рождения')} required error={errors.birth_date}>
           {({ id, invalid }) => (
             <DateInput id={id} invalid={invalid} value={form.birth_date} onChange={v => set('birth_date', v)} required />
           )}
         </Field>
-        <Field label="Пол" required error={errors.gender}>
+        <Field label={t('Пол')} required error={errors.gender}>
           {({ id, invalid }) => (
             <Select id={id} invalid={invalid} value={form.gender} onChange={e => set('gender', e.target.value)} required>
-              <option value="">Выберите</option>
-              <option value="female">Девочка</option>
-              <option value="male">Мальчик</option>
+              <option value="">{t('Выберите')}</option>
+              <option value="female">{t('Девочка')}</option>
+              <option value="male">{t('Мальчик')}</option>
             </Select>
           )}
         </Field>
-        <Field label="Статус" error={errors.status}>
+        <Field label={t('Статус')} error={errors.status}>
           {({ id, invalid }) => (
             <Select id={id} invalid={invalid} value={form.status} onChange={e => set('status', e.target.value)}>
-              <option value="active">Активен</option>
-              <option value="paused">Приостановлен</option>
-              <option value="left">Ушёл</option>
+              <option value="active">{t('Активен')}</option>
+              <option value="paused">{t('Приостановлен')}</option>
+              <option value="left">{t('Ушёл')}</option>
             </Select>
           )}
         </Field>
         {form.status === 'left' ? (
-          <Field label="Причина ухода" required error={errors.leave_reason} className="sm:col-span-2">
+          <Field label={t('Причина ухода')} required error={errors.leave_reason} className="sm:col-span-2">
             {({ id, invalid }) => (
               <Input id={id} invalid={invalid} value={form.leave_reason} onChange={e => set('leave_reason', e.target.value)} required />
             )}
@@ -116,7 +117,7 @@ export default function ChildModal({ child, onClose, onSaved }) {
         ) : null}
 
         {directions.length > 0 && (
-          <Field label="Направления" error={errors.directions} className="sm:col-span-2">
+          <Field label={t('Направления')} error={errors.directions} className="sm:col-span-2">
             <div className="flex flex-wrap gap-2">
               {directions.map(direction => {
                 const active = form.directions.includes(direction.id)
@@ -139,12 +140,12 @@ export default function ChildModal({ child, onClose, onSaved }) {
           </Field>
         )}
 
-        <Field label="Медицинские заметки" error={errors.medical_notes} className="sm:col-span-2">
-          {({ id }) => <Textarea id={id} value={form.medical_notes} onChange={e => set('medical_notes', e.target.value)} placeholder="Аллергии, особенности..." />}
+        <Field label={t('Медицинские заметки')} error={errors.medical_notes} className="sm:col-span-2">
+          {({ id }) => <Textarea id={id} value={form.medical_notes} onChange={e => set('medical_notes', e.target.value)} placeholder={t('Аллергии, особенности...')} />}
         </Field>
         <Checkbox
           className="sm:col-span-2"
-          label="Согласие на обработку персональных данных получено"
+          label={t('Согласие на обработку персональных данных получено')}
           checked={form.consent_given}
           onChange={e => set('consent_given', e.target.checked)}
         />
@@ -185,7 +186,7 @@ function PhotoPicker({ value, onChange, error }) {
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        aria-label={value ? 'Заменить фото' : 'Загрузить фото'}
+        aria-label={value ? t('Заменить фото') : t('Загрузить фото')}
         className={cn(
           'flex size-[72px] shrink-0 items-center justify-center overflow-hidden rounded-full',
           value ? 'ring-2 ring-brand-100' : 'border-2 border-dashed border-[#e5e7eb] bg-[#f8f9ff] text-ink-subtle hover:border-brand-300 hover:text-brand-500',
@@ -198,11 +199,11 @@ function PhotoPicker({ value, onChange, error }) {
       <div className="flex flex-col items-start gap-1">
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" icon={Upload} onClick={() => inputRef.current?.click()} disabled={uploading}>
-            {value ? 'Заменить фото' : 'Загрузить фото'}
+            {value ? t('Заменить фото') : t('Загрузить фото')}
           </Button>
-          {value && !uploading && <Button size="sm" variant="ghost" onClick={() => onChange('')}>Убрать</Button>}
+          {value && !uploading && <Button size="sm" variant="ghost" onClick={() => onChange('')}>{t('Убрать')}</Button>}
         </div>
-        <p className="font-btn text-[11px] text-ink-subtle">JPG, PNG до 5 МБ</p>
+        <p className="font-btn text-[11px] text-ink-subtle">{t('JPG, PNG до 5 МБ')}</p>
         {error && <p className="font-btn text-xs text-danger-600">{[].concat(error)[0]}</p>}
       </div>
       <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => upload(e.target.files[0])} />

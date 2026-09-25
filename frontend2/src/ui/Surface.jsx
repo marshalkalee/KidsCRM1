@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ChevronLeft, Inbox, Loader2 } from 'lucide-react'
 import { cn } from './cn'
+import { t } from '../i18n'
 
 export function Card({ className, children, padded = true, ...rest }) {
   return (
@@ -77,7 +78,7 @@ export function EmptyState({ icon: Icon = Inbox, title, description, action, cla
   )
 }
 
-export function Spinner({ className, label = 'Загрузка…' }) {
+export function Spinner({ className, label = t('Загрузка…') }) {
   return (
     <div className={cn('flex items-center justify-center gap-2 py-10 text-sm text-ink-muted', className)} role="status">
       <Loader2 className="size-5 animate-spin text-brand-500" />
@@ -91,14 +92,14 @@ export function Skeleton({ className }) {
 }
 
 /** Ошибка загрузки с повтором — вместо пустого экрана или вечного спиннера. */
-export function ErrorState({ title = 'Не удалось загрузить данные', onRetry }) {
+export function ErrorState({ title = t('Не удалось загрузить данные'), onRetry }) {
   return (
     <div className="flex flex-col items-center py-12 text-center">
       <p className="font-semibold text-ink">{title}</p>
-      <p className="mt-1 text-sm text-ink-muted">Проверьте соединение и попробуйте ещё раз.</p>
+      <p className="mt-1 text-sm text-ink-muted">{t('Проверьте соединение и попробуйте ещё раз.')}</p>
       {onRetry && (
         <button type="button" onClick={onRetry} className="font-btn mt-4 text-sm font-semibold text-brand-600 hover:text-brand-700">
-          Повторить
+          {t('Повторить')}
         </button>
       )}
     </div>

@@ -1,5 +1,8 @@
 // Форматирование для экранов: деньги в тенге, даты по-русски, возраст.
-const moneyFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 })
+import { locale, plural } from '../i18n'
+import { t } from '../i18n'
+
+const moneyFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 })
 
 export function money(value) {
   const number = Number(value)
@@ -16,21 +19,17 @@ export function formatDate(iso) {
 
 export function ageLabel(age) {
   if (age == null) return '—'
-  const mod10 = age % 10
-  const mod100 = age % 100
-  if (mod10 === 1 && mod100 !== 11) return `${age} год`
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${age} года`
-  return `${age} лет`
+  return `${age} ${plural(age, ['год', 'года', 'лет'])}`
 }
 
 // Статусы ребёнка — как Child.Status на бэке.
 export const CHILD_STATUSES = {
-  active: { label: 'Активен', tone: 'success' },
-  paused: { label: 'Приостановлен', tone: 'warning' },
-  left: { label: 'Ушёл', tone: 'neutral' },
+  active: { label: t('Активен'), tone: 'success' },
+  paused: { label: t('Приостановлен'), tone: 'warning' },
+  left: { label: t('Ушёл'), tone: 'neutral' },
 }
 
-const dateTimeFormat = new Intl.DateTimeFormat('ru-RU', {
+const dateTimeFormat = new Intl.DateTimeFormat(locale, {
   day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
 })
 
@@ -42,9 +41,9 @@ export function formatDateTime(iso) {
 
 // Роли контакта — как ChildContact.Role на бэке.
 export const CONTACT_ROLES = {
-  mother: 'Мама',
-  father: 'Папа',
-  guardian: 'Опекун',
-  grandmother: 'Бабушка',
-  other: 'Другое',
+  mother: t('Мама'),
+  father: t('Папа'),
+  guardian: t('Опекун'),
+  grandmother: t('Бабушка'),
+  other: t('Другое'),
 }

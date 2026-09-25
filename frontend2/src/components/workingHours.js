@@ -1,12 +1,13 @@
+import { t } from '../i18n'
 // Рабочие часы филиала — как backend/domains/platform/tenants/working_hours.py.
 export const WEEKDAYS = [
-  ['mon', 'Пн', 'Понедельник'],
-  ['tue', 'Вт', 'Вторник'],
-  ['wed', 'Ср', 'Среда'],
-  ['thu', 'Чт', 'Четверг'],
-  ['fri', 'Пт', 'Пятница'],
-  ['sat', 'Сб', 'Суббота'],
-  ['sun', 'Вс', 'Воскресенье'],
+  ['mon', t('Пн'), t('Понедельник')],
+  ['tue', t('Вт'), t('Вторник')],
+  ['wed', t('Ср'), t('Среда')],
+  ['thu', t('Чт'), t('Четверг')],
+  ['fri', t('Пт'), t('Пятница')],
+  ['sat', t('Сб'), t('Суббота')],
+  ['sun', t('Вс'), t('Воскресенье')],
 ]
 
 // Как default_working_hours() на бэке: пн–пт 09:00–20:00, выходные закрыты.
@@ -34,6 +35,6 @@ export function hoursSummary(hours) {
     else groups.push({ from: short, to: short, label })
   }
   const open = groups.filter(g => g.label)
-  if (!open.length) return 'Закрыт всю неделю'
+  if (!open.length) return t('Закрыт всю неделю')
   return open.map(g => `${g.from}${g.to !== g.from ? `–${g.to}` : ''} ${g.label}`).join(', ')
 }

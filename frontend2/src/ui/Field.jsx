@@ -2,6 +2,7 @@ import { Children, forwardRef, isValidElement, useId, useState } from 'react'
 import { Calendar } from 'lucide-react'
 import { CheckSquare, Dropdown } from './Dropdown'
 import { cn } from './cn'
+import { t } from '../i18n'
 
 // Поля — как в формах первого React (TRU-91): Manrope 13px, белое поле с
 // рамкой 1.5px, подпись 10px капсом.
@@ -93,7 +94,7 @@ export function Select({ id, value, onChange, children, invalid, disabled, requi
         value={value ?? ''}
         onChange={v => onChange?.({ target: { value: v, name } })}
         options={options}
-        placeholder={empty?.label || 'Выберите…'}
+        placeholder={empty?.label || t('Выберите…')}
         invalid={invalid}
         disabled={disabled}
         ariaLabel={ariaLabel}
@@ -108,7 +109,7 @@ export function Select({ id, value, onChange, children, invalid, disabled, requi
 }
 
 /** Выбор нескольких значений — список с галочками (как выбор преподавателей). */
-export function MultiSelect({ id, value, onChange, options, placeholder = 'Не выбрано', invalid }) {
+export function MultiSelect({ id, value, onChange, options, placeholder = t('Не выбрано'), invalid }) {
   return <Dropdown id={id} multiple value={value} onChange={onChange} options={options} placeholder={placeholder} invalid={invalid} />
 }
 
@@ -124,7 +125,7 @@ export function Checkbox({ label, className, checked, onChange, disabled, ...res
 }
 
 /** Список галочек в сером блоке (как «Доступно в филиалах» в первой версии). */
-export function CheckList({ options, value, onChange, empty = 'Пусто' }) {
+export function CheckList({ options, value, onChange, empty = t('Пусто') }) {
   if (!options.length) return <p className="font-btn text-xs text-ink-subtle">{empty}</p>
   const values = value.map(String)
   const toggle = v => onChange(values.includes(String(v)) ? values.filter(x => x !== String(v)) : [...values, String(v)])
@@ -161,7 +162,7 @@ export function DateInput({ id, value, onChange, invalid, required }) {
   }
   return (
     <div className="relative">
-      <Input id={id} invalid={invalid} required={required} inputMode="numeric" placeholder="дд.мм.гггг" maxLength={10} value={text} onChange={e => change(e.target.value)} className="pr-9" />
+      <Input id={id} invalid={invalid} required={required} inputMode="numeric" placeholder={t('дд.мм.гггг')} maxLength={10} value={text} onChange={e => change(e.target.value)} className="pr-9" />
       <Calendar className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-ink-subtle" />
     </div>
   )

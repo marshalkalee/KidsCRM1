@@ -9,9 +9,10 @@ import {
   Avatar, Badge, Button, DataTable, EmptyState, FilterBar, FilterCheck, FilterPanel, FilterSelect, PageHeader,
   SearchInput, cn, plural, useFilterDraft,
 } from '../ui'
+import { t } from '../i18n'
 
 const PANEL_KEYS = ['branch', 'direction', 'teacher', 'status', 'underfilled']
-const STATUS_OPTIONS = [['', 'Все статусы'], ...Object.entries(GROUP_STATUSES).map(([v, s]) => [v, s.label])]
+const STATUS_OPTIONS = [['', t('Все статусы')], ...Object.entries(GROUP_STATUSES).map(([v, s]) => [v, s.label])]
 const listOf = r => r.data.results || r.data
 
 /**
@@ -42,7 +43,7 @@ export default function Groups() {
 
   useEffect(() => {
     Promise.all([api.get('directions/'), api.get('users/', { params: { role: 'teacher' } })])
-      .then(([d, t]) => { setDirections(listOf(d)); setTeachers(listOf(t)) })
+      .then(([d, tch]) => { setDirections(listOf(d)); setTeachers(listOf(tch)) })
       .catch(() => {})
   }, [])
 
@@ -72,22 +73,22 @@ export default function Groups() {
   const columns = [
     {
       key: 'name',
-      header: 'Название',
+      header: t('Название'),
       primary: true,
       render: g => (
         <span className="flex min-w-0 items-center gap-2.5">
           <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: g.direction_color || '#9a93a8' }} />
           <span className="min-w-0">
             <span className="block truncate font-semibold text-ink">{g.name}</span>
-            {g.age_min != null && g.age_max != null && <span className="block text-xs text-ink-subtle">{g.age_min}–{g.age_max} лет</span>}
+            {g.age_min != null && g.age_max != null && <span className="block text-xs text-ink-subtle">{g.age_min}–{g.age_max} {t('лет')}</span>}
           </span>
         </span>
       ),
     },
-    ...(activeBranch ? [] : [{ key: 'branch_name', header: 'Филиал', className: 'text-ink-muted whitespace-nowrap' }]),
+    ...(activeBranch ? [] : [{ key: 'branch_name', header: t('Филиал'), className: 'text-ink-muted whitespace-nowrap' }]),
     {
       key: 'direction',
-      header: 'Направление',
+      header: t('Направление'),
       hideOnMobile: true,
       render: g => (
         <span
@@ -100,28 +101,28 @@ export default function Groups() {
     },
     {
       key: 'teachers',
-      header: 'Преподаватели',
+      header: t('Преподаватели'),
       render: g => (g.teachers_detail.length ? (
         <span className="flex items-center gap-2">
           <span className="flex -space-x-2">
-            {g.teachers_detail.slice(0, 3).map(t => <Avatar key={t.id} name={t.full_name} className="size-7 text-[10px] ring-2 ring-surface" />)}
+            {g.teachers_detail.slice(0, 3).map(tch => <Avatar key={tch.id} name={tch.full_name} className="size-7 text-[10px] ring-2 ring-surface" />)}
           </span>
-          <span className="truncate text-ink-muted">{g.teachers_detail.map(t => t.full_name.split(' ')[0]).join(', ')}</span>
+          <span className="truncate text-ink-muted">{g.teachers_detail.map(tch => tch.full_name.split(' ')[0]).join(', ')}</span>
         </span>
-      ) : <span className="text-ink-subtle">не назначен</span>),
+      ) : <span className="text-ink-subtle">{t('не назначен')}</span>),
     },
-    { key: 'schedule', header: 'Расписание', hideOnMobile: true, className: 'text-ink-muted whitespace-nowrap', render: g => scheduleSummary(g.schedule) || <span className="text-ink-subtle">—</span> },
-    { key: 'fill', header: 'Записано', render: g => <Fill group={g} /> },
+    { key: 'schedule', header: t('Расписание'), hideOnMobile: true, className: 'text-ink-muted whitespace-nowrap', render: g => scheduleSummary(g.schedule) || <span className="text-ink-subtle">—</span> },
+    { key: 'fill', header: t('Записано'), render: g => <Fill group={g} /> },
     {
       key: 'status',
-      header: 'Статус',
+      header: t('Статус'),
       mobileAside: true,
       render: g => {
         const full = g.members_count >= g.capacity
         if (g.status !== 'active') return <Badge tone={GROUP_STATUSES[g.status].tone}>{GROUP_STATUSES[g.status].label}</Badge>
-        if (full) return <Badge tone="danger">Мест нет</Badge>
-        if (g.is_underfilled) return <Badge tone="warning">Недобор</Badge>
-        return <Badge tone="success">Набирает</Badge>
+        if (full) return <Badge tone="danger">{t('Мест нет')}</Badge>
+        if (g.is_underfilled) return <Badge tone="warning">{t('Недобор')}</Badge>
+        return <Badge tone="success">{t('Набирает')}</Badge>
       },
     },
   ]
@@ -129,14 +130,14 @@ export default function Groups() {
   return (
     <div>
       <PageHeader
-        title="Группы"
-        description={`${rows.length} ${plural(rows.length, ['группа', 'группы', 'групп'])}${activeBranch ? ` · ${activeBranch.name}` : ''}${underfilledCount ? ` · с недобором: ${underfilledCount}` : ''}`}
-        actions={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Новая группа</Button>}
+        title={t('Группы')}
+        description={`${rows.length} ${plural(rows.length, ['группа', 'группы', 'групп'])}${activeBranch ? ` · ${activeBranch.name}` : ''}${underfilledCount ? ` · ${t('с недобором: {n}', { n: underfilledCount })}` : ''}`}
+        actions={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Новая группа')}</Button>}
       />
 
       <div className="mb-4 space-y-3">
         <FilterBar
-          search={<SearchInput value={q} onChange={setQuery} placeholder="Поиск по названию, направлению, филиалу" />}
+          search={<SearchInput value={q} onChange={setQuery} placeholder={t('Поиск по названию, направлению, филиалу')} />}
           filtersOpen={filtersOpen}
           onToggleFilters={() => setFiltersOpen(o => !o)}
           activeCount={activeCount}
@@ -154,13 +155,13 @@ export default function Groups() {
         onRetry={() => setReloadKey(k => k + 1)}
         onRowClick={g => navigate(`/groups/${g.id}`)}
         empty={activeCount || q ? (
-          <EmptyState icon={Search} title="Групп не нашли" description="Измените поиск или сбросьте фильтры." action={<Button size="sm" onClick={reset}>Сбросить фильтры</Button>} />
+          <EmptyState icon={Search} title={t('Групп не нашли')} description={t('Измените поиск или сбросьте фильтры.')} action={<Button size="sm" onClick={reset}>{t('Сбросить фильтры')}</Button>} />
         ) : (
           <EmptyState
             icon={UsersRound}
-            title="Групп пока нет"
-            description="Создайте группу — в неё записываются дети, по ней строится расписание."
-            action={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Новая группа</Button>}
+            title={t('Групп пока нет')}
+            description={t('Создайте группу — в неё записываются дети, по ней строится расписание.')}
+            action={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Новая группа')}</Button>}
           />
         )}
       />
@@ -180,14 +181,14 @@ function GroupFilters({ applied, onApply, onReset, branches, directions, teacher
       canReset={PANEL_KEYS.some(key => applied[key])}
       onApply={() => onApply(draft)}
       onReset={onReset}
-      checks={<FilterCheck label="Только с недобором" checked={draft.underfilled === '1'} onChange={v => set('underfilled', v ? '1' : '')} />}
+      checks={<FilterCheck label={t('Только с недобором')} checked={draft.underfilled === '1'} onChange={v => set('underfilled', v ? '1' : '')} />}
     >
       {branches.length > 1 && (
-        <FilterSelect label="Филиал" value={draft.branch} onChange={v => set('branch', v)} options={[['', 'Как в шапке'], ...branches.map(b => [String(b.id), b.name])]} />
+        <FilterSelect label={t('Филиал')} value={draft.branch} onChange={v => set('branch', v)} options={[['', t('Как в шапке')], ...branches.map(b => [String(b.id), b.name])]} />
       )}
-      <FilterSelect label="Направление" value={draft.direction} onChange={v => set('direction', v)} options={[['', 'Все направления'], ...directions.map(d => [String(d.id), d.name])]} />
-      <FilterSelect label="Преподаватель" value={draft.teacher} onChange={v => set('teacher', v)} options={[['', 'Все преподаватели'], ...teachers.map(t => [String(t.id), t.full_name])]} />
-      <FilterSelect label="Статус" value={draft.status} onChange={v => set('status', v)} options={STATUS_OPTIONS} />
+      <FilterSelect label={t('Направление')} value={draft.direction} onChange={v => set('direction', v)} options={[['', t('Все направления')], ...directions.map(d => [String(d.id), d.name])]} />
+      <FilterSelect label={t('Преподаватель')} value={draft.teacher} onChange={v => set('teacher', v)} options={[['', t('Все преподаватели')], ...teachers.map(tch => [String(tch.id), tch.full_name])]} />
+      <FilterSelect label={t('Статус')} value={draft.status} onChange={v => set('status', v)} options={STATUS_OPTIONS} />
     </FilterPanel>
   )
 }

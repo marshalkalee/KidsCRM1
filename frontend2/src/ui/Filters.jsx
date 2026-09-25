@@ -3,6 +3,7 @@ import { Check, Search, SlidersHorizontal, X } from 'lucide-react'
 import { Button } from './Button'
 import { Dropdown } from './Dropdown'
 import { cn } from './cn'
+import { t } from '../i18n'
 
 /**
  * Фильтры списков как в первом React (TRU-91): строка поиска + кнопка
@@ -25,7 +26,7 @@ export function FilterBar({ search, filtersOpen, onToggleFilters, activeCount = 
           )}
         >
           <SlidersHorizontal className="size-4" />
-          <span className="hidden sm:inline">Фильтры</span>
+          <span className="hidden sm:inline">{t('Фильтры')}</span>
           {activeCount > 0 && (
             <span className="absolute -right-2 -top-2 flex size-[18px] items-center justify-center rounded-full bg-brand-600 text-[10px] font-bold text-white">{activeCount}</span>
           )}
@@ -63,8 +64,8 @@ export function FilterPanel({ children, checks, onApply, onReset, dirty, canRese
         </>
       )}
       <div className="flex gap-1.5 xl:ml-auto xl:flex-col">
-        <Button variant="primary" size="sm" onClick={onApply} disabled={!dirty}>Применить</Button>
-        {canReset && <Button size="sm" icon={X} onClick={onReset}>Сбросить</Button>}
+        <Button variant="primary" size="sm" onClick={onApply} disabled={!dirty}>{t('Применить')}</Button>
+        {canReset && <Button size="sm" icon={X} onClick={onReset}>{t('Сбросить')}</Button>}
       </div>
     </div>
   )

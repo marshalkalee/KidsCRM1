@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { Search, User, Users } from 'lucide-react'
 import api from '../../api/axios'
 import { cn } from '../../ui'
+import { t } from '../../i18n'
 
 const MIN_LENGTH = 3 // как на сервере (search.GLOBAL_SEARCH_MIN_LENGTH)
 const DEBOUNCE_MS = 250
 
 const MATCHED_ON = {
   child_name: null,
-  parent_name: 'родитель',
-  phone: 'телефон',
+  parent_name: t('родитель'),
+  phone: t('телефон'),
 }
 
 function resultUrl(result) {
@@ -87,9 +88,9 @@ export function GlobalSearch({ className }) {
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onKeyDown={onKeyDown}
-          placeholder="Ребёнок, родитель или телефон"
+          placeholder={t('Ребёнок, родитель или телефон')}
           className="w-full bg-transparent text-sm text-ink placeholder:text-ink-subtle focus:outline-none"
-          aria-label="Поиск"
+          aria-label={t('Поиск')}
           role="combobox"
           aria-expanded={showPanel}
         />
@@ -97,8 +98,8 @@ export function GlobalSearch({ className }) {
 
       {showPanel && (
         <div className="absolute left-0 right-0 top-12 z-40 overflow-hidden rounded-lg border border-line bg-surface shadow-pop" role="listbox">
-          {loading && <p className="px-4 py-3 text-sm text-ink-muted">Ищем…</p>}
-          {!loading && !results.length && <p className="px-4 py-3 text-sm text-ink-muted">Ничего не нашлось</p>}
+          {loading && <p className="px-4 py-3 text-sm text-ink-muted">{t('Ищем…')}</p>}
+          {!loading && !results.length && <p className="px-4 py-3 text-sm text-ink-muted">{t('Ничего не нашлось')}</p>}
           {results.map((result, i) => {
             const Icon = result.type === 'child' ? User : Users
             const hint = MATCHED_ON[result.matched_on]
@@ -119,7 +120,7 @@ export function GlobalSearch({ className }) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-ink">{result.title}</span>
                   <span className="block truncate text-xs text-ink-muted">
-                    {result.type === 'child' ? 'Ребёнок' : 'Родитель'}
+                    {result.type === 'child' ? t('Ребёнок') : t('Родитель')}
                     {hint && result.matched_detail ? ` · ${hint}: ${result.matched_detail}` : ''}
                   </span>
                 </span>

@@ -4,7 +4,9 @@ import { Bell, Building2, ChevronDown, LogOut, Menu, PanelLeftClose, PanelLeftOp
 import { useSession } from '../../session/SessionContext'
 import { cn, initials } from '../../ui'
 import { GlobalSearch } from './GlobalSearch'
+import LanguageSwitcher from './LanguageSwitcher'
 import { visibleSections } from './navigation'
+import { t } from '../../i18n'
 
 const COLLAPSED_KEY = 'kc:sidebar-collapsed'
 
@@ -42,7 +44,7 @@ export default function Layout() {
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-ink/40" onClick={() => setDrawerOpen(false)} />
           <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-surface shadow-pop">
-            <button type="button" onClick={() => setDrawerOpen(false)} className="absolute right-3 top-4 rounded-md p-1.5 text-ink-subtle hover:bg-surface-muted" aria-label="Закрыть меню">
+            <button type="button" onClick={() => setDrawerOpen(false)} className="absolute right-3 top-4 rounded-md p-1.5 text-ink-subtle hover:bg-surface-muted" aria-label={t('Закрыть меню')}>
               <X className="size-5" />
             </button>
             {/* Переход по пункту меню закрывает шторку. */}
@@ -53,21 +55,22 @@ export default function Layout() {
 
       <header className="sticky top-0 z-20 border-b border-line bg-surface">
         <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
-          <button type="button" onClick={() => setDrawerOpen(true)} className="-ml-1 rounded-md p-2 text-ink-muted hover:bg-surface-muted lg:hidden" aria-label="Меню">
+          <button type="button" onClick={() => setDrawerOpen(true)} className="-ml-1 rounded-md p-2 text-ink-muted hover:bg-surface-muted lg:hidden" aria-label={t('Меню')}>
             <Menu className="size-5" />
           </button>
           <button
             type="button"
             onClick={toggleCollapsed}
             className="-ml-2 hidden rounded-md p-2 text-ink-muted hover:bg-surface-muted hover:text-ink lg:block"
-            aria-label={collapsed ? 'Развернуть меню' : 'Свернуть меню'}
-            title={collapsed ? 'Развернуть меню' : 'Свернуть меню'}
+            aria-label={collapsed ? t('Развернуть меню') : t('Свернуть меню')}
+            title={collapsed ? t('Развернуть меню') : t('Свернуть меню')}
           >
             {collapsed ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
           </button>
           <GlobalSearch className="min-w-0 flex-1 md:max-w-md" />
           <div className="ml-auto flex items-center gap-2">
             <BranchSwitcher />
+            <LanguageSwitcher />
             <Notifications />
           </div>
         </div>
@@ -158,7 +161,7 @@ function Notifications() {
         type="button"
         onClick={() => setOpen(o => !o)}
         className="flex size-10 items-center justify-center rounded-[10px] border border-line bg-surface text-ink-muted hover:border-brand-300 hover:text-ink"
-        aria-label="Уведомления"
+        aria-label={t('Уведомления')}
         aria-expanded={open}
       >
         <Bell className="size-[18px]" />
@@ -166,8 +169,8 @@ function Notifications() {
       {open && (
         <div className="absolute right-0 top-12 z-40 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-5 text-center shadow-pop">
           <span className="mx-auto mb-2 flex size-10 items-center justify-center rounded-full bg-brand-50 text-brand-500"><Bell className="size-5" /></span>
-          <p className="text-sm font-semibold text-ink">Уведомлений пока нет</p>
-          <p className="mt-1 text-[13px] text-ink-muted">Здесь будут напоминания о продлениях, долгах и занятиях.</p>
+          <p className="text-sm font-semibold text-ink">{t('Уведомлений пока нет')}</p>
+          <p className="mt-1 text-[13px] text-ink-muted">{t('Здесь будут напоминания о продлениях, долгах и занятиях.')}</p>
         </div>
       )}
     </div>
@@ -190,13 +193,13 @@ function UserMenu({ collapsed = false }) {
           </div>
         )}
         {!collapsed && (
-          <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title="Выйти" aria-label="Выйти">
+          <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title={t('Выйти')} aria-label={t('Выйти')}>
             <LogOut className="size-4" />
           </button>
         )}
       </div>
       {collapsed && (
-        <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title="Выйти" aria-label="Выйти">
+        <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title={t('Выйти')} aria-label={t('Выйти')}>
           <LogOut className="size-4" />
         </button>
       )}
@@ -221,7 +224,7 @@ function BranchSwitcher() {
   }, [open])
 
   if (!branches.length) return null
-  const label = activeBranch?.name || 'Все филиалы'
+  const label = activeBranch?.name || t('Все филиалы')
 
   function choose(id) {
     setActiveBranchId(id)
@@ -245,7 +248,7 @@ function BranchSwitcher() {
       </button>
       {open && (
         <ul className="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-pop" role="listbox">
-          {[{ id: null, name: 'Все филиалы' }, ...branches].map(branch => (
+          {[{ id: null, name: t('Все филиалы') }, ...branches].map(branch => (
             <li key={branch.id || 'all'}>
               <button
                 type="button"

@@ -1,7 +1,9 @@
+import { t } from '../i18n'
+import LanguageSwitcher from './shell/LanguageSwitcher'
 const FEATURES = [
-  'База детей и родителей без дублей',
-  'Расписание, группы и посещаемость',
-  'Абонементы, оплаты и задолженности',
+  t('База детей и родителей без дублей'),
+  t('Расписание, группы и посещаемость'),
+  t('Абонементы, оплаты и задолженности'),
 ]
 
 /** Макет страниц входа и регистрации: слева — бренд, справа — форма. */
@@ -24,8 +26,8 @@ export default function AuthLayout({ children }) {
           <span className="text-lg font-bold">KidsCRM</span>
         </div>
         <div className="relative max-w-md">
-          <h1 className="text-4xl font-bold leading-tight tracking-tight">Весь центр —<br />в одном месте</h1>
-          <p className="mt-4 text-base text-white/85">Замените Excel и переписки в WhatsApp: дети, расписание и деньги под контролем.</p>
+          <h1 className="text-4xl font-bold leading-tight tracking-tight">{t('Весь центр —')}<br />{t('в одном месте')}</h1>
+          <p className="mt-4 text-base text-white/85">{t('Замените Excel и переписки в WhatsApp: дети, расписание и деньги под контролем.')}</p>
           <ul className="mt-8 space-y-3">
             {FEATURES.map(f => (
               <li key={f} className="flex items-center gap-3 text-[15px] font-medium">
@@ -38,7 +40,8 @@ export default function AuthLayout({ children }) {
         <p className="relative text-xs text-white/70">© 2026 KidsCRM</p>
       </aside>
 
-      <main className="flex items-center justify-center px-5 py-12">
+      <main className="relative flex items-center justify-center px-5 py-12">
+        <div className="absolute right-5 top-5"><LanguageSwitcher /></div>
         <div className="w-full max-w-sm">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
             <span className="flex size-9 items-center justify-center rounded-md bg-gradient-to-br from-brand-400 to-brand-600 text-white">

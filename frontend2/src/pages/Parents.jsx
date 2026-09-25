@@ -5,6 +5,7 @@ import api from '../api/axios'
 import ParentModal from '../components/ParentModal'
 import { useSession } from '../session/SessionContext'
 import { Avatar, Button, DataTable, EmptyState, PageHeader, SearchInput, plural } from '../ui'
+import { t } from '../i18n'
 
 // Размер страницы — как PAGE_SIZE в DRF (config/settings/base.py).
 const PAGE_SIZE = 50
@@ -40,7 +41,7 @@ export default function Parents() {
   const columns = [
     {
       key: 'full_name',
-      header: 'Родитель',
+      header: t('Родитель'),
       primary: true,
       render: row => (
         <div className="flex min-w-0 items-center gap-3">
@@ -51,7 +52,7 @@ export default function Parents() {
     },
     {
       key: 'children',
-      header: 'Дети',
+      header: t('Дети'),
       render: row => (row.children.length ? (
         <span className="text-ink-muted">
           {row.children.map((child, i) => (
@@ -65,7 +66,7 @@ export default function Parents() {
     },
     ...(showPhones ? [{
       key: 'phones',
-      header: 'Телефон',
+      header: t('Телефон'),
       render: row => (row.phones?.length
         ? <span className="whitespace-nowrap text-ink-muted">{row.phones[0].number}{row.phones.length > 1 && <span className="text-ink-subtle"> +{row.phones.length - 1}</span>}</span>
         : <span className="text-ink-subtle">—</span>),
@@ -76,12 +77,12 @@ export default function Parents() {
   return (
     <div>
       <PageHeader
-        title="Родители"
-        description={loading && !data.count ? 'Загрузка…' : `${data.count} ${plural(data.count, ['контакт', 'контакта', 'контактов'])}${q ? ' по запросу' : ''}`}
-        actions={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Добавить родителя</Button>}
+        title={t('Родители')}
+        description={loading && !data.count ? t('Загрузка…') : `${data.count} ${plural(data.count, ['контакт', 'контакта', 'контактов'])}${q ? ` ${t('по запросу')}` : ''}`}
+        actions={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Добавить родителя')}</Button>}
       />
       <div className="mb-4">
-        <SearchInput value={q} onChange={setQuery} placeholder={showPhones ? 'Имя или телефон' : 'Имя родителя'} />
+        <SearchInput value={q} onChange={setQuery} placeholder={showPhones ? t('Имя или телефон') : t('Имя родителя')} />
       </div>
       <DataTable
         columns={columns}
@@ -93,9 +94,9 @@ export default function Parents() {
         onPageChange={next => setParams({ ...(q ? { q } : {}), ...(next > 1 ? { page: String(next) } : {}) }, { replace: true })}
         onRowClick={row => navigate(`/parents/${row.id}`)}
         empty={q ? (
-          <EmptyState icon={Search} title="Никого не нашли" description="Проверьте имя или номер телефона." />
+          <EmptyState icon={Search} title={t('Никого не нашли')} description={t('Проверьте имя или номер телефона.')} />
         ) : (
-          <EmptyState icon={UsersRound} title="Родителей пока нет" description="Родители появляются при добавлении контакта ребёнку или импорте из Excel." />
+          <EmptyState icon={UsersRound} title={t('Родителей пока нет')} description={t('Родители появляются при добавлении контакта ребёнку или импорте из Excel.')} />
         )}
       />
       {creating && (

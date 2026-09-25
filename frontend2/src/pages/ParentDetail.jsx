@@ -8,8 +8,9 @@ import {
   Avatar, Badge, Button, CHILD_STATUSES, CONTACT_ROLES, Card, CardHeader, EmptyState, ErrorState, PageHeader,
   Skeleton, ageLabel, apiErrorMessage, cn, formatDateTime, money, plural, useConfirm, useToast,
 } from '../ui'
+import { t } from '../i18n'
 
-const PHONE_TYPES = { mobile: 'мобильный', work: 'рабочий', home: 'домашний' }
+const PHONE_TYPES = { mobile: t('мобильный'), work: t('рабочий'), home: t('домашний') }
 const PAYMENTS_PREVIEW = 5
 
 /**
@@ -35,7 +36,7 @@ export default function ParentDetail() {
 
   useEffect(() => { load() }, [load])
 
-  const back = { to: '/parents', label: 'Родители' }
+  const back = { to: '/parents', label: t('Родители') }
   if (status === 'loading') {
     return (
       <div>
@@ -47,7 +48,7 @@ export default function ParentDetail() {
   if (status === 'missing') {
     return (
       <Card>
-        <EmptyState icon={SearchX} title="Родитель не найден" description="Возможно, запись удалили или ссылка неверная." action={<Button to="/parents">К списку родителей</Button>} />
+        <EmptyState icon={SearchX} title={t('Родитель не найден')} description={t('Возможно, запись удалили или ссылка неверная.')} action={<Button to="/parents">{t('К списку родителей')}</Button>} />
       </Card>
     )
   }
@@ -58,14 +59,14 @@ export default function ParentDetail() {
 
   async function remove() {
     if (children.length) {
-      toast.error('Сначала отвяжите детей — в карточке каждого ребёнка, вкладка «Контакты».')
+      toast.error(t('Сначала отвяжите детей — в карточке каждого ребёнка, вкладка «Контакты».'))
       return
     }
-    const ok = await confirm({ title: 'Удалить родителя?', message: `${parent.full_name} пропадёт из списка родителей.`, confirmText: 'Удалить', danger: true })
+    const ok = await confirm({ title: t('Удалить родителя?'), message: t('{name} пропадёт из списка родителей.', { name: parent.full_name }), confirmText: t('Удалить'), danger: true })
     if (!ok) return
     try {
       await api.delete(`clients/parents/${parent.id}/`)
-      toast.success('Родитель удалён')
+      toast.success(t('Родитель удалён'))
       navigate('/parents', { replace: true })
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -80,8 +81,8 @@ export default function ParentDetail() {
         description={[roles.join(', '), `${children.length} ${plural(children.length, ['ребёнок', 'ребёнка', 'детей'])}`].filter(Boolean).join(' · ')}
         actions={permissions.can_edit && (
           <>
-            <Button icon={Pencil} onClick={() => setEditing(true)}>Редактировать</Button>
-            <Button variant="danger-ghost" size="icon" onClick={remove} aria-label="Удалить родителя"><Trash2 className="size-4" /></Button>
+            <Button icon={Pencil} onClick={() => setEditing(true)}>{t('Редактировать')}</Button>
+            <Button variant="danger-ghost" size="icon" onClick={remove} aria-label={t('Удалить родителя')}><Trash2 className="size-4" /></Button>
           </>
         )}
       />
@@ -95,7 +96,7 @@ export default function ParentDetail() {
         <div className="min-w-0 space-y-6">
           <ChildrenCard kids={children} />
           <section>
-            <h2 className="mb-3 text-[15px] font-bold text-ink">Коммуникации</h2>
+            <h2 className="mb-3 text-[15px] font-bold text-ink">{t('Коммуникации')}</h2>
             <Communications
               stacked
               params={{ family: parent.id }}
@@ -120,13 +121,13 @@ function ContactsCard({ parent }) {
   const whatsapp = parent.whatsapp || phones?.[0]?.number
   return (
     <Card>
-      <p className="text-[15px] font-bold text-ink">Связаться</p>
+      <p className="text-[15px] font-bold text-ink">{t('Связаться')}</p>
       {phones ? (
         <>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {phones[0] && (
               <a href={`tel:${phones[0].number}`} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-brand-600 text-sm font-semibold text-white shadow-card hover:bg-brand-700">
-                <Phone className="size-4" /> Позвонить
+                <Phone className="size-4" /> {t('Позвонить')}
               </a>
             )}
             {whatsapp && (
@@ -137,7 +138,7 @@ function ContactsCard({ parent }) {
           </div>
           <dl className="mt-4 divide-y divide-line border-t border-line text-sm">
             {phones.map(phone => (
-              <Row key={phone.number} icon={Phone} label={PHONE_TYPES[phone.phone_type] || 'телефон'}>
+              <Row key={phone.number} icon={Phone} label={PHONE_TYPES[phone.phone_type] || t('телефон')}>
                 <a href={`tel:${phone.number}`} className="hover:text-brand-700">{phone.number}</a>
               </Row>
             ))}
@@ -150,7 +151,7 @@ function ContactsCard({ parent }) {
           </dl>
         </>
       ) : (
-        <p className="mt-3 rounded-md bg-surface-muted px-3 py-2 text-[13px] text-ink-muted">Телефоны скрыты для вашей роли.</p>
+        <p className="mt-3 rounded-md bg-surface-muted px-3 py-2 text-[13px] text-ink-muted">{t('Телефоны скрыты для вашей роли.')}</p>
       )}
     </Card>
   )
@@ -173,20 +174,20 @@ function MoneyCard({ money: summary }) {
   return (
     <Card padded={false}>
       <div className={cn('rounded-t-lg px-5 py-4', hasDebt ? 'bg-danger-50' : 'bg-success-50')}>
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">Долг по всем детям</p>
-        <p className={cn('mt-0.5 text-2xl font-bold', hasDebt ? 'text-danger-600' : 'text-success-600')}>{hasDebt ? money(summary.total_debt) : 'Нет долга'}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">{t('Долг по всем детям')}</p>
+        <p className={cn('mt-0.5 text-2xl font-bold', hasDebt ? 'text-danger-600' : 'text-success-600')}>{hasDebt ? money(summary.total_debt) : t('Нет долга')}</p>
       </div>
       <div className="px-5 pb-4 pt-3">
-        <p className="text-[13px] font-semibold text-ink">Оплаты</p>
+        <p className="text-[13px] font-semibold text-ink">{t('Оплаты')}</p>
         {summary.payments.length === 0 ? (
-          <p className="mt-2 text-sm text-ink-muted">Оплат пока нет.</p>
+          <p className="mt-2 text-sm text-ink-muted">{t('Оплат пока нет.')}</p>
         ) : (
           <ul className="mt-1 divide-y divide-line">
             {payments.map(payment => (
               <li key={payment.id} className="flex items-baseline justify-between gap-3 py-2 text-sm">
                 <div className="min-w-0">
                   <p className="truncate text-ink">{payment.child_name.split(' ').slice(-1)[0]} · <span className="text-ink-muted">{payment.subscription_name}</span></p>
-                  <p className="text-xs text-ink-subtle">{formatDateTime(payment.paid_at)} · {payment.method_label}</p>
+                  <p className="text-xs text-ink-subtle">{formatDateTime(payment.paid_at)} · {t(payment.method_label)}</p>
                 </div>
                 <span className="shrink-0 font-semibold text-ink">{money(payment.amount)}</span>
               </li>
@@ -195,7 +196,7 @@ function MoneyCard({ money: summary }) {
         )}
         {summary.payments.length > PAYMENTS_PREVIEW && (
           <button type="button" onClick={() => setShowAll(v => !v)} className="mt-1 text-[13px] font-semibold text-brand-700 hover:underline">
-            {showAll ? 'Свернуть' : `Все оплаты (${summary.payments.length})`}
+            {showAll ? t('Свернуть') : t('Все оплаты ({n})', { n: summary.payments.length })}
           </button>
         )}
       </div>
@@ -206,9 +207,9 @@ function MoneyCard({ money: summary }) {
 function ChildrenCard({ kids }) {
   return (
     <Card padded={false}>
-      <CardHeader className="mb-0 px-5 pt-5" title="Дети" />
+      <CardHeader className="mb-0 px-5 pt-5" title={t('Дети')} />
       {kids.length === 0 ? (
-        <p className="px-5 pb-5 pt-2 text-sm text-ink-muted">Дети не привязаны. Привязать можно в карточке ребёнка, вкладка «Контакты».</p>
+        <p className="px-5 pb-5 pt-2 text-sm text-ink-muted">{t('Дети не привязаны. Привязать можно в карточке ребёнка, вкладка «Контакты».')}</p>
       ) : (
         <ul className="mt-3 divide-y divide-line border-t border-line">
           {kids.map(child => {
@@ -222,7 +223,7 @@ function ChildrenCard({ kids }) {
                     <p className="truncate text-[13px] text-ink-muted">{ageLabel(child.age)}{child.branch_names && ` · ${child.branch_names}`}</p>
                   </div>
                   <div className="hidden shrink-0 flex-wrap justify-end gap-1.5 sm:flex">
-                    {child.is_payer && <Badge tone="brand">Плательщик</Badge>}
+                    {child.is_payer && <Badge tone="brand">{t('Плательщик')}</Badge>}
                     <Badge tone={childStatus.tone} dot>{childStatus.label}</Badge>
                   </div>
                   <ChevronRight className="size-4 shrink-0 text-ink-subtle group-hover:text-brand-600" />
