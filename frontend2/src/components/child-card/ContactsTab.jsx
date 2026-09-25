@@ -6,6 +6,7 @@ import {
   Badge, Button, CONTACT_ROLES, Card, Checkbox, EmptyState, ErrorState, Field, Input, Modal, Select,
   Skeleton, apiErrorMessage, cn, useConfirm, useToast,
 } from '../../ui'
+import { t } from '../../i18n'
 
 /**
  * Вкладка «Контакты»: родители и контактные лица ребёнка (ChildContact).
@@ -35,15 +36,15 @@ export default function ContactsTab({ child, permissions, onCountChange }) {
 
   async function detach(link) {
     const ok = await confirm({
-      title: 'Отвязать контакт?',
-      message: `${link.parent_contact_full_name} больше не будет связан(а) с ребёнком. Сам контакт и история оплат сохранятся.`,
-      confirmText: 'Отвязать',
+      title: t('Отвязать контакт?'),
+      message: t('{name} больше не будет связан(а) с ребёнком. Сам контакт и история оплат сохранятся.', { name: link.parent_contact_full_name }),
+      confirmText: t('Отвязать'),
       danger: true,
     })
     if (!ok) return
     try {
       await api.delete(`clients/child-contacts/${link.id}/`)
-      toast.success('Контакт отвязан')
+      toast.success(t('Контакт отвязан'))
       load()
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -59,9 +60,9 @@ export default function ContactsTab({ child, permissions, onCountChange }) {
         <Card>
           <EmptyState
             icon={UserRound}
-            title="Контактов пока нет"
-            description="Добавьте маму, папу или другого взрослого, кому звонить и кто платит."
-            action={canManage && <Button variant="primary" size="sm" icon={Plus} onClick={() => setEditing('new')}>Добавить контакт</Button>}
+            title={t('Контактов пока нет')}
+            description={t('Добавьте маму, папу или другого взрослого, кому звонить и кто платит.')}
+            action={canManage && <Button variant="primary" size="sm" icon={Plus} onClick={() => setEditing('new')}>{t('Добавить контакт')}</Button>}
           />
         </Card>
       ) : (
@@ -75,7 +76,7 @@ export default function ContactsTab({ child, permissions, onCountChange }) {
               onClick={() => setEditing('new')}
               className="flex min-h-32 items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line text-sm font-semibold text-ink-muted transition-colors hover:border-brand-400 hover:text-brand-700"
             >
-              <Plus className="size-4" /> Добавить контакт
+              <Plus className="size-4" /> {t('Добавить контакт')}
             </button>
           )}
         </div>
@@ -106,14 +107,14 @@ function ContactCard({ link, canManage, onEdit, onDetach }) {
           </Link>
           <div className="mt-1 flex flex-wrap gap-1.5">
             <Badge>{CONTACT_ROLES[link.role] || link.role}</Badge>
-            {link.is_payer && <Badge tone="brand">Плательщик</Badge>}
-            {link.is_primary_contact && <Badge tone="info">Основной контакт</Badge>}
+            {link.is_payer && <Badge tone="brand">{t('Плательщик')}</Badge>}
+            {link.is_primary_contact && <Badge tone="info">{t('Основной контакт')}</Badge>}
           </div>
         </div>
         {canManage && (
           <div className="flex shrink-0 gap-1">
-            <Button variant="ghost" size="icon" onClick={onEdit} aria-label="Изменить"><Pencil className="size-4" /></Button>
-            <Button variant="danger-ghost" size="icon" onClick={onDetach} aria-label="Отвязать"><Unlink className="size-4" /></Button>
+            <Button variant="ghost" size="icon" onClick={onEdit} aria-label={t('Изменить')}><Pencil className="size-4" /></Button>
+            <Button variant="danger-ghost" size="icon" onClick={onDetach} aria-label={t('Отвязать')}><Unlink className="size-4" /></Button>
           </div>
         )}
       </div>
@@ -194,7 +195,7 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
         }
         await api.post('clients/child-contacts/', { child: child.id, parent_contact: parentId, ...form })
       }
-      toast.success(isEdit ? 'Контакт обновлён' : 'Контакт добавлен')
+      toast.success(isEdit ? t('Контакт обновлён') : t('Контакт добавлен'))
       onSaved()
     } catch (err) {
       const data = err.response?.data
@@ -211,12 +212,12 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
     <Modal
       open
       onClose={onClose}
-      title={isEdit ? link.parent_contact_full_name : 'Добавить контакт'}
+      title={isEdit ? link.parent_contact_full_name : t('Добавить контакт')}
       footer={
         <>
-          <Button onClick={onClose}>Отмена</Button>
+          <Button onClick={onClose}>{t('Отмена')}</Button>
           <Button variant="primary" type="submit" form="contact-form" loading={saving} disabled={!canSubmit}>
-            {isEdit ? 'Сохранить' : 'Добавить'}
+            {isEdit ? t('Сохранить') : t('Добавить')}
           </Button>
         </>
       }
@@ -224,7 +225,7 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
       <form id="contact-form" onSubmit={submit} className="flex flex-col gap-4">
         {!isEdit && (
           <div className="flex rounded-md border border-line p-0.5" role="group">
-            {[['new', 'Новый контакт'], ['existing', 'Уже есть в базе']].map(([value, label]) => (
+            {[['new', t('Новый контакт')], ['existing', t('Уже есть в базе')]].map(([value, label]) => (
               <button
                 key={value}
                 type="button"
@@ -240,23 +241,23 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
 
         {!isEdit && mode === 'new' && (
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="ФИО" required error={errors.full_name}>
+            <Field label={t('ФИО')} required error={errors.full_name}>
               {({ id, invalid }) => <Input id={id} invalid={invalid} value={parent.full_name} onChange={e => setParent(p => ({ ...p, full_name: e.target.value }))} autoFocus />}
             </Field>
-            <Field label="Телефон" required error={errors.phone}>
+            <Field label={t('Телефон')} required error={errors.phone}>
               {({ id, invalid }) => <Input id={id} invalid={invalid} type="tel" inputMode="tel" placeholder="+7 700 000 00 00" value={parent.phone} onChange={e => setParent(p => ({ ...p, phone: e.target.value }))} />}
             </Field>
           </div>
         )}
 
         {!isEdit && mode === 'existing' && (
-          <Field label="Найти родителя" hint="Имя или телефон, от 3 символов">
+          <Field label={t('Найти родителя')} hint={t('Имя или телефон, от 3 символов')}>
             {({ id }) => (
               <div className="flex flex-col gap-2">
                 <Input id={id} value={query} onChange={e => { setQuery(e.target.value); setPicked(null) }} autoFocus />
                 {query.trim().length >= 3 && (
                   <ul className="max-h-48 overflow-y-auto rounded-md border border-line">
-                    {found.length === 0 && <li className="px-3 py-2 text-sm text-ink-muted">Никого не нашли</li>}
+                    {found.length === 0 && <li className="px-3 py-2 text-sm text-ink-muted">{t('Никого не нашли')}</li>}
                     {found.map(item => {
                       const linked = linkedParentIds.includes(item.id)
                       return (
@@ -271,7 +272,7 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
                             )}
                           >
                             <span className="font-medium">{item.title}</span>
-                            <span className="text-xs text-ink-subtle">{linked ? 'уже привязан' : item.matched_detail}</span>
+                            <span className="text-xs text-ink-subtle">{linked ? t('уже привязан') : item.matched_detail}</span>
                           </button>
                         </li>
                       )
@@ -283,7 +284,7 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
           </Field>
         )}
 
-        <Field label="Кем приходится">
+        <Field label={t('Кем приходится')}>
           {({ id }) => (
             <Select id={id} value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
               {Object.entries(CONTACT_ROLES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -291,8 +292,8 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
           )}
         </Field>
         <div className="flex flex-col gap-2">
-          <Checkbox label="Плательщик (у ребёнка он один — прежний снимется)" checked={form.is_payer} onChange={e => setForm(f => ({ ...f, is_payer: e.target.checked }))} />
-          <Checkbox label="Основной контакт" checked={form.is_primary_contact} onChange={e => setForm(f => ({ ...f, is_primary_contact: e.target.checked }))} />
+          <Checkbox label={t('Плательщик (у ребёнка он один — прежний снимется)')} checked={form.is_payer} onChange={e => setForm(f => ({ ...f, is_payer: e.target.checked }))} />
+          <Checkbox label={t('Основной контакт')} checked={form.is_primary_contact} onChange={e => setForm(f => ({ ...f, is_primary_contact: e.target.checked }))} />
         </div>
         {errors.detail && <p className="text-sm text-danger-600">{errors.detail}</p>}
       </form>

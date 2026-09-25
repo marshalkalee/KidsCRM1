@@ -8,6 +8,7 @@ import GroupModal from '../components/GroupModal'
 import OrganizationForm from '../components/OrganizationForm'
 import { useSession } from '../session/SessionContext'
 import { Badge, Button, Card, CardHeader, ErrorState, PageHeader, Spinner, apiErrorMessage, cn, useToast } from '../ui'
+import { t } from '../i18n'
 
 // Мастер настройки центра (TRU-86). Сам ничего не создаёт — каждый шаг
 // открывает те же формы, что обычные экраны (филиал, направление, группа,
@@ -15,12 +16,12 @@ import { Badge, Button, Card, CardHeader, ErrorState, PageHeader, Spinner, apiEr
 // Поэтому филиал, заведённый в «Настройках» мимо мастера, тоже засчитан.
 
 const STEP_INFO = {
-  organization: { description: 'Название, часовой пояс и когда подсвечивать продления и долги. Можно оставить как есть.' },
-  branch: { description: 'Где проходят занятия. У филиала — адрес, часы работы и залы.', list: 'branches/', add: 'Добавить филиал' },
-  directions: { description: 'Чему учите: балет, растяжка, хореография. По направлениям строятся группы и абонементы.', list: 'directions/', add: 'Добавить направление' },
-  subscription_types: { description: 'Какие абонементы продаёте: на 8 занятий, безлимит и т.п.' },
-  groups: { description: 'Группы с преподавателем и вместимостью — в них записываются дети.', list: 'groups/', add: 'Создать группу' },
-  import: { description: 'Загрузите базу детей и родителей из Excel — дубли найдём и спросим, что с ними делать.' },
+  organization: { get description() { return t('Название, часовой пояс и когда подсвечивать продления и долги. Можно оставить как есть.') } },
+  branch: { get description() { return t('Где проходят занятия. У филиала — адрес, часы работы и залы.') }, list: 'branches/', get add() { return t('Добавить филиал') } },
+  directions: { get description() { return t('Чему учите: балет, растяжка, хореография. По направлениям строятся группы и абонементы.') }, list: 'directions/', get add() { return t('Добавить направление') } },
+  subscription_types: { get description() { return t('Какие абонементы продаёте: на 8 занятий, безлимит и т.п.') } },
+  groups: { get description() { return t('Группы с преподавателем и вместимостью — в них записываются дети.') }, list: 'groups/', get add() { return t('Создать группу') } },
+  import: { get description() { return t('Загрузите базу детей и родителей из Excel — дубли найдём и спросим, что с ними делать.') } },
 }
 
 export default function Onboarding() {
@@ -47,7 +48,7 @@ export default function Onboarding() {
 
   return (
     <div>
-      <PageHeader title="Настройка центра" description={`Готово ${state.done} из ${state.total}. Любой шаг можно пропустить и вернуться позже.`} />
+      <PageHeader title={t('Настройка центра')} description={t('Готово {done} из {total}. Любой шаг можно пропустить и вернуться позже.', { done: state.done, total: state.total })} />
       <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
         <StepList steps={state.steps} active={active} onSelect={goTo} />
         <div className="min-w-0">
@@ -92,7 +93,7 @@ function StepList({ steps, active, onSelect }) {
               )}>
                 {step.status === 'done' ? <Check className="size-3.5" /> : step.status === 'skipped' ? <SkipForward className="size-3" /> : index + 1}
               </span>
-              <span className="whitespace-nowrap">{step.title}</span>
+              <span className="whitespace-nowrap">{t(step.title)}</span>
             </button>
           </li>
         ))}
@@ -119,16 +120,16 @@ function StepPanel({ step, reload, onNext }) {
   }
 
   const skipButton = step.status !== 'done' && (
-    <Button variant="ghost" icon={SkipForward} loading={skipping} onClick={skip}>Пропустить, вернусь позже</Button>
+    <Button variant="ghost" icon={SkipForward} loading={skipping} onClick={skip}>{t('Пропустить, вернусь позже')}</Button>
   )
-  const nextButton = <Button variant="primary" icon={ArrowRight} onClick={onNext}>Дальше</Button>
+  const nextButton = <Button variant="primary" icon={ArrowRight} onClick={onNext}>{t('Дальше')}</Button>
 
   if (step.key === 'organization') {
     return (
       <div className="max-w-3xl space-y-4">
-        <Card><CardHeader className="mb-0" title="Организация" description={info.description} /></Card>
+        <Card><CardHeader className="mb-0" title={t('Организация')} description={info.description} /></Card>
         <OrganizationForm
-          submitLabel="Сохранить и дальше"
+          submitLabel={t('Сохранить и дальше')}
           onSaved={async () => { await reload(); onNext() }}
           secondaryAction={step.status === 'done' ? nextButton : <ConfirmOrganization reload={reload} onNext={onNext} />}
         />
@@ -139,26 +140,26 @@ function StepPanel({ step, reload, onNext }) {
   return (
     <Card>
       <CardHeader
-        title={step.title}
+        title={t(step.title)}
         description={info.description}
-        actions={step.status === 'done' ? <Badge tone="success" dot>Готово</Badge> : step.status === 'skipped' ? <Badge tone="warning">Пропущено</Badge> : null}
+        actions={step.status === 'done' ? <Badge tone="success" dot>{t('Готово')}</Badge> : step.status === 'skipped' ? <Badge tone="warning">{t('Пропущено')}</Badge> : null}
       />
       {info.list && <ItemsStep step={step} info={info} reload={reload} />}
       {step.key === 'subscription_types' && (
         <div className="flex items-start gap-3 rounded-lg bg-surface-muted p-4 text-sm text-ink-muted">
           <Sparkles className="mt-0.5 size-4 shrink-0 text-brand-600" />
-          Экран типов абонементов скоро появится (TRU-74). Пропустите шаг — вернётесь к нему, когда он будет готов.
+          {t('Экран типов абонементов скоро появится (TRU-74). Пропустите шаг — вернётесь к нему, когда он будет готов.')}
         </div>
       )}
       {step.key === 'import' && (
         <div className="flex flex-col items-start gap-3 rounded-lg bg-surface-muted p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="flex items-center gap-2 text-sm text-ink-muted"><FileSpreadsheet className="size-4 text-brand-600" /> Импорт откроется на отдельной странице, потом вернитесь сюда.</p>
-          <Button to="/children/import" icon={ArrowRight}>Открыть импорт</Button>
+          <p className="flex items-center gap-2 text-sm text-ink-muted"><FileSpreadsheet className="size-4 text-brand-600" /> {t('Импорт откроется на отдельной странице, потом вернитесь сюда.')}</p>
+          <Button to="/children/import" icon={ArrowRight}>{t('Открыть импорт')}</Button>
         </div>
       )}
       <div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:justify-between">
         <div>{skipButton}</div>
-        {step.status === 'done' ? nextButton : <p className="self-center text-[13px] text-ink-subtle">Шаг засчитается, когда появится первая запись.</p>}
+        {step.status === 'done' ? nextButton : <p className="self-center text-[13px] text-ink-subtle">{t('Шаг засчитается, когда появится первая запись.')}</p>}
       </div>
     </Card>
   )
@@ -178,7 +179,7 @@ function ConfirmOrganization({ reload, onNext }) {
       setLoading(false)
     }
   }
-  return <Button loading={loading} onClick={confirm}>Всё верно, дальше</Button>
+  return <Button loading={loading} onClick={confirm}>{t('Всё верно, дальше')}</Button>
 }
 
 /** Список уже заведённого + та же модалка, что на обычном экране. */
@@ -209,7 +210,7 @@ function ItemsStep({ step, info, reload }) {
         </ul>
       )}
       {items && items.length === 0 && (
-        <p className="mb-3 flex items-center gap-2 text-sm text-ink-subtle"><CircleDashed className="size-4" /> Пока ничего нет.</p>
+        <p className="mb-3 flex items-center gap-2 text-sm text-ink-subtle"><CircleDashed className="size-4" /> {t('Пока ничего нет.')}</p>
       )}
       <Button icon={Plus} onClick={() => setAdding(true)}>{info.add}</Button>
 
@@ -232,7 +233,7 @@ function DoneStep({ state, onSelect }) {
     try {
       await api.post('onboarding/finish/')
       await reload()
-      toast.success('Настройка завершена')
+      toast.success(t('Настройка завершена'))
       navigate('/dashboard')
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -243,27 +244,27 @@ function DoneStep({ state, onSelect }) {
   return (
     <Card className="text-center">
       <span className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-success-50 text-success-600"><Check className="size-7" /></span>
-      <h2 className="text-xl font-bold text-ink">{skipped.length ? 'Основное готово' : 'Центр настроен'}</h2>
+      <h2 className="text-xl font-bold text-ink">{skipped.length ? t('Основное готово') : t('Центр настроен')}</h2>
       <p className="mx-auto mt-1 max-w-md text-sm text-ink-muted">
         {skipped.length
-          ? 'Пропущенные шаги можно пройти сейчас или позже — они останутся на главной, пока вы не завершите настройку.'
-          : 'Всё на месте: филиалы, направления и группы. Можно работать.'}
+          ? t('Пропущенные шаги можно пройти сейчас или позже — они останутся на главной, пока вы не завершите настройку.')
+          : t('Всё на месте: филиалы, направления и группы. Можно работать.')}
       </p>
       {skipped.length > 0 && (
         <ul className="mx-auto mt-5 max-w-sm divide-y divide-line rounded-lg border border-line text-left">
           {skipped.map(step => (
             <li key={step.key} className="flex items-center justify-between px-4 py-2.5 text-sm">
-              <span className="text-ink">{step.title}</span>
-              <button type="button" onClick={() => onSelect(step.key)} className="font-semibold text-brand-700 hover:underline">Пройти</button>
+              <span className="text-ink">{t(step.title)}</span>
+              <button type="button" onClick={() => onSelect(step.key)} className="font-semibold text-brand-700 hover:underline">{t('Пройти')}</button>
             </li>
           ))}
         </ul>
       )}
       <div className="mt-6 flex flex-wrap justify-center gap-2">
-        <Button variant="primary" loading={finishing} onClick={finish}>Завершить настройку</Button>
-        <Button to="/dashboard" variant="ghost">На главную</Button>
+        <Button variant="primary" loading={finishing} onClick={finish}>{t('Завершить настройку')}</Button>
+        <Button to="/dashboard" variant="ghost">{t('На главную')}</Button>
       </div>
-      <p className="mt-4 text-xs text-ink-subtle">Изменить всё это можно в любой момент в <Link to="/branches" className="underline">Настройках</Link>.</p>
+      <p className="mt-4 text-xs text-ink-subtle">{t('Изменить всё это можно в любой момент в')} <Link to="/branches" className="underline">{t('Настройках')}</Link>.</p>
     </Card>
   )
 }

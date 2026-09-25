@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import api from '../api/axios'
 import { Button, Field, Input, Modal, Select, apiErrorMessage, useToast } from '../ui'
+import { t } from '../i18n'
 
-const PHONE_TYPES = { mobile: 'Мобильный', work: 'Рабочий', home: 'Домашний' }
+const PHONE_TYPES = { get mobile() { return t('Мобильный') }, get work() { return t('Рабочий') }, get home() { return t('Домашний') } }
 
 /**
  * Создание/редактирование родителя. Телефоны уходят списком целиком — сервер
@@ -33,7 +34,7 @@ export default function ParentModal({ parent, onClose, onSaved }) {
       const response = isEdit
         ? await api.patch(`clients/parents/${parent.id}/`, payload)
         : await api.post('clients/parents/', payload)
-      toast.success(isEdit ? 'Изменения сохранены' : 'Родитель добавлен')
+      toast.success(isEdit ? t('Изменения сохранены') : t('Родитель добавлен'))
       onSaved(response.data)
     } catch (err) {
       const data = err.response?.data
@@ -52,26 +53,26 @@ export default function ParentModal({ parent, onClose, onSaved }) {
     <Modal
       open
       onClose={onClose}
-      title={isEdit ? 'Редактировать родителя' : 'Новый родитель'}
+      title={isEdit ? t('Редактировать родителя') : t('Новый родитель')}
       footer={
         <>
-          <Button onClick={onClose}>Отмена</Button>
-          <Button variant="primary" type="submit" form="parent-form" loading={saving}>{isEdit ? 'Сохранить' : 'Добавить'}</Button>
+          <Button onClick={onClose}>{t('Отмена')}</Button>
+          <Button variant="primary" type="submit" form="parent-form" loading={saving}>{isEdit ? t('Сохранить') : t('Добавить')}</Button>
         </>
       }
     >
       <form id="parent-form" onSubmit={submit} className="flex flex-col gap-4">
-        <Field label="ФИО" required error={errors.full_name}>
+        <Field label={t('ФИО')} required error={errors.full_name}>
           {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.full_name} onChange={e => set('full_name', e.target.value)} required autoFocus />}
         </Field>
 
-        <Field label="Телефоны" required error={phonesError}>
+        <Field label={t('Телефоны')} required error={phonesError}>
           <div className="flex flex-col gap-2">
             {form.phones.map((phone, index) => (
               <div key={index}>
                 <div className="flex gap-2">
                   <Input
-                    aria-label={`Телефон ${index + 1}`}
+                    aria-label={t('Телефон {n}', { n: index + 1 })}
                     invalid={Boolean(phoneError(index))}
                     type="tel"
                     inputMode="tel"
@@ -79,11 +80,11 @@ export default function ParentModal({ parent, onClose, onSaved }) {
                     value={phone.number}
                     onChange={e => setPhone(index, 'number', e.target.value)}
                   />
-                  <Select aria-label="Тип" className="w-36" value={phone.phone_type} onChange={e => setPhone(index, 'phone_type', e.target.value)}>
+                  <Select aria-label={t('Тип')} className="w-36" value={phone.phone_type} onChange={e => setPhone(index, 'phone_type', e.target.value)}>
                     {Object.entries(PHONE_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </Select>
                   {form.phones.length > 1 && (
-                    <Button variant="ghost" size="icon" aria-label="Убрать телефон" onClick={() => set('phones', form.phones.filter((_, i) => i !== index))}>
+                    <Button variant="ghost" size="icon" aria-label={t('Убрать телефон')} onClick={() => set('phones', form.phones.filter((_, i) => i !== index))}>
                       <X className="size-4" />
                     </Button>
                   )}
@@ -92,13 +93,13 @@ export default function ParentModal({ parent, onClose, onSaved }) {
               </div>
             ))}
             <Button variant="ghost" size="sm" icon={Plus} className="self-start" onClick={() => set('phones', [...form.phones, { number: '', phone_type: 'mobile' }])}>
-              Ещё телефон
+              {t('Ещё телефон')}
             </Button>
           </div>
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="WhatsApp" hint="Если отличается от телефона" error={errors.whatsapp}>
+          <Field label="WhatsApp" hint={t('Если отличается от телефона')} error={errors.whatsapp}>
             {({ id, invalid }) => <Input id={id} invalid={invalid} type="tel" inputMode="tel" value={form.whatsapp} onChange={e => set('whatsapp', e.target.value)} />}
           </Field>
           <Field label="Email" error={errors.email}>

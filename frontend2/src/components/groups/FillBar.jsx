@@ -1,4 +1,5 @@
 import { cn } from '../../ui'
+import { t } from '../../i18n'
 
 /** «Занято 8 из 12» с полосой: красная — мест нет, жёлтая — недобор. */
 export default function FillBar({ group, className }) {
@@ -8,8 +9,8 @@ export default function FillBar({ group, className }) {
   return (
     <div className={className}>
       <div className="mb-1.5 flex items-baseline justify-between text-[13px]">
-        <span className="text-ink-muted">Занято</span>
-        <span className="font-semibold text-ink">{group.members_count} <span className="font-normal text-ink-subtle">из {group.capacity}</span></span>
+        <span className="text-ink-muted">{t('Занято')}</span>
+        <span className="font-semibold text-ink">{group.members_count} <span className="font-normal text-ink-subtle">{t('из')} {group.capacity}</span></span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-muted">
         <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${Math.max(percent, 3)}%` }} />

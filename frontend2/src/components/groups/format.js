@@ -1,9 +1,10 @@
+import { t } from '../../i18n'
 // Общее для страниц групп (TRU-87).
 
 export const GROUP_STATUSES = {
-  active: { label: 'Набирает', tone: 'success' },
-  paused: { label: 'Приостановлена', tone: 'warning' },
-  closed: { label: 'Закрыта', tone: 'neutral' },
+  active: { get label() { return t('Набирает') }, tone: 'success' },
+  paused: { get label() { return t('Приостановлена') }, tone: 'warning' },
+  closed: { get label() { return t('Закрыта') }, tone: 'neutral' },
 }
 
 export const WEEKDAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -13,7 +14,7 @@ export function scheduleSummary(slots = []) {
   const byTime = new Map()
   for (const slot of slots) {
     const days = byTime.get(slot.start_time) || []
-    days.push(WEEKDAYS_SHORT[slot.weekday])
+    days.push(t(WEEKDAYS_SHORT[slot.weekday]))
     byTime.set(slot.start_time, days)
   }
   return [...byTime.entries()].map(([time, days]) => `${days.join(', ')} · ${time}`).join('; ')

@@ -8,6 +8,7 @@ import {
   Avatar, Badge, Button, CHILD_STATUSES, DataTable, EmptyState, FilterBar, FilterCheck, FilterPanel, FilterSelect,
   PageHeader, SearchInput, ageLabel, formatDate, money, plural, useFilterDraft,
 } from '../ui'
+import { t } from '../i18n'
 
 // Всё состояние списка — в адресной строке: ссылку с фильтрами можно
 // переслать коллеге, «назад» из карточки возвращает туда же. Последние
@@ -19,7 +20,7 @@ const MONEY_KEYS = ['has_debt', 'expiring']
 const STORAGE_KEY = 'kc:children-list'
 const PAGE_SIZE = 25
 
-const STATUS_OPTIONS = [['', 'Все статусы'], ...Object.entries(CHILD_STATUSES).map(([value, s]) => [value, s.label])]
+const statusOptions = () => [['', t('Все статусы')], ...Object.entries(CHILD_STATUSES).map(([value, s]) => [value, s.label])]
 
 function readStored() {
   try { return localStorage.getItem(STORAGE_KEY) } catch { return null }
@@ -113,7 +114,7 @@ export default function Children() {
   const columns = [
     {
       key: 'full_name',
-      header: 'Ребёнок',
+      header: t('Ребёнок'),
       sortable: true,
       primary: true,
       render: row => (
@@ -128,19 +129,19 @@ export default function Children() {
     },
     {
       key: 'age',
-      header: 'Возраст',
+      header: t('Возраст'),
       sortable: true,
       hideOnMobile: true,
       render: row => (
         <span title={formatDate(row.birth_date)} className="whitespace-nowrap text-ink-muted">{ageLabel(row.age)}</span>
       ),
     },
-    { key: 'direction_names', header: 'Направление', render: row => <NameList value={row.direction_names} /> },
-    { key: 'group_names', header: 'Группа', render: row => <NameList value={row.group_names} /> },
-    ...(activeBranch ? [] : [{ key: 'branch_names', header: 'Филиал', hideOnMobile: true, render: row => <NameList value={row.branch_names} /> }]),
+    { key: 'direction_names', header: t('Направление'), render: row => <NameList value={row.direction_names} /> },
+    { key: 'group_names', header: t('Группа'), render: row => <NameList value={row.group_names} /> },
+    ...(activeBranch ? [] : [{ key: 'branch_names', header: t('Филиал'), hideOnMobile: true, render: row => <NameList value={row.branch_names} /> }]),
     {
       key: 'status',
-      header: 'Статус',
+      header: t('Статус'),
       sortable: true,
       mobileAside: true,
       render: row => {
@@ -151,14 +152,14 @@ export default function Children() {
     ...(data.show_money ? [
       {
         key: 'subscription_name',
-        header: 'Абонемент',
+        header: t('Абонемент'),
         className: 'text-ink-muted',
         render: row => row.subscription_name || '—',
         mobileRender: row => row.subscription_name || null,
       },
       {
         key: 'debt',
-        header: 'Долг',
+        header: t('Долг'),
         align: 'right',
         render: row => (Number(row.debt) > 0 ? (
           <span className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-danger-600">
@@ -176,19 +177,19 @@ export default function Children() {
   return (
     <div>
       <PageHeader
-        title="Дети"
-        description={loading && !data.count ? 'Загрузка…' : `${countLabel}${hasAnyFilter ? ' по фильтрам' : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
+        title={t('Дети')}
+        description={loading && !data.count ? t('Загрузка…') : `${countLabel}${hasAnyFilter ? ` ${t('по фильтрам')}` : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
         actions={canManage && (
           <>
-            <Button icon={Upload} onClick={() => navigate('/children/import')}>Импорт из Excel</Button>
-            <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Добавить ребёнка</Button>
+            <Button icon={Upload} onClick={() => navigate('/children/import')}>{t('Импорт из Excel')}</Button>
+            <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Добавить ребёнка')}</Button>
           </>
         )}
       />
 
       <div className="mb-4 space-y-3">
         <FilterBar
-          search={<SearchInput value={params.get('q') || ''} onChange={setQuery} placeholder="Поиск по имени ребёнка" />}
+          search={<SearchInput value={params.get('q') || ''} onChange={setQuery} placeholder={t('Поиск по имени ребёнка')} />}
           filtersOpen={filtersOpen}
           onToggleFilters={() => setFiltersOpen(o => !o)}
           activeCount={activeFilters}
@@ -212,19 +213,19 @@ export default function Children() {
         empty={hasAnyFilter ? (
           <EmptyState
             icon={Search}
-            title="Никого не нашли"
-            description="Попробуйте изменить поиск или сбросить фильтры."
-            action={<Button size="sm" onClick={resetFilters}>Сбросить фильтры</Button>}
+            title={t('Никого не нашли')}
+            description={t('Попробуйте изменить поиск или сбросить фильтры.')}
+            action={<Button size="sm" onClick={resetFilters}>{t('Сбросить фильтры')}</Button>}
           />
         ) : (
           <EmptyState
             icon={Users}
-            title="Детей пока нет"
-            description={canManage ? 'Добавьте первого ребёнка вручную или загрузите список из Excel.' : 'Когда администратор добавит детей, они появятся здесь.'}
+            title={t('Детей пока нет')}
+            description={canManage ? t('Добавьте первого ребёнка вручную или загрузите список из Excel.') : t('Когда администратор добавит детей, они появятся здесь.')}
             action={canManage && (
               <div className="flex flex-wrap justify-center gap-2">
-                <Button size="sm" icon={Upload} onClick={() => navigate('/children/import')}>Импорт из Excel</Button>
-                <Button size="sm" variant="primary" icon={Plus} onClick={() => setCreating(true)}>Добавить ребёнка</Button>
+                <Button size="sm" icon={Upload} onClick={() => navigate('/children/import')}>{t('Импорт из Excel')}</Button>
+                <Button size="sm" variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Добавить ребёнка')}</Button>
               </div>
             )}
           />
@@ -254,17 +255,17 @@ function ChildFilters({ params, update, branches, directions, groups, showMoney,
       onReset={onReset}
       checks={showMoney && (
         <>
-          <FilterCheck label="Есть задолженность" checked={draft.has_debt === '1'} onChange={v => set('has_debt', v ? '1' : '')} />
-          <FilterCheck label="Абонемент скоро заканчивается" checked={draft.expiring === '1'} onChange={v => set('expiring', v ? '1' : '')} />
+          <FilterCheck label={t('Есть задолженность')} checked={draft.has_debt === '1'} onChange={v => set('has_debt', v ? '1' : '')} />
+          <FilterCheck label={t('Абонемент скоро заканчивается')} checked={draft.expiring === '1'} onChange={v => set('expiring', v ? '1' : '')} />
         </>
       )}
     >
       {branches.length > 1 && (
-        <FilterSelect label="Филиал" value={draft.branch} onChange={v => set('branch', v)} options={[['', 'Как в шапке'], ...branches.map(b => [String(b.id), b.name])]} />
+        <FilterSelect label={t('Филиал')} value={draft.branch} onChange={v => set('branch', v)} options={[['', t('Как в шапке')], ...branches.map(b => [String(b.id), b.name])]} />
       )}
-      <FilterSelect label="Направление" value={draft.direction} onChange={v => set('direction', v)} options={[['', 'Все направления'], ...directions.map(d => [String(d.id), d.name])]} />
-      <FilterSelect label="Группа" value={draft.group} onChange={v => set('group', v)} options={[['', 'Все группы'], ...groups.map(g => [String(g.id), g.name])]} />
-      <FilterSelect label="Статус" value={draft.status} onChange={v => set('status', v)} options={STATUS_OPTIONS} />
+      <FilterSelect label={t('Направление')} value={draft.direction} onChange={v => set('direction', v)} options={[['', t('Все направления')], ...directions.map(d => [String(d.id), d.name])]} />
+      <FilterSelect label={t('Группа')} value={draft.group} onChange={v => set('group', v)} options={[['', t('Все группы')], ...groups.map(g => [String(g.id), g.name])]} />
+      <FilterSelect label={t('Статус')} value={draft.status} onChange={v => set('status', v)} options={statusOptions()} />
     </FilterPanel>
   )
 }

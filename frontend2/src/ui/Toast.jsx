@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import { createPortal } from 'react-dom'
 import { CheckCircle2, AlertTriangle, X } from 'lucide-react'
 import { cn } from './cn'
+import { t } from '../i18n'
 
 const ToastContext = createContext(null)
 let nextId = 1
@@ -12,7 +13,7 @@ let nextId = 1
  */
 export function ToastProvider({ children }) {
   const [items, setItems] = useState([])
-  const dismiss = useCallback(id => setItems(list => list.filter(t => t.id !== id)), [])
+  const dismiss = useCallback(id => setItems(list => list.filter(item => item.id !== id)), [])
   const push = useCallback((tone, text) => {
     const id = nextId++
     setItems(list => [...list, { id, tone, text }])
@@ -41,7 +42,7 @@ export function ToastProvider({ children }) {
               >
                 <Icon className={cn('mt-0.5 size-4 shrink-0', item.tone === 'error' ? 'text-danger-600' : 'text-success-600')} />
                 <span className="flex-1">{item.text}</span>
-                <button type="button" onClick={() => dismiss(item.id)} className="text-ink-subtle hover:text-ink" aria-label="Закрыть">
+                <button type="button" onClick={() => dismiss(item.id)} className="text-ink-subtle hover:text-ink" aria-label={t('Закрыть')}>
                   <X className="size-4" />
                 </button>
               </div>
@@ -59,9 +60,9 @@ export function useToast() {
 }
 
 /** Текст ошибки для пользователя из ответа DRF (detail / non_field_errors / первая ошибка поля). */
-export function apiErrorMessage(error, fallback = 'Что-то пошло не так. Попробуйте ещё раз.') {
+export function apiErrorMessage(error, fallback = t('Что-то пошло не так. Попробуйте ещё раз.')) {
   const data = error?.response?.data
-  if (!data) return error?.response ? fallback : 'Нет связи с сервером.'
+  if (!data) return error?.response ? fallback : t('Нет связи с сервером.')
   if (typeof data === 'string') return fallback
   if (data.detail) return data.detail
   if (data.non_field_errors) return data.non_field_errors[0]

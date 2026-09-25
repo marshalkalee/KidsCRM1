@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import api from '../api/axios'
 import { Button, Field, Input, Modal, MultiSelect, Select, apiErrorMessage, useToast } from '../ui'
+import { t } from '../i18n'
 
 const listOf = response => response.data.results || response.data
 
@@ -28,10 +29,10 @@ export default function GroupModal({ group, onClose, onSaved }) {
 
   useEffect(() => {
     Promise.all([api.get('branches/'), api.get('directions/'), api.get('users/', { params: { role: 'teacher' } })])
-      .then(([b, d, t]) => setOptions({
+      .then(([b, d, tch]) => setOptions({
         branches: listOf(b).filter(x => x.is_active || String(x.id) === String(group?.branch)),
         directions: listOf(d).filter(x => x.is_active || String(x.id) === String(group?.direction)),
-        teachers: listOf(t),
+        teachers: listOf(tch),
       }))
       .catch(() => {})
   }, [group?.branch, group?.direction])
@@ -55,7 +56,7 @@ export default function GroupModal({ group, onClose, onSaved }) {
     }
     try {
       const response = isEdit ? await api.patch(`groups/${group.id}/`, payload) : await api.post('groups/', payload)
-      toast.success(isEdit ? 'Группа сохранена' : 'Группа создана')
+      toast.success(isEdit ? t('Группа сохранена') : t('Группа создана'))
       onSaved(response.data)
     } catch (err) {
       const data = err.response?.data
@@ -70,65 +71,65 @@ export default function GroupModal({ group, onClose, onSaved }) {
     <Modal
       open
       onClose={onClose}
-      title={isEdit ? 'Редактировать группу' : 'Новая группа'}
+      title={isEdit ? t('Редактировать группу') : t('Новая группа')}
       footer={
         <>
-          <Button onClick={onClose}>Отмена</Button>
-          <Button variant="primary" type="submit" form="group-form" loading={saving}>{isEdit ? 'Сохранить' : 'Создать группу'}</Button>
+          <Button onClick={onClose}>{t('Отмена')}</Button>
+          <Button variant="primary" type="submit" form="group-form" loading={saving}>{isEdit ? t('Сохранить') : t('Создать группу')}</Button>
         </>
       }
     >
       <form id="group-form" onSubmit={submit} className="grid gap-3.5 sm:grid-cols-2">
-        <Field label="Название" required error={errors.name} className="sm:col-span-2">
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => set('name', e.target.value)} placeholder="Балет — Младшая группа" required autoFocus />}
+        <Field label={t('Название')} required error={errors.name} className="sm:col-span-2">
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => set('name', e.target.value)} placeholder={t('Балет — Младшая группа')} required autoFocus />}
         </Field>
-        <Field label="Филиал" required error={errors.branch}>
+        <Field label={t('Филиал')} required error={errors.branch}>
           {({ id, invalid }) => (
             <Select id={id} invalid={invalid} value={form.branch} onChange={e => set('branch', e.target.value)} required>
-              <option value="">Выберите</option>
-              {options.branches.map(b => <option key={b.id} value={b.id}>{b.name}{!b.is_active && ' (архив)'}</option>)}
+              <option value="">{t('Выберите')}</option>
+              {options.branches.map(b => <option key={b.id} value={b.id}>{b.name}{!b.is_active && t(' (архив)')}</option>)}
             </Select>
           )}
         </Field>
-        <Field label="Направление" required error={errors.direction}>
+        <Field label={t('Направление')} required error={errors.direction}>
           {({ id, invalid }) => (
             <Select id={id} invalid={invalid} value={form.direction} onChange={e => set('direction', e.target.value)} required>
-              <option value="">Выберите</option>
-              {directions.map(d => <option key={d.id} value={d.id}>{d.name}{!d.is_active && ' (архив)'}</option>)}
+              <option value="">{t('Выберите')}</option>
+              {directions.map(d => <option key={d.id} value={d.id}>{d.name}{!d.is_active && t(' (архив)')}</option>)}
             </Select>
           )}
         </Field>
 
-        <Field label="Преподаватели" error={errors.teachers} className="sm:col-span-2">
+        <Field label={t('Преподаватели')} error={errors.teachers} className="sm:col-span-2">
           {({ id, invalid }) => (
             <MultiSelect
               id={id}
               invalid={invalid}
               value={form.teachers}
               onChange={v => set('teachers', v)}
-              options={options.teachers.map(t => ({ value: String(t.id), label: t.full_name }))}
-              placeholder={options.teachers.length ? 'Не назначены' : 'Преподавателей нет'}
+              options={options.teachers.map(tch => ({ value: String(tch.id), label: tch.full_name }))}
+              placeholder={options.teachers.length ? t('Не назначены') : t('Преподавателей нет')}
             />
           )}
         </Field>
 
         <div className="grid grid-cols-3 gap-3.5 sm:col-span-2">
-          <Field label="Вместимость" required error={errors.capacity}>
+          <Field label={t('Вместимость')} required error={errors.capacity}>
             {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={1} max={100} value={form.capacity} onChange={e => set('capacity', e.target.value)} required />}
           </Field>
-          <Field label="Возраст от" error={errors.age_min}>
+          <Field label={t('Возраст от')} error={errors.age_min}>
             {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={0} max={99} value={form.age_min} onChange={e => set('age_min', e.target.value)} />}
           </Field>
-          <Field label="Возраст до" error={errors.age_max}>
+          <Field label={t('Возраст до')} error={errors.age_max}>
             {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={0} max={99} value={form.age_max} onChange={e => set('age_max', e.target.value)} />}
           </Field>
         </div>
-        <Field label="Статус" error={errors.status} className="sm:col-span-2">
+        <Field label={t('Статус')} error={errors.status} className="sm:col-span-2">
           {({ id }) => (
             <Select id={id} value={form.status} onChange={e => set('status', e.target.value)} required>
-              <option value="active">Набирает</option>
-              <option value="paused">Приостановлена</option>
-              <option value="closed">Закрыта</option>
+              <option value="active">{t('Набирает')}</option>
+              <option value="paused">{t('Приостановлена')}</option>
+              <option value="closed">{t('Закрыта')}</option>
             </Select>
           )}
         </Field>

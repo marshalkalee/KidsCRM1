@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { Bell, Building2, ChevronDown, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
+import { Bell, Building2, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
 import { useSession } from '../../session/SessionContext'
 import { cn, initials } from '../../ui'
 import { GlobalSearch } from './GlobalSearch'
+import LanguageSwitcher from './LanguageSwitcher'
 import { visibleSections } from './navigation'
+import { t } from '../../i18n'
 
 const COLLAPSED_KEY = 'kc:sidebar-collapsed'
 
@@ -42,7 +44,7 @@ export default function Layout() {
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-ink/40" onClick={() => setDrawerOpen(false)} />
           <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-surface shadow-pop">
-            <button type="button" onClick={() => setDrawerOpen(false)} className="absolute right-3 top-4 rounded-md p-1.5 text-ink-subtle hover:bg-surface-muted" aria-label="Закрыть меню">
+            <button type="button" onClick={() => setDrawerOpen(false)} className="absolute right-3 top-4 rounded-md p-1.5 text-ink-subtle hover:bg-surface-muted" aria-label={t('Закрыть меню')}>
               <X className="size-5" />
             </button>
             {/* Переход по пункту меню закрывает шторку. */}
@@ -53,27 +55,28 @@ export default function Layout() {
 
       <header className="sticky top-0 z-20 border-b border-line bg-surface">
         <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
-          <button type="button" onClick={() => setDrawerOpen(true)} className="-ml-1 rounded-md p-2 text-ink-muted hover:bg-surface-muted lg:hidden" aria-label="Меню">
+          <button type="button" onClick={() => setDrawerOpen(true)} className="-ml-1 rounded-md p-2 text-ink-muted hover:bg-surface-muted lg:hidden" aria-label={t('Меню')}>
             <Menu className="size-5" />
           </button>
           <button
             type="button"
             onClick={toggleCollapsed}
             className="-ml-2 hidden rounded-md p-2 text-ink-muted hover:bg-surface-muted hover:text-ink lg:block"
-            aria-label={collapsed ? 'Развернуть меню' : 'Свернуть меню'}
-            title={collapsed ? 'Развернуть меню' : 'Свернуть меню'}
+            aria-label={collapsed ? t('Развернуть меню') : t('Свернуть меню')}
+            title={collapsed ? t('Развернуть меню') : t('Свернуть меню')}
           >
             {collapsed ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
           </button>
           <GlobalSearch className="min-w-0 flex-1 md:max-w-md" />
           <div className="ml-auto flex items-center gap-2">
             <BranchSwitcher />
+            <LanguageSwitcher />
             <Notifications />
           </div>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
+      <main className="w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <Outlet />
       </main>
     </div>
@@ -158,7 +161,7 @@ function Notifications() {
         type="button"
         onClick={() => setOpen(o => !o)}
         className="flex size-10 items-center justify-center rounded-[10px] border border-line bg-surface text-ink-muted hover:border-brand-300 hover:text-ink"
-        aria-label="Уведомления"
+        aria-label={t('Уведомления')}
         aria-expanded={open}
       >
         <Bell className="size-[18px]" />
@@ -166,8 +169,8 @@ function Notifications() {
       {open && (
         <div className="absolute right-0 top-12 z-40 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-5 text-center shadow-pop">
           <span className="mx-auto mb-2 flex size-10 items-center justify-center rounded-full bg-brand-50 text-brand-500"><Bell className="size-5" /></span>
-          <p className="text-sm font-semibold text-ink">Уведомлений пока нет</p>
-          <p className="mt-1 text-[13px] text-ink-muted">Здесь будут напоминания о продлениях, долгах и занятиях.</p>
+          <p className="text-sm font-semibold text-ink">{t('Уведомлений пока нет')}</p>
+          <p className="mt-1 text-[13px] text-ink-muted">{t('Здесь будут напоминания о продлениях, долгах и занятиях.')}</p>
         </div>
       )}
     </div>
@@ -190,13 +193,13 @@ function UserMenu({ collapsed = false }) {
           </div>
         )}
         {!collapsed && (
-          <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title="Выйти" aria-label="Выйти">
+          <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title={t('Выйти')} aria-label={t('Выйти')}>
             <LogOut className="size-4" />
           </button>
         )}
       </div>
       {collapsed && (
-        <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title="Выйти" aria-label="Выйти">
+        <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title={t('Выйти')} aria-label={t('Выйти')}>
           <LogOut className="size-4" />
         </button>
       )}
@@ -206,7 +209,8 @@ function UserMenu({ collapsed = false }) {
 
 /**
  * Активный филиал: влияет на списки, которые умеют фильтровать по филиалу
- * (заголовок X-Branch-Id). Один филиал — переключать нечего, показываем просто название.
+ * (заголовок X-Branch-Id). В шапке — только иконка, как колокольчик: выбранный
+ * филиал отмечен точкой, его название — в подсказке и в списке.
  */
 function BranchSwitcher() {
   const { branches, activeBranch, activeBranchId, setActiveBranchId } = useSession()
@@ -221,7 +225,7 @@ function BranchSwitcher() {
   }, [open])
 
   if (!branches.length) return null
-  const label = activeBranch?.name || 'Все филиалы'
+  const label = activeBranch?.name || t('Все филиалы')
 
   function choose(id) {
     setActiveBranchId(id)
@@ -235,17 +239,22 @@ function BranchSwitcher() {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex h-10 max-w-[220px] items-center gap-2 rounded-[10px] border border-line bg-surface px-3 text-sm font-medium text-ink hover:border-brand-300"
+        className={cn(
+          'relative flex size-10 items-center justify-center rounded-[10px] border bg-surface hover:border-brand-300 hover:text-ink',
+          activeBranchId ? 'border-brand-300 text-brand-600' : 'border-line text-ink-muted',
+        )}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={t('Филиал: {name}', { name: label })}
+        title={t('Филиал: {name}', { name: label })}
       >
-        <Building2 className="size-4 shrink-0 text-ink-subtle" />
-        <span className="hidden truncate sm:inline">{label}</span>
-        <ChevronDown className="size-4 shrink-0 text-ink-subtle" />
+        <Building2 className="size-[18px]" />
+        {activeBranchId && <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-brand-500 ring-2 ring-surface" />}
       </button>
       {open && (
-        <ul className="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-pop" role="listbox">
-          {[{ id: null, name: 'Все филиалы' }, ...branches].map(branch => (
+        <ul className="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-pop" role="listbox" aria-label={t('Филиал')}>
+          <li className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-subtle" role="presentation">{t('Филиал')}</li>
+          {[{ id: null, name: t('Все филиалы') }, ...branches].map(branch => (
             <li key={branch.id || 'all'}>
               <button
                 type="button"

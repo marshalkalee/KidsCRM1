@@ -10,6 +10,7 @@ import {
   Avatar, Badge, Button, CHILD_STATUSES, Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, SearchInput,
   Skeleton, Tabs, ageLabel, apiErrorMessage, cn, formatDate, plural, useConfirm, useToast,
 } from '../ui'
+import { t } from '../i18n'
 
 const WEEKDAYS_FULL = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 
@@ -41,10 +42,10 @@ export default function GroupDetail() {
 
   useEffect(() => { load() }, [load])
 
-  const back = { to: '/groups', label: 'Группы' }
+  const back = { to: '/groups', label: t('Группы') }
   if (status === 'loading') return <><PageHeader title={<Skeleton className="h-8 w-56" />} back={back} /><Skeleton className="h-64" /></>
   if (status === 'missing') {
-    return <Card><EmptyState icon={SearchX} title="Группа не найдена" action={<Button to="/groups">К списку групп</Button>} /></Card>
+    return <Card><EmptyState icon={SearchX} title={t('Группа не найдена')} action={<Button to="/groups">{t('К списку групп')}</Button>} /></Card>
   }
   if (status === 'error') return <Card><ErrorState onRetry={load} /></Card>
 
@@ -54,16 +55,16 @@ export default function GroupDetail() {
   async function toggleClosed() {
     if (!closed) {
       const ok = await confirm({
-        title: `Закрыть «${group.name}»?`,
-        message: 'Группа перестанет набирать и пропадёт из выбора. Состав и история сохранятся, группу можно вернуть.',
-        confirmText: 'Закрыть группу',
+        title: t('Закрыть «{name}»?', { name: group.name }),
+        message: t('Группа перестанет набирать и пропадёт из выбора. Состав и история сохранятся, группу можно вернуть.'),
+        confirmText: t('Закрыть группу'),
         danger: true,
       })
       if (!ok) return
     }
     try {
       await api.patch(`groups/${group.id}/`, { status: closed ? 'active' : 'closed' })
-      toast.success(closed ? 'Группа снова набирает' : 'Группа закрыта')
+      toast.success(closed ? t('Группа снова набирает') : t('Группа закрыта'))
       load()
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -72,15 +73,15 @@ export default function GroupDetail() {
 
   async function remove(member) {
     const ok = await confirm({
-      title: `Убрать ${member.child_name} из группы?`,
-      message: 'Запись останется в истории группы с сегодняшней датой выхода.',
-      confirmText: 'Убрать',
+      title: t('Убрать {name} из группы?', { name: member.child_name }),
+      message: t('Запись останется в истории группы с сегодняшней датой выхода.'),
+      confirmText: t('Убрать'),
       danger: true,
     })
     if (!ok) return
     try {
       await api.post(`groups/${group.id}/remove_member/`, { child_id: member.child })
-      toast.success('Ребёнок убран из группы')
+      toast.success(t('Ребёнок убран из группы'))
       load()
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -99,12 +100,12 @@ export default function GroupDetail() {
             {group.name}
           </span>
         }
-        description={[group.direction_name, group.branch_name, group.age_min != null && group.age_max != null ? `${group.age_min}–${group.age_max} лет` : null].filter(Boolean).join(' · ')}
+        description={[group.direction_name, group.branch_name, group.age_min != null && group.age_max != null ? t('{from}–{to} лет', { from: group.age_min, to: group.age_max }) : null].filter(Boolean).join(' · ')}
         actions={canManage && (
           <>
-            <Button icon={Pencil} onClick={() => setEditing(true)}>Редактировать</Button>
+            <Button icon={Pencil} onClick={() => setEditing(true)}>{t('Редактировать')}</Button>
             <Button variant={closed ? 'secondary' : 'danger-ghost'} icon={closed ? ArchiveRestore : Lock} onClick={toggleClosed}>
-              {closed ? 'Вернуть в набор' : 'Закрыть'}
+              {closed ? t('Вернуть в набор') : t('Закрыть')}
             </Button>
           </>
         )}
@@ -113,48 +114,48 @@ export default function GroupDetail() {
       <div className="mb-6 grid gap-4 md:grid-cols-3">
         <Card>
           <div className="mb-3 flex items-center justify-between">
-            <p className="text-[15px] font-bold text-ink">Заполняемость</p>
+            <p className="text-[15px] font-bold text-ink">{t('Заполняемость')}</p>
             {group.status !== 'active' ? <Badge tone={groupStatus.tone}>{groupStatus.label}</Badge>
-              : full ? <Badge tone="danger">Мест нет</Badge>
-                : group.is_underfilled ? <Badge tone="warning">Недобор</Badge> : <Badge tone="success">Норма</Badge>}
+              : full ? <Badge tone="danger">{t('Мест нет')}</Badge>
+                : group.is_underfilled ? <Badge tone="warning">{t('Недобор')}</Badge> : <Badge tone="success">{t('Норма')}</Badge>}
           </div>
           <FillBar group={group} />
           <p className="mt-2 text-[13px] text-ink-muted">
-            {full ? 'Свободных мест нет' : `Свободно ${group.capacity - group.members_count} ${plural(group.capacity - group.members_count, ['место', 'места', 'мест'])}`}
+            {full ? t('Свободных мест нет') : t('Свободно: {count}', { count: `${group.capacity - group.members_count} ${plural(group.capacity - group.members_count, ['место', 'места', 'мест'])}` })}
           </p>
         </Card>
         <Card>
-          <p className="mb-3 text-[15px] font-bold text-ink">Расписание</p>
+          <p className="mb-3 text-[15px] font-bold text-ink">{t('Расписание')}</p>
           {group.schedule.length ? (
             <ul className="space-y-2">
               {group.schedule.map(slot => (
                 <li key={`${slot.weekday}-${slot.start_time}`} className="flex items-center gap-3 text-sm">
-                  <span className="flex w-9 justify-center rounded-md bg-brand-50 py-1 text-xs font-bold text-brand-700" title={WEEKDAYS_FULL[slot.weekday]}>{WEEKDAYS_SHORT[slot.weekday]}</span>
+                  <span className="flex w-9 justify-center rounded-md bg-brand-50 py-1 text-xs font-bold text-brand-700" title={t(WEEKDAYS_FULL[slot.weekday])}>{t(WEEKDAYS_SHORT[slot.weekday])}</span>
                   <span className="font-semibold text-ink">{slot.start_time}</span>
-                  <span className="text-ink-muted">{slot.duration_minutes} мин</span>
+                  <span className="text-ink-muted">{slot.duration_minutes} {t('мин')}</span>
                   {slot.room && <span className="ml-auto flex items-center gap-1 text-[13px] text-ink-subtle"><DoorOpen className="size-3.5" />{slot.room}</span>}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="flex items-center gap-2 text-sm text-ink-subtle"><CalendarClock className="size-4" /> Расписание не задано</p>
+            <p className="flex items-center gap-2 text-sm text-ink-subtle"><CalendarClock className="size-4" /> {t('Расписание не задано')}</p>
           )}
         </Card>
         <Card>
-          <p className="mb-3 text-[15px] font-bold text-ink">Преподаватели</p>
+          <p className="mb-3 text-[15px] font-bold text-ink">{t('Преподаватели')}</p>
           {group.teachers_detail.length ? (
             <ul className="space-y-2.5">
-              {group.teachers_detail.map(t => (
-                <li key={t.id} className="flex items-center gap-3 text-sm font-medium text-ink"><Avatar name={t.full_name} />{t.full_name}</li>
+              {group.teachers_detail.map(tch => (
+                <li key={tch.id} className="flex items-center gap-3 text-sm font-medium text-ink"><Avatar name={tch.full_name} />{tch.full_name}</li>
               ))}
             </ul>
-          ) : <p className="text-sm text-ink-subtle">Не назначены</p>}
+          ) : <p className="text-sm text-ink-subtle">{t('Не назначены')}</p>}
         </Card>
       </div>
 
       <Tabs
         className="mb-4"
-        tabs={[{ key: 'members', label: 'Состав', count: members.length }, { key: 'history', label: 'История', count: history.length }]}
+        tabs={[{ key: 'members', label: t('Состав'), count: members.length }, { key: 'history', label: t('История'), count: history.length }]}
         value={tab}
         onChange={key => setParams(key === 'members' ? {} : { tab: key }, { replace: true })}
       />
@@ -165,13 +166,13 @@ export default function GroupDetail() {
             className="mb-0 px-5 pt-5"
             title={`${members.length} ${plural(members.length, ['ребёнок', 'ребёнка', 'детей'])}`}
             actions={canManage && !closed && (
-              <Button size="sm" icon={UserPlus} disabled={full} onClick={() => setAdding(true)} title={full ? 'В группе нет мест' : undefined}>
-                Добавить ребёнка
+              <Button size="sm" icon={UserPlus} disabled={full} onClick={() => setAdding(true)} title={full ? t('В группе нет мест') : undefined}>
+                {t('Добавить ребёнка')}
               </Button>
             )}
           />
           {members.length === 0 ? (
-            <EmptyState icon={UsersRound} title="В группе пока никого" description="Добавьте детей — они появятся в журнале посещений." />
+            <EmptyState icon={UsersRound} title={t('В группе пока никого')} description={t('Добавьте детей — они появятся в журнале посещений.')} />
           ) : (
             <ul className="mt-3 divide-y divide-line border-t border-line">
               {members.map(member => {
@@ -181,11 +182,11 @@ export default function GroupDetail() {
                     <Avatar name={member.child_name} />
                     <div className="min-w-0 flex-1">
                       <Link to={`/children/${member.child}`} className="font-semibold text-ink hover:text-brand-700">{member.child_name}</Link>
-                      <p className="text-[13px] text-ink-muted">{ageLabel(member.child_age)} · в группе с {formatDate(member.joined_at)}</p>
+                      <p className="text-[13px] text-ink-muted">{ageLabel(member.child_age)} {t('· в группе с')} {formatDate(member.joined_at)}</p>
                     </div>
                     {member.child_status !== 'active' && childStatus && <Badge tone={childStatus.tone}>{childStatus.label}</Badge>}
                     {canManage && (
-                      <Button variant="ghost" size="icon" aria-label={`Убрать ${member.child_name}`} onClick={() => remove(member)}>
+                      <Button variant="ghost" size="icon" aria-label={t('Убрать {name}', { name: member.child_name })} onClick={() => remove(member)}>
                         <UserMinus className="size-4" />
                       </Button>
                     )}
@@ -203,11 +204,11 @@ export default function GroupDetail() {
                 <span className={cn('size-2 shrink-0 rounded-full', entry.left_at ? 'bg-line-strong' : 'bg-success-600')} />
                 <Link to={`/children/${entry.child}`} className="min-w-0 flex-1 truncate font-medium text-ink hover:text-brand-700">{entry.child_name}</Link>
                 <span className="whitespace-nowrap text-ink-muted">
-                  {formatDate(entry.joined_at)} — {entry.left_at ? formatDate(entry.left_at) : <span className="text-success-600">сейчас</span>}
+                  {formatDate(entry.joined_at)} — {entry.left_at ? formatDate(entry.left_at) : <span className="text-success-600">{t('сейчас')}</span>}
                 </span>
               </li>
             ))}
-            {history.length === 0 && <li className="px-5 py-6 text-center text-sm text-ink-muted">История пуста.</li>}
+            {history.length === 0 && <li className="px-5 py-6 text-center text-sm text-ink-muted">{t('История пуста.')}</li>}
           </ul>
         </Card>
       )}
@@ -244,7 +245,7 @@ function AddMemberModal({ group, memberIds, onClose, onAdded }) {
     setSavingId(child.id)
     try {
       await api.post(`groups/${group.id}/add_member/`, { child: child.id })
-      toast.success(`${child.full_name} в группе`)
+      toast.success(t('{name} в группе', { name: child.full_name }))
       onAdded()
     } catch (err) {
       const data = err.response?.data
@@ -256,11 +257,11 @@ function AddMemberModal({ group, memberIds, onClose, onAdded }) {
   const fits = age => (group.age_min == null || age >= group.age_min) && (group.age_max == null || age <= group.age_max)
 
   return (
-    <Modal open onClose={onClose} title={`Добавить в «${group.name}»`} description={`Свободно мест: ${group.capacity - group.members_count}`}>
-      <SearchInput value={query} onChange={setQuery} placeholder="Имя ребёнка" />
+    <Modal open onClose={onClose} title={t('Добавить в «{name}»', { name: group.name })} description={t('Свободно мест: {n}', { n: group.capacity - group.members_count })}>
+      <SearchInput value={query} onChange={setQuery} placeholder={t('Имя ребёнка')} />
       <ul className="mt-3 max-h-80 divide-y divide-line overflow-y-auto rounded-lg border border-line">
-        {!found && <li className="px-4 py-3 text-sm text-ink-muted">Загрузка…</li>}
-        {found?.length === 0 && <li className="px-4 py-3 text-sm text-ink-muted">Никого не нашли</li>}
+        {!found && <li className="px-4 py-3 text-sm text-ink-muted">{t('Загрузка…')}</li>}
+        {found?.length === 0 && <li className="px-4 py-3 text-sm text-ink-muted">{t('Никого не нашли')}</li>}
         {found?.map(child => {
           const inGroup = memberIds.includes(String(child.id))
           return (
@@ -270,12 +271,12 @@ function AddMemberModal({ group, memberIds, onClose, onAdded }) {
                 <p className="truncate text-sm font-semibold text-ink">{child.full_name}</p>
                 <p className="truncate text-xs text-ink-muted">
                   {ageLabel(child.age)}
-                  {!fits(child.age) && <span className="text-warning-600"> · не по возрасту группы</span>}
+                  {!fits(child.age) && <span className="text-warning-600"> {t('· не по возрасту группы')}</span>}
                   {child.group_names !== '—' && ` · ${child.group_names}`}
                 </p>
               </div>
-              {inGroup ? <Badge>Уже в группе</Badge> : (
-                <Button size="sm" loading={savingId === child.id} disabled={Boolean(savingId)} onClick={() => add(child)}>Добавить</Button>
+              {inGroup ? <Badge>{t('Уже в группе')}</Badge> : (
+                <Button size="sm" loading={savingId === child.id} disabled={Boolean(savingId)} onClick={() => add(child)}>{t('Добавить')}</Button>
               )}
             </li>
           )

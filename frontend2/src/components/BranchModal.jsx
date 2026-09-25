@@ -2,6 +2,7 @@ import { useState } from 'react'
 import api from '../api/axios'
 import { Button, Checkbox, Field, Input, Modal, Textarea, apiErrorMessage, useToast } from '../ui'
 import { WEEKDAYS, initialHours } from './workingHours'
+import { t } from '../i18n'
 
 export default function BranchModal({ branch, onClose, onSaved }) {
   const isEdit = Boolean(branch)
@@ -27,7 +28,7 @@ export default function BranchModal({ branch, onClose, onSaved }) {
     try {
       const payload = { ...form, working_hours }
       const response = isEdit ? await api.patch(`branches/${branch.id}/`, payload) : await api.post('branches/', payload)
-      toast.success(isEdit ? 'Филиал сохранён' : 'Филиал добавлен')
+      toast.success(isEdit ? t('Филиал сохранён') : t('Филиал добавлен'))
       onSaved(response.data)
     } catch (err) {
       const data = err.response?.data
@@ -45,39 +46,39 @@ export default function BranchModal({ branch, onClose, onSaved }) {
       open
       onClose={onClose}
       size="lg"
-      title={isEdit ? 'Редактировать филиал' : 'Новый филиал'}
+      title={isEdit ? t('Редактировать филиал') : t('Новый филиал')}
       footer={
         <>
-          <Button onClick={onClose}>Отмена</Button>
-          <Button variant="primary" type="submit" form="branch-form" loading={saving}>{isEdit ? 'Сохранить' : 'Создать филиал'}</Button>
+          <Button onClick={onClose}>{t('Отмена')}</Button>
+          <Button variant="primary" type="submit" form="branch-form" loading={saving}>{isEdit ? t('Сохранить') : t('Создать филиал')}</Button>
         </>
       }
     >
       <form id="branch-form" onSubmit={submit} className="flex flex-col gap-3.5">
-        <Field label="Название" required error={errors.name}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Центральный филиал" required autoFocus />}
+        <Field label={t('Название')} required error={errors.name}>
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder={t('Центральный филиал')} required autoFocus />}
         </Field>
-        <Field label="Адрес" error={errors.address}>
+        <Field label={t('Адрес')} error={errors.address}>
           {({ id }) => <Textarea id={id} rows={2} value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />}
         </Field>
-        <Field label="Телефон" error={errors.phone}>
+        <Field label={t('Телефон')} error={errors.phone}>
           {({ id, invalid }) => <Input id={id} invalid={invalid} type="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />}
         </Field>
         <div>
-          <p className="font-btn mb-2.5 text-sm font-bold text-ink">Часы работы</p>
+          <p className="font-btn mb-2.5 text-sm font-bold text-ink">{t('Часы работы')}</p>
           <div className="flex flex-col gap-2">
             {WEEKDAYS.map(([code, , full]) => {
               const day = hours[code]
               return (
                 <div key={code}>
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="font-btn w-[100px] shrink-0 text-xs text-[#374151]">{full}</span>
-                    <Checkbox className="w-[90px] shrink-0 text-xs" label="Выходной" checked={day.closed} onChange={e => setDay(code, { closed: e.target.checked })} />
+                    <span className="font-btn w-[100px] shrink-0 text-xs text-[#374151]">{t(full)}</span>
+                    <Checkbox className="w-[90px] shrink-0 text-xs" label={t('Выходной')} checked={day.closed} onChange={e => setDay(code, { closed: e.target.checked })} />
                     {!day.closed && (
                       <div className="flex items-center gap-1.5">
-                        <Input type="time" aria-label={`${full}, открытие`} className="h-8 w-[100px] px-2 text-xs" value={day.open} onChange={e => setDay(code, { open: e.target.value })} />
+                        <Input type="time" aria-label={t('{day}, открытие', { day: t(full) })} className="h-8 w-[100px] px-2 text-xs" value={day.open} onChange={e => setDay(code, { open: e.target.value })} />
                         <span className="text-ink-subtle">—</span>
-                        <Input type="time" aria-label={`${full}, закрытие`} className="h-8 w-[100px] px-2 text-xs" value={day.close} onChange={e => setDay(code, { close: e.target.value })} />
+                        <Input type="time" aria-label={t('{day}, закрытие', { day: t(full) })} className="h-8 w-[100px] px-2 text-xs" value={day.close} onChange={e => setDay(code, { close: e.target.value })} />
                       </div>
                     )}
                   </div>

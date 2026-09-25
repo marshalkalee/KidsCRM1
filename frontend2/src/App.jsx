@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/shell/Layout'
+import { useLang } from './i18n'
 import { RequireAuth, RequirePermission, SessionProvider } from './session/SessionContext'
 import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
@@ -21,12 +22,15 @@ import Directions from './pages/Directions'
 import OrganizationSettings from './pages/OrganizationSettings'
 
 function App() {
+  // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
+  // сессия и адрес страницы остаются.
+  const lang = useLang()
   return (
     <BrowserRouter>
       <ToastProvider>
         <ConfirmProvider>
           <SessionProvider>
-            <Routes>
+            <Routes key={lang}>
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
@@ -38,7 +42,7 @@ function App() {
                 <Route path="children/:id" element={<ChildDetail />} />
                 <Route path="parents" element={<Parents />} />
                 <Route path="parents/:id" element={<ParentDetail />} />
-                <Route path="schedule" element={<Schedule />} />
+                <Route path="schedule" element={<div className="kc-schedule"><Schedule /></div>} />
                 <Route path="groups" element={<Groups />} />
                 <Route path="groups/:id" element={<GroupDetail />} />
                 <Route path="branches" element={<RequirePermission permission="can_manage_branches"><Branches /></RequirePermission>} />

@@ -1,7 +1,9 @@
-import { Children, forwardRef, isValidElement, useId, useState } from 'react'
+import { Children, forwardRef, isValidElement, useCallback, useId, useRef, useState } from 'react'
 import { Calendar } from 'lucide-react'
 import { CheckSquare, Dropdown } from './Dropdown'
+import { DatePicker } from './DatePicker'
 import { cn } from './cn'
+import { t } from '../i18n'
 
 // Поля — как в формах первого React (TRU-91): Manrope 13px, белое поле с
 // рамкой 1.5px, подпись 10px капсом.
@@ -93,7 +95,7 @@ export function Select({ id, value, onChange, children, invalid, disabled, requi
         value={value ?? ''}
         onChange={v => onChange?.({ target: { value: v, name } })}
         options={options}
-        placeholder={empty?.label || 'Выберите…'}
+        placeholder={empty?.label || t('Выберите…')}
         invalid={invalid}
         disabled={disabled}
         ariaLabel={ariaLabel}
@@ -108,7 +110,7 @@ export function Select({ id, value, onChange, children, invalid, disabled, requi
 }
 
 /** Выбор нескольких значений — список с галочками (как выбор преподавателей). */
-export function MultiSelect({ id, value, onChange, options, placeholder = 'Не выбрано', invalid }) {
+export function MultiSelect({ id, value, onChange, options, placeholder = t('Не выбрано'), invalid }) {
   return <Dropdown id={id} multiple value={value} onChange={onChange} options={options} placeholder={placeholder} invalid={invalid} />
 }
 
@@ -124,7 +126,7 @@ export function Checkbox({ label, className, checked, onChange, disabled, ...res
 }
 
 /** Список галочек в сером блоке (как «Доступно в филиалах» в первой версии). */
-export function CheckList({ options, value, onChange, empty = 'Пусто' }) {
+export function CheckList({ options, value, onChange, empty = t('Пусто') }) {
   if (!options.length) return <p className="font-btn text-xs text-ink-subtle">{empty}</p>
   const values = value.map(String)
   const toggle = v => onChange(values.includes(String(v)) ? values.filter(x => x !== String(v)) : [...values, String(v)])
@@ -138,13 +140,17 @@ export function CheckList({ options, value, onChange, empty = 'Пусто' }) {
 }
 
 /**
- * Дата маской «дд.мм.гггг», как в форме ребёнка первой версии. value/onChange
- * — ISO «гггг-мм-дд» (как ждёт API); пока дата не введена целиком — "".
+ * Дата: ввод маской «дд.мм.гггг», как в форме ребёнка первой версии, или
+ * выбор в календаре по кнопке справа. value/onChange — ISO «гггг-мм-дд»
+ * (как ждёт API); пока дата не введена целиком — "". min/max — ISO.
  */
-export function DateInput({ id, value, onChange, invalid, required }) {
+export function DateInput({ id, value, onChange, invalid, required, min, max }) {
   const toDisplay = iso => (iso ? iso.split('-').reverse().join('.') : '')
   const [text, setText] = useState(() => toDisplay(value))
   const [synced, setSynced] = useState(value)
+  const [open, setOpen] = useState(false)
+  const anchorRef = useRef(null)
+  const close = useCallback(() => setOpen(false), [])
   if (value !== synced) {
     setSynced(value)
     if (value) setText(toDisplay(value))
@@ -159,10 +165,28 @@ export function DateInput({ id, value, onChange, invalid, required }) {
     setSynced(iso)
     onChange(iso)
   }
+  function pick(iso) {
+    setText(toDisplay(iso))
+    setSynced(iso)
+    onChange(iso)
+  }
   return (
-    <div className="relative">
-      <Input id={id} invalid={invalid} required={required} inputMode="numeric" placeholder="дд.мм.гггг" maxLength={10} value={text} onChange={e => change(e.target.value)} className="pr-9" />
-      <Calendar className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-ink-subtle" />
+    <div className="relative" ref={anchorRef}>
+      <Input id={id} invalid={invalid} required={required} inputMode="numeric" placeholder={t('дд.мм.гггг')} maxLength={10} value={text} onChange={e => change(e.target.value)} className="pr-10" />
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={cn(
+          'absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md hover:bg-brand-50 hover:text-brand-600',
+          open ? 'bg-brand-50 text-brand-600' : 'text-ink-subtle',
+        )}
+        aria-label={t('Открыть календарь')}
+        aria-expanded={open}
+        title={t('Открыть календарь')}
+      >
+        <Calendar className="size-4" />
+      </button>
+      {open && <DatePicker anchorRef={anchorRef} value={value} onChange={pick} onClose={close} min={min} max={max} />}
     </div>
   )
 }

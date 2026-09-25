@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown } from 'lucide-react'
 import { cn } from './cn'
+import { t } from '../i18n'
 
 /**
  * Выпадающий список как CustomSelect первого React (TRU-91): выбранное —
@@ -12,7 +13,7 @@ import { cn } from './cn'
  * квадратными галочками (как выбор преподавателей в первой версии).
  */
 export function Dropdown({
-  id, value, onChange, options, placeholder = 'Выберите…', multiple = false, invalid, disabled,
+  id, value, onChange, options, placeholder = t('Выберите…'), multiple = false, invalid, disabled,
   size = 'md', ariaLabel, ariaLabelledby, className,
 }) {
   const [open, setOpen] = useState(false)
@@ -114,7 +115,7 @@ export function Dropdown({
           }}
           className="z-[70] overflow-y-auto rounded-[10px] border-[1.5px] border-line bg-surface py-1 shadow-pop"
         >
-          {options.length === 0 && <li className="font-btn px-3.5 py-2.5 text-[13px] text-ink-subtle">Пусто</li>}
+          {options.length === 0 && <li className="font-btn px-3.5 py-2.5 text-[13px] text-ink-subtle">{t('Пусто')}</li>}
           {options.map(option => {
             const isSelected = multiple ? values.includes(String(option.value)) : String(option.value) === String(value ?? '')
             return (
