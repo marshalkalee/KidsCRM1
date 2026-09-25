@@ -1,41 +1,52 @@
 <div class="kc-payments-tab">
-    {% if not subscription %}
-      <p class="kc-empty-state" data-i18n="payments.child_tab.no_subscription">Нет активного абонемента — сначала продайте абонемент.</p>
-    {% else %}
-      <p>
-        <strong>{{ subscription.subscription_type_version.name }}</strong>
-        · <span data-i18n="payments.child_tab.sessions_left">Осталось занятий:</span>
-        {{ subscription.sessions_remaining_cache|default:"безлимит" }}
-        · <span data-i18n="payments.child_tab.debt_label">Долг:</span>
-        <span id="js-current-debt">{{ debt }}</span> ₸
-      </p>
-      <form id="js-payment-form"
-            data-child-id="{{ child.id }}"
-            data-subscription-id="{{ subscription.id }}">
-        {% csrf_token %}
-        <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
-        <input type="hidden" name="subscription_id" value="{{ subscription.id }}">
-        <label class="kc-form-input__label" for="id_amount" data-i18n="payments.child_tab.amount_label">Сумма</label>
-        <input class="kc-form-input"
-               type="number"
-               name="amount"
-               id="id_amount"
-               value="{{ debt }}"
-               required>
-        <div class="kc-method-buttons" role="radiogroup" aria-label="Способ оплаты">
-          {% for value, label in methods %}
-            <label class="kc-method-buttons__option">
-              <input type="radio"
-                     name="method"
-                     value="{{ value }}"
-                     {% if forloop.first %}checked{% endif %}>
-              {{ label }}
-            </label>
-          {% endfor %}
-        </div>
-        <label class="kc-form-input__label" for="id_comment" data-i18n="payments.child_tab.comment_label">Комментарий</label>
-        <input class="kc-form-input" type="text" name="comment" id="id_comment">
-        <button type="submit" class="kc-btn kc-btn--primary" id="js-submit-payment" data-i18n="payments.child_tab.submit">Принять оплату</button>
-      </form>
-    {% endif %}
-  </div>
+  {% if not subscription %}
+    <p class="kc-empty-state" data-i18n="payments.child_tab.no_subscription">
+      Нет активного абонемента — сначала продайте абонемент.
+    </p>
+  {% else %}
+    <p>
+      <strong>{{ subscription.subscription_type_version.name }}</strong>
+      · <span data-i18n="payments.child_tab.sessions_left">Осталось занятий:</span>
+      {{ subscription.sessions_remaining_cache|default:"безлимит" }}
+      · <span data-i18n="payments.child_tab.debt_label">Долг:</span>
+      <span id="js-current-debt">{{ debt }}</span> ₸
+    </p>
+    <form id="js-payment-form"
+          data-child-id="{{ child.id }}"
+          data-subscription-id="{{ subscription.id }}">
+      {% csrf_token %}
+      <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+      <input type="hidden" name="subscription_id" value="{{ subscription.id }}">
+      <label class="kc-form-input__label"
+             for="id_amount"
+             data-i18n="payments.child_tab.amount_label">Сумма</label>
+      <input class="kc-form-input"
+             type="number"
+             name="amount"
+             id="id_amount"
+             value="{{ debt }}"
+             required>
+      <div class="kc-method-buttons"
+           role="radiogroup"
+           aria-label="Способ оплаты">
+        {% for value, label in methods %}
+          <label class="kc-method-buttons__option">
+            <input type="radio"
+                   name="method"
+                   value="{{ value }}"
+                   {% if forloop.first %}checked{% endif %}>
+            {{ label }}
+          </label>
+        {% endfor %}
+      </div>
+      <label class="kc-form-input__label"
+             for="id_comment"
+             data-i18n="payments.child_tab.comment_label">Комментарий</label>
+      <input class="kc-form-input" type="text" name="comment" id="id_comment">
+      <button type="submit"
+              class="kc-btn kc-btn--primary"
+              id="js-submit-payment"
+              data-i18n="payments.child_tab.submit">Принять оплату</button>
+    </form>
+  {% endif %}
+</div>
