@@ -20,6 +20,7 @@ class AuditLog(UUIDPrimaryKeyModel):
         REVOKE = "revoke", "Отзыв прав"
         CANCEL = "cancel", "Отмена"
         RESCHEDULE = "reschedule", "Перенос"
+        MARK_ATTENDANCE = "mark_attendance", "Отметка посещаемости"
 
     organization = models.ForeignKey(
         "tenants.Organization",

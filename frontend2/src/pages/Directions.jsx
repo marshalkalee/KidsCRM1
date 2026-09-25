@@ -1,117 +1,126 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Archive, ArchiveRestore, Pencil, Plus, Tag } from 'lucide-react'
-import api from '../api/axios'
+import { useState, useEffect } from 'react'
+import axios from 'axios'
+import { Plus, Edit2, Archive, ArchiveRestore } from 'lucide-react'
 import DirectionModal from '../components/DirectionModal'
-import { Badge, Button, Checkbox, DataTable, EmptyState, PageHeader, apiErrorMessage, plural, useToast } from '../ui'
 
-function ageRange(d) {
-  if (d.age_min != null && d.age_max != null) return `${d.age_min}–${d.age_max} лет`
-  if (d.age_min != null) return `от ${d.age_min} лет`
-  if (d.age_max != null) return `до ${d.age_max} лет`
-  return 'любой'
+function authHeaders() {
+  return { Authorization: `Bearer ${localStorage.getItem('access')}` }
 }
 
-/** Направления (TRU-85): архивация вместо удаления — история групп и
- * абонементов по направлению остаётся. */
 export default function Directions() {
-  const toast = useToast()
-  const [directions, setDirections] = useState(null)
+  const [directions, setDirections] = useState([])
   const [branches, setBranches] = useState([])
-  const [error, setError] = useState(false)
-  const [showArchived, setShowArchived] = useState(false)
-  const [editing, setEditing] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [editDirection, setEditDirection] = useState(null)
 
-  const load = useCallback(() => {
-    Promise.all([api.get('directions/'), api.get('branches/')])
-      .then(([d, b]) => {
-        setDirections(d.data.results || d.data)
-        setBranches(b.data.results || b.data)
-        setError(false)
-      })
-      .catch(() => setError(true))
-  }, [])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load() }, [])
 
-  const branchName = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b.name])), [branches])
-
-  async function toggleArchive(direction) {
+  async function load() {
+    setLoading(true)
     try {
-      await api.patch(`directions/${direction.id}/`, { is_active: !direction.is_active })
-      toast.success(direction.is_active ? 'Направление в архиве' : 'Направление восстановлено')
-      load()
-    } catch (err) {
-      toast.error(apiErrorMessage(err))
-    }
+      const [d, b] = await Promise.all([
+        axios.get('/api/v1/directions/', { headers: authHeaders() }),
+        axios.get('/api/v1/branches/', { headers: authHeaders() }),
+      ])
+      const list = d.data.results || d.data
+      list.sort((a, b2) => Number(b2.is_active) - Number(a.is_active) || a.name.localeCompare(b2.name))
+      setDirections(list)
+      setBranches(b.data.results || b.data)
+    } catch (e) { console.error(e) }
+    finally { setLoading(false) }
   }
 
-  const archivedCount = directions?.filter(d => !d.is_active).length || 0
-  const rows = (directions || []).filter(d => showArchived || d.is_active)
-  const activeCount = (directions || []).length - archivedCount
+  async function toggleActive(direction) {
+    try {
+      await axios.patch(`/api/v1/directions/${direction.id}/`, { is_active: !direction.is_active }, { headers: authHeaders() })
+      load()
+    } catch (e) { console.error(e) }
+  }
 
-  const columns = [
-    {
-      key: 'name',
-      header: 'Направление',
-      primary: true,
-      render: d => (
-        <span className="flex items-center gap-2.5">
-          <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: d.color || '#9aa3ad' }} />
-          <span className="font-semibold text-ink">{d.name}</span>
-          {!d.is_active && <Badge>В архиве</Badge>}
-        </span>
-      ),
-    },
-    { key: 'age', header: 'Возраст', render: d => <span className="text-ink-muted">{ageRange(d)}</span> },
-    {
-      key: 'branches',
-      header: 'Филиалы',
-      render: d => (d.branches.length
-        ? <span className="flex flex-wrap gap-1">{d.branches.map(id => <Badge key={id}>{branchName[id] || '…'}</Badge>)}</span>
-        : <span className="text-ink-subtle">не выбраны</span>),
-    },
-    {
-      key: 'actions',
-      header: '',
-      align: 'right',
-      mobileAside: true,
-      render: d => (
-        <span className="inline-flex gap-1" onClick={e => e.stopPropagation()}>
-          <Button variant="ghost" size="icon" aria-label="Изменить" onClick={() => setEditing(d)}><Pencil className="size-4" /></Button>
-          <Button variant="ghost" size="icon" aria-label={d.is_active ? 'В архив' : 'Восстановить'} onClick={() => toggleArchive(d)}>
-            {d.is_active ? <Archive className="size-4" /> : <ArchiveRestore className="size-4" />}
-          </Button>
-        </span>
-      ),
-    },
-  ]
+  function branchNames(direction) {
+    const names = (direction.branches || []).map(id => branches.find(b => String(b.id) === String(id))?.name).filter(Boolean)
+    return names.length ? names.join(', ') : '—'
+  }
+
+  const card = { background: '#fff', borderRadius: 12, border: '1px solid #F0F0F5', overflow: 'hidden' }
 
   return (
     <div>
-      <PageHeader
-        title="Направления"
-        description={directions ? `${activeCount} ${plural(activeCount, ['направление', 'направления', 'направлений'])}` : 'Загрузка…'}
-        actions={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>Добавить направление</Button>}
-      />
-      {archivedCount > 0 && (
-        <Checkbox className="mb-4" label={`Показать архивные (${archivedCount})`} checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
-      )}
-      <DataTable
-        columns={columns}
-        rows={rows}
-        loading={!directions && !error}
-        error={error}
-        onRetry={load}
-        onRowClick={d => setEditing(d)}
-        empty={<EmptyState icon={Tag} title="Направлений пока нет" description="Балет, растяжка, хореография — по ним строятся группы и абонементы." action={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>Добавить направление</Button>} />}
-      />
-      {editing && (
+      <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #F0F0F5' }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>Направления</h1>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{directions.length} направлений</p>
+        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope' }}
+        >
+          <Plus size={14} /> Новое направление
+        </button>
+      </div>
+
+      <div style={card}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #F0F0F5' }}>
+              {['Название', 'Возраст', 'Филиалы', 'Статус', ''].map(h => (
+                <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка...</td></tr>
+            ) : directions.length === 0 ? (
+              <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Направлений пока нет</td></tr>
+            ) : directions.map(direction => (
+              <tr key={direction.id} style={{ borderBottom: '1px solid #F0F0F5', opacity: direction.is_active ? 1 : 0.55 }}>
+                <td style={{ padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 4, background: direction.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{direction.name}</span>
+                  </div>
+                </td>
+                <td style={{ padding: '14px 16px', fontSize: 13, color: '#6B7280' }}>
+                  {direction.age_min || direction.age_max ? `${direction.age_min ?? '—'}–${direction.age_max ?? '—'} лет` : '—'}
+                </td>
+                <td style={{ padding: '14px 16px', fontSize: 13, color: '#6B7280' }}>{branchNames(direction)}</td>
+                <td style={{ padding: '14px 16px' }}>
+                  <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: direction.is_active ? '#F0FDF4' : '#F9FAFB', color: direction.is_active ? '#16A34A' : '#6B7280' }}>
+                    {direction.is_active ? 'Активно' : 'В архиве'}
+                  </span>
+                </td>
+                <td style={{ padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button onClick={() => setEditDirection(direction)} title="Редактировать" style={iconBtnStyle}><Edit2 size={14} /></button>
+                    <button
+                      onClick={() => toggleActive(direction)}
+                      title={direction.is_active ? 'Архивировать' : 'Восстановить'}
+                      style={iconBtnStyle}
+                    >
+                      {direction.is_active ? <Archive size={14} /> : <ArchiveRestore size={14} />}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {(showModal || editDirection) && (
         <DirectionModal
-          direction={editing === 'new' ? null : editing}
-          branches={branches}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); load() }}
+          direction={editDirection}
+          onClose={() => { setShowModal(false); setEditDirection(null) }}
+          onSaved={() => { setShowModal(false); setEditDirection(null); load() }}
         />
       )}
     </div>
   )
+}
+
+const iconBtnStyle = {
+  width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  border: '1px solid #F0F0F5', borderRadius: 8, background: '#fff', cursor: 'pointer', color: '#6B7280',
 }

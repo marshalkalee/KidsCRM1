@@ -1,126 +1,165 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { Check, DoorOpen, Pencil, Plus, Trash2, X } from 'lucide-react'
-import api from '../api/axios'
-import { useSession } from '../session/SessionContext'
-import { Button, Card, EmptyState, ErrorState, Input, PageHeader, Skeleton, apiErrorMessage, useConfirm, useToast } from '../ui'
+import { useState, useEffect, useCallback } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import axios from 'axios'
+import { ArrowLeft, Plus, Edit2, Trash2, X } from 'lucide-react'
 
-/**
- * Залы филиала (TRU-85) — нужны для проверки конфликтов расписания.
- * Добавить и переименовать — прямо в списке, без модалок. Менять залы
- * могут все, кроме бухгалтера (RoomViewSet: IsNotAccountant).
- */
-export default function BranchRooms() {
-  const { id } = useParams()
-  const { user } = useSession()
-  const toast = useToast()
-  const confirm = useConfirm()
-  const canManage = user?.role !== 'accountant'
-  const [branch, setBranch] = useState(null)
-  const [rooms, setRooms] = useState(null)
-  const [error, setError] = useState(false)
-  const [editingId, setEditingId] = useState(null)
+function authHeaders() {
+  return { Authorization: `Bearer ${localStorage.getItem('access')}` }
+}
 
-  const load = useCallback(() => {
-    Promise.all([api.get(`branches/${id}/`), api.get('rooms/', { params: { branch: id } })])
-      .then(([b, r]) => { setBranch(b.data); setRooms(r.data.results || r.data); setError(false) })
-      .catch(() => setError(true))
-  }, [id])
-  useEffect(() => { load() }, [load])
+const lbl = { fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 5, fontFamily: 'Manrope' }
+const inputStyle = { width: '100%', padding: '9px 12px', border: '1.5px solid #EBEBF0', borderRadius: 8, fontSize: 13, fontFamily: 'Manrope', outline: 'none', boxSizing: 'border-box', background: '#fff' }
 
-  async function save(room, values) {
+function RoomModal({ branchId, room, onClose, onSaved }) {
+  const isEdit = !!room
+  const [name, setName] = useState(room?.name || '')
+  const [capacity, setCapacity] = useState(room?.capacity ?? '')
+  const [saving, setSaving] = useState(false)
+  const [errors, setErrors] = useState({})
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setSaving(true); setErrors({})
     try {
-      if (room) await api.patch(`rooms/${room.id}/`, values)
-      else await api.post('rooms/', { ...values, branch: id })
-      toast.success(room ? 'Зал сохранён' : 'Зал добавлен')
-      setEditingId(null)
-      load()
-      return true
+      const payload = { name, branch: branchId, capacity: capacity === '' ? null : Number(capacity) }
+      if (isEdit) {
+        await axios.patch(`/api/v1/rooms/${room.id}/`, payload, { headers: authHeaders() })
+      } else {
+        await axios.post('/api/v1/rooms/', payload, { headers: authHeaders() })
+      }
+      onSaved()
     } catch (err) {
-      const data = err.response?.data
-      toast.error(data?.name?.[0] || data?.capacity?.[0] || apiErrorMessage(err))
-      return false
-    }
+      setErrors(err.response?.data || { non_field_errors: 'Ошибка сервера' })
+    } finally { setSaving(false) }
   }
-
-  async function remove(room) {
-    const ok = await confirm({ title: `Удалить зал «${room.name}»?`, message: 'Прошедшие занятия в этом зале останутся в истории.', confirmText: 'Удалить', danger: true })
-    if (!ok) return
-    try {
-      await api.delete(`rooms/${room.id}/`)
-      toast.success('Зал удалён')
-      load()
-    } catch (err) {
-      toast.error(apiErrorMessage(err))
-    }
-  }
-
-  const back = { to: '/branches', label: 'Филиалы' }
-  if (error) return <><PageHeader title="Залы" back={back} /><Card><ErrorState onRetry={load} /></Card></>
-  if (!rooms) return <><PageHeader title={<Skeleton className="h-8 w-56" />} back={back} /><Skeleton className="h-48 max-w-2xl" /></>
 
   return (
-    <div>
-      <PageHeader title={`Залы — ${branch.name}`} description="По залам система ловит накладки в расписании." back={back} />
-      <Card padded={false} className="max-w-2xl">
-        {rooms.length === 0 && !canManage && <EmptyState icon={DoorOpen} title="Залов пока нет" />}
-        <ul className="divide-y divide-line">
-          {rooms.map(room => (
-            <li key={room.id} className="px-5 py-3">
-              {editingId === room.id ? (
-                <RoomForm room={room} onSave={values => save(room, values)} onCancel={() => setEditingId(null)} />
-              ) : (
-                <div className="flex items-center gap-3">
-                  <DoorOpen className="size-4 shrink-0 text-ink-subtle" />
-                  <span className="flex-1 font-medium text-ink">{room.name}</span>
-                  <span className="text-sm text-ink-muted">{room.capacity ? `до ${room.capacity} чел.` : 'вместимость не указана'}</span>
-                  {canManage && (
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" aria-label="Изменить" onClick={() => setEditingId(room.id)}><Pencil className="size-4" /></Button>
-                      <Button variant="danger-ghost" size="icon" aria-label="Удалить" onClick={() => remove(room)}><Trash2 className="size-4" /></Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
-          {canManage && (
-            <li className="bg-surface-muted/50 px-5 py-3">
-              <RoomForm key={rooms.length} onSave={values => save(null, values)} />
-            </li>
-          )}
-        </ul>
-      </Card>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, padding: '24px 24px 20px' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0, fontFamily: 'Manrope' }}>{isEdit ? 'Редактировать зал' : 'Новый зал'}</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={lbl}>Название зала *</div>
+            <input value={name} onChange={e => setName(e.target.value)} required placeholder="Зал 1" style={inputStyle} />
+            {errors.name && <p style={{ color: '#DC2626', fontSize: 12, margin: '4px 0 0' }}>{errors.name[0]}</p>}
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <div style={lbl}>Вместимость</div>
+            <input type="number" min={1} value={capacity} onChange={e => setCapacity(e.target.value)} style={inputStyle} />
+          </div>
+          {errors.non_field_errors && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 12 }}>{errors.non_field_errors}</p>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={onClose} style={{ padding: '9px 18px', border: '1.5px solid #EBEBF0', borderRadius: 8, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'Manrope', color: '#6B7280' }}>Отмена</button>
+            <button type="submit" disabled={saving} style={{ padding: '9px 18px', background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', opacity: saving ? 0.7 : 1 }}>
+              {saving ? 'Сохранение...' : isEdit ? 'Сохранить' : 'Создать зал'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
 
-function RoomForm({ room, onSave, onCancel }) {
-  const [name, setName] = useState(room?.name || '')
-  const [capacity, setCapacity] = useState(room?.capacity ?? '')
-  const [saving, setSaving] = useState(false)
+export default function BranchRooms() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const [branch, setBranch] = useState(null)
+  const [rooms, setRooms] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [editRoom, setEditRoom] = useState(null)
 
-  async function submit(e) {
-    e.preventDefault()
-    if (!name.trim()) return
-    setSaving(true)
-    const ok = await onSave({ name: name.trim(), capacity: capacity === '' ? null : Number(capacity) })
-    setSaving(false)
-    if (ok && !room) { setName(''); setCapacity('') }
+  const load = useCallback(() => {
+    setLoading(true)
+    Promise.all([
+      axios.get(`/api/v1/branches/${id}/`, { headers: authHeaders() }),
+      axios.get('/api/v1/rooms/', { headers: authHeaders(), params: { branch: id } }),
+    ]).then(([b, r]) => {
+      setBranch(b.data)
+      const list = r.data.results || r.data
+      setRooms(list.filter(room => String(room.branch) === String(id)))
+    }).catch(console.error)
+      .finally(() => setLoading(false))
+  }, [id])
+
+  useEffect(() => { load() }, [load])
+
+  async function handleDelete(room) {
+    if (!window.confirm(`Удалить зал «${room.name}»?`)) return
+    try {
+      await axios.delete(`/api/v1/rooms/${room.id}/`, { headers: authHeaders() })
+      load()
+    } catch (e) { console.error(e) }
   }
 
+  const card = { background: '#fff', borderRadius: 12, border: '1px solid #F0F0F5', overflow: 'hidden' }
+
   return (
-    <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
-      <Input aria-label="Название зала" placeholder={room ? '' : 'Новый зал, например «Большой»'} className="h-9 min-w-40 flex-1" value={name} onChange={e => setName(e.target.value)} autoFocus={Boolean(room)} />
-      <Input aria-label="Вместимость" type="number" min={1} placeholder="Мест" className="h-9 w-24" value={capacity} onChange={e => setCapacity(e.target.value)} />
-      {room ? (
-        <>
-          <Button variant="primary" size="icon" type="submit" aria-label="Сохранить" loading={saving}><Check className="size-4" /></Button>
-          <Button variant="ghost" size="icon" aria-label="Отмена" onClick={onCancel}><X className="size-4" /></Button>
-        </>
-      ) : (
-        <Button variant="primary" size="sm" className="h-9" type="submit" icon={Plus} loading={saving} disabled={!name.trim()}>Добавить</Button>
+    <div>
+      <button onClick={() => navigate('/branches')}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 13, fontFamily: 'Manrope', marginBottom: 16, padding: 0 }}>
+        <ArrowLeft size={14} /> К списку филиалов
+      </button>
+
+      <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #F0F0F5' }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>Залы {branch ? `— ${branch.name}` : ''}</h1>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{rooms.length} залов</p>
+        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope' }}
+        >
+          <Plus size={14} /> Новый зал
+        </button>
+      </div>
+
+      <div style={card}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #F0F0F5' }}>
+              {['Название', 'Вместимость', ''].map(h => (
+                <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={3} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка...</td></tr>
+            ) : rooms.length === 0 ? (
+              <tr><td colSpan={3} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Залов пока нет</td></tr>
+            ) : rooms.map(room => (
+              <tr key={room.id} style={{ borderBottom: '1px solid #F0F0F5' }}>
+                <td style={{ padding: '14px 16px', fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{room.name}</td>
+                <td style={{ padding: '14px 16px', fontSize: 13, color: '#6B7280' }}>{room.capacity ?? '—'}</td>
+                <td style={{ padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button onClick={() => setEditRoom(room)} title="Редактировать" style={iconBtnStyle}><Edit2 size={14} /></button>
+                    <button onClick={() => handleDelete(room)} title="Удалить" style={{ ...iconBtnStyle, color: '#DC2626' }}><Trash2 size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {(showModal || editRoom) && (
+        <RoomModal
+          branchId={id}
+          room={editRoom}
+          onClose={() => { setShowModal(false); setEditRoom(null) }}
+          onSaved={() => { setShowModal(false); setEditRoom(null); load() }}
+        />
       )}
-    </form>
+    </div>
   )
+}
+
+const iconBtnStyle = {
+  width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  border: '1px solid #F0F0F5', borderRadius: 8, background: '#fff', cursor: 'pointer', color: '#6B7280',
 }

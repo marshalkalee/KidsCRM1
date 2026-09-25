@@ -1,110 +1,116 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Archive, ArchiveRestore, Building2, Clock, DoorOpen, MapPin, Pencil, Phone, Plus } from 'lucide-react'
-import api from '../api/axios'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import axios from 'axios'
+import { Plus, Edit2, Archive, ArchiveRestore, DoorOpen } from 'lucide-react'
 import BranchModal from '../components/BranchModal'
-import { hoursSummary } from '../components/workingHours'
-import { useSession } from '../session/SessionContext'
-import { Badge, Button, Card, Checkbox, EmptyState, ErrorState, PageHeader, Skeleton, apiErrorMessage, cn, plural, useConfirm, useToast } from '../ui'
 
-/**
- * Филиалы (TRU-85): карточки с часами работы и залами. Архивация — PATCH
- * is_active (не удаление): архивный филиал пропадает из переключателя в
- * шапке, но его история остаётся.
- */
+function authHeaders() {
+  return { Authorization: `Bearer ${localStorage.getItem('access')}` }
+}
+
 export default function Branches() {
-  const toast = useToast()
-  const confirm = useConfirm()
-  const { reload: reloadSession } = useSession()
-  const [branches, setBranches] = useState(null)
-  const [error, setError] = useState(false)
-  const [showArchived, setShowArchived] = useState(false)
-  const [editing, setEditing] = useState(null) // null | 'new' | branch
+  const [branches, setBranches] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [editBranch, setEditBranch] = useState(null)
+  const navigate = useNavigate()
 
-  const load = useCallback(() => {
-    api.get('branches/')
-      .then(r => { setBranches(r.data.results || r.data); setError(false) })
-      .catch(() => setError(true))
-  }, [])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load() }, [])
 
-  async function toggleArchive(branch) {
-    if (branch.is_active) {
-      const ok = await confirm({
-        title: `Архивировать «${branch.name}»?`,
-        message: 'Филиал пропадёт из выбора в шапке и из новых записей. История занятий и оплат сохранится, филиал можно вернуть.',
-        confirmText: 'Архивировать',
-        danger: true,
-      })
-      if (!ok) return
-    }
+  async function load() {
+    setLoading(true)
     try {
-      await api.patch(`branches/${branch.id}/`, { is_active: !branch.is_active })
-      toast.success(branch.is_active ? 'Филиал в архиве' : 'Филиал восстановлен')
-      load()
-      reloadSession()
-    } catch (err) {
-      toast.error(apiErrorMessage(err))
-    }
+      const res = await axios.get('/api/v1/branches/', { headers: authHeaders() })
+      const list = res.data.results || res.data
+      list.sort((a, b) => Number(b.is_active) - Number(a.is_active) || a.name.localeCompare(b.name))
+      setBranches(list)
+    } catch (e) { console.error(e) }
+    finally { setLoading(false) }
   }
 
-  const active = branches?.filter(b => b.is_active) || []
-  const archived = branches?.filter(b => !b.is_active) || []
-  const shown = showArchived ? [...active, ...archived] : active
+  async function toggleActive(branch) {
+    try {
+      await axios.patch(`/api/v1/branches/${branch.id}/`, { is_active: !branch.is_active }, { headers: authHeaders() })
+      load()
+    } catch (e) { console.error(e) }
+  }
+
+  const card = { background: '#fff', borderRadius: 12, border: '1px solid #F0F0F5', overflow: 'hidden' }
 
   return (
     <div>
-      <PageHeader
-        title="Филиалы"
-        description={branches ? `${active.length} ${plural(active.length, ['активный филиал', 'активных филиала', 'активных филиалов'])}` : 'Загрузка…'}
-        actions={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>Добавить филиал</Button>}
-      />
-      {archived.length > 0 && (
-        <Checkbox className="mb-4" label={`Показать архивные (${archived.length})`} checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
-      )}
-      {error && <Card><ErrorState onRetry={load} /></Card>}
-      {!error && !branches && <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"><Skeleton className="h-48" /><Skeleton className="h-48" /></div>}
-      {branches && shown.length === 0 && (
-        <Card>
-          <EmptyState icon={Building2} title="Филиалов пока нет" description="Добавьте первый филиал — затем залы в нём и направления." action={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>Добавить филиал</Button>} />
-        </Card>
-      )}
-      {shown.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {shown.map(branch => (
-            <Card key={branch.id} className={cn('flex flex-col gap-3', !branch.is_active && 'opacity-70')}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-base font-bold text-ink">{branch.name}</p>
-                  {!branch.is_active && <Badge className="mt-1">В архиве</Badge>}
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <Button variant="ghost" size="icon" aria-label="Изменить" onClick={() => setEditing(branch)}><Pencil className="size-4" /></Button>
-                  <Button variant="ghost" size="icon" aria-label={branch.is_active ? 'В архив' : 'Восстановить'} onClick={() => toggleArchive(branch)}>
-                    {branch.is_active ? <Archive className="size-4" /> : <ArchiveRestore className="size-4" />}
-                  </Button>
-                </div>
-              </div>
-              <ul className="space-y-1.5 text-[13px] text-ink-muted">
-                {branch.address && <li className="flex gap-2"><MapPin className="mt-0.5 size-3.5 shrink-0" />{branch.address}</li>}
-                {branch.phone && <li className="flex gap-2"><Phone className="mt-0.5 size-3.5 shrink-0" />{branch.phone}</li>}
-                <li className="flex gap-2"><Clock className="mt-0.5 size-3.5 shrink-0" />{hoursSummary(branch.working_hours)}</li>
-              </ul>
-              <Link to={`/branches/${branch.id}/rooms`} className="mt-auto flex items-center justify-between rounded-md bg-surface-muted px-3 py-2 text-sm font-medium text-ink hover:bg-brand-50 hover:text-brand-700">
-                <span className="flex items-center gap-2"><DoorOpen className="size-4" /> Залы</span>
-                <span className="text-ink-muted">{branch.rooms_count ?? 0}</span>
-              </Link>
-            </Card>
-          ))}
+      <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #F0F0F5' }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>Филиалы</h1>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{branches.length} филиалов</p>
         </div>
-      )}
-      {editing && (
+        <button
+          onClick={() => setShowModal(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope' }}
+        >
+          <Plus size={14} /> Новый филиал
+        </button>
+      </div>
+
+      <div style={card}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #F0F0F5' }}>
+              {['Название', 'Адрес', 'Телефон', 'Статус', ''].map(h => (
+                <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка...</td></tr>
+            ) : branches.length === 0 ? (
+              <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Филиалов пока нет</td></tr>
+            ) : branches.map(branch => (
+              <tr key={branch.id} style={{ borderBottom: '1px solid #F0F0F5', opacity: branch.is_active ? 1 : 0.55 }}>
+                <td style={{ padding: '14px 16px', fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{branch.name}</td>
+                <td style={{ padding: '14px 16px', fontSize: 13, color: '#6B7280' }}>{branch.address || '—'}</td>
+                <td style={{ padding: '14px 16px', fontSize: 13, color: '#6B7280' }}>{branch.phone || '—'}</td>
+                <td style={{ padding: '14px 16px' }}>
+                  <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: branch.is_active ? '#F0FDF4' : '#F9FAFB', color: branch.is_active ? '#16A34A' : '#6B7280' }}>
+                    {branch.is_active ? 'Активен' : 'В архиве'}
+                  </span>
+                </td>
+                <td style={{ padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button
+                      onClick={() => navigate(`/branches/${branch.id}/rooms`)}
+                      title="Залы"
+                      style={iconBtnStyle}
+                    ><DoorOpen size={14} /></button>
+                    <button onClick={() => setEditBranch(branch)} title="Редактировать" style={iconBtnStyle}><Edit2 size={14} /></button>
+                    <button
+                      onClick={() => toggleActive(branch)}
+                      title={branch.is_active ? 'Архивировать' : 'Восстановить'}
+                      style={iconBtnStyle}
+                    >
+                      {branch.is_active ? <Archive size={14} /> : <ArchiveRestore size={14} />}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {(showModal || editBranch) && (
         <BranchModal
-          branch={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); load(); reloadSession() }}
+          branch={editBranch}
+          onClose={() => { setShowModal(false); setEditBranch(null) }}
+          onSaved={() => { setShowModal(false); setEditBranch(null); load() }}
         />
       )}
     </div>
   )
+}
+
+const iconBtnStyle = {
+  width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  border: '1px solid #F0F0F5', borderRadius: 8, background: '#fff', cursor: 'pointer', color: '#6B7280',
 }

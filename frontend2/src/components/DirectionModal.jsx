@@ -1,124 +1,122 @@
-import { useState } from 'react'
-import api from '../api/axios'
-import { Button, Field, Input, Modal, apiErrorMessage, cn, useToast } from '../ui'
+import { useState, useEffect } from 'react'
+import axios from 'axios'
+import { X } from 'lucide-react'
 
-// Готовые цвета для календаря — различимы между собой и с текстом поверх.
-const PALETTE = ['#e8998d', '#c97b6e', '#f0b86e', '#8bc6a0', '#6fb1d8', '#8e9ae0', '#c48fd6', '#9aa3ad']
+function authHeaders() {
+  return { Authorization: `Bearer ${localStorage.getItem('access')}` }
+}
 
-/** Направление: цвет в расписании, возраст, в каких филиалах доступно. */
-export default function DirectionModal({ direction, branches, onClose, onSaved }) {
-  const isEdit = Boolean(direction)
-  const toast = useToast()
-  const [form, setForm] = useState({
-    name: direction?.name || '',
-    color: direction?.color || PALETTE[0],
-    age_min: direction?.age_min ?? '',
-    age_max: direction?.age_max ?? '',
-    branches: direction?.branches || [],
-  })
-  const [errors, setErrors] = useState({})
+const lbl = { fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 5, fontFamily: 'Manrope' }
+const inputStyle = { width: '100%', padding: '9px 12px', border: '1.5px solid #EBEBF0', borderRadius: 8, fontSize: 13, fontFamily: 'Manrope', outline: 'none', boxSizing: 'border-box', background: '#fff' }
+
+export default function DirectionModal({ direction, onClose, onSaved }) {
+  const isEdit = !!direction
+  const [branches, setBranches] = useState([])
+  const [name, setName] = useState(direction?.name || '')
+  const [color, setColor] = useState(direction?.color || '#7C6FF7')
+  const [ageMin, setAgeMin] = useState(direction?.age_min ?? '')
+  const [ageMax, setAgeMax] = useState(direction?.age_max ?? '')
+  const [selectedBranches, setSelectedBranches] = useState((direction?.branches || []).map(String))
   const [saving, setSaving] = useState(false)
+  const [errors, setErrors] = useState({})
 
-  const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
-  const toggleBranch = branchId => set(
-    'branches',
-    form.branches.includes(branchId) ? form.branches.filter(x => x !== branchId) : [...form.branches, branchId],
-  )
+  useEffect(() => {
+    axios.get('/api/v1/branches/', { headers: authHeaders() })
+      .then(res => setBranches((res.data.results || res.data).filter(b => b.is_active)))
+      .catch(console.error)
+  }, [])
 
-  async function submit(e) {
-    e.preventDefault()
-    setSaving(true)
-    setErrors({})
-    const payload = {
-      ...form,
-      age_min: form.age_min === '' ? null : Number(form.age_min),
-      age_max: form.age_max === '' ? null : Number(form.age_max),
-    }
-    try {
-      const response = isEdit ? await api.patch(`directions/${direction.id}/`, payload) : await api.post('directions/', payload)
-      toast.success(isEdit ? 'Направление сохранено' : 'Направление добавлено')
-      onSaved(response.data)
-    } catch (err) {
-      const data = err.response?.data
-      if (data && typeof data === 'object' && !data.detail) setErrors(data)
-      else toast.error(apiErrorMessage(err))
-    } finally {
-      setSaving(false)
-    }
+  function toggleBranch(id) {
+    setSelectedBranches(list => list.includes(id) ? list.filter(v => v !== id) : [...list, id])
   }
 
-  // Архивные филиалы выбрать нельзя (сервер их не примет), но если
-  // направление уже в таком филиале — показываем, чтобы не потерять.
-  const options = branches.filter(b => b.is_active || form.branches.includes(b.id))
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setSaving(true); setErrors({})
+    try {
+      const payload = {
+        name,
+        color,
+        age_min: ageMin === '' ? null : Number(ageMin),
+        age_max: ageMax === '' ? null : Number(ageMax),
+        branches: selectedBranches,
+      }
+      if (isEdit) {
+        await axios.patch(`/api/v1/directions/${direction.id}/`, payload, { headers: authHeaders() })
+      } else {
+        await axios.post('/api/v1/directions/', payload, { headers: authHeaders() })
+      }
+      onSaved()
+    } catch (err) {
+      setErrors(err.response?.data || { non_field_errors: 'Ошибка сервера' })
+    } finally { setSaving(false) }
+  }
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={isEdit ? 'Редактировать направление' : 'Новое направление'}
-      footer={
-        <>
-          <Button onClick={onClose}>Отмена</Button>
-          <Button variant="primary" type="submit" form="direction-form" loading={saving}>{isEdit ? 'Сохранить' : 'Добавить'}</Button>
-        </>
-      }
-    >
-      <form id="direction-form" onSubmit={submit} className="flex flex-col gap-4">
-        <Field label="Название" required error={errors.name}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => set('name', e.target.value)} placeholder="Например, Классический балет" required autoFocus />}
-        </Field>
-
-        <Field label="Цвет в расписании" error={errors.color}>
-          <div className="flex flex-wrap items-center gap-2">
-            {PALETTE.map(color => (
-              <button
-                key={color}
-                type="button"
-                aria-label={`Цвет ${color}`}
-                aria-pressed={form.color === color}
-                onClick={() => set('color', color)}
-                className={cn('size-8 rounded-full ring-offset-2 transition', form.color === color ? 'ring-2 ring-ink' : 'hover:scale-110')}
-                style={{ backgroundColor: color }}
-              />
-            ))}
-            <label className="relative flex size-8 cursor-pointer items-center justify-center rounded-full border border-dashed border-line-strong text-xs text-ink-muted" title="Свой цвет">
-              +
-              <input type="color" className="absolute inset-0 cursor-pointer opacity-0" value={form.color} onChange={e => set('color', e.target.value)} />
-            </label>
-          </div>
-        </Field>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Возраст от" error={errors.age_min}>
-            {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={0} max={99} value={form.age_min} onChange={e => set('age_min', e.target.value)} />}
-          </Field>
-          <Field label="Возраст до" error={errors.age_max}>
-            {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={0} max={99} value={form.age_max} onChange={e => set('age_max', e.target.value)} />}
-          </Field>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 480, maxHeight: '92vh', overflowY: 'auto', padding: '24px 24px 20px' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0, fontFamily: 'Manrope' }}>{isEdit ? 'Редактировать направление' : 'Новое направление'}</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
         </div>
 
-        <Field label="Доступно в филиалах" hint={options.length ? 'Можно выбрать несколько' : 'Сначала добавьте филиал'} error={errors.branches}>
-          <div className="flex flex-wrap gap-2">
-            {options.map(branch => {
-              const active = form.branches.includes(branch.id)
-              return (
-                <button
-                  key={branch.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => toggleBranch(branch.id)}
-                  className={cn(
-                    'rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors',
-                    active ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line text-ink-muted hover:border-line-strong hover:text-ink',
-                  )}
-                >
-                  {branch.name}{!branch.is_active && ' (архив)'}
-                </button>
-              )
-            })}
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
+            <div style={{ flex: 1 }}>
+              <div style={lbl}>Название направления *</div>
+              <input value={name} onChange={e => setName(e.target.value)} required placeholder="Балет" style={inputStyle} />
+              {errors.name && <p style={{ color: '#DC2626', fontSize: 12, margin: '4px 0 0' }}>{errors.name[0]}</p>}
+            </div>
+            <div style={{ width: 90 }}>
+              <div style={lbl}>Цвет</div>
+              <input type="color" value={color} onChange={e => setColor(e.target.value)} style={{ ...inputStyle, padding: 4, height: 38, cursor: 'pointer' }} />
+            </div>
           </div>
-        </Field>
-      </form>
-    </Modal>
+
+          <div style={{ display: 'flex', gap: 14, marginBottom: 18 }}>
+            <div style={{ flex: 1 }}>
+              <div style={lbl}>Возраст от</div>
+              <input type="number" min={0} value={ageMin} onChange={e => setAgeMin(e.target.value)} style={inputStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={lbl}>Возраст до</div>
+              <input type="number" min={0} value={ageMax} onChange={e => setAgeMax(e.target.value)} style={inputStyle} />
+              {errors.age_max && <p style={{ color: '#DC2626', fontSize: 12, margin: '4px 0 0' }}>{errors.age_max[0]}</p>}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 18 }}>
+            <div style={lbl}>Доступно в филиалах</div>
+            {branches.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#9CA3AF', fontFamily: 'Manrope' }}>Нет активных филиалов</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#FAFAFA', border: '1.5px solid #EBEBF0', borderRadius: 8, padding: '10px 12px' }}>
+                {branches.map(b => {
+                  const checked = selectedBranches.includes(String(b.id))
+                  return (
+                    <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleBranch(String(b.id))} style={{ display: 'none' }} />
+                      <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 4, border: `2px solid ${checked ? '#C97B6E' : '#D1D5DB'}`, background: checked ? '#C97B6E' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {checked && <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.8 7L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                      </div>
+                      <span style={{ fontSize: 13, fontFamily: 'Manrope', color: '#374151' }}>{b.name}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {errors.non_field_errors && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 12 }}>{errors.non_field_errors}</p>}
+
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={onClose} style={{ padding: '9px 18px', border: '1.5px solid #EBEBF0', borderRadius: 8, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'Manrope', color: '#6B7280' }}>Отмена</button>
+            <button type="submit" disabled={saving} style={{ padding: '9px 18px', background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', opacity: saving ? 0.7 : 1 }}>
+              {saving ? 'Сохранение...' : isEdit ? 'Сохранить' : 'Создать направление'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
