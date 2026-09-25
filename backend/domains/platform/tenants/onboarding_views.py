@@ -25,14 +25,7 @@ OWNER = "owner"
 # шаг сам начнёт открывать его форму вместо заглушки.
 SUBSCRIPTION_TYPE_CREATE_URL_NAME = None
 
-STEP_TITLES = {
-    Step.ORGANIZATION: "Организация",
-    Step.BRANCH: "Филиал",
-    Step.DIRECTIONS: "Направления",
-    Step.SUBSCRIPTION_TYPES: "Типы абонементов",
-    Step.GROUPS: "Группы",
-    Step.IMPORT: "Импорт базы",
-}
+STEP_TITLES = onboarding.STEP_TITLES
 
 
 def _url_or_none(name, *args):

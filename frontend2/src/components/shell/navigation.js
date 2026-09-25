@@ -37,7 +37,11 @@ export function visibleSections(can) {
     .filter(section => section.items.length)
 }
 
+// Страницы вне меню, которым всё равно нужен заголовок в шапке.
+const EXTRA_TITLES = { '/onboarding': 'Настройка центра' }
+
 export function sectionTitle(pathname) {
+  if (EXTRA_TITLES[pathname]) return EXTRA_TITLES[pathname]
   for (const section of NAV_SECTIONS) {
     for (const item of section.items) {
       if (pathname === item.to || pathname.startsWith(item.to + '/')) return item.label

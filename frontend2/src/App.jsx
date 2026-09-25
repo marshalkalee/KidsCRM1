@@ -4,8 +4,10 @@ import { RequireAuth, RequirePermission, SessionProvider } from './session/Sessi
 import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
+import Signup from './pages/Signup'
 import NotFound from './pages/NotFound'
 import ChildImport from './pages/ChildImport'
+import Onboarding from './pages/Onboarding'
 import ParentDetail from './pages/ParentDetail'
 import Parents from './pages/Parents'
 import Children from './pages/Children'
@@ -26,9 +28,11 @@ function App() {
           <SessionProvider>
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
               <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
+                <Route path="onboarding" element={<RequirePermission permission="can_manage_org_settings"><Onboarding /></RequirePermission>} />
                 <Route path="children" element={<Children />} />
                 <Route path="children/import" element={<RequirePermission permission="can_manage_children"><ChildImport /></RequirePermission>} />
                 <Route path="children/:id" element={<ChildDetail />} />
