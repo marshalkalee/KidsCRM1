@@ -79,3 +79,47 @@ class AttendanceMarkSerializer(serializers.Serializer):
         if attrs["status"] == Attendance.Status.ABSENT and not attrs.get("absence_reason"):
             attrs["absence_reason"] = Attendance.AbsenceReason.NO_REASON
         return attrs
+
+
+class AttendanceRosterEntrySerializer(serializers.Serializer):
+    """TRU-56: строка ростера занятия — {"child": Child, "attendance":
+    Attendance | None} (см. AttendanceViewSet.roster). Ребёнок без
+    Attendance ещё не отмечен — это НЕ то же самое, что status="absent"."""
+
+    child = serializers.UUIDField(source="child.id")
+    child_name = serializers.CharField(source="child.full_name")
+    attendance_id = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+    absence_reason = serializers.SerializerMethodField()
+    consumed_from_subscription = serializers.SerializerMethodField()
+    no_subscription_flag = serializers.SerializerMethodField()
+    marked_at = serializers.SerializerMethodField()
+
+    def get_attendance_id(self, obj):
+        attendance = obj["attendance"]
+        return attendance.id if attendance else None
+
+    def get_status(self, obj):
+        attendance = obj["attendance"]
+        return attendance.status if attendance else None
+
+    def get_status_display(self, obj):
+        attendance = obj["attendance"]
+        return attendance.get_status_display() if attendance else None
+
+    def get_absence_reason(self, obj):
+        attendance = obj["attendance"]
+        return attendance.absence_reason if attendance else ""
+
+    def get_consumed_from_subscription(self, obj):
+        attendance = obj["attendance"]
+        return bool(attendance and attendance.consumed_from_subscription)
+
+    def get_no_subscription_flag(self, obj):
+        attendance = obj["attendance"]
+        return bool(attendance and attendance.no_subscription_flag)
+
+    def get_marked_at(self, obj):
+        attendance = obj["attendance"]
+        return attendance.marked_at if attendance else None

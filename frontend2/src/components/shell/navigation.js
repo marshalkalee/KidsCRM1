@@ -1,5 +1,5 @@
 import {
-  Building2, CalendarDays, Contact, Home, Settings, Tag, Users, UsersRound,
+  Building2, CalendarDays, CheckSquare, Contact, Home, Settings, Tag, Users, UsersRound,
 } from 'lucide-react'
 
 /**
@@ -18,6 +18,7 @@ export const NAV_SECTIONS = [
       { to: '/parents', label: 'Родители', icon: Contact },
       { to: '/groups', label: 'Группы', icon: UsersRound },
       { to: '/schedule', label: 'Расписание', icon: CalendarDays },
+      { to: '/attendance', label: 'Посещаемость', icon: CheckSquare },
     ],
   },
   {

@@ -9,6 +9,13 @@ export function fetchLessons(dateFrom, dateTo, filters = {}) {
   return api.get('schedule/', { params }).then(res => res.data.results || res.data)
 }
 
+export function fetchTodayLessons() {
+  // today=1 — фильтр на бэке по дате в таймзоне организации (LessonViewSet.
+  // get_queryset), там же для преподавателя список уже сужен до своих
+  // занятий (RBAC) — здесь дополнительно фильтровать не нужно.
+  return api.get('schedule/', { params: { today: 1 } }).then(res => res.data.results || res.data)
+}
+
 export function fetchGroups() {
   return api.get('groups/').then(res => res.data.results || res.data)
 }
