@@ -33,6 +33,15 @@ class Step:
     IMPORT = "import"
 
 
+STEP_TITLES = {
+    Step.ORGANIZATION: "Организация",
+    Step.BRANCH: "Филиал",
+    Step.DIRECTIONS: "Направления",
+    Step.SUBSCRIPTION_TYPES: "Типы абонементов",
+    Step.GROUPS: "Группы",
+    Step.IMPORT: "Импорт базы",
+}
+
 # Порядок — маршрут из ТЗ п. 10.4 (организация — нулевой шаг: часовой пояс
 # и пороги со значениями по умолчанию, достаточно подтвердить).
 STEP_ORDER = [

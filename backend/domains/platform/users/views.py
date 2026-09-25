@@ -31,6 +31,7 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer.save(organization=self.request.user.organization)
 
 
+@method_decorator(ratelimit(key="ip", rate="5/m", method="POST", block=True), name="post")
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
