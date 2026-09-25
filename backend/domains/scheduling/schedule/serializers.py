@@ -145,7 +145,7 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
         # считаем сами одним индексированным запросом.
         if "conflict_map" in self.context:
             return self.context["conflict_map"].get(obj.id, set())
-        if obj.status == Lesson.Status.CANCELLED:
+        if obj.status in (Lesson.Status.CANCELLED, Lesson.Status.RESCHEDULED):
             return set()
         conflicts = find_conflicting_lessons(
             obj.organization,

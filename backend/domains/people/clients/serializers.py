@@ -5,7 +5,7 @@ from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone
 from domains.platform.core.role_permissions import can_view_child_sensitive_fields, can_view_phone
 from domains.platform.tenants.models import Direction
 
-from .models import Child, ChildContact, ContactPhone, ParentContact
+from .models import Child, ChildContact, CommunicationLog, ContactPhone, ParentContact
 
 
 class ChildSerializer(serializers.ModelSerializer):
@@ -200,3 +200,42 @@ class ChildContactSerializer(serializers.ModelSerializer):
             if qs.exists():
                 raise serializers.ValidationError("Этот контакт уже привязан к этому ребёнку.")
         return attrs
+
+
+class CommunicationLogSerializer(serializers.ModelSerializer):
+    """
+    /api/v1/communications/ — вкладка «Коммуникации» карточки ребёнка (ТЗ
+    п. 3.1, п. 4.1) и запись факта обзвона о переносе занятия (TRU-49).
+    Append-only, как и сама модель (CommunicationLog.__doc__) — только
+    список и создание.
+    """
+
+    parent_contact_full_name = serializers.CharField(
+        source="parent_contact.full_name", read_only=True, default=None
+    )
+    channel_display = serializers.CharField(source="get_channel_display", read_only=True)
+    author_name = serializers.CharField(source="author.full_name", read_only=True)
+
+    class Meta:
+        model = CommunicationLog
+        fields = [
+            "id",
+            "child",
+            "parent_contact",
+            "parent_contact_full_name",
+            "channel",
+            "channel_display",
+            "note",
+            "author",
+            "author_name",
+            "created_at",
+        ]
+        read_only_fields = ["id", "author", "created_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            org = request.user.organization
+            self.fields["child"].queryset = Child.objects.for_tenant(org)
+            self.fields["parent_contact"].queryset = ParentContact.objects.for_tenant(org)

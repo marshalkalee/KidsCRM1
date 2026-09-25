@@ -4,8 +4,13 @@ from rest_framework import viewsets
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOfOrganization
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 
-from .models import Child, ChildContact, ParentContact
-from .serializers import ChildContactSerializer, ChildSerializer, ParentContactSerializer
+from .models import Child, ChildContact, CommunicationLog, ParentContact
+from .serializers import (
+    ChildContactSerializer,
+    ChildSerializer,
+    CommunicationLogSerializer,
+    ParentContactSerializer,
+)
 
 
 class ChildViewSet(viewsets.ModelViewSet):
@@ -94,3 +99,34 @@ class ChildContactViewSet(viewsets.ModelViewSet):
         if parent_contact_id:
             qs = qs.filter(parent_contact_id=parent_contact_id)
         return qs
+
+
+class CommunicationLogViewSet(viewsets.ModelViewSet):
+    """
+    /api/v1/communications/ (ТЗ п. 3.1, п. 4.1) — вкладка «Коммуникации»
+    карточки ребёнка и запись факта обзвона о переносе занятия (TRU-49,
+    LessonViewSet.mark_called). Append-only (см. CommunicationLog.__doc__)
+    — только просмотр и создание, без изменения/удаления.
+    """
+
+    serializer_class = CommunicationLogSerializer
+    permission_classes = [IsStaffOfOrganization]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        qs = CommunicationLog.objects.for_tenant(self.request.user.organization).select_related(
+            "parent_contact", "author"
+        )
+        child_id = self.request.query_params.get("child")
+        if child_id:
+            qs = qs.filter(child_id=child_id)
+        date_from = self.request.query_params.get("date_from")
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        date_to = self.request.query_params.get("date_to")
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(author=self.request.user)

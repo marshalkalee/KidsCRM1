@@ -18,11 +18,17 @@ from domains.money.subscriptions.models import (
 from domains.money.subscriptions.subscription_service import SubscriptionService
 from domains.money.subscriptions.subscription_types import create_type
 from domains.money.subscriptions.subscriptions import add_ledger_entry
-from domains.people.clients.models import Child
+from domains.people.clients.models import (
+    Child,
+    ChildContact,
+    CommunicationLog,
+    ContactPhone,
+    ParentContact,
+)
 from domains.platform.core.audit import AuditLog
 from domains.platform.tenants.models import Branch, Direction, Organization, Room
 from domains.scheduling.groups.models import Group, GroupMembership
-from domains.scheduling.schedule.models import Lesson
+from domains.scheduling.schedule.models import Lesson, RescheduleCallLog
 
 User = get_user_model()
 
@@ -459,6 +465,17 @@ class LessonConflictTest(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+    def test_rescheduled_existing_lesson_does_not_block(self):
+        # Перенесённое занятие освободило исходный слот — новое занятие
+        # (или перенос старого назад) в это же время/зал/преподавателя не
+        # должно упираться в "призрак" занятия, которое там больше не идёт.
+        self.existing.transition_to(Lesson.Status.RESCHEDULED)
+        client = _authenticated_client(self.owner)
+
+        response = client.post("/api/v1/schedule/", self._overlapping_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
     def test_individual_lesson_without_group_counts_as_conflict(self):
         client = _authenticated_client(self.owner)
         payload = self._overlapping_payload(individual_children=[str(self.child.id)])
@@ -569,6 +586,28 @@ class LessonConflictTest(APITestCase):
             set(by_id[str(self.existing.id)]["conflicting_lesson_ids"]), {str(second.id)}
         )
         self.assertFalse(by_id[str(unrelated.id)]["has_conflict"])
+
+    def test_rescheduled_lesson_not_marked_as_conflicting_with_its_old_slot(self):
+        # Перенесённое занятие остаётся на своём старом месте в календаре
+        # (видно как rescheduled), но само по себе больше никого не
+        # блокирует и не подсвечивается как конфликт.
+        self.existing.transition_to(Lesson.Status.RESCHEDULED)
+        new_in_same_slot = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            starts_at=self.day,
+            ends_at=self.day + datetime.timedelta(hours=1),
+        )
+        client = _authenticated_client(self.owner)
+
+        response = client.get(
+            "/api/v1/schedule/", {"date_from": "2026-09-24", "date_to": "2026-09-24"}
+        )
+
+        by_id = {row["id"]: row for row in response.data}
+        self.assertFalse(by_id[str(self.existing.id)]["has_conflict"])
+        self.assertFalse(by_id[str(new_in_same_slot.id)]["has_conflict"])
 
     def test_conflicts_endpoint_lists_only_conflicting_lessons(self):
         second = Lesson.objects.create(
@@ -1181,3 +1220,268 @@ class BulkCancelTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.in_range_room1.refresh_from_db()
         self.assertEqual(self.in_range_room1.status, Lesson.Status.SCHEDULED)
+
+
+class RescheduleWhoToCallTest(APITestCase):
+    """
+    Перенос занятия и список «кого обзвонить» (TRU-49, ТЗ п. 4.2, п. 4.5).
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.branch = Branch.objects.create(organization=self.org, name="Главный")
+        self.room = Room.objects.create(branch=self.branch, name="Зал 1")
+        self.other_room = Room.objects.create(branch=self.branch, name="Зал 2")
+        self.direction = Direction.objects.create(organization=self.org, name="Балет")
+        self.group = Group.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            direction=self.direction,
+            name="Балет",
+            capacity=10,
+        )
+        self.teacher = User.objects.create_user(
+            phone="+77070000001",
+            full_name="Айгуль",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.owner = User.objects.create_user(
+            phone="+77070000002",
+            full_name="Владелец",
+            password="pass12345",
+            organization=self.org,
+            role=User.Role.OWNER,
+        )
+
+        self.child_a = Child.objects.create(
+            organization=self.org,
+            full_name="Аружан Иванова",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 8),
+            gender=Child.Gender.FEMALE,
+        )
+        self.child_b = Child.objects.create(
+            organization=self.org,
+            full_name="Бекзат Иванов",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 9),
+            gender=Child.Gender.MALE,
+        )
+        for child in (self.child_a, self.child_b):
+            GroupMembership.objects.create(
+                organization=self.org,
+                group=self.group,
+                child=child,
+                joined_at=datetime.date.today() - datetime.timedelta(days=60),
+            )
+
+        # Одна мама — оба ребёнка (проверяем, что в списке она один раз).
+        self.mother = ParentContact.objects.create(
+            organization=self.org, full_name="Иванова Мама", whatsapp="+77011234567"
+        )
+        ContactPhone.objects.create(parent_contact=self.mother, number="+77011234567")
+        ChildContact.objects.create(
+            organization=self.org,
+            child=self.child_a,
+            parent_contact=self.mother,
+            role=ChildContact.Role.MOTHER,
+            is_primary_contact=True,
+        )
+        ChildContact.objects.create(
+            organization=self.org,
+            child=self.child_b,
+            parent_contact=self.mother,
+            role=ChildContact.Role.MOTHER,
+            is_primary_contact=True,
+        )
+        # Папа — только у второго ребёнка.
+        self.father = ParentContact.objects.create(organization=self.org, full_name="Иванов Папа")
+        ContactPhone.objects.create(parent_contact=self.father, number="+77029876543")
+        ChildContact.objects.create(
+            organization=self.org,
+            child=self.child_b,
+            parent_contact=self.father,
+            role=ChildContact.Role.FATHER,
+        )
+
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        self.day = datetime.datetime(2026, 9, 16, 18, 0, tzinfo=tz)
+        self.lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            room=self.room,
+            teacher=self.teacher,
+            starts_at=self.day,
+            ends_at=self.day + datetime.timedelta(hours=1),
+        )
+
+    def _reschedule(self, **overrides):
+        client = _authenticated_client(self.owner)
+        new_day = self.day + datetime.timedelta(days=2)
+        payload = {
+            "group": str(self.group.id),
+            "room": str(self.room.id),
+            "teacher": str(self.teacher.id),
+            "starts_at": new_day.isoformat(),
+            "ends_at": (new_day + datetime.timedelta(hours=1)).isoformat(),
+        }
+        payload.update(overrides)
+        return client, client.post(
+            f"/api/v1/schedule/{self.lesson.id}/reschedule/", payload, format="json"
+        )
+
+    def test_reschedule_sets_bidirectional_link_and_statuses(self):
+        client, response = self._reschedule()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.lesson.refresh_from_db()
+        new_lesson = Lesson.objects.get(pk=response.data["id"])
+        self.assertEqual(self.lesson.status, Lesson.Status.RESCHEDULED)
+        self.assertEqual(new_lesson.status, Lesson.Status.SCHEDULED)
+        self.assertEqual(new_lesson.rescheduled_from_id, self.lesson.id)
+        self.assertEqual(self.lesson.rescheduled_to.id, new_lesson.id)
+
+        # Оба видны в календаре — старое как перенесённое, новое как обычное.
+        list_response = client.get(
+            "/api/v1/schedule/", {"date_from": "2026-09-16", "date_to": "2026-09-19"}
+        )
+        by_id = {row["id"]: row for row in list_response.data}
+        self.assertEqual(by_id[str(self.lesson.id)]["status"], "rescheduled")
+        self.assertEqual(by_id[str(new_lesson.id)]["status"], "scheduled")
+
+    def test_reschedule_reverts_subscription_consumption_like_cancel(self):
+        subscription_type = create_type(
+            self.org,
+            name="8 занятий",
+            price=25000,
+            quota_sessions=8,
+            duration_days=30,
+            directions=[self.direction],
+        )
+        subscription = Subscription.objects.create(
+            organization=self.org,
+            child=self.child_a,
+            subscription_type_version=subscription_type.versions.latest(),
+            direction=self.direction,
+            starts_on=datetime.date.today(),
+            ends_on=datetime.date.today() + datetime.timedelta(days=30),
+            list_price=25000,
+            price=25000,
+        )
+        add_ledger_entry(subscription, kind=SubscriptionLedgerEntry.Kind.INITIAL_GRANT, delta=8)
+        SubscriptionService.consume(self.child_a.id, self.lesson.id, self.direction.id)
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.sessions_remaining_cache, 7)
+
+        _client, response = self._reschedule()
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.sessions_remaining_cache, 8)
+        consumption = LessonConsumption.objects.get(child=self.child_a, lesson_id=self.lesson.id)
+        self.assertIsNotNone(consumption.reverted_at)
+
+    def test_who_to_call_requires_rescheduled_status(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.get(f"/api/v1/schedule/{self.lesson.id}/who-to-call/")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_who_to_call_groups_by_contact_with_message_and_whatsapp_link(self):
+        client, _reschedule_response = self._reschedule()
+
+        response = client.get(f"/api/v1/schedule/{self.lesson.id}/who-to-call/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn("16 сентября в 18:00", response.data["message"])
+        self.assertIn("18 сентября в 18:00", response.data["message"])
+
+        contacts = {c["parent_contact_name"]: c for c in response.data["contacts"]}
+        self.assertEqual(set(contacts), {"Иванова Мама", "Иванов Папа"})
+
+        mother = contacts["Иванова Мама"]
+        self.assertEqual(
+            {c["full_name"] for c in mother["children"]}, {"Аружан Иванова", "Бекзат Иванов"}
+        )
+        self.assertFalse(mother["called"])
+        self.assertIsNotNone(mother["whatsapp_link"])
+        self.assertIn("wa.me/77011234567", mother["whatsapp_link"])
+        self.assertIn(
+            "%D1%81%D0%B5%D0%BD%D1%82%D1%8F%D0%B1%D1%80%D1%8F", mother["whatsapp_link"]
+        )  # "сентября" urlencoded
+
+        father = contacts["Иванов Папа"]
+        self.assertEqual({c["full_name"] for c in father["children"]}, {"Бекзат Иванов"})
+        self.assertEqual(father["phones"], ["+77029876543"])
+
+    def test_mark_called_persists_and_is_idempotent(self):
+        client, _r = self._reschedule()
+
+        response = client.post(
+            f"/api/v1/schedule/{self.lesson.id}/mark-called/",
+            {"parent_contact": str(self.mother.id)},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            RescheduleCallLog.objects.filter(
+                lesson=self.lesson, parent_contact=self.mother
+            ).exists()
+        )
+
+        # Видно при возврате на экран.
+        who = client.get(f"/api/v1/schedule/{self.lesson.id}/who-to-call/")
+        mother = next(c for c in who.data["contacts"] if c["parent_contact_name"] == "Иванова Мама")
+        self.assertTrue(mother["called"])
+
+        # Один звонок — одна запись в коммуникациях на ребёнка (не на каждый повтор).
+        client.post(
+            f"/api/v1/schedule/{self.lesson.id}/mark-called/",
+            {"parent_contact": str(self.mother.id)},
+            format="json",
+        )
+        self.assertEqual(
+            CommunicationLog.objects.filter(parent_contact=self.mother).count(), 2
+        )  # по одной на child_a и child_b, не по две
+
+    def test_unmark_called_removes_flag_but_keeps_communication_log(self):
+        client, _r = self._reschedule()
+        client.post(
+            f"/api/v1/schedule/{self.lesson.id}/mark-called/",
+            {"parent_contact": str(self.mother.id)},
+            format="json",
+        )
+        log_count_before = CommunicationLog.objects.filter(parent_contact=self.mother).count()
+
+        response = client.post(
+            f"/api/v1/schedule/{self.lesson.id}/unmark-called/",
+            {"parent_contact": str(self.mother.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(
+            RescheduleCallLog.objects.filter(
+                lesson=self.lesson, parent_contact=self.mother
+            ).exists()
+        )
+        self.assertEqual(
+            CommunicationLog.objects.filter(parent_contact=self.mother).count(), log_count_before
+        )
+
+    def test_communications_api_lists_entries_for_child(self):
+        client, _r = self._reschedule()
+        client.post(
+            f"/api/v1/schedule/{self.lesson.id}/mark-called/",
+            {"parent_contact": str(self.mother.id)},
+            format="json",
+        )
+
+        response = client.get("/api/v1/communications/", {"child": str(self.child_a.id)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data.get("results", response.data)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["parent_contact_full_name"], "Иванова Мама")
+        self.assertEqual(rows[0]["channel"], "call")

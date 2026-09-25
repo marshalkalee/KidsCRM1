@@ -1,16 +1,19 @@
 from django.db.models import Count, Prefetch, Q
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import filters, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 
+from domains.people.clients.models import ChildContact, CommunicationLog, ParentContact
 from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
 from domains.platform.core.viewsets import TenantModelViewSet
 from domains.scheduling.groups.models import Group
 
 from .conflicts import compute_conflict_map, find_conflicting_lessons
-from .models import Lesson
+from .models import Lesson, RescheduleCallLog
+from .reschedule_contacts import build_reschedule_message, build_who_to_call
 from .serializers import LessonSerializer
 
 
@@ -297,7 +300,7 @@ class LessonViewSet(TenantModelViewSet):
             is_modified=True,
         )
         try:
-            lesson.reschedule_to(new_lesson)
+            lesson.reschedule_to(new_lesson, actor=request.user)
         except Exception as e:
             new_lesson.delete()
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -332,3 +335,78 @@ class LessonViewSet(TenantModelViewSet):
         context["conflict_map"] = conflict_map
         serializer = LessonSerializer(conflicting, many=True, context=context)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="who-to-call")
+    def who_to_call(self, request, pk=None):
+        """
+        TRU-49: список контактов для обзвона о переносе — исходное
+        (перенесённое) занятие, pk. Готовый текст сообщения и wa.me-ссылка
+        с уже подставленным текстом (ТЗ п. 4.5); кто уже обзвонён —
+        RescheduleCallLog, сохраняется между заходами на экран.
+        """
+        lesson = self.get_object()
+        if lesson.status != Lesson.Status.RESCHEDULED or not hasattr(lesson, "rescheduled_to"):
+            return Response(
+                {"detail": "Занятие не перенесено — обзванивать не о чем."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        data = build_who_to_call(lesson, self.request.organization)
+        return Response(data)
+
+    @action(detail=True, methods=["post"], url_path="mark-called")
+    def mark_called(self, request, pk=None):
+        """
+        Отметка «обзвонил» — сохраняется (не только на фронте, критерий
+        приёмки TRU-49) и пишет факт в CommunicationLog каждого затронутого
+        ребёнка этого контакта (вкладка «Коммуникации», TRU-28). Повторная
+        отметка того же контакта по тому же занятию — идемпотентна, не
+        плодит вторую запись коммуникации.
+        """
+        lesson = self.get_object()
+        if lesson.status != Lesson.Status.RESCHEDULED or not hasattr(lesson, "rescheduled_to"):
+            return Response(
+                {"detail": "Занятие не перенесено — обзванивать не о чем."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        contact_id = request.data.get("parent_contact")
+        if not contact_id:
+            return Response({"parent_contact": "Обязателен."}, status=status.HTTP_400_BAD_REQUEST)
+        parent_contact = get_object_or_404(
+            ParentContact.objects.for_tenant(self.request.organization), pk=contact_id
+        )
+        channel = request.data.get("channel", CommunicationLog.Channel.CALL)
+        valid_channels = {value for value, _ in CommunicationLog.Channel.choices}
+        if channel not in valid_channels:
+            channel = CommunicationLog.Channel.CALL
+
+        _call_log, created = RescheduleCallLog.objects.get_or_create(
+            lesson=lesson, parent_contact=parent_contact, defaults={"called_by": request.user}
+        )
+        if created:
+            tz = timezone.zoneinfo.ZoneInfo(self.request.organization.timezone or "Asia/Almaty")
+            message = build_reschedule_message(lesson, lesson.rescheduled_to, tz)
+            child_ids = {child.id for child in lesson.participants()}
+            affected_child_ids = (
+                ChildContact.objects.for_tenant(self.request.organization)
+                .filter(parent_contact=parent_contact, child_id__in=child_ids)
+                .values_list("child_id", flat=True)
+                .distinct()
+            )
+            for child_id in affected_child_ids:
+                CommunicationLog.objects.create(
+                    child_id=child_id,
+                    parent_contact=parent_contact,
+                    channel=channel,
+                    note=f"Обзвон о переносе занятия. {message}",
+                    author=request.user,
+                )
+        return Response({"called": True})
+
+    @action(detail=True, methods=["post"], url_path="unmark-called")
+    def unmark_called(self, request, pk=None):
+        """Снять отметку (передумали/ошиблись контактом) — историю
+        CommunicationLog не трогает, тот лог append-only."""
+        lesson = self.get_object()
+        contact_id = request.data.get("parent_contact")
+        RescheduleCallLog.objects.filter(lesson=lesson, parent_contact_id=contact_id).delete()
+        return Response({"called": False})

@@ -77,3 +77,19 @@ export function bulkCancelLessons({ dateFrom, dateTo, reasonCategory, comment, f
 export function rescheduleLesson(id, payload) {
   return api.post(`schedule/${id}/reschedule/`, payload).then(res => res.data)
 }
+
+export function fetchWhoToCall(lessonId) {
+  return api.get(`schedule/${lessonId}/who-to-call/`).then(res => res.data)
+}
+
+export function markCalled(lessonId, parentContactId, channel = 'call') {
+  return api
+    .post(`schedule/${lessonId}/mark-called/`, { parent_contact: parentContactId, channel })
+    .then(res => res.data)
+}
+
+export function unmarkCalled(lessonId, parentContactId) {
+  return api
+    .post(`schedule/${lessonId}/unmark-called/`, { parent_contact: parentContactId })
+    .then(res => res.data)
+}

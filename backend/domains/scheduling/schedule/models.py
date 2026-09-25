@@ -161,10 +161,33 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
         self.status = new_status
         self.save(update_fields=["status", "updated_at"])
 
-    def reschedule_to(self, new_lesson: "Lesson"):
+    def reschedule_to(self, new_lesson: "Lesson", *, actor=None):
+        """Перенос — по ТЗ п. 4.2 это "отмена с причиной + создание нового
+        со связью" (TRU-49): исходное занятие получает статус «перенесено»,
+        новое хранит ссылку на него в обе стороны (rescheduled_from/
+        rescheduled_to). Списания с абонемента участников исходного занятия
+        откатываются той же логикой, что при обычной отмене (TRU-48,
+        согласовано с Bekzat) — SubscriptionService.revert() идемпотентен,
+        для обычного переноса в будущем просто ничего не делает."""
+        from domains.money.subscriptions.subscription_service import SubscriptionService
+        from domains.platform.core.audit import AuditLog
+
+        before = {"status": self.status}
+
         self.transition_to(self.Status.RESCHEDULED)
         new_lesson.rescheduled_from = self
         new_lesson.save(update_fields=["rescheduled_from", "updated_at"])
+
+        for child in self.participants():
+            SubscriptionService.revert(child_id=child.id, lesson_id=self.id)
+
+        AuditLog.record(
+            actor=actor,
+            action=AuditLog.Action.RESCHEDULE,
+            entity=self,
+            before=before,
+            after={"status": self.status, "rescheduled_to_id": str(new_lesson.id)},
+        )
         return new_lesson
 
     def cancel(self, *, actor, category: str, comment: str = ""):
@@ -210,3 +233,52 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
                 "cancel_reason": self.cancel_reason,
             },
         )
+
+
+class RescheduleCallLog(TenantModel):
+    """
+    TRU-49: кто уже обзвонён по переносу конкретного занятия — отметки
+    должны сохраняться и быть видны при возврате на экран (критерий
+    приёмки), а не жить только в состоянии фронтенда, иначе при двадцати
+    детях администратор собьётся и кому-то позвонит дважды, а кому-то ни
+    разу. Ключ — (занятие, контакт): один родитель с двумя детьми в одной
+    группе отмечается один раз, не дважды.
+    """
+
+    lesson = models.ForeignKey(
+        Lesson,
+        on_delete=models.CASCADE,
+        related_name="reschedule_call_logs",
+        verbose_name=_("Перенесённое занятие"),
+    )
+    parent_contact = models.ForeignKey(
+        "clients.ParentContact",
+        on_delete=models.CASCADE,
+        related_name="reschedule_call_logs",
+        verbose_name=_("Контакт"),
+    )
+    called_at = models.DateTimeField(auto_now_add=True)
+    called_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        verbose_name = _("Отметка обзвона о переносе")
+        verbose_name_plural = _("Отметки обзвона о переносе")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lesson", "parent_contact"],
+                name="unique_reschedule_call_per_contact",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.organization_id = self.lesson.organization_id
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.lesson_id} — {self.parent_contact_id}"

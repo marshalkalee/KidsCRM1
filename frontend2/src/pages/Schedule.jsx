@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, MapPin, User as UserIcon,
-  Plus, CalendarDays, Rows3, AlertTriangle, Ban,
+  Plus, CalendarDays, Rows3, AlertTriangle, Ban, Phone, MessageCircle, PhoneCall,
 } from 'lucide-react'
 import {
   startOfWeek, addDays, toISODate, isToday, formatWeekRange, formatDayLabel,
@@ -11,6 +11,7 @@ import {
 import {
   fetchLessons, fetchGroups, fetchRooms, fetchTeachers, fetchBranches, fetchDirections, fetchMe,
   fetchConflicts, searchChildren, createLesson, cancelLesson, bulkCancelLessons, rescheduleLesson,
+  fetchWhoToCall, markCalled, unmarkCalled,
 } from '../api/lessons'
 
 const ACCENT = '#C97B6E'
@@ -72,6 +73,105 @@ function layoutColumn(lessons) {
   return placed.map(l => ({ ...l, totalCols }))
 }
 
+// Группирует уже разложенные (layoutColumn) занятия одного дня/зала в
+// кластеры по фактическому пересечению времени — цепочкой, как обычное
+// объединение интервалов. Внутри кластера .col уже 0-based (колонки
+// освобождаются между кластерами) и идёт подряд без дырок — на этом
+// строится и локальная ширина кластера, и раскладка по рядам ниже.
+function clusterOverlaps(items) {
+  const sorted = [...items].sort((a, b) => a.startMin - b.startMin)
+  const clusters = []
+  let current = []
+  let currentMaxEnd = -Infinity
+  for (const item of sorted) {
+    if (current.length === 0 || item.startMin < currentMaxEnd) {
+      current.push(item)
+      currentMaxEnd = Math.max(currentMaxEnd, item.endMin)
+    } else {
+      clusters.push(current)
+      current = [item]
+      currentMaxEnd = item.endMin
+    }
+  }
+  if (current.length) clusters.push(current)
+  return clusters
+}
+
+// Единая шкала времени для ВСЕЙ сетки (все дни/залы сразу — иначе часовые
+// линии разъедутся между колонками). Обычно час = ROW_HEIGHT px. Но если в
+// каком-то дне/зале нашёлся кластер больше чем из 2 одновременных занятий
+// (реальный конфликт по залу/преподавателю, TRU-46), то ровно на диапазон
+// этого пересечения высота растёт в нужное число раз — под лишние занятия,
+// разложенные по 2 в ряд. Столбцы дней/залов при этом остаются фиксированной
+// ширины, никогда не сжимаются и не скроллятся; растягивается только сама
+// сетка по вертикали (у неё и так уже есть overflowY: auto на весь календарь).
+function buildTimeScale(gridStartHour, hours, columns, itemsByColumn) {
+  const baseMin = gridStartHour * 60
+  const endMin = (hours[hours.length - 1] + 1) * 60
+  const pxPerMin = ROW_HEIGHT / 60
+
+  const expansions = []
+  columns.forEach(col => {
+    const { active } = itemsByColumn[col.id] || { active: [] }
+    clusterOverlaps(active).forEach(cluster => {
+      const localMaxCols = cluster.reduce((max, l) => Math.max(max, l.col + 1), 1)
+      if (localMaxCols > 2) {
+        expansions.push({
+          startMin: Math.min(...cluster.map(l => l.startMin)),
+          endMin: Math.max(...cluster.map(l => l.endMin)),
+          numRows: Math.ceil(localMaxCols / 2),
+        })
+      }
+    })
+  })
+
+  const boundarySet = new Set([baseMin, endMin])
+  expansions.forEach(e => { boundarySet.add(e.startMin); boundarySet.add(e.endMin) })
+  const boundaries = [...boundarySet].filter(m => m >= baseMin && m <= endMin).sort((a, b) => a - b)
+
+  const cumulative = [0]
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const segStart = boundaries[i]
+    const segEnd = boundaries[i + 1]
+    const multiplier = expansions.reduce(
+      (max, e) => (e.startMin <= segStart && e.endMin >= segEnd ? Math.max(max, e.numRows) : max),
+      1
+    )
+    cumulative.push(cumulative[i] + (segEnd - segStart) * pxPerMin * multiplier)
+  }
+
+  function top(min) {
+    const clamped = Math.min(Math.max(min, baseMin), endMin)
+    let i = 0
+    while (i < boundaries.length - 2 && boundaries[i + 1] < clamped) i++
+    const segStart = boundaries[i]
+    const segEnd = boundaries[i + 1] ?? segStart
+    const segPx = cumulative[i + 1] - cumulative[i]
+    const multiplier = segEnd > segStart ? segPx / ((segEnd - segStart) * pxPerMin) : 1
+    return cumulative[i] + (clamped - segStart) * pxPerMin * multiplier
+  }
+
+  return { top, totalHeight: cumulative[cumulative.length - 1] }
+}
+
+// Отменённые/перенесённые занятия фактически освободили своё время (тот же
+// принцип, что и в бэкенд-детекте конфликтов, TRU-46) — не должны отжимать
+// место у нового занятия в сетке. Раскладываем их отдельно, узкой меткой
+// сбоку, а не полноценной колонкой.
+function splitActiveAndHistory(lessons) {
+  const active = []
+  const history = []
+  lessons.forEach(l => {
+    if (l.status === 'cancelled' || l.status === 'rescheduled') history.push(l)
+    else active.push(l)
+  })
+  // layoutColumn и для history — не для ширины (метки не сжимаются), а
+  // чтобы получить .col по реальному пересечению времени: иначе третья
+  // отменённая запись дня сдвигалась бы наравне с первыми двумя, даже
+  // если она в другое время и ни с чем не пересекается.
+  return { active: layoutColumn(active), history: layoutColumn(history) }
+}
+
 function withMinutes(lesson) {
   return {
     ...lesson,
@@ -123,6 +223,7 @@ export default function Schedule() {
   const [branches, setBranches] = useState([])
   const [directions, setDirections] = useState([])
   const [selectedLesson, setSelectedLesson] = useState(null)
+  const [whoToCallLessonId, setWhoToCallLessonId] = useState(null)
   const [createSlot, setCreateSlot] = useState(null)
   const [mobileDay, setMobileDay] = useState(0)
   const [conflictsCount, setConflictsCount] = useState(0)
@@ -190,31 +291,34 @@ export default function Schedule() {
   )
 
   const byWeekday = useMemo(() => {
-    const map = {}
-    weekDays.forEach(d => { map[toISODate(d)] = [] })
+    const raw = {}
+    weekDays.forEach(d => { raw[toISODate(d)] = [] })
     lessons.forEach(lesson => {
       const dateStr = localDatePart(lesson.starts_at_local)
-      if (!(dateStr in map)) return
-      map[dateStr].push(withMinutes(lesson))
+      if (!(dateStr in raw)) return
+      raw[dateStr].push(withMinutes(lesson))
     })
-    Object.keys(map).forEach(k => { map[k] = layoutColumn(map[k]) })
+    const map = {}
+    Object.keys(raw).forEach(k => { map[k] = splitActiveAndHistory(raw[k]) })
     return map
   }, [lessons, weekDays])
 
   const byRoom = useMemo(() => {
-    const map = {}
+    const raw = {}
     lessons.forEach(lesson => {
       const key = lesson.room || '__none__'
-      if (!map[key]) map[key] = []
-      map[key].push(withMinutes(lesson))
+      if (!raw[key]) raw[key] = []
+      raw[key].push(withMinutes(lesson))
     })
-    Object.keys(map).forEach(k => { map[k] = layoutColumn(map[k]) })
+    const map = {}
+    Object.keys(raw).forEach(k => { map[k] = splitActiveAndHistory(raw[k]) })
     return map
   }, [lessons])
 
   const dayColumns = useMemo(() => {
     const cols = filteredRooms.map(r => ({ id: r.id, name: r.name }))
-    if (byRoom.__none__?.length) cols.push({ id: '__none__', name: 'Без зала' })
+    const none = byRoom.__none__
+    if (none && (none.active.length + none.history.length) > 0) cols.push({ id: '__none__', name: 'Без зала' })
     return cols
   }, [filteredRooms, byRoom])
 
@@ -309,9 +413,31 @@ export default function Schedule() {
       {selectedLesson && (
         <LessonDetailsModal
           lesson={selectedLesson}
+          lessons={lessons}
           onClose={() => setSelectedLesson(null)}
           onDone={handleActionDone}
           onAttendance={id => navigate(`/attendance?lesson=${id}`)}
+          onWhoToCall={id => { setSelectedLesson(null); setWhoToCallLessonId(id) }}
+          onSelectReplacement={l => setSelectedLesson(l)}
+          onCreateHere={l => {
+            setSelectedLesson(null)
+            const durationMin = Math.round((new Date(l.ends_at) - new Date(l.starts_at)) / 60000)
+            setCreateSlot({
+              date: localDatePart(l.starts_at_local),
+              time: localTimePart(l.starts_at_local),
+              room: l.room || '',
+              groupId: l.group || '',
+              teacherId: l.teacher || '',
+              durationMin,
+            })
+          }}
+        />
+      )}
+
+      {whoToCallLessonId && (
+        <WhoToCallModal
+          lessonId={whoToCallLessonId}
+          onClose={() => setWhoToCallLessonId(null)}
         />
       )}
 
@@ -579,28 +705,122 @@ function LessonChip({ lesson, style, onClick }) {
       onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
       title={hasConflict ? 'Пересекается по залу или преподавателю с другим занятием' : undefined}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        {hasConflict && <AlertTriangle size={10} style={{ color: '#B45309', flexShrink: 0 }} />}
-        {isIndividual && <UserIcon size={9} style={{ color, flexShrink: 0 }} />}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {hasConflict && <AlertTriangle size={10} style={{ color: '#B45309', flexShrink: 0 }} />}
+            {isIndividual && <UserIcon size={9} style={{ color, flexShrink: 0 }} />}
+            <div style={{
+              fontSize: 11, fontWeight: 700, color: dimmed ? '#9CA3AF' : '#1A1A2E',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              textDecoration: isCancelled ? 'line-through' : 'none',
+            }}>
+              {lessonTitle(lesson)}
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: dimmed ? '#9CA3AF' : '#6B7280', whiteSpace: 'nowrap' }}>
+            {localTimePart(lesson.starts_at_local)}–{localTimePart(lesson.ends_at_local)}
+            {lesson.capacity != null && ` · ${lesson.enrolled_count}/${lesson.capacity}`}
+          </div>
+          {dimmed && (
+            <div style={{ fontSize: 9, fontWeight: 700, color: isCancelled ? '#DC2626' : '#D97706', marginTop: 2 }}>
+              {isCancelled ? 'ОТМЕНЕНО' : 'ПЕРЕНЕСЕНО'}
+            </div>
+          )}
+          {hasConflict && (
+            <div style={{ fontSize: 9, fontWeight: 700, color: '#B45309', marginTop: 2 }}>КОНФЛИКТ</div>
+          )}
+    </div>
+  )
+}
+
+const HISTORY_MARKER_WIDTH = 8
+const HISTORY_BASE_OFFSET = 0
+
+// Одна метка на группу отменённых/перенесённых занятий, пересекающихся по
+// времени (см. splitActiveAndHistory) — не занимает колонку, время
+// фактически свободно, на нём уже может стоять новое занятие в полную
+// ширину. Раньше рисовалась отдельная полоска на КАЖДОЕ такое занятие —
+// при нескольких переносах подряд получался "частокол" из полосок; теперь
+// это одна метка (с счётчиком, если записей больше одной). Если занятие
+// одно — клик сразу открывает его карточку. Если несколько — список
+// открывается КЛИКОМ (не наведением: при наведении список пропадал, как
+// только мышь уходила с узкой полоски по пути к нему) и остаётся открытым,
+// пока не выбрали занятие или не кликнули снаружи.
+function HistoryMarker({ items, onSelect, style }) {
+  const [open, setOpen] = useState(false)
+  const [hover, setHover] = useState(false)
+  const ref = useRef()
+  const hasRescheduled = items.some(l => l.status === 'rescheduled')
+  const baseColor = hasRescheduled ? '240, 180, 41' : '156, 163, 175'
+  const color = `rgba(${baseColor}, ${hover || open ? 0.85 : 0.55})`
+
+  useEffect(() => {
+    if (!open) return
+    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div
+      ref={ref}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={e => {
+        e.stopPropagation()
+        if (items.length === 1) onSelect(items[0])
+        else setOpen(o => !o)
+      }}
+      style={{
+        position: 'absolute', right: HISTORY_BASE_OFFSET, width: 16,
+        display: 'flex', justifyContent: 'flex-end', cursor: 'pointer', zIndex: open ? 20 : 2,
+        ...style,
+      }}
+    >
+      <div style={{
+        width: HISTORY_MARKER_WIDTH, height: '100%', borderRadius: 3, background: color,
+        transition: 'background 0.15s',
+      }} />
+      {items.length > 1 && (
         <div style={{
-          fontSize: 11, fontWeight: 700, color: dimmed ? '#9CA3AF' : '#1A1A2E',
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          textDecoration: isCancelled ? 'line-through' : 'none',
+          position: 'absolute', top: 2, right: 1, minWidth: 14, height: 14, padding: '0 3px',
+          borderRadius: 8, background: '#1A1A2E', color: '#fff', fontSize: 9, fontWeight: 700,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
         }}>
-          {lessonTitle(lesson)}
-        </div>
-      </div>
-      <div style={{ fontSize: 10, color: dimmed ? '#9CA3AF' : '#6B7280', whiteSpace: 'nowrap' }}>
-        {localTimePart(lesson.starts_at_local)}–{localTimePart(lesson.ends_at_local)}
-        {lesson.capacity != null && ` · ${lesson.enrolled_count}/${lesson.capacity}`}
-      </div>
-      {dimmed && (
-        <div style={{ fontSize: 9, fontWeight: 700, color: isCancelled ? '#DC2626' : '#D97706', marginTop: 2 }}>
-          {isCancelled ? 'ОТМЕНЕНО' : 'ПЕРЕНЕСЕНО'}
+          {items.length}
         </div>
       )}
-      {hasConflict && (
-        <div style={{ fontSize: 9, fontWeight: 700, color: '#B45309', marginTop: 2 }}>КОНФЛИКТ</div>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 0, right: '100%', marginRight: 6,
+          background: '#1A1A2E', color: '#fff', borderRadius: 8, padding: 6,
+          fontSize: 11, fontFamily: 'Manrope', whiteSpace: 'nowrap',
+          boxShadow: '0 6px 16px rgba(0,0,0,0.25)', maxHeight: 220, overflowY: 'auto',
+        }}>
+          {items.map((lesson, i) => {
+            const isCancelled = lesson.status === 'cancelled'
+            return (
+              <div
+                key={lesson.id}
+                onClick={e => { e.stopPropagation(); setOpen(false); onSelect(lesson) }}
+                style={{
+                  padding: '6px 8px', borderRadius: 6, cursor: 'pointer',
+                  borderTop: i > 0 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <div style={{ fontWeight: 700, color: isCancelled ? '#F87171' : '#FBBF24', marginBottom: 2 }}>
+                  {isCancelled ? 'ОТМЕНЕНО' : 'ПЕРЕНЕСЕНО'}
+                </div>
+                <div style={{ fontWeight: 600 }}>{lessonTitle(lesson)}</div>
+                <div style={{ color: '#9CA3AF', marginTop: 2 }}>
+                  {localTimePart(lesson.starts_at_local)}–{localTimePart(lesson.ends_at_local)}
+                  {lesson.room_name && ` · ${lesson.room_name}`}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
     </div>
   )
@@ -610,12 +830,14 @@ function LessonChip({ lesson, style, onClick }) {
 // видом (колонки = дни) и дневным видом (колонки = залы).
 function TimeGrid({ columns, columnHeader, itemsByColumn, hours, loading, emptyText, onSelectLesson, onSelectSlot }) {
   const gridStartHour = hours[0] ?? 8
-  const totalHeight = hours.length * ROW_HEIGHT
   const templateColumns = `56px repeat(${columns.length || 1}, 1fr)`
 
-  function minutesToTop(min) { return ((min - gridStartHour * 60) / 60) * ROW_HEIGHT }
+  const { top: dynTop, totalHeight } = useMemo(
+    () => buildTimeScale(gridStartHour, hours, columns, itemsByColumn),
+    [gridStartHour, hours, columns, itemsByColumn]
+  )
 
-  const isEmpty = !loading && columns.every(c => !(itemsByColumn[c.id]?.length))
+  const isEmpty = !loading && columns.every(c => !(itemsByColumn[c.id]?.active.length))
 
   return (
     <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #F0F0F5', overflow: 'hidden' }}>
@@ -634,40 +856,104 @@ function TimeGrid({ columns, columnHeader, itemsByColumn, hours, loading, emptyT
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: templateColumns, position: 'relative', maxHeight: '70vh', overflowY: 'auto' }}>
-          <div>
+          <div style={{ position: 'relative', height: totalHeight }}>
             {hours.map(h => (
-              <div key={h} style={{ height: ROW_HEIGHT, textAlign: 'right', paddingRight: 8, paddingTop: 4, boxSizing: 'border-box', fontSize: 11, color: '#9CA3AF' }}>
+              <div key={h} style={{ position: 'absolute', top: dynTop(h * 60), left: 0, right: 0, textAlign: 'right', paddingRight: 8, paddingTop: 4, boxSizing: 'border-box', fontSize: 11, color: '#9CA3AF' }}>
                 {String(h).padStart(2, '0')}:00
               </div>
             ))}
           </div>
           {columns.map(col => {
-            const items = itemsByColumn[col.id] || []
+            const { active, history } = itemsByColumn[col.id] || { active: [], history: [] }
+            // Столбцы (дни/залы) — ФИКСИРОВАННОЙ ширины, никогда не сжимаются
+            // и не скроллятся. Занятия группируются в кластеры по факту
+            // пересечения времени; ширина внутри кластера считается только
+            // от него самого (не от всех занятий дня/зала) — иначе конфликт
+            // в одной ячейке делал бы уже занятия в других, не связанных с
+            // ним. Если пересеклось больше двух (реальный конфликт по залу/
+            // преподавателю, TRU-46) — лишние уходят по 2 в новый ряд ниже, а
+            // сама сетка растёт по высоте ровно на диапазон этого пересечения
+            // (buildTimeScale), не наезжая на чужое время и не трогая ширину.
+            const clusters = clusterOverlaps(active)
             return (
-              <div key={col.id} style={{ position: 'relative', borderLeft: '1px solid #F0F0F5', height: totalHeight }}>
-                {hours.map((h, i) => (
+              <div key={col.id} style={{ position: 'relative', borderLeft: '1px solid #F0F0F5', height: totalHeight, overflow: 'hidden' }}>
+                {hours.map(h => (
                   <div
                     key={h}
                     onClick={() => onSelectSlot?.({ col, time: `${String(h).padStart(2, '0')}:00` })}
-                    style={{ position: 'absolute', top: i * ROW_HEIGHT, left: 0, right: 0, height: ROW_HEIGHT, borderBottom: '1px solid #F7F7FA', cursor: onSelectSlot ? 'pointer' : 'default' }}
+                    style={{ position: 'absolute', top: dynTop(h * 60), left: 0, right: 0, height: dynTop((h + 1) * 60) - dynTop(h * 60), borderBottom: '1px solid #F7F7FA', cursor: onSelectSlot ? 'pointer' : 'default' }}
                     onMouseEnter={e => { if (onSelectSlot) e.currentTarget.style.background = '#FAFAFA' }}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   />
                 ))}
-                {items.map(lesson => (
-                  <LessonChip
-                    key={lesson.id}
-                    lesson={lesson}
-                    onClick={e => { e.stopPropagation(); onSelectLesson(lesson) }}
-                    style={{
-                      top: minutesToTop(lesson.startMin) + 1,
-                      height: Math.max(minutesToTop(lesson.endMin) - minutesToTop(lesson.startMin) - 2, 22),
-                      left: `calc(${(lesson.col / lesson.totalCols) * 100}% + 2px)`,
-                      width: `calc(${(1 / lesson.totalCols) * 100}% - 4px)`,
-                      zIndex: 1,
-                    }}
-                  />
-                ))}
+                {clusters.map(cluster => {
+                  const localMaxCols = cluster.reduce((max, l) => Math.max(max, l.col + 1), 1)
+                  if (localMaxCols <= 2) {
+                    // Обычный случай — без пересечений (или максимум два
+                    // рядом) чипы делят ширину ячейки пополам, как раньше.
+                    // Высота — по факту длительности занятия (не через
+                    // dynTop), иначе одиночные занятия в других днях/залах
+                    // растягивались бы под масштаб чужой расширенной ячейки —
+                    // выше сдвигается только позиция (top), а не высота.
+                    return cluster.map(lesson => (
+                      <LessonChip
+                        key={lesson.id}
+                        lesson={lesson}
+                        onClick={e => { e.stopPropagation(); onSelectLesson(lesson) }}
+                        style={{
+                          top: dynTop(lesson.startMin) + 1,
+                          height: Math.max((lesson.endMin - lesson.startMin) * ROW_HEIGHT / 60 - 2, 22),
+                          left: `calc(${(lesson.col / localMaxCols) * 100}% + 2px)`,
+                          width: `calc(${(1 / localMaxCols) * 100}% - 4px)`,
+                          zIndex: 1,
+                        }}
+                      />
+                    ))
+                  }
+                  // Реальный конфликт (3+ занятий разом) — по 2 в ряд, лишние
+                  // уходят новым рядом вниз, внутри собственной, уже
+                  // зарезервированной под них высоты (без скролла и без
+                  // изменения ширины столбца).
+                  const numRows = Math.ceil(localMaxCols / 2)
+                  const clusterStartMin = Math.min(...cluster.map(l => l.startMin))
+                  const clusterEndMin = Math.max(...cluster.map(l => l.endMin))
+                  const clusterTop = dynTop(clusterStartMin)
+                  const rowHeight = (dynTop(clusterEndMin) - clusterTop) / numRows
+                  return cluster.map(lesson => {
+                    const row = Math.floor(lesson.col / 2)
+                    const lane = lesson.col % 2
+                    const lanesInRow = row === numRows - 1 && localMaxCols % 2 === 1 ? 1 : 2
+                    return (
+                      <LessonChip
+                        key={lesson.id}
+                        lesson={lesson}
+                        onClick={e => { e.stopPropagation(); onSelectLesson(lesson) }}
+                        style={{
+                          top: clusterTop + row * rowHeight + 1,
+                          height: Math.max(rowHeight - 2, 22),
+                          left: `calc(${(lane / lanesInRow) * 100}% + 2px)`,
+                          width: `calc(${(1 / lanesInRow) * 100}% - 4px)`,
+                          zIndex: 1,
+                        }}
+                      />
+                    )
+                  })
+                })}
+                {clusterOverlaps(history).map((group, gi) => {
+                  const groupStartMin = Math.min(...group.map(l => l.startMin))
+                  const groupEndMin = Math.max(...group.map(l => l.endMin))
+                  return (
+                    <HistoryMarker
+                      key={`history-${gi}`}
+                      items={group}
+                      onSelect={onSelectLesson}
+                      style={{
+                        top: dynTop(groupStartMin) + 1,
+                        height: Math.max((groupEndMin - groupStartMin) * ROW_HEIGHT / 60 - 2, 14),
+                      }}
+                    />
+                  )
+                })}
               </div>
             )
           })}
@@ -725,10 +1011,16 @@ function DayGrid({ date, columns, byRoom, hours, loading, onSelectLesson, onSele
   )
 }
 
+// Мобильные списки — уже вертикальный список, сжатия в колонку не
+// происходит, так что active/history можно просто слить обратно вместе.
+function flattenColumn(entry) {
+  return entry ? [...entry.active, ...entry.history] : []
+}
+
 function MobileWeekDayView({ weekDays, mobileDay, setMobileDay, byDay, loading, onSelectLesson }) {
   const day = weekDays[mobileDay]
   const dateStr = toISODate(day)
-  const dayLessons = (byDay[dateStr] || []).slice().sort((a, b) => a.startMin - b.startMin)
+  const dayLessons = flattenColumn(byDay[dateStr]).sort((a, b) => a.startMin - b.startMin)
 
   return (
     <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #F0F0F5', overflow: 'hidden' }}>
@@ -764,7 +1056,7 @@ function MobileWeekDayView({ weekDays, mobileDay, setMobileDay, byDay, loading, 
 }
 
 function MobileDayRoomsView({ date, columns, byRoom, loading, onSelectLesson }) {
-  const nonEmptyColumns = columns.filter(c => (byRoom[c.id] || []).length > 0)
+  const nonEmptyColumns = columns.filter(c => flattenColumn(byRoom[c.id]).length > 0)
 
   return (
     <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #F0F0F5', padding: 12 }}>
@@ -779,7 +1071,7 @@ function MobileDayRoomsView({ date, columns, byRoom, loading, onSelectLesson }) 
             <div key={col.id}>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 8 }}>{col.name}</div>
               <LessonList
-                lessons={(byRoom[col.id] || []).slice().sort((a, b) => a.startMin - b.startMin)}
+                lessons={flattenColumn(byRoom[col.id]).sort((a, b) => a.startMin - b.startMin)}
                 loading={false}
                 emptyText=""
                 onSelectLesson={onSelectLesson}
@@ -937,6 +1229,139 @@ function BulkCancelModal({ filters, onClose, onDone }) {
   )
 }
 
+function WhoToCallModal({ lessonId, onClose }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState(null) // parent_contact_id пока идёт запрос
+
+  const load = useCallback(() => {
+    setLoading(true); setError('')
+    fetchWhoToCall(lessonId)
+      .then(setData)
+      .catch(e => setError(e.response?.data?.detail || 'Не удалось загрузить список'))
+      .finally(() => setLoading(false))
+  }, [lessonId])
+
+  useEffect(() => { load() }, [load])
+
+  // Оптимистично меняем локальное состояние сразу — карточка отвечает без
+  // рывка от перерисовки всего списка, запрос идёт в фоне; при ошибке
+  // откатываем обратно.
+  function setContactCalled(parentContactId, called) {
+    setData(prev => ({
+      ...prev,
+      contacts: prev.contacts.map(c => c.parent_contact_id === parentContactId ? { ...c, called } : c),
+    }))
+  }
+
+  async function toggleCalled(contact) {
+    const nextCalled = !contact.called
+    setPending(contact.parent_contact_id)
+    setContactCalled(contact.parent_contact_id, nextCalled)
+    try {
+      if (nextCalled) await markCalled(lessonId, contact.parent_contact_id, 'call')
+      else await unmarkCalled(lessonId, contact.parent_contact_id)
+    } catch (e) {
+      setContactCalled(contact.parent_contact_id, contact.called) // откат
+      setError(e.response?.data?.detail || 'Не удалось сохранить отметку')
+    } finally { setPending(null) }
+  }
+
+  function handleWhatsappClick(contact) {
+    // Открытие чата — тоже сигнал, что связались; отмечаем как обзвонено,
+    // если ещё не отмечено (не блокирует переход по ссылке).
+    if (!contact.called) {
+      setContactCalled(contact.parent_contact_id, true)
+      markCalled(lessonId, contact.parent_contact_id, 'whatsapp').catch(() => setContactCalled(contact.parent_contact_id, false))
+    }
+  }
+
+  return (
+    <div style={modalOverlay} onClick={onClose}>
+      <div style={{ ...modalBox, maxWidth: 560, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <PhoneCall size={16} style={{ color: ACCENT }} /> Кого обзвонить
+          </h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка…</div>
+        ) : error ? (
+          <p style={{ color: '#DC2626', fontSize: 13 }}>{error}</p>
+        ) : (
+          <>
+            <div style={{ background: '#F8F9FF', border: '1px solid #F0F0F5', borderRadius: 10, padding: '10px 12px', margin: '10px 0 16px', fontSize: 12, color: '#6B7280', fontFamily: 'Manrope', lineHeight: 1.6 }}>
+              {data.message}
+            </div>
+            {data.contacts.length === 0 ? (
+              <p style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', padding: 24 }}>Контактов не найдено.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {data.contacts.map(contact => (
+                  <div key={contact.parent_contact_id} style={{
+                    border: `1px solid ${contact.called ? '#BBF7D0' : '#F0F0F5'}`,
+                    background: contact.called ? '#F0FDF4' : '#fff',
+                    borderRadius: 10, padding: '12px 14px',
+                    transition: 'background-color 0.25s ease, border-color 0.25s ease',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1A1A2E', fontFamily: 'Manrope' }}>
+                          {contact.parent_contact_name}
+                          {contact.roles.length > 0 && <span style={{ fontWeight: 400, color: '#9CA3AF' }}> · {contact.roles.join(', ')}</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#9CA3AF', fontFamily: 'Manrope', marginTop: 2 }}>
+                          {contact.children.map(c => c.full_name).join(', ')}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => toggleCalled(contact)}
+                        disabled={pending === contact.parent_contact_id}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7,
+                          border: `1px solid ${contact.called ? '#16A34A' : '#EBEBF0'}`,
+                          background: contact.called ? '#16A34A' : '#fff',
+                          color: contact.called ? '#fff' : '#6B7280',
+                          fontSize: 11, fontWeight: 600, fontFamily: 'Manrope', cursor: 'pointer', whiteSpace: 'nowrap',
+                          opacity: pending === contact.parent_contact_id ? 0.6 : 1,
+                          transition: 'background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, opacity 0.15s ease',
+                        }}
+                      >
+                        {contact.called ? <><Check size={12} /> Обзвонен</> : 'Отметить обзвон'}
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {contact.phones.map(phone => (
+                        <a key={phone} href={`tel:${phone}`} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px solid #EBEBF0', color: '#374151', fontSize: 12, fontFamily: 'Manrope', textDecoration: 'none' }}>
+                          <Phone size={12} /> {phone}
+                        </a>
+                      ))}
+                      {contact.whatsapp_link && (
+                        <a
+                          href={contact.whatsapp_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => handleWhatsappClick(contact)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px solid #BBF7D0', background: '#F0FDF4', color: '#16A34A', fontSize: 12, fontWeight: 600, fontFamily: 'Manrope', textDecoration: 'none' }}
+                        >
+                          <MessageCircle size={12} /> WhatsApp
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ConflictsModal({ filters, onClose, onSelectLesson }) {
   const [conflicts, setConflicts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1036,7 +1461,7 @@ const dangerBtn = { ...secondaryBtn, color: '#DC2626', borderColor: '#FECACA' }
 const inputStyle = { width: '100%', padding: '9px 12px', border: '1.5px solid #EBEBF0', borderRadius: 8, fontSize: 13, fontFamily: 'Manrope', outline: 'none', boxSizing: 'border-box' }
 const labelStyle = { display: 'block', fontSize: 11, fontWeight: 600, color: '#9CA3AF', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em' }
 
-function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
+function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, onWhoToCall, onCreateHere, onSelectReplacement }) {
   const [mode, setMode] = useState('view') // view | cancel | reschedule
   const [reasonCategory, setReasonCategory] = useState('')
   const [comment, setComment] = useState('')
@@ -1051,6 +1476,17 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
   // там нечего (перенесённое — это уже новое занятие в другом времени).
   const canMarkAttendance = lesson.status === 'scheduled' || lesson.status === 'completed'
   const durationMs = new Date(lesson.ends_at) - new Date(lesson.starts_at)
+
+  // Если на месте отменённого/перенесённого занятия уже создано новое
+  // (тот же зал, пересекающееся время, активный статус) — предлагать
+  // создать ещё одно бессмысленно, лучше открыть уже существующее.
+  const replacementExists = (lessons || []).find(l => (
+    l.id !== lesson.id
+    && (l.status === 'scheduled' || l.status === 'completed')
+    && l.room && lesson.room && l.room === lesson.room
+    && new Date(l.starts_at) < new Date(lesson.ends_at)
+    && new Date(lesson.starts_at) < new Date(l.ends_at)
+  )) || null
 
   async function handleCancel() {
     if (!reasonCategory) { setError('Выберите причину отмены'); return }
@@ -1131,6 +1567,25 @@ function LessonDetailsModal({ lesson, onClose, onDone, onAttendance }) {
                 <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', margin: '4px 0' }}>
                   {lesson.status === 'rescheduled' ? 'Занятие перенесено.' : 'Занятие отменено.'}
                 </p>
+              )}
+              {lesson.status === 'rescheduled' && (
+                <button style={{ ...secondaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => onWhoToCall(lesson.id)}>
+                  <PhoneCall size={13} /> Кого обзвонить
+                </button>
+              )}
+              {(lesson.status === 'cancelled' || lesson.status === 'rescheduled') && (
+                replacementExists ? (
+                  <button
+                    style={{ ...secondaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer' }}
+                    onClick={() => onSelectReplacement(replacementExists)}
+                  >
+                    <Check size={13} style={{ color: '#16A34A' }} /> На этом месте уже есть занятие — открыть
+                  </button>
+                ) : (
+                  <button style={{ ...secondaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => onCreateHere(lesson)}>
+                    <Plus size={13} /> Создать занятие на этом месте
+                  </button>
+                )
               )}
               {canMarkAttendance && (
                 <button style={primaryBtn} onClick={() => onAttendance(lesson.id)}>Отметить посещаемость</button>
@@ -1287,12 +1742,12 @@ function ChildrenMultiSelect({ value, onChange }) {
 
 function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
   const [lessonType, setLessonType] = useState('group') // group | individual (TRU-47)
-  const [groupId, setGroupId] = useState('')
+  const [groupId, setGroupId] = useState(slot.groupId || '')
   const [children, setChildren] = useState([]) // [{id, full_name}]
   const [roomId, setRoomId] = useState(slot.room || '')
-  const [teacherId, setTeacherId] = useState('')
+  const [teacherId, setTeacherId] = useState(slot.teacherId || '')
   const [time, setTime] = useState(slot.time)
-  const [durationMin, setDurationMin] = useState(60)
+  const [durationMin, setDurationMin] = useState(slot.durationMin || 60)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [conflicts, setConflicts] = useState(null)
