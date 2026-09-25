@@ -1,3 +1,10 @@
+from rest_framework.routers import DefaultRouter
+
+from .views import AttendanceViewSet
+
 app_name = "attendance"
 
-urlpatterns = []
+router = DefaultRouter()
+router.register("", AttendanceViewSet, basename="attendance")
+
+urlpatterns = router.urls

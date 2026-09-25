@@ -28,6 +28,16 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
         blank=True,
         help_text=_("Null для индивидуального занятия"),
     )
+    # TRU-47: у индивидуального занятия (group=None) нет группового членства,
+    # откуда обычно берутся участники — ребёнок(и) привязываются к самому
+    # занятию напрямую. У группового занятия остаётся пусто — участники
+    # берутся из Group.memberships, как и раньше (см. Lesson.participants).
+    individual_children = models.ManyToManyField(
+        "clients.Child",
+        related_name="individual_lessons",
+        verbose_name=_("Дети (индивидуальное занятие)"),
+        blank=True,
+    )
     schedule_slot = models.ForeignKey(
         "schedule_templates.ScheduleTemplateSlot",
         on_delete=models.SET_NULL,
@@ -83,7 +93,24 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
             "Такие занятия не пересоздаются при смене шаблона."
         ),
     )
-    cancel_reason = models.TextField(_("Причина отмены"), blank=True)
+
+    class CancelReasonCategory(models.TextChoices):
+        TEACHER_ILLNESS = "teacher_illness", _("Болезнь преподавателя")
+        HOLIDAY = "holiday", _("Праздник")
+        ROOM_INCIDENT = "room_incident", _("Авария в помещении")
+        OTHER = "other", _("Другое")
+
+    # TRU-48: справочник причин отмены — обязателен при отмене (проверяется
+    # во view/сериализаторе, не здесь, т.к. пустое значение допустимо для
+    # всех остальных статусов). cancel_reason остаётся свободным
+    # комментарием — обязателен только когда category=OTHER.
+    cancel_reason_category = models.CharField(
+        _("Причина отмены (категория)"),
+        max_length=32,
+        choices=CancelReasonCategory.choices,
+        blank=True,
+    )
+    cancel_reason = models.TextField(_("Причина отмены (комментарий)"), blank=True)
     note = models.TextField(_("Примечание"), blank=True)
 
     class Meta:
@@ -93,12 +120,34 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
         indexes = [
             models.Index(fields=["group", "starts_at"]),
             models.Index(fields=["teacher", "starts_at"]),
+            # Для conflicts.find_conflicting_lessons (TRU-46) — запрос по
+            # залу + пересечению времени должен идти по индексу, не сканом.
+            models.Index(fields=["room", "starts_at"]),
             models.Index(fields=["organization", "starts_at"]),
             models.Index(fields=["organization", "status", "starts_at"]),
         ]
 
     def __str__(self):
         return f"{self.group or 'Индив.'} — {self.starts_at:%d.%m %H:%M}"
+
+    @property
+    def is_individual(self):
+        return self.group_id is None
+
+    def participants(self):
+        """Дети, которые должны быть на занятии — общий интерфейс
+        независимо от того, групповое занятие или индивидуальное (TRU-47),
+        чтобы будущий экран посещаемости (TRU-56) не разветвлялся по типу
+        занятия. Групповое — активные на сейчас участники группы
+        (left_at=None); индивидуальное — individual_children напрямую."""
+        from domains.people.clients.models import Child
+
+        if self.group_id:
+            return Child.objects.filter(
+                group_memberships__group_id=self.group_id,
+                group_memberships__left_at__isnull=True,
+            ).distinct()
+        return self.individual_children.all()
 
     def transition_to(self, new_status: str):
         allowed = ALLOWED_STATUS_TRANSITIONS.get(self.status, set())
@@ -112,8 +161,124 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
         self.status = new_status
         self.save(update_fields=["status", "updated_at"])
 
-    def reschedule_to(self, new_lesson: "Lesson"):
+    def reschedule_to(self, new_lesson: "Lesson", *, actor=None):
+        """Перенос — по ТЗ п. 4.2 это "отмена с причиной + создание нового
+        со связью" (TRU-49): исходное занятие получает статус «перенесено»,
+        новое хранит ссылку на него в обе стороны (rescheduled_from/
+        rescheduled_to). Списания с абонемента участников исходного занятия
+        откатываются той же логикой, что при обычной отмене (TRU-48,
+        согласовано с Bekzat) — SubscriptionService.revert() идемпотентен,
+        для обычного переноса в будущем просто ничего не делает."""
+        from domains.money.subscriptions.subscription_service import SubscriptionService
+        from domains.platform.core.audit import AuditLog
+
+        before = {"status": self.status}
+
         self.transition_to(self.Status.RESCHEDULED)
         new_lesson.rescheduled_from = self
         new_lesson.save(update_fields=["rescheduled_from", "updated_at"])
+
+        for child in self.participants():
+            SubscriptionService.revert(child_id=child.id, lesson_id=self.id)
+
+        AuditLog.record(
+            actor=actor,
+            action=AuditLog.Action.RESCHEDULE,
+            entity=self,
+            before=before,
+            after={"status": self.status, "rescheduled_to_id": str(new_lesson.id)},
+        )
         return new_lesson
+
+    def cancel(self, *, actor, category: str, comment: str = ""):
+        """Отмена с обязательной причиной (TRU-48, ТЗ п. 4.2/4.3).
+
+        Занятие отменил центр — списание с абонемента не производится ни
+        при каких условиях; если оно уже было списано (отмена задним
+        числом — занятие в прошлом, посещаемость уже отмечена), откатываем
+        его для каждого участника. SubscriptionService.revert() идемпотентен:
+        если списания не было (обычный случай — занятие ещё в будущем),
+        просто ничего не делает.
+
+        Пишет запись в аудит-лог: кто отменил, когда, с какой причиной.
+        """
+        from domains.money.subscriptions.subscription_service import SubscriptionService
+        from domains.platform.core.audit import AuditLog
+
+        before = {
+            "status": self.status,
+            "cancel_reason_category": self.cancel_reason_category,
+            "cancel_reason": self.cancel_reason,
+        }
+
+        self.transition_to(self.Status.CANCELLED)
+        self.cancel_reason_category = category
+        self.cancel_reason = comment
+        self.is_modified = True
+        self.save(
+            update_fields=["cancel_reason_category", "cancel_reason", "is_modified", "updated_at"]
+        )
+
+        for child in self.participants():
+            SubscriptionService.revert(child_id=child.id, lesson_id=self.id)
+
+        AuditLog.record(
+            actor=actor,
+            action=AuditLog.Action.CANCEL,
+            entity=self,
+            before=before,
+            after={
+                "status": self.status,
+                "cancel_reason_category": self.cancel_reason_category,
+                "cancel_reason": self.cancel_reason,
+            },
+        )
+
+
+class RescheduleCallLog(TenantModel):
+    """
+    TRU-49: кто уже обзвонён по переносу конкретного занятия — отметки
+    должны сохраняться и быть видны при возврате на экран (критерий
+    приёмки), а не жить только в состоянии фронтенда, иначе при двадцати
+    детях администратор собьётся и кому-то позвонит дважды, а кому-то ни
+    разу. Ключ — (занятие, контакт): один родитель с двумя детьми в одной
+    группе отмечается один раз, не дважды.
+    """
+
+    lesson = models.ForeignKey(
+        Lesson,
+        on_delete=models.CASCADE,
+        related_name="reschedule_call_logs",
+        verbose_name=_("Перенесённое занятие"),
+    )
+    parent_contact = models.ForeignKey(
+        "clients.ParentContact",
+        on_delete=models.CASCADE,
+        related_name="reschedule_call_logs",
+        verbose_name=_("Контакт"),
+    )
+    called_at = models.DateTimeField(auto_now_add=True)
+    called_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        verbose_name = _("Отметка обзвона о переносе")
+        verbose_name_plural = _("Отметки обзвона о переносе")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lesson", "parent_contact"],
+                name="unique_reschedule_call_per_contact",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.organization_id = self.lesson.organization_id
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.lesson_id} — {self.parent_contact_id}"

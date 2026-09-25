@@ -17,6 +17,10 @@ api_v1_patterns = [
     path("", include("domains.platform.tenants.urls")),
     path("users/", include("domains.platform.users.urls")),
     path("clients/", include("domains.people.clients.urls")),
+    # Отдельно от clients/ — так уже ждёт фронт (frontend2/ChildDetail.jsx),
+    # не переименовываем под него (ТЗ п. 3.1, п. 4.1; запись обзвона о
+    # переносе занятия — TRU-49, LessonViewSet.mark_called).
+    path("communications/", include("domains.people.clients.communications_urls")),
     path("schedule/", include("domains.scheduling.schedule.urls")),
     path("groups/", include("domains.scheduling.groups.urls")),
     path("schedule-templates/", include("domains.scheduling.schedule_templates.urls")),

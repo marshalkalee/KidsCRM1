@@ -45,11 +45,24 @@ def generate_lessons_for_template(self, template_id: str):
             len(result["created"]),
             result["skipped"],
         )
+        # TRU-46: конфликт по залу/преподавателю не блокирует генерацию
+        # (ТЗ п. 4.2) — попадает в лог здесь и виден администратору через
+        # GET /api/v1/schedule/conflicts/ (занятие уже сохранено как
+        # обычная строка, конфликт пересчитывается оттуда заново).
+        if result["conflicts"]:
+            logger.warning(
+                "Шаблон %s (группа: %s): %d занятие(й) с конфликтом по залу/" "преподавателю — %s",
+                template_id,
+                template.group,
+                len(result["conflicts"]),
+                [(str(c["lesson_id"]), c["date"].isoformat()) for c in result["conflicts"]],
+            )
         return {
             "template_id": str(template_id),
             "group": str(template.group),
             "created": len(result["created"]),
             "skipped": result["skipped"],
+            "conflicts": len(result["conflicts"]),
         }
     except Exception as exc:
         logger.error(
