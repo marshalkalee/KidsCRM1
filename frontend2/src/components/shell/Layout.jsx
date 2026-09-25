@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet } from 'react-router-dom'
 import { Building2, ChevronDown, LogOut, Menu, X } from 'lucide-react'
 import { useSession } from '../../session/SessionContext'
 import { cn, initials } from '../../ui'
 import { GlobalSearch } from './GlobalSearch'
-import { sectionTitle, visibleSections } from './navigation'
+import { visibleSections } from './navigation'
 
 /**
- * Каркас приложения (TRU-80): боковое меню по ролям, шапка с заголовком
- * раздела, поиском и переключателем филиала, меню пользователя. На
+ * Каркас приложения (TRU-80): боковое меню по ролям, шапка с поиском и
+ * переключателем филиала, меню пользователя. Название раздела в шапке не
+ * дублируем — заголовок один, в PageHeader страницы (TRU-89). На
  * экранах уже 1024px меню — выезжающая шторка.
  */
 export default function Layout() {
-  const location = useLocation()
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   return (
@@ -41,8 +41,7 @@ export default function Layout() {
           <button type="button" onClick={() => setDrawerOpen(true)} className="-ml-1 rounded-md p-2 text-ink-muted hover:bg-surface-muted lg:hidden" aria-label="Меню">
             <Menu className="size-5" />
           </button>
-          <p className="hidden shrink-0 text-sm font-semibold text-ink-muted xl:block xl:w-40">{sectionTitle(location.pathname)}</p>
-          <GlobalSearch className="min-w-0 flex-1 md:max-w-md" />
+          <GlobalSearch className="min-w-0 flex-1 md:max-w-lg" />
           <div className="ml-auto flex items-center gap-2">
             <BranchSwitcher />
           </div>

@@ -322,7 +322,9 @@ function NameList({ value, limit = 2 }) {
   const rest = names.length - limit
   return (
     <span className="text-ink-muted" title={rest > 0 ? value : undefined}>
-      {names.slice(0, limit).join(', ')}
+      {names.slice(0, limit).map((name, i) => (
+        <span key={name}>{i > 0 && ', '}<span className="whitespace-nowrap">{name}</span></span>
+      ))}
       {rest > 0 && <span className="ml-1.5 rounded-full bg-surface-muted px-1.5 py-0.5 text-[11px] font-semibold text-ink-muted">+{rest}</span>}
     </span>
   )

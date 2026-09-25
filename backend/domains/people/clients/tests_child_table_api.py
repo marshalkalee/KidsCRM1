@@ -138,6 +138,31 @@ class ChildTableApiTests(TestCase):
 
         self.assertEqual(self._names(response), ["Центр"])
 
+    def test_branch_comes_from_group_not_from_direction(self):
+        # Направление доступно в обоих филиалах, но ребёнок ходит в группу
+        # Центрального — там он и числится (TRU-89).
+        self.direction.branches.add(self.other_branch)
+        in_group = self._make_child("В группе", self.direction)
+        group = Group.objects.create(
+            organization=self.org,
+            branch=self.branch,
+            direction=self.direction,
+            name="Младшие",
+            capacity=10,
+        )
+        GroupMembership.objects.create(
+            organization=self.org, group=group, child=in_group, joined_at=datetime.date.today()
+        )
+        self._make_child("Без группы", self.direction)
+        self.api.force_authenticate(self.owner)
+
+        rows = {r["full_name"]: r for r in self.api.get(URL).json()["results"]}
+        north = self.api.get(URL, {"branch": str(self.other_branch.id)})
+
+        self.assertEqual(rows["В группе"]["branch_names"], "Центральный")
+        self.assertEqual(rows["Без группы"]["branch_names"], "Северный, Центральный")
+        self.assertEqual(self._names(north), ["Без группы"])
+
     def test_explicit_branch_param_wins_over_header(self):
         self._make_child("Центр", self.direction)
         self._make_child("Север", self.other_direction)

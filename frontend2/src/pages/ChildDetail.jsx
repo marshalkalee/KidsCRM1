@@ -44,7 +44,7 @@ export default function ChildDetail() {
     [tabs],
   )
 
-  const back = { to: '/children', label: 'Все дети' }
+  const back = { to: '/children', label: 'Дети' }
   if (status === 'loading') {
     return (
       <div>
