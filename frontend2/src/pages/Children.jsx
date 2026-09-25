@@ -1,24 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertCircle, Plus, Search, SlidersHorizontal, Upload, Users, X } from 'lucide-react'
+import { AlertCircle, Plus, Search, Upload, Users } from 'lucide-react'
 import api from '../api/axios'
 import ChildModal from '../components/ChildModal'
 import { useSession } from '../session/SessionContext'
 import {
-  Avatar, Badge, Button, CHILD_STATUSES, DataTable, EmptyState, Modal, PageHeader, SearchInput, Select,
-  ageLabel, cn, formatDate, money, plural,
+  Avatar, Badge, Button, CHILD_STATUSES, DataTable, EmptyState, FilterBar, FilterCheck, FilterPanel, FilterSelect,
+  PageHeader, SearchInput, ageLabel, formatDate, money, plural, useFilterDraft,
 } from '../ui'
+import { t } from '../i18n'
 
 // Всё состояние списка — в адресной строке: ссылку с фильтрами можно
 // переслать коллеге, «назад» из карточки возвращает туда же. Последние
 // фильтры ещё и запоминаются — чтобы, открыв «Дети» из меню, не выставлять
 // их заново.
-const FILTER_KEYS = ['q', 'status', 'direction', 'group', 'has_debt', 'expiring']
+const FILTER_KEYS = ['q', 'branch', 'status', 'direction', 'group', 'has_debt', 'expiring']
+const PANEL_KEYS = FILTER_KEYS.filter(key => key !== 'q')
 const MONEY_KEYS = ['has_debt', 'expiring']
 const STORAGE_KEY = 'kc:children-list'
 const PAGE_SIZE = 25
 
-const STATUS_TABS = [['', 'Все'], ...Object.entries(CHILD_STATUSES).map(([value, s]) => [value, s.label])]
+const statusOptions = () => [['', t('Все статусы')], ...Object.entries(CHILD_STATUSES).map(([value, s]) => [value, s.label])]
 
 function readStored() {
   try { return localStorage.getItem(STORAGE_KEY) } catch { return null }
@@ -29,7 +31,7 @@ function writeStored(value) {
 
 export default function Children() {
   const navigate = useNavigate()
-  const { can, activeBranch, activeBranchId } = useSession()
+  const { can, activeBranch, activeBranchId, branches } = useSession()
   const canManage = can('can_manage_children')
   const showMoney = can('can_view_client_money')
   const [params, setParams] = useSearchParams()
@@ -112,7 +114,7 @@ export default function Children() {
   const columns = [
     {
       key: 'full_name',
-      header: 'Ребёнок',
+      header: t('Ребёнок'),
       sortable: true,
       primary: true,
       render: row => (
@@ -127,37 +129,37 @@ export default function Children() {
     },
     {
       key: 'age',
-      header: 'Возраст',
+      header: t('Возраст'),
       sortable: true,
       hideOnMobile: true,
       render: row => (
         <span title={formatDate(row.birth_date)} className="whitespace-nowrap text-ink-muted">{ageLabel(row.age)}</span>
       ),
     },
-    { key: 'direction_names', header: 'Направление', render: row => <NameList value={row.direction_names} /> },
-    { key: 'group_names', header: 'Группа', render: row => <NameList value={row.group_names} /> },
-    ...(activeBranch ? [] : [{ key: 'branch_names', header: 'Филиал', hideOnMobile: true, render: row => <NameList value={row.branch_names} /> }]),
+    { key: 'direction_names', header: t('Направление'), render: row => <NameList value={row.direction_names} /> },
+    { key: 'group_names', header: t('Группа'), render: row => <NameList value={row.group_names} /> },
+    ...(activeBranch ? [] : [{ key: 'branch_names', header: t('Филиал'), hideOnMobile: true, render: row => <NameList value={row.branch_names} /> }]),
     {
       key: 'status',
-      header: 'Статус',
+      header: t('Статус'),
       sortable: true,
       mobileAside: true,
       render: row => {
         const status = CHILD_STATUSES[row.status] || { label: row.status, tone: 'neutral' }
-        return <Badge tone={status.tone} dot>{status.label}</Badge>
+        return <Badge tone={status.tone}>{status.label}</Badge>
       },
     },
     ...(data.show_money ? [
       {
         key: 'subscription_name',
-        header: 'Абонемент',
+        header: t('Абонемент'),
         className: 'text-ink-muted',
         render: row => row.subscription_name || '—',
         mobileRender: row => row.subscription_name || null,
       },
       {
         key: 'debt',
-        header: 'Долг',
+        header: t('Долг'),
         align: 'right',
         render: row => (Number(row.debt) > 0 ? (
           <span className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-danger-600">
@@ -170,38 +172,31 @@ export default function Children() {
     ] : []),
   ]
 
-  const filterProps = { params, update, directions, groups: branchGroups, showMoney }
   const countLabel = `${data.count} ${plural(data.count, ['ребёнок', 'ребёнка', 'детей'])}`
 
   return (
     <div>
       <PageHeader
-        title="Дети"
-        description={loading && !data.count ? 'Загрузка…' : `${countLabel}${hasAnyFilter ? ' по фильтрам' : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
+        title={t('Дети')}
+        description={loading && !data.count ? t('Загрузка…') : `${countLabel}${hasAnyFilter ? ` ${t('по фильтрам')}` : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
         actions={canManage && (
           <>
-            <Button icon={Upload} onClick={() => navigate('/children/import')}>Импорт</Button>
-            <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>Добавить ребёнка</Button>
+            <Button icon={Upload} onClick={() => navigate('/children/import')}>{t('Импорт из Excel')}</Button>
+            <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Добавить ребёнка')}</Button>
           </>
         )}
       />
 
       <div className="mb-4 space-y-3">
-        <div className="flex gap-2">
-          <SearchInput className="flex-1" value={params.get('q') || ''} onChange={setQuery} placeholder="Поиск по имени ребёнка" />
-          <Button className="lg:hidden" icon={SlidersHorizontal} onClick={() => setFiltersOpen(true)}>
-            <span className="hidden sm:inline">Фильтры</span>
-            {activeFilters > 0 && (
-              <span className="flex size-5 items-center justify-center rounded-full bg-brand-600 text-[11px] text-white">{activeFilters}</span>
-            )}
-          </Button>
-        </div>
-        <div className="hidden flex-wrap items-center gap-2 lg:flex">
-          <FilterControls {...filterProps} />
-          {hasAnyFilter && (
-            <Button variant="ghost" size="sm" icon={X} onClick={resetFilters}>Сбросить</Button>
-          )}
-        </div>
+        <FilterBar
+          search={<SearchInput value={params.get('q') || ''} onChange={setQuery} placeholder={t('Поиск по имени ребёнка')} />}
+          filtersOpen={filtersOpen}
+          onToggleFilters={() => setFiltersOpen(o => !o)}
+          activeCount={activeFilters}
+        />
+        {filtersOpen && (
+          <ChildFilters params={params} update={update} branches={branches} directions={directions} groups={branchGroups} showMoney={showMoney} onReset={resetFilters} />
+        )}
       </div>
 
       <DataTable
@@ -218,40 +213,24 @@ export default function Children() {
         empty={hasAnyFilter ? (
           <EmptyState
             icon={Search}
-            title="Никого не нашли"
-            description="Попробуйте изменить поиск или сбросить фильтры."
-            action={<Button size="sm" onClick={resetFilters}>Сбросить фильтры</Button>}
+            title={t('Никого не нашли')}
+            description={t('Попробуйте изменить поиск или сбросить фильтры.')}
+            action={<Button size="sm" onClick={resetFilters}>{t('Сбросить фильтры')}</Button>}
           />
         ) : (
           <EmptyState
             icon={Users}
-            title="Детей пока нет"
-            description={canManage ? 'Добавьте первого ребёнка вручную или загрузите список из Excel.' : 'Когда администратор добавит детей, они появятся здесь.'}
+            title={t('Детей пока нет')}
+            description={canManage ? t('Добавьте первого ребёнка вручную или загрузите список из Excel.') : t('Когда администратор добавит детей, они появятся здесь.')}
             action={canManage && (
               <div className="flex flex-wrap justify-center gap-2">
-                <Button size="sm" icon={Upload} onClick={() => navigate('/children/import')}>Импорт из Excel</Button>
-                <Button size="sm" variant="primary" icon={Plus} onClick={() => setCreating(true)}>Добавить ребёнка</Button>
+                <Button size="sm" icon={Upload} onClick={() => navigate('/children/import')}>{t('Импорт из Excel')}</Button>
+                <Button size="sm" variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Добавить ребёнка')}</Button>
               </div>
             )}
           />
         )}
       />
-
-      <Modal
-        open={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        title="Фильтры"
-        footer={
-          <>
-            {hasAnyFilter && <Button variant="ghost" onClick={resetFilters}>Сбросить</Button>}
-            <Button variant="primary" onClick={() => setFiltersOpen(false)}>Показать: {countLabel}</Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4">
-          <FilterControls {...filterProps} stacked />
-        </div>
-      </Modal>
 
       {creating && (
         <ChildModal
@@ -263,55 +242,31 @@ export default function Children() {
   )
 }
 
-function FilterControls({ params, update, directions, groups, showMoney, stacked = false }) {
-  const status = params.get('status') || ''
+/** Панель фильтров как в первом React: правки применяются кнопкой «Применить». */
+function ChildFilters({ params, update, branches, directions, groups, showMoney, onReset }) {
+  const applied = Object.fromEntries(PANEL_KEYS.map(key => [key, params.get(key) || '']))
+  const { draft, set, dirty } = useFilterDraft(applied)
+  const canReset = PANEL_KEYS.some(key => applied[key])
   return (
-    <>
-      <div className={cn('flex rounded-md border border-line bg-surface p-0.5', stacked && 'w-full')} role="group" aria-label="Статус">
-        {STATUS_TABS.map(([value, label]) => (
-          <button
-            key={value || 'all'}
-            type="button"
-            aria-pressed={status === value}
-            onClick={() => update({ status: value })}
-            className={cn(
-              'h-8 flex-1 whitespace-nowrap rounded px-3 text-[13px] font-medium transition-colors',
-              status === value ? 'bg-brand-50 text-brand-700 shadow-card' : 'text-ink-muted hover:text-ink',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <Select
-        aria-label="Направление"
-        className={cn('h-9', !stacked && 'w-44')}
-        value={params.get('direction') || ''}
-        onChange={e => update({ direction: e.target.value })}
-      >
-        <option value="">Все направления</option>
-        {directions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-      </Select>
-      <Select
-        aria-label="Группа"
-        className={cn('h-9', !stacked && 'w-44')}
-        value={params.get('group') || ''}
-        onChange={e => update({ group: e.target.value })}
-      >
-        <option value="">Все группы</option>
-        {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-      </Select>
-      {showMoney && (
-        <div className={cn('flex gap-2', stacked && 'flex-wrap')}>
-          <ToggleChip active={params.get('has_debt') === '1'} onClick={() => update({ has_debt: params.get('has_debt') !== '1' })}>
-            С долгом
-          </ToggleChip>
-          <ToggleChip active={params.get('expiring') === '1'} onClick={() => update({ expiring: params.get('expiring') !== '1' })}>
-            Абонемент заканчивается
-          </ToggleChip>
-        </div>
+    <FilterPanel
+      dirty={dirty}
+      canReset={canReset}
+      onApply={() => update(draft)}
+      onReset={onReset}
+      checks={showMoney && (
+        <>
+          <FilterCheck label={t('Есть задолженность')} checked={draft.has_debt === '1'} onChange={v => set('has_debt', v ? '1' : '')} />
+          <FilterCheck label={t('Абонемент скоро заканчивается')} checked={draft.expiring === '1'} onChange={v => set('expiring', v ? '1' : '')} />
+        </>
       )}
-    </>
+    >
+      {branches.length > 1 && (
+        <FilterSelect label={t('Филиал')} value={draft.branch} onChange={v => set('branch', v)} options={[['', t('Как в шапке')], ...branches.map(b => [String(b.id), b.name])]} />
+      )}
+      <FilterSelect label={t('Направление')} value={draft.direction} onChange={v => set('direction', v)} options={[['', t('Все направления')], ...directions.map(d => [String(d.id), d.name])]} />
+      <FilterSelect label={t('Группа')} value={draft.group} onChange={v => set('group', v)} options={[['', t('Все группы')], ...groups.map(g => [String(g.id), g.name])]} />
+      <FilterSelect label={t('Статус')} value={draft.status} onChange={v => set('status', v)} options={statusOptions()} />
+    </FilterPanel>
   )
 }
 
@@ -327,21 +282,5 @@ function NameList({ value, limit = 2 }) {
       ))}
       {rest > 0 && <span className="ml-1.5 rounded-full bg-surface-muted px-1.5 py-0.5 text-[11px] font-semibold text-ink-muted">+{rest}</span>}
     </span>
-  )
-}
-
-function ToggleChip({ active, onClick, children }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        'h-9 whitespace-nowrap rounded-full border px-3.5 text-[13px] font-medium transition-colors',
-        active ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink',
-      )}
-    >
-      {children}
-    </button>
   )
 }

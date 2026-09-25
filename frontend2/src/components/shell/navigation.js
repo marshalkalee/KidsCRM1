@@ -1,6 +1,7 @@
 import {
   Building2, CalendarDays, CheckSquare, Contact, Home, Settings, Tag, Users, UsersRound,
 } from 'lucide-react'
+import { t } from '../../i18n'
 
 /**
  * Пункты бокового меню. permission — флаг из /users/auth/me/ (те же, что
@@ -11,22 +12,21 @@ import {
  */
 export const NAV_SECTIONS = [
   {
-    label: 'Работа',
+    get label() { return t('Работа') },
     items: [
-      { to: '/dashboard', label: 'Главная', icon: Home },
-      { to: '/children', label: 'Дети', icon: Users },
-      { to: '/parents', label: 'Родители', icon: Contact },
-      { to: '/groups', label: 'Группы', icon: UsersRound },
-      { to: '/schedule', label: 'Расписание', icon: CalendarDays },
-      { to: '/attendance', label: 'Посещаемость', icon: CheckSquare },
+      { to: '/dashboard', get label() { return t('Главная') }, icon: Home },
+      { to: '/children', get label() { return t('Дети') }, icon: Users },
+      { to: '/parents', get label() { return t('Родители') }, icon: Contact },
+      { to: '/groups', get label() { return t('Группы') }, icon: UsersRound },
+      { to: '/schedule', get label() { return t('Расписание') }, icon: CalendarDays },
     ],
   },
   {
-    label: 'Настройки',
+    get label() { return t('Настройки') },
     items: [
-      { to: '/branches', label: 'Филиалы', icon: Building2, permission: 'can_manage_branches' },
-      { to: '/directions', label: 'Направления', icon: Tag, permission: 'can_manage_directions' },
-      { to: '/settings/organization', label: 'Организация', icon: Settings, permission: 'can_manage_org_settings' },
+      { to: '/branches', get label() { return t('Филиалы') }, icon: Building2, permission: 'can_manage_branches' },
+      { to: '/directions', get label() { return t('Направления') }, icon: Tag, permission: 'can_manage_directions' },
+      { to: '/settings/organization', get label() { return t('Организация') }, icon: Settings, permission: 'can_manage_org_settings' },
     ],
   },
 ]

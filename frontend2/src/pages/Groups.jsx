@@ -1,271 +1,208 @@
-import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
-import { Plus, Search, SlidersHorizontal, ChevronDown, Check, X, Users } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Plus, Search, UsersRound } from 'lucide-react'
+import api from '../api/axios'
 import GroupModal from '../components/GroupModal'
+import { GROUP_STATUSES, scheduleSummary } from '../components/groups/format'
+import { useSession } from '../session/SessionContext'
+import {
+  Avatar, Badge, Button, DataTable, EmptyState, FilterBar, FilterCheck, FilterPanel, FilterSelect, PageHeader,
+  SearchInput, cn, plural, useFilterDraft,
+} from '../ui'
+import { t } from '../i18n'
 
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('access')}` }
-}
+const PANEL_KEYS = ['branch', 'direction', 'teacher', 'status', 'underfilled']
+const statusOptions = () => [['', t('Все статусы')], ...Object.entries(GROUP_STATUSES).map(([v, s]) => [v, s.label])]
+const listOf = r => r.data.results || r.data
 
-const STATUS_STYLE = {
-  active: { bg: '#F0FDF4', color: '#16A34A', label: 'Активна' },
-  paused: { bg: '#FFFBEB', color: '#D97706', label: 'Приостановлена' },
-  closed: { bg: '#F9FAFB', color: '#6B7280', label: 'Закрыта' },
-}
+/**
+ * Группы (TRU-87, вид первого React — TRU-91): таблица с панелью фильтров.
+ * «Недобор» — по порогу из настроек организации (сервер считает
+ * is_underfilled). Фильтры в адресе; без своего филиала — филиал из шапки.
+ */
+export default function Groups() {
+  const navigate = useNavigate()
+  const { can, activeBranchId, activeBranch, branches } = useSession()
+  const canManage = can('can_manage_groups')
+  const [params, setParams] = useSearchParams()
+  const [loaded, setLoaded] = useState({ key: null, rows: [], error: false })
+  const [directions, setDirections] = useState([])
+  const [teachers, setTeachers] = useState([])
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
-function CustomSelect({ label, value, onChange, options }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef()
+  const applied = Object.fromEntries(PANEL_KEYS.map(key => [key, params.get(key) || '']))
+  const q = params.get('q') || ''
+  const update = useCallback(changes => setParams(current => {
+    const next = new URLSearchParams(current)
+    Object.entries(changes).forEach(([key, value]) => (value ? next.set(key, value) : next.delete(key)))
+    return next
+  }, { replace: true }), [setParams])
+  const setQuery = useCallback(value => update({ q: value }), [update])
 
   useEffect(() => {
-    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    Promise.all([api.get('directions/'), api.get('users/', { params: { role: 'teacher' } })])
+      .then(([d, tch]) => { setDirections(listOf(d)); setTeachers(listOf(tch)) })
+      .catch(() => {})
   }, [])
 
-  const selected = options.find(([v]) => v === value)
-  const active = value !== ''
+  const branch = applied.branch || activeBranchId || ''
+  const requestKey = `${applied.direction}|${applied.teacher}|${applied.status}|${branch}|${q}|${reloadKey}`
+  useEffect(() => {
+    const controller = new AbortController()
+    const query = {
+      status: applied.status || undefined,
+      direction: applied.direction || undefined,
+      teacher: applied.teacher || undefined,
+      branch: branch || undefined,
+      search: q || undefined,
+    }
+    api.get('groups/', { params: query, signal: controller.signal })
+      .then(r => setLoaded({ key: requestKey, rows: listOf(r), error: false }))
+      .catch(err => { if (err.name !== 'CanceledError') setLoaded(prev => ({ ...prev, key: requestKey, error: true })) })
+    return () => controller.abort()
+  }, [applied.status, applied.direction, applied.teacher, branch, q, requestKey])
+
+  const loading = loaded.key !== requestKey
+  const rows = loaded.rows.filter(g => applied.underfilled !== '1' || g.is_underfilled)
+  const underfilledCount = loaded.rows.filter(g => g.is_underfilled).length
+  const activeCount = PANEL_KEYS.filter(key => applied[key]).length
+  const reset = () => update(Object.fromEntries(PANEL_KEYS.map(key => [key, ''])))
+
+  const columns = [
+    {
+      key: 'name',
+      header: t('Название'),
+      primary: true,
+      render: g => (
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: g.direction_color || '#9a93a8' }} />
+          <span className="min-w-0">
+            <span className="block truncate font-semibold text-ink">{g.name}</span>
+            {g.age_min != null && g.age_max != null && <span className="block text-xs text-ink-subtle">{g.age_min}–{g.age_max} {t('лет')}</span>}
+          </span>
+        </span>
+      ),
+    },
+    ...(activeBranch ? [] : [{ key: 'branch_name', header: t('Филиал'), className: 'text-ink-muted whitespace-nowrap' }]),
+    {
+      key: 'direction',
+      header: t('Направление'),
+      hideOnMobile: true,
+      render: g => (
+        <span
+          className="inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold"
+          style={{ backgroundColor: `color-mix(in srgb, ${g.direction_color || '#9a93a8'} 16%, #fff)`, color: `color-mix(in srgb, ${g.direction_color || '#9a93a8'} 75%, #1f1b2e)` }}
+        >
+          {g.direction_name}
+        </span>
+      ),
+    },
+    {
+      key: 'teachers',
+      header: t('Преподаватели'),
+      render: g => (g.teachers_detail.length ? (
+        <span className="flex items-center gap-2">
+          <span className="flex -space-x-2">
+            {g.teachers_detail.slice(0, 3).map(tch => <Avatar key={tch.id} name={tch.full_name} className="size-7 text-[10px] ring-2 ring-surface" />)}
+          </span>
+          <span className="truncate text-ink-muted">{g.teachers_detail.map(tch => tch.full_name.split(' ')[0]).join(', ')}</span>
+        </span>
+      ) : <span className="text-ink-subtle">{t('не назначен')}</span>),
+    },
+    { key: 'schedule', header: t('Расписание'), hideOnMobile: true, className: 'text-ink-muted whitespace-nowrap', render: g => scheduleSummary(g.schedule) || <span className="text-ink-subtle">—</span> },
+    { key: 'fill', header: t('Записано'), render: g => <Fill group={g} /> },
+    {
+      key: 'status',
+      header: t('Статус'),
+      mobileAside: true,
+      render: g => {
+        const full = g.members_count >= g.capacity
+        if (g.status !== 'active') return <Badge tone={GROUP_STATUSES[g.status].tone}>{GROUP_STATUSES[g.status].label}</Badge>
+        if (full) return <Badge tone="danger">{t('Мест нет')}</Badge>
+        if (g.is_underfilled) return <Badge tone="warning">{t('Недобор')}</Badge>
+        return <Badge tone="success">{t('Набирает')}</Badge>
+      },
+    },
+  ]
 
   return (
-    <div ref={ref} style={{ width: 170, flexShrink: 0, position: 'relative' }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 5, fontFamily: 'Manrope' }}>{label}</div>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '7px 10px',
-          border: `1.5px solid ${open || active ? '#E8998D' : '#EBEBF0'}`,
-          borderRadius: 8, background: active ? '#FDF0EE' : '#FAFAFA',
-          fontSize: 12, fontFamily: 'Manrope', fontWeight: active ? 600 : 400,
-          color: active ? '#C97B6E' : '#6B7280',
-          cursor: 'pointer', outline: 'none',
-          transition: 'border-color 0.15s, background 0.15s',
-          boxShadow: open ? '0 0 0 3px rgba(201,123,110,0.12)' : 'none',
-        }}
-      >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {selected ? selected[1] : options[0][1]}
-        </span>
-        <ChevronDown size={12} style={{ flexShrink: 0, marginLeft: 6, color: active ? '#C97B6E' : '#9CA3AF', transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
-      </button>
+    <div>
+      <PageHeader
+        title={t('Группы')}
+        description={`${rows.length} ${plural(rows.length, ['группа', 'группы', 'групп'])}${activeBranch ? ` · ${activeBranch.name}` : ''}${underfilledCount ? ` · ${t('с недобором: {n}', { n: underfilledCount })}` : ''}`}
+        actions={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Новая группа')}</Button>}
+      />
 
-      {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100, background: '#fff', border: '1.5px solid #F0F0F5', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', overflow: 'hidden' }}>
-          {options.map(([v, l]) => {
-            const isSelected = value === v
-            return (
-              <div
-                key={v}
-                onClick={() => { onChange(v); setOpen(false) }}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', fontSize: 12, fontFamily: 'Manrope', fontWeight: isSelected ? 600 : 400, color: isSelected ? '#C97B6E' : '#374151', background: isSelected ? '#FDF0EE' : '#fff', cursor: 'pointer' }}
-                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = '#FAFAFA' }}
-                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = '#fff' }}
-              >
-                {l}
-                {isSelected && <Check size={12} style={{ color: '#C97B6E', flexShrink: 0 }} />}
-              </div>
-            )
-          })}
-        </div>
+      <div className="mb-4 space-y-3">
+        <FilterBar
+          search={<SearchInput value={q} onChange={setQuery} placeholder={t('Поиск по названию, направлению, филиалу')} />}
+          filtersOpen={filtersOpen}
+          onToggleFilters={() => setFiltersOpen(o => !o)}
+          activeCount={activeCount}
+        />
+        {filtersOpen && (
+          <GroupFilters applied={applied} onApply={update} onReset={reset} branches={branches} directions={directions} teachers={teachers} />
+        )}
+      </div>
+
+      <DataTable
+        columns={columns}
+        rows={rows}
+        loading={loading}
+        error={loaded.error}
+        onRetry={() => setReloadKey(k => k + 1)}
+        onRowClick={g => navigate(`/groups/${g.id}`)}
+        empty={activeCount || q ? (
+          <EmptyState icon={Search} title={t('Групп не нашли')} description={t('Измените поиск или сбросьте фильтры.')} action={<Button size="sm" onClick={reset}>{t('Сбросить фильтры')}</Button>} />
+        ) : (
+          <EmptyState
+            icon={UsersRound}
+            title={t('Групп пока нет')}
+            description={t('Создайте группу — в неё записываются дети, по ней строится расписание.')}
+            action={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Новая группа')}</Button>}
+          />
+        )}
+      />
+
+      {creating && (
+        <GroupModal onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setReloadKey(k => k + 1) }} />
       )}
     </div>
   )
 }
 
-const EMPTY_FILTERS = { status: '', branch: '', direction: '' }
-
-export default function Groups() {
-  const [groups, setGroups] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [pendingFilters, setPendingFilters] = useState(EMPTY_FILTERS)
-  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS)
-  const [branches, setBranches] = useState([])
-  const [directions, setDirections] = useState([])
-  const [showFilters, setShowFilters] = useState(false)
-  const [showModal, setShowModal] = useState(false)
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    Promise.all([
-      axios.get('/api/v1/branches/', { headers: authHeaders() }),
-      axios.get('/api/v1/directions/', { headers: authHeaders() }),
-    ]).then(([b, d]) => {
-      setBranches(b.data.results || b.data)
-      setDirections(d.data.results || d.data)
-    }).catch(console.error)
-  }, [])
-
-  useEffect(() => { loadGroups() }, [appliedFilters])
-
-  async function loadGroups() {
-    setLoading(true)
-    try {
-      const params = {}
-      if (appliedFilters.status) params.status = appliedFilters.status
-      if (appliedFilters.branch) params.branch = appliedFilters.branch
-      if (appliedFilters.direction) params.direction = appliedFilters.direction
-      if (search) params.search = search
-      const res = await axios.get('/api/v1/groups/', { headers: authHeaders(), params })
-      setGroups(res.data.results || res.data)
-    } catch (e) { console.error(e) }
-    finally { setLoading(false) }
-  }
-
-  function setPending(key, value) { setPendingFilters(f => ({ ...f, [key]: value })) }
-  function applyFilters() { setAppliedFilters({ ...pendingFilters }) }
-  function resetFilters() { setPendingFilters(EMPTY_FILTERS); setAppliedFilters(EMPTY_FILTERS) }
-  function handleSearch(e) { e.preventDefault(); loadGroups() }
-
-  const activeCount = [appliedFilters.status, appliedFilters.branch, appliedFilters.direction].filter(Boolean).length
-  const hasPendingChanges = JSON.stringify(pendingFilters) !== JSON.stringify(appliedFilters)
-  const card = { background: '#fff', borderRadius: 12, border: '1px solid #F0F0F5', overflow: 'hidden' }
-
+function GroupFilters({ applied, onApply, onReset, branches, directions, teachers }) {
+  const { draft, set, dirty } = useFilterDraft(applied)
   return (
-    <div>
-      <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #F0F0F5' }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>Группы</h1>
-          <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{groups.length} групп</p>
-        </div>
-        <button
-          onClick={() => setShowModal(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'linear-gradient(135deg, #E8998D, #C97B6E)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope' }}
-        >
-          <Plus size={14} /> Новая группа
-        </button>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-        <form onSubmit={handleSearch} style={{ flex: 1, display: 'flex' }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: '1px solid #F0F0F5', borderRadius: 10, padding: '10px 14px' }}>
-            <Search size={16} style={{ color: '#9CA3AF', flexShrink: 0 }} />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Поиск по названию, направлению, филиалу..."
-              style={{ border: 'none', outline: 'none', fontSize: 13, width: '100%', fontFamily: 'Manrope' }}
-            />
-          </div>
-        </form>
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px',
-            background: showFilters ? '#FDF0EE' : '#fff',
-            color: showFilters ? '#C97B6E' : '#6B7280',
-            border: `1.5px solid ${showFilters ? '#E8998D' : '#F0F0F5'}`,
-            borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope',
-            position: 'relative',
-          }}
-        >
-          <SlidersHorizontal size={15} />
-          Фильтры
-          {activeCount > 0 && (
-            <span style={{ position: 'absolute', top: -7, right: -7, width: 18, height: 18, borderRadius: '50%', background: '#C97B6E', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{activeCount}</span>
-          )}
-        </button>
-      </div>
-
-      {showFilters && (
-        <div style={{ ...card, padding: '16px 20px', marginBottom: 16, overflow: 'visible' }}>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <CustomSelect
-                label="Филиал"
-                value={pendingFilters.branch}
-                onChange={v => setPending('branch', v)}
-                options={[['', 'Все филиалы'], ...branches.map(b => [String(b.id), b.name])]}
-              />
-              <CustomSelect
-                label="Направление"
-                value={pendingFilters.direction}
-                onChange={v => setPending('direction', v)}
-                options={[['', 'Все направления'], ...directions.map(d => [String(d.id), d.name])]}
-              />
-              <CustomSelect
-                label="Статус"
-                value={pendingFilters.status}
-                onChange={v => setPending('status', v)}
-                options={[['', 'Все статусы'], ...Object.entries(STATUS_STYLE).map(([v, s]) => [v, s.label])]}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-              <button
-                onClick={applyFilters}
-                disabled={!hasPendingChanges}
-                style={{ padding: '7px 16px', background: hasPendingChanges ? 'linear-gradient(135deg, #E8998D, #C97B6E)' : '#F0F0F5', color: hasPendingChanges ? '#fff' : '#9CA3AF', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: hasPendingChanges ? 'pointer' : 'default', fontFamily: 'Manrope', whiteSpace: 'nowrap' }}
-              >
-                Применить
-              </button>
-              {(activeCount > 0 || hasPendingChanges) && (
-                <button
-                  onClick={resetFilters}
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 16px', border: '1.5px solid #EBEBF0', borderRadius: 8, background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', color: '#9CA3AF', whiteSpace: 'nowrap' }}
-                >
-                  <X size={11} /> Сбросить
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+    <FilterPanel
+      dirty={dirty}
+      canReset={PANEL_KEYS.some(key => applied[key])}
+      onApply={() => onApply(draft)}
+      onReset={onReset}
+      checks={<FilterCheck label={t('Только с недобором')} checked={draft.underfilled === '1'} onChange={v => set('underfilled', v ? '1' : '')} />}
+    >
+      {branches.length > 1 && (
+        <FilterSelect label={t('Филиал')} value={draft.branch} onChange={v => set('branch', v)} options={[['', t('Как в шапке')], ...branches.map(b => [String(b.id), b.name])]} />
       )}
+      <FilterSelect label={t('Направление')} value={draft.direction} onChange={v => set('direction', v)} options={[['', t('Все направления')], ...directions.map(d => [String(d.id), d.name])]} />
+      <FilterSelect label={t('Преподаватель')} value={draft.teacher} onChange={v => set('teacher', v)} options={[['', t('Все преподаватели')], ...teachers.map(tch => [String(tch.id), tch.full_name])]} />
+      <FilterSelect label={t('Статус')} value={draft.status} onChange={v => set('status', v)} options={statusOptions()} />
+    </FilterPanel>
+  )
+}
 
-      <div style={card}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid #F0F0F5' }}>
-              {['Название', 'Филиал', 'Направление', 'Преподаватели', 'Записано', 'Статус'].map(h => (
-                <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка...</td></tr>
-            ) : groups.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Групп пока нет</td></tr>
-            ) : groups.map(group => {
-              const st = STATUS_STYLE[group.status] || STATUS_STYLE.active
-              const branch = branches.find(b => String(b.id) === String(group.branch))
-              const direction = directions.find(d => String(d.id) === String(group.direction))
-              const full = group.members_count >= group.capacity
-              return (
-                <tr
-                  key={group.id}
-                  onClick={() => navigate(`/groups/${group.id}`)}
-                  style={{ borderBottom: '1px solid #F0F0F5', cursor: 'pointer', transition: 'background 0.1s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#FAFAFA'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  <td style={{ padding: '14px 16px', fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{group.name}</td>
-                  <td style={{ padding: '14px 16px', fontSize: 13, color: '#6B7280' }}>{branch?.name || '—'}</td>
-                  <td style={{ padding: '14px 16px', fontSize: 13, color: '#6B7280' }}>{direction?.name || '—'}</td>
-                  <td style={{ padding: '14px 16px', fontSize: 13, color: '#6B7280' }}>{group.teachers_count || 0}</td>
-                  <td style={{ padding: '14px 16px' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 600, color: full ? '#D97706' : '#1A1A2E' }}>
-                      <Users size={13} style={{ color: '#9CA3AF' }} />
-                      {group.members_count} / {group.capacity}
-                    </span>
-                  </td>
-                  <td style={{ padding: '14px 16px' }}>
-                    <span style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: st.bg, color: st.color }}>{st.label}</span>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {showModal && (
-        <GroupModal
-          onClose={() => setShowModal(false)}
-          onSaved={() => { setShowModal(false); loadGroups() }}
-        />
-      )}
-    </div>
+/** «8 / 12» с мини-полосой: красная — мест нет, оранжевая — недобор. */
+function Fill({ group }) {
+  const full = group.members_count >= group.capacity
+  const color = full ? 'bg-danger-600' : group.is_underfilled ? 'bg-warning-600' : 'bg-success-600'
+  return (
+    <span className="flex items-center gap-2.5">
+      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-line">
+        <span className={cn('block h-full rounded-full', color)} style={{ width: `${Math.min(100, Math.max(group.fill_percent ?? 0, 4))}%` }} />
+      </span>
+      <span className="whitespace-nowrap font-semibold text-ink">{group.members_count}<span className="font-normal text-ink-subtle"> / {group.capacity}</span></span>
+    </span>
   )
 }

@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom'
 import { ChevronLeft, Inbox, Loader2 } from 'lucide-react'
 import { cn } from './cn'
+import { t } from '../i18n'
 
 export function Card({ className, children, padded = true, ...rest }) {
   return (
-    <div className={cn('rounded-lg border border-line bg-surface shadow-card', padded && 'p-5', className)} {...rest}>
+    <div className={cn('rounded-lg border border-line bg-surface', padded && 'p-5', className)} {...rest}>
       {children}
     </div>
   )
@@ -41,22 +42,23 @@ export function Badge({ tone = 'neutral', dot = false, className, children }) {
 }
 
 /**
- * Заголовок страницы — единственный на экране (в шапке приложения его нет).
- * back — «хлебная крошка» к родительскому разделу над заголовком
- * (карточка ребёнка: «‹ Дети»). Действия справа, на телефоне — под заголовком.
+ * Шапка страницы — белая карточка, как в первом React (TRU-91): заголовок,
+ * строка-описание («164 ребёнка»), действия справа (на телефоне — под
+ * заголовком). back — «‹ Раздел» над заголовком на вложенных страницах.
+ * В шапке приложения название раздела не повторяется.
  */
 export function PageHeader({ title, description, actions, back }) {
   return (
-    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mb-5 flex flex-col gap-4 rounded-xl border border-line bg-surface px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
       <div className="min-w-0">
         {back && (
-          <Link to={back.to} className="-ml-1 mb-1.5 inline-flex items-center gap-0.5 rounded px-1 text-[13px] font-semibold text-ink-muted transition-colors hover:text-brand-700">
-            <ChevronLeft className="size-4" />
+          <Link to={back.to} className="-ml-1 mb-1 inline-flex items-center gap-0.5 rounded px-1 text-xs font-semibold text-ink-subtle transition-colors hover:text-brand-600">
+            <ChevronLeft className="size-3.5" />
             {back.label}
           </Link>
         )}
-        <h1 className="text-[26px] font-bold leading-tight tracking-tight text-ink">{title}</h1>
-        {description && <p className="mt-1.5 text-sm text-ink-muted">{description}</p>}
+        <h1 className="text-[22px] font-bold leading-tight tracking-tight text-ink">{title}</h1>
+        {description && <p className="mt-1 text-[13px] text-ink-subtle">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
@@ -76,7 +78,7 @@ export function EmptyState({ icon: Icon = Inbox, title, description, action, cla
   )
 }
 
-export function Spinner({ className, label = 'Загрузка…' }) {
+export function Spinner({ className, label = t('Загрузка…') }) {
   return (
     <div className={cn('flex items-center justify-center gap-2 py-10 text-sm text-ink-muted', className)} role="status">
       <Loader2 className="size-5 animate-spin text-brand-500" />
@@ -90,14 +92,14 @@ export function Skeleton({ className }) {
 }
 
 /** Ошибка загрузки с повтором — вместо пустого экрана или вечного спиннера. */
-export function ErrorState({ title = 'Не удалось загрузить данные', onRetry }) {
+export function ErrorState({ title = t('Не удалось загрузить данные'), onRetry }) {
   return (
     <div className="flex flex-col items-center py-12 text-center">
       <p className="font-semibold text-ink">{title}</p>
-      <p className="mt-1 text-sm text-ink-muted">Проверьте соединение и попробуйте ещё раз.</p>
+      <p className="mt-1 text-sm text-ink-muted">{t('Проверьте соединение и попробуйте ещё раз.')}</p>
       {onRetry && (
-        <button type="button" onClick={onRetry} className="mt-4 text-sm font-semibold text-brand-600 hover:text-brand-700">
-          Повторить
+        <button type="button" onClick={onRetry} className="font-btn mt-4 text-sm font-semibold text-brand-600 hover:text-brand-700">
+          {t('Повторить')}
         </button>
       )}
     </div>

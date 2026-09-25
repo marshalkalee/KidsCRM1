@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 // Рабочие часы филиала — как backend/domains/platform/tenants/working_hours.py.
 export const WEEKDAYS = [
   ['mon', 'Пн', 'Понедельник'],
@@ -26,7 +27,8 @@ export function initialHours(hours) {
 export function hoursSummary(hours) {
   const days = initialHours(hours)
   const groups = []
-  for (const [code, short] of WEEKDAYS) {
+  for (const [code, ruShort] of WEEKDAYS) {
+    const short = t(ruShort)
     const day = days[code]
     const label = day.closed ? null : `${day.open}–${day.close}`
     const last = groups[groups.length - 1]
@@ -34,6 +36,6 @@ export function hoursSummary(hours) {
     else groups.push({ from: short, to: short, label })
   }
   const open = groups.filter(g => g.label)
-  if (!open.length) return 'Закрыт всю неделю'
+  if (!open.length) return t('Закрыт всю неделю')
   return open.map(g => `${g.from}${g.to !== g.from ? `–${g.to}` : ''} ${g.label}`).join(', ')
 }

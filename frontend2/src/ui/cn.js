@@ -3,14 +3,8 @@ export function cn(...parts) {
   return parts.filter(Boolean).join(' ')
 }
 
-// Русское склонение по числу: plural(5, ['ребёнок', 'ребёнка', 'детей']).
-export function plural(n, [one, few, many]) {
-  const mod10 = n % 10
-  const mod100 = n % 100
-  if (mod10 === 1 && mod100 !== 11) return one
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few
-  return many
-}
+// Склонение по числу — с учётом языка (i18n): plural(5, ['ребёнок', 'ребёнка', 'детей']).
+export { plural } from '../i18n'
 
 export function initials(fullName = '') {
   return fullName

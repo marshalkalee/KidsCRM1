@@ -5,6 +5,7 @@ import { ArrowRight, Eye, EyeOff } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import { useSession } from '../session/SessionContext'
 import { Button, Field, Input } from '../ui'
+import { t } from '../i18n'
 
 /**
  * Регистрация центра (TRU-86): организация + владелец одним запросом
@@ -36,9 +37,9 @@ export default function Signup() {
       setRegistered(true)
       await reload()
     } catch (err) {
-      if (err.response?.status === 429) setErrors({ detail: 'Слишком много попыток. Подождите минуту.' })
+      if (err.response?.status === 429) setErrors({ detail: t('Слишком много попыток. Подождите минуту.') })
       else if (err.response?.data && typeof err.response.data === 'object') setErrors(err.response.data)
-      else setErrors({ detail: 'Нет связи с сервером.' })
+      else setErrors({ detail: t('Нет связи с сервером.') })
     } finally {
       setLoading(false)
     }
@@ -46,17 +47,17 @@ export default function Signup() {
 
   return (
     <AuthLayout>
-      <h2 className="text-2xl font-bold tracking-tight">Регистрация центра</h2>
-      <p className="mt-1.5 text-sm text-ink-muted">Пара минут — и можно заводить филиалы, группы и детей.</p>
+      <h2 className="text-2xl font-bold tracking-tight">{t('Регистрация центра')}</h2>
+      <p className="mt-1.5 text-sm text-ink-muted">{t('Пара минут — и можно заводить филиалы, группы и детей.')}</p>
 
       <form onSubmit={submit} className="mt-8 space-y-4">
-        <Field label="Название центра" error={errors.org_name}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.org_name} onChange={e => set('org_name', e.target.value)} placeholder="Например, Студия «Грация»" required autoFocus />}
+        <Field label={t('Название центра')} error={errors.org_name}>
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.org_name} onChange={e => set('org_name', e.target.value)} placeholder={t('Например, Студия «Грация»')} required autoFocus />}
         </Field>
-        <Field label="Ваше имя" error={errors.full_name}>
+        <Field label={t('Ваше имя')} error={errors.full_name}>
           {({ id, invalid }) => <Input id={id} invalid={invalid} autoComplete="name" value={form.full_name} onChange={e => set('full_name', e.target.value)} required />}
         </Field>
-        <Field label="Телефон" hint="По нему вы будете входить" error={errors.phone}>
+        <Field label={t('Телефон')} hint={t('По нему вы будете входить')} error={errors.phone}>
           {({ id, invalid }) => (
             <Input
               id={id}
@@ -70,7 +71,7 @@ export default function Signup() {
             />
           )}
         </Field>
-        <Field label="Пароль" hint="Не короче 8 символов, не только цифры" error={errors.password}>
+        <Field label={t('Пароль')} hint={t('Не короче 8 символов, не только цифры')} error={errors.password}>
           {({ id, invalid }) => (
             <div className="relative">
               <Input
@@ -87,7 +88,7 @@ export default function Signup() {
                 type="button"
                 onClick={() => setShowPassword(v => !v)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-ink-subtle hover:text-ink"
-                aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                aria-label={showPassword ? t('Скрыть пароль') : t('Показать пароль')}
               >
                 {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
@@ -96,11 +97,11 @@ export default function Signup() {
         </Field>
         {errors.detail && <p className="rounded-md bg-danger-50 px-3 py-2 text-sm text-danger-600" role="alert">{errors.detail}</p>}
         <Button type="submit" variant="primary" loading={loading} className="w-full justify-center">
-          Создать центр {!loading && <ArrowRight className="size-4" />}
+          {t('Создать центр')} {!loading && <ArrowRight className="size-4" />}
         </Button>
       </form>
       <p className="mt-6 text-center text-sm text-ink-muted">
-        Уже есть аккаунт? <Link to="/login" className="font-semibold text-brand-700 hover:underline">Войти</Link>
+        {t('Уже есть аккаунт?')} <Link to="/login" className="font-semibold text-brand-700 hover:underline">{t('Войти')}</Link>
       </p>
     </AuthLayout>
   )

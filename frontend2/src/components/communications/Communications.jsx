@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import { MessageCircle, MessagesSquare, Phone, StickyNote } from 'lucide-react'
 import api from '../../api/axios'
 import { Button, Card, EmptyState, ErrorState, Select, Skeleton, Textarea, apiErrorMessage, cn, formatDateTime, useToast } from '../../ui'
+import { t } from '../../i18n'
 
 // Как CommunicationLog.Channel на бэке.
 const CHANNELS = [
-  { value: 'call', label: 'Звонок', icon: Phone, tone: 'bg-info-50 text-info-600' },
+  { value: 'call', get label() { return t('Звонок') }, icon: Phone, tone: 'bg-info-50 text-info-600' },
   { value: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, tone: 'bg-success-50 text-success-600' },
-  { value: 'comment', label: 'Комментарий', icon: StickyNote, tone: 'bg-warning-50 text-warning-600' },
+  { value: 'comment', get label() { return t('Комментарий') }, icon: StickyNote, tone: 'bg-warning-50 text-warning-600' },
 ]
 const CHANNEL_BY_VALUE = Object.fromEntries(CHANNELS.map(c => [c.value, c]))
 
@@ -47,7 +48,7 @@ export function Communications({ params, canCreate, childOptions, contactOptions
         {!error && !logs && <div className="space-y-3"><Skeleton className="h-20" /><Skeleton className="h-20" /></div>}
         {!error && logs && logs.length === 0 && (
           <Card>
-            <EmptyState icon={MessagesSquare} title="Записей пока нет" description="Здесь будет история звонков и переписки с семьёй." />
+            <EmptyState icon={MessagesSquare} title={t('Записей пока нет')} description={t('Здесь будет история звонков и переписки с семьёй.')} />
           </Card>
         )}
         {!error && logs && logs.length > 0 && <Feed logs={logs} showChild={showChild} />}
@@ -76,11 +77,11 @@ function Feed({ logs, showChild }) {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                   <p className="text-sm font-semibold text-ink">
-                    {log.channel_label}
+                    {t(log.channel_label)}
                     {log.parent_contact_full_name && <span className="font-normal text-ink-muted"> · {log.parent_contact_full_name}</span>}
                     {showChild && (
                       <>
-                        <span className="font-normal text-ink-muted"> · о </span>
+                        <span className="font-normal text-ink-muted"> {t('· о')} </span>
                         <Link to={`/children/${log.child}`} className="font-normal text-brand-700 hover:underline">{log.child_name}</Link>
                       </>
                     )}
@@ -115,7 +116,7 @@ function QuickLogForm({ childOptions, contactOptions, fixedContact, onCreated })
     try {
       await api.post('clients/communications/', { child, channel, note, parent_contact: contact || null })
       setNote('')
-      toast.success('Запись добавлена')
+      toast.success(t('Запись добавлена'))
       onCreated()
     } catch (err) {
       const data = err.response?.data
@@ -128,8 +129,8 @@ function QuickLogForm({ childOptions, contactOptions, fixedContact, onCreated })
   return (
     <Card>
       <form onSubmit={submit} className="flex flex-col gap-3">
-        <p className="text-[15px] font-bold text-ink">Новая запись</p>
-        <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="Канал">
+        <p className="text-[15px] font-bold text-ink">{t('Новая запись')}</p>
+        <div className="grid grid-cols-3 gap-1.5" role="group" aria-label={t('Канал')}>
           {CHANNELS.map(({ value, label, icon: Icon }) => (
             <button
               key={value}
@@ -147,26 +148,26 @@ function QuickLogForm({ childOptions, contactOptions, fixedContact, onCreated })
           ))}
         </div>
         {childOptions.length > 1 && (
-          <Select aria-label="О ком" value={child} onChange={e => setChild(e.target.value)}>
+          <Select aria-label={t('О ком')} value={child} onChange={e => setChild(e.target.value)}>
             {childOptions.map(option => <option key={option.id} value={option.id}>{option.full_name}</option>)}
           </Select>
         )}
         {!fixedContact && contactOptions.length > 0 && (
-          <Select aria-label="С кем" value={contact} onChange={e => setContact(e.target.value)}>
-            <option value="">Без контакта</option>
+          <Select aria-label={t('С кем')} value={contact} onChange={e => setContact(e.target.value)}>
+            <option value="">{t('Без контакта')}</option>
             {contactOptions.map(option => <option key={option.id} value={option.id}>{option.full_name}</option>)}
           </Select>
         )}
         <Textarea
-          aria-label="Заметка"
+          aria-label={t('Заметка')}
           rows={3}
           value={note}
           onChange={e => setNote(e.target.value)}
-          placeholder="О чём договорились"
+          placeholder={t('О чём договорились')}
           onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(e) }}
         />
         {error && <p className="text-sm text-danger-600">{error}</p>}
-        <Button variant="primary" type="submit" loading={saving} disabled={!note.trim()}>Добавить</Button>
+        <Button variant="primary" type="submit" loading={saving} disabled={!note.trim()}>{t('Добавить')}</Button>
       </form>
     </Card>
   )
