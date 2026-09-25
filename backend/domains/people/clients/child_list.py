@@ -28,15 +28,25 @@ CHILD_SORT_FIELDS = {
 MONEY_FILTERS = ("has_debt", "expiring")
 
 
-def branch_names(child):
-    # Филиал не хранится на Child напрямую — выводится из филиалов, где
-    # доступны направления ребёнка (Direction.branches, M2M). Не идеально
-    # для ребёнка без направлений, но не требует новой связи на модели
-    # ради одной строчки в шапке.
-    names = {
+def branch_names(child, group_branches=None):
+    """Филиал не хранится на Child напрямую. Главный источник — филиалы
+    групп, где ребёнок сейчас занимается (group_branches, TRU-89): направление
+    обычно доступно в нескольких филиалах, и по нему ребёнок «числился» бы
+    во всех сразу. Нет групп — филиалы, где доступны его направления."""
+    names = set(group_branches or ()) or {
         branch.name for direction in child.directions.all() for branch in direction.branches.all()
     }
     return ", ".join(sorted(names)) if names else None
+
+
+def active_group_branch_names(child):
+    """Филиалы текущих групп ребёнка — из prefetch_related(
+    "group_memberships__group__branch"), без запроса на ребёнка."""
+    return [
+        membership.group.branch.name
+        for membership in child.group_memberships.all()
+        if membership.left_at is None
+    ]
 
 
 def direction_names(child):
@@ -78,8 +88,21 @@ def filter_children(qs, organization, params):
 
     branch_id = params.get("branch")
     if branch_id:
-        qs = qs.filter(directions__branches__id=branch_id)
-        needs_distinct = True
+        # Как branch_names: ребёнок в группе этого филиала — или с
+        # направлением, доступным в нём. Один подзапрос с UNION: OR двух
+        # join'ов или двух IN на 5000 детях не укладывается в бюджет.
+        in_branch_group = GroupMembership.objects.filter(
+            group__branch_id=branch_id, left_at__isnull=True
+        ).values("child_id")
+        # Направления — только для детей без текущей группы, как в branch_names.
+        with_branch_direction = (
+            Child.directions.through.objects.filter(direction__branches__id=branch_id)
+            .exclude(
+                child_id__in=GroupMembership.objects.filter(left_at__isnull=True).values("child_id")
+            )
+            .values("child_id")
+        )
+        qs = qs.filter(id__in=in_branch_group.union(with_branch_direction))
 
     direction_id = params.get("direction")
     if direction_id:
@@ -113,11 +136,13 @@ def batch_child_extras(organization, child_ids):
     memberships = (
         GroupMembership.objects.for_tenant(organization)
         .filter(child_id__in=child_ids, left_at__isnull=True)
-        .select_related("group")
+        .select_related("group__branch")
     )
     groups_by_child = {}
+    branches_by_child = {}
     for membership in memberships:
         groups_by_child.setdefault(membership.child_id, []).append(membership.group.name)
+        branches_by_child.setdefault(membership.child_id, []).append(membership.group.branch.name)
 
     subscriptions = (
         Subscription.objects.for_tenant(organization)
@@ -133,7 +158,12 @@ def batch_child_extras(organization, child_ids):
 
     # Сумма долга — сервисом домена «Деньги», не своим подсчётом: та же
     # цифра в карточке родителя и на экране задолженностей.
-    return groups_by_child, latest_subscription_by_child, debt_by_child(organization, child_ids)
+    return (
+        groups_by_child,
+        branches_by_child,
+        latest_subscription_by_child,
+        debt_by_child(organization, child_ids),
+    )
 
 
 def _int_param(params, name, default):
@@ -164,7 +194,9 @@ def list_children(organization, params, *, show_money):
     children = list(qs[start : start + page_size])
 
     child_ids = [child.id for child in children]
-    groups_by_child, subscription_by_child, debts = batch_child_extras(organization, child_ids)
+    groups_by_child, branches_by_child, subscription_by_child, debts = batch_child_extras(
+        organization, child_ids
+    )
 
     rows = []
     for child in children:
@@ -176,7 +208,7 @@ def list_children(organization, params, *, show_money):
                 "age": child.age,
                 "birth_date": child.birth_date.isoformat(),
                 "photo_url": child.photo_url or None,
-                "branch_names": branch_names(child) or "—",
+                "branch_names": branch_names(child, branches_by_child.get(child.id)) or "—",
                 "direction_names": direction_names(child) or "—",
                 "group_names": ", ".join(groups_by_child.get(child.id, [])) or "—",
                 "status": child.status,

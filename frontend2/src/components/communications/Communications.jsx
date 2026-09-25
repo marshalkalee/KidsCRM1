@@ -19,9 +19,10 @@ const CHANNEL_BY_VALUE = Object.fromEntries(CHANNELS.map(c => [c.value, c]))
  *
  * childOptions — дети, о ком можно записать (одного не спрашиваем);
  * contactOptions — [{id, full_name}] для «с кем говорили»;
- * showChild — подписывать ребёнка в ленте (у родителя детей несколько).
+ * showChild — подписывать ребёнка в ленте (у родителя детей несколько);
+ * stacked — форма над лентой (для узкой колонки, как в карточке родителя).
  */
-export function Communications({ params, canCreate, childOptions, contactOptions = [], fixedContact, showChild = false, onCountChange }) {
+export function Communications({ params, canCreate, childOptions, contactOptions = [], fixedContact, showChild = false, stacked = false, onCountChange }) {
   const [logs, setLogs] = useState(null)
   const [error, setError] = useState(false)
   const query = JSON.stringify(params)
@@ -40,8 +41,8 @@ export function Communications({ params, canCreate, childOptions, contactOptions
   useEffect(() => { load() }, [load])
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-      <div className="order-2 lg:order-1">
+    <div className={cn('grid gap-4', !stacked && 'lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start')}>
+      <div className={cn('order-2', !stacked && 'lg:order-1')}>
         {error && <Card><ErrorState onRetry={load} /></Card>}
         {!error && !logs && <div className="space-y-3"><Skeleton className="h-20" /><Skeleton className="h-20" /></div>}
         {!error && logs && logs.length === 0 && (
@@ -52,7 +53,7 @@ export function Communications({ params, canCreate, childOptions, contactOptions
         {!error && logs && logs.length > 0 && <Feed logs={logs} showChild={showChild} />}
       </div>
       {canCreate && childOptions.length > 0 && (
-        <div className="order-1 lg:sticky lg:top-24 lg:order-2">
+        <div className={cn('order-1', !stacked && 'lg:sticky lg:top-24 lg:order-2')}>
           <QuickLogForm childOptions={childOptions} contactOptions={contactOptions} fixedContact={fixedContact} onCreated={load} />
         </div>
       )}

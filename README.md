@@ -49,7 +49,14 @@ venv, зависимости ставятся прямо в образ. Для �
    docker compose exec backend python manage.py migrate
    docker compose exec backend python scripts/build_i18n_bundle.py
    ```
-5. Открыть в браузере.
+5. (По желанию) наполнить свою организацию демо-данными — чтобы экраны
+   смотреть на «живом» центре: 3 филиала, 20 групп, ~150 детей с
+   родителями, абонементы с долгами, расписание, коммуникации. Только при
+   `DEBUG=True`, повторный запуск ничего не дублирует.
+   ```bash
+   docker compose exec backend python manage.py seed_demo --phone +7XXXXXXXXXX
+   ```
+6. Открыть в браузере.
 
    Основной вход — `http://localhost/` — React-приложение (через nginx, тот
    же путь запроса, что и в проде). API — `/api/v1/`, админка — `/admin/`.

@@ -19,7 +19,7 @@ from domains.platform.core.role_permissions import (
 from domains.scheduling.groups.models import GroupMembership
 
 from . import search
-from .child_list import branch_names, list_children
+from .child_list import active_group_branch_names, branch_names, list_children
 from .models import Child, ChildContact, CommunicationLog, ParentContact
 from .parents import DELETE_BLOCKED_MESSAGE, can_delete_parent, parent_money
 from .serializers import (
@@ -63,16 +63,17 @@ class ChildViewSet(viewsets.ModelViewSet):
         child = self.get_object()
         organization = request.user.organization
         directions = list(child.directions.all().prefetch_related("branches"))
-        branches = {
+        memberships = list(
+            GroupMembership.objects.for_tenant(organization)
+            .filter(child=child, left_at__isnull=True)
+            .select_related("group__branch")
+        )
+        # Как child_list.branch_names: филиалы групп, без групп — направлений.
+        branches = {m.group.branch_id: m.group.branch.name for m in memberships} or {
             branch.id: branch.name
             for direction in directions
             for branch in direction.branches.all()
         }
-        memberships = (
-            GroupMembership.objects.for_tenant(organization)
-            .filter(child=child, left_at__isnull=True)
-            .select_related("group")
-        )
         money = None
         if can_view_client_money(request.user):
             subscription = (
@@ -176,7 +177,9 @@ class ParentContactViewSet(viewsets.ModelViewSet):
             ChildContact.objects.for_tenant(organization)
             .filter(parent_contact=parent, child__deleted_at__isnull=True)
             .select_related("child")
-            .prefetch_related("child__directions__branches")
+            .prefetch_related(
+                "child__directions__branches", "child__group_memberships__group__branch"
+            )
         )
         money = None
         if can_view_client_money(request.user):
@@ -211,7 +214,9 @@ class ParentContactViewSet(viewsets.ModelViewSet):
                         "role": link.role,
                         "is_payer": link.is_payer,
                         "is_primary_contact": link.is_primary_contact,
-                        "branch_names": branch_names(link.child),
+                        "branch_names": branch_names(
+                            link.child, active_group_branch_names(link.child)
+                        ),
                     }
                     for link in links
                 ],

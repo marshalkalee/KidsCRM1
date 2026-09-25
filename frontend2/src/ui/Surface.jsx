@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Inbox, Loader2 } from 'lucide-react'
+import { ChevronLeft, Inbox, Loader2 } from 'lucide-react'
 import { cn } from './cn'
 
 export function Card({ className, children, padded = true, ...rest }) {
@@ -41,22 +41,22 @@ export function Badge({ tone = 'neutral', dot = false, className, children }) {
 }
 
 /**
- * Заголовок страницы — прямо на фоне, без отдельной карточки: title,
- * строка-описание (например «14 детей в базе»), действия справа, на
- * телефоне — под заголовком.
+ * Заголовок страницы — единственный на экране (в шапке приложения его нет).
+ * back — «хлебная крошка» к родительскому разделу над заголовком
+ * (карточка ребёнка: «‹ Дети»). Действия справа, на телефоне — под заголовком.
  */
 export function PageHeader({ title, description, actions, back }) {
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         {back && (
-          <Link to={back.to} className="mb-2 inline-flex items-center gap-1 text-[13px] font-medium text-ink-muted hover:text-ink">
-            <ArrowLeft className="size-4" />
+          <Link to={back.to} className="-ml-1 mb-1.5 inline-flex items-center gap-0.5 rounded px-1 text-[13px] font-semibold text-ink-muted transition-colors hover:text-brand-700">
+            <ChevronLeft className="size-4" />
             {back.label}
           </Link>
         )}
-        <h1 className="text-2xl font-bold tracking-tight text-ink">{title}</h1>
-        {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
+        <h1 className="text-[26px] font-bold leading-tight tracking-tight text-ink">{title}</h1>
+        {description && <p className="mt-1.5 text-sm text-ink-muted">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
