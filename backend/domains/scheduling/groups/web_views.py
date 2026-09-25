@@ -4,7 +4,6 @@
 """
 
 from django.contrib import messages
-from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -14,6 +13,8 @@ from domains.platform.core.decorators import role_required
 from domains.platform.tenants.models import Branch, Direction
 from domains.scheduling.groups.forms import GroupForm
 from domains.scheduling.groups.models import Group
+
+from . import queries
 
 OWNER = "owner"
 MANAGER = "manager"
@@ -27,31 +28,23 @@ def _is_ajax(request):
     return request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
 
-def _group_fill_pct(group):
-    """Процент заполненности группы на сегодня."""
-    if not group.capacity:
-        return 0
-    return round(group.members_count / group.capacity * 100)
-
-
 @role_required()
 def group_list(request):
     org = request.user.organization
-    threshold = org.settings.get("group_fill_threshold", 70)
+    # Порог — из настроек организации (раньше читался несуществующий ключ
+    # "group_fill_threshold" и всегда был 70%).
+    threshold = queries.underfilled_threshold(org)
 
-    groups = (
+    groups = queries.with_members_count(
         Group.objects.for_tenant(org)
         .select_related("branch", "direction")
         .prefetch_related("teachers")
-        .annotate(
-            members_count=Count(
-                "memberships",
-                filter=Q(memberships__left_at__isnull=True),
-                distinct=True,
-            )
-        )
         .order_by("status", "name")
     )
+
+    # Преподаватель видит только свои группы — как в API.
+    if request.user.role == "teacher":
+        groups = groups.filter(teachers=request.user)
 
     # Фильтры
     branch_id = request.GET.get("branch")
@@ -82,8 +75,8 @@ def group_list(request):
             "teacher_names": ", ".join(t.get_full_name() or str(t.phone) for t in g.teachers.all()),
             "capacity": g.capacity,
             "members_count": g.members_count,
-            "fill_pct": _group_fill_pct(g),
-            "is_underfilled": _group_fill_pct(g) < threshold,
+            "fill_pct": queries.fill_percent(g),
+            "is_underfilled": queries.is_underfilled(g, threshold),
             "status": g.status,
             "age_range": f"{g.age_min}–{g.age_max}" if g.age_min and g.age_max else "",
             "detail_url": reverse("scheduling_web:group-detail", args=[g.pk]),
@@ -165,15 +158,10 @@ def group_edit(request, pk):
 def group_detail(request, pk):
     org = request.user.organization
     group = get_object_or_404(
-        Group.objects.for_tenant(org)
-        .select_related("branch", "direction")
-        .prefetch_related("teachers", "memberships__child")
-        .annotate(
-            members_count=Count(
-                "memberships",
-                filter=Q(memberships__left_at__isnull=True),
-                distinct=True,
-            )
+        queries.with_members_count(
+            Group.objects.for_tenant(org)
+            .select_related("branch", "direction")
+            .prefetch_related("teachers", "memberships__child")
         ),
         pk=pk,
     )
@@ -184,7 +172,7 @@ def group_detail(request, pk):
         {
             "group": group,
             "active_memberships": active_memberships,
-            "fill_pct": _group_fill_pct(group),
+            "fill_pct": queries.fill_percent(group),
         },
     )
 

@@ -1,4 +1,5 @@
-from django.db.models import Count, Q
+from django.db.models import Count
+from django.utils import timezone
 from rest_framework import filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -9,6 +10,7 @@ from domains.platform.core.permissions import (
 )
 from domains.platform.core.viewsets import TenantModelViewSet
 
+from . import queries
 from .models import Group, GroupMembership
 from .serializers import GroupMembershipSerializer, GroupSerializer
 
@@ -26,18 +28,11 @@ class GroupViewSet(TenantModelViewSet):
         return [IsStaffOfOrganization()]
 
     def get_queryset(self):
-        qs = (
-            Group.objects.for_tenant(self.request.organization)
+        qs = queries.with_members_count(
+            Group.objects.for_tenant(self.request.user.organization)
             .select_related("branch", "direction")
-            .prefetch_related("teachers")
-            .annotate(
-                teachers_count=Count("teachers", distinct=True),
-                members_count=Count(
-                    "memberships",
-                    filter=Q(memberships__left_at__isnull=True),
-                    distinct=True,
-                ),
-            )
+            .prefetch_related("teachers", "schedule_templates__slots__room")
+            .annotate(teachers_count=Count("teachers", distinct=True))
         )
         user = self.request.user
         if user.role == "teacher":
@@ -55,10 +50,17 @@ class GroupViewSet(TenantModelViewSet):
         if direction_id:
             qs = qs.filter(direction_id=direction_id)
 
+        teacher_id = self.request.query_params.get("teacher")
+        if teacher_id:
+            qs = qs.filter(teachers__id=teacher_id)
+
         if self.request.query_params.get("for_enrollment"):
             qs = qs.filter(status=Group.Status.ACTIVE)
 
         return qs
+
+    def perform_create(self, serializer):
+        serializer.save(organization=self.request.user.organization)
 
     def perform_destroy(self, instance):
         instance.status = Group.Status.CLOSED
@@ -68,9 +70,10 @@ class GroupViewSet(TenantModelViewSet):
     def members(self, request, pk=None):
         group = self.get_object()
         memberships = (
-            GroupMembership.objects.for_tenant(request.organization)
+            GroupMembership.objects.for_tenant(request.user.organization)
             .filter(group=group, left_at__isnull=True)
             .select_related("child")
+            .order_by("child__full_name")
         )
         serializer = GroupMembershipSerializer(memberships, many=True)
         return Response(serializer.data)
@@ -93,7 +96,7 @@ class GroupViewSet(TenantModelViewSet):
         left_at = request.data.get("left_at")
 
         membership = (
-            GroupMembership.objects.for_tenant(request.organization)
+            GroupMembership.objects.for_tenant(request.user.organization)
             .filter(
                 group=group,
                 child_id=child_id,
@@ -108,7 +111,8 @@ class GroupViewSet(TenantModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        membership.left_at = left_at
+        # Без даты — «вышел сегодня» (раньше left_at=None молча ничего не менял).
+        membership.left_at = left_at or timezone.localdate()
         membership.save(update_fields=["left_at", "updated_at"])
         return Response(GroupMembershipSerializer(membership).data)
 
@@ -116,7 +120,7 @@ class GroupViewSet(TenantModelViewSet):
     def history(self, request, pk=None):
         group = self.get_object()
         memberships = (
-            GroupMembership.objects.for_tenant(request.organization)
+            GroupMembership.objects.for_tenant(request.user.organization)
             .filter(group=group)
             .select_related("child")
             .order_by("-joined_at")

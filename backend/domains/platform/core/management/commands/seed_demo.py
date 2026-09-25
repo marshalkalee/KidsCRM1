@@ -152,6 +152,7 @@ class Command(BaseCommand):
         self.owner = owner
         self.today = timezone.localdate()
         self.used_phones = set(ContactPhone.objects.values_list("number", flat=True))
+        self.filled = {}
         with transaction.atomic():
             branches = self.seed_branches()
             directions = self.seed_directions(branches)
@@ -358,7 +359,10 @@ class Command(BaseCommand):
     def make_child(self, surname_m, surname_f, groups):
         girl = self.rng.random() < 0.78  # балетная студия — в основном девочки
         first_name = self.rng.choice(GIRLS if girl else BOYS)
-        group = self.rng.choice(groups)
+        # Только группы со свободными местами — как при записи через API.
+        free = [g for g in groups if self.filled.get(g.pk, 0) < g.capacity]
+        group = self.rng.choice(free or groups)
+        self.filled[group.pk] = self.filled.get(group.pk, 0) + 1
         age = self.rng.randint(group.age_min, group.age_max)
         birth_date = self.today - datetime.timedelta(days=age * 365 + self.rng.randint(0, 360))
         status = self.rng.choices(
