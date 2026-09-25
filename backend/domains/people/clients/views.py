@@ -20,8 +20,10 @@ from domains.scheduling.groups.models import GroupMembership
 
 from . import search
 from .child_list import active_group_branch_names, branch_names, list_children
+from .forms import ChildPhotoUploadForm
 from .models import Child, ChildContact, CommunicationLog, ParentContact
 from .parents import DELETE_BLOCKED_MESSAGE, can_delete_parent, parent_money
+from .photos import MAX_PHOTO_BYTES, save_child_photo
 from .serializers import (
     ChildContactSerializer,
     ChildSerializer,
@@ -308,6 +310,22 @@ class CommunicationLogViewSet(
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def child_photo_api(request):
+    """Фото ребёнка для формы frontend2: multipart file → {url}. Ссылку
+    форма кладёт в photo_url при сохранении ребёнка (как в вебе)."""
+    uploaded = request.FILES.get("file")
+    if uploaded is not None and uploaded.size > MAX_PHOTO_BYTES:
+        return Response({"file": ["Файл больше 5 МБ."]}, status=status.HTTP_400_BAD_REQUEST)
+    form = ChildPhotoUploadForm(files=request.FILES)
+    if not form.is_valid():
+        return Response(
+            {"file": ["Загрузите изображение: JPG или PNG."]}, status=status.HTTP_400_BAD_REQUEST
+        )
+    return Response({"url": save_child_photo(request, form.cleaned_data["file"])})
 
 
 @api_view(["GET"])

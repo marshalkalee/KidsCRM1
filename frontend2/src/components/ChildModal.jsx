@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Camera, Loader2, Upload } from 'lucide-react'
 import api from '../api/axios'
 import { Button, Checkbox, DateInput, Field, Input, Modal, Select, Textarea, apiErrorMessage, cn, useToast } from '../ui'
 
@@ -11,6 +12,7 @@ const EMPTY = {
   medical_notes: '',
   consent_given: false,
   leave_reason: '',
+  photo_url: '',
 }
 
 function initialForm(child) {
@@ -76,6 +78,7 @@ export default function ChildModal({ child, onClose, onSaved }) {
       }
     >
       <form id="child-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+        <PhotoPicker value={form.photo_url} onChange={url => set('photo_url', url)} error={errors.photo_url} />
         <Field label="ФИО" required error={errors.full_name}>
           {({ id, invalid }) => (
             <Input id={id} invalid={invalid} value={form.full_name} onChange={e => set('full_name', e.target.value)} placeholder="Введите ФИО" required autoFocus />
@@ -148,5 +151,61 @@ export default function ChildModal({ child, onClose, onSaved }) {
         {errors.non_field_errors && <p className="text-sm text-danger-600 sm:col-span-2">{errors.non_field_errors[0]}</p>}
       </form>
     </Modal>
+  )
+}
+
+/**
+ * Фото как в форме первого React: кружок и «Загрузить фото». Файл
+ * отправляется сразу при выборе (clients/children/photo/), в форму
+ * попадает ссылка — сохраняется вместе с ребёнком.
+ */
+function PhotoPicker({ value, onChange, error }) {
+  const toast = useToast()
+  const inputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+
+  async function upload(file) {
+    if (!file) return
+    setUploading(true)
+    try {
+      const body = new FormData()
+      body.append('file', file)
+      const { data } = await api.post('clients/children/photo/', body)
+      onChange(data.url)
+    } catch (err) {
+      toast.error(err.response?.data?.file?.[0] || apiErrorMessage(err))
+    } finally {
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-4 sm:col-span-2">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        aria-label={value ? 'Заменить фото' : 'Загрузить фото'}
+        className={cn(
+          'flex size-[72px] shrink-0 items-center justify-center overflow-hidden rounded-full',
+          value ? 'ring-2 ring-brand-100' : 'border-2 border-dashed border-[#e5e7eb] bg-[#f8f9ff] text-ink-subtle hover:border-brand-300 hover:text-brand-500',
+        )}
+      >
+        {uploading ? <Loader2 className="size-6 animate-spin text-brand-500" />
+          : value ? <img src={value} alt="" className="size-full object-cover" />
+            : <Camera className="size-6" />}
+      </button>
+      <div className="flex flex-col items-start gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" icon={Upload} onClick={() => inputRef.current?.click()} disabled={uploading}>
+            {value ? 'Заменить фото' : 'Загрузить фото'}
+          </Button>
+          {value && !uploading && <Button size="sm" variant="ghost" onClick={() => onChange('')}>Убрать</Button>}
+        </div>
+        <p className="font-btn text-[11px] text-ink-subtle">JPG, PNG до 5 МБ</p>
+        {error && <p className="font-btn text-xs text-danger-600">{[].concat(error)[0]}</p>}
+      </div>
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => upload(e.target.files[0])} />
+    </div>
   )
 }

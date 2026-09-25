@@ -9,12 +9,8 @@
 заглушки, см. child_card_tabs.py (контракт для Дарьи/Bekzat'а).
 """
 
-import uuid
-from pathlib import Path
-
 import pytz
 from django.contrib import messages
-from django.core.files.storage import default_storage
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -40,6 +36,7 @@ from .forms import (
 )
 from .models import Child, ChildContact, CommunicationLog, ParentContact
 from .parents import DELETE_BLOCKED_MESSAGE, can_delete_parent, parent_money
+from .photos import save_child_photo
 
 OWNER = "owner"
 MANAGER = "manager"
@@ -222,12 +219,7 @@ def child_photo_upload(request):
     if not form.is_valid():
         return JsonResponse({"success": False, "errors": form.errors}, status=400)
 
-    uploaded = form.cleaned_data["file"]
-    extension = Path(uploaded.name).suffix.lower()
-    saved_path = default_storage.save(f"children/photos/{uuid.uuid4()}{extension}", uploaded)
-    # URLField на Child требует абсолютный URL (со схемой/хостом) — путь
-    # относительно MEDIA_URL сам по себе такую проверку не пройдёт.
-    url = request.build_absolute_uri(default_storage.url(saved_path))
+    url = save_child_photo(request, form.cleaned_data["file"])
     return JsonResponse({"success": True, "url": url})
 
 
