@@ -127,16 +127,16 @@ AuditLog.record(actor, action: str, entity: AuditEntity, before: dict | None, af
 
 ## 5. Деньги → всем (задолженность)
 
-debt_for_subscription(subscription) -> Decimal
-debt_for_child(child) -> Decimal
-debt_for_parent(parent_contact) -> Decimal
+debtor_child_ids(organization) -> QuerySet[child_id]
+debt_by_child(organization, child_ids) -> dict[child_id, Decimal]
+debtor_subscriptions(organization, branch=None, direction=None, min_age_days=None) -> QuerySet[Subscription]
 
 Единственный источник правды для долга (ТЗ п. 3.1, критерий приёмки
-MVP №4 — сверка с бухгалтерией). Долг считается от Subscription.price
-(со скидкой), не от цены типа. Отрицательное значение — переплата,
-не ошибка.
+MVP №4). Долг — по каждому абонементу отдельно (price > paid), без
+взаимозачёта между абонементами одного ребёнка. Код —
+domains/money/subscriptions/debt.py (не payments/debt.py — устарел).
 
-Владелец: Bekzat. Потребитель: Анель.
+Владелец: Bekzat. Потребители: Анель (список детей, карточка родителя).
 
 > **Внимание (TRU-73):** в коде пока два расчёта долга —
 > `domains/money/payments/debt.py` (этот контракт) и
