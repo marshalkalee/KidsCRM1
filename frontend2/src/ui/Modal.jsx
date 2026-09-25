@@ -4,7 +4,8 @@ import { X } from 'lucide-react'
 import { Button } from './Button'
 import { cn } from './cn'
 
-const SIZES = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' }
+// Ширины — как у модалок первого React: 480 / 520 / 560, большая — для отчётов.
+const SIZES = { sm: 'max-w-[480px]', md: 'max-w-[520px]', lg: 'max-w-[560px]', xl: 'max-w-4xl' }
 
 /**
  * Модалка: портал в body, закрытие по Esc и по клику на фон, блокировка
@@ -38,17 +39,17 @@ export function Modal({ open, onClose, title, description, size = 'md', footer, 
         aria-label={title}
         className={cn('flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-surface shadow-pop outline-none sm:rounded-2xl', SIZES[size])}
       >
-        <div className="flex items-start justify-between gap-4 px-6 pb-2 pt-6 sm:px-7 sm:pt-7">
+        <div className="flex items-start justify-between gap-4 px-6 pb-1 pt-6">
           <div>
-            <h2 className="text-lg font-bold text-ink">{title}</h2>
+            <h2 className="font-btn text-[17px] font-bold text-ink">{title}</h2>
             {description && <p className="mt-0.5 text-[13px] text-ink-muted">{description}</p>}
           </div>
           <button type="button" onClick={onClose} className="-mr-1 rounded-md p-1 text-ink-subtle hover:bg-surface-muted hover:text-ink" aria-label="Закрыть">
             <X className="size-5" />
           </button>
         </div>
-        <div className="overflow-y-auto px-6 py-4 sm:px-7">{children}</div>
-        {footer && <div className="flex flex-wrap justify-end gap-2.5 px-6 pb-6 pt-2 sm:px-7">{footer}</div>}
+        <div className="overflow-y-auto px-6 py-4">{children}</div>
+        {footer && <div className="flex flex-wrap justify-end gap-2 px-6 pb-5 pt-1">{footer}</div>}
       </div>
     </div>,
     document.body,

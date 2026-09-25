@@ -1,7 +1,8 @@
 // Общие компоненты frontend2 (TRU-80) — экраны собираются из них, а не
 // рисуют кнопки/таблицы/модалки заново. Цвета — токены из index.css.
 export { Button } from './Button'
-export { Field, Input, Select, Textarea, Checkbox } from './Field'
+export { Field, Input, Select, Textarea, Checkbox, MultiSelect, CheckList, DateInput } from './Field'
+export { Dropdown, CheckSquare } from './Dropdown'
 export { Card, CardHeader, Badge, PageHeader, EmptyState, Spinner, Skeleton, ErrorState } from './Surface'
 export { Modal, ConfirmProvider, useConfirm } from './Modal'
 export { ToastProvider, useToast, apiErrorMessage } from './Toast'

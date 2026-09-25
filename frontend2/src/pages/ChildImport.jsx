@@ -109,7 +109,7 @@ function FileStep({ onAnalyzed, openJob }) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
       <Card>
         <button
           type="button"
@@ -570,7 +570,7 @@ function ImportResult({ job, reload, openJob }) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
       <Card>
         <div className="mb-4 flex items-center gap-3">
           <span className={cn('flex size-11 items-center justify-center rounded-full', job.rolled_back_at ? 'bg-surface-muted text-ink-muted' : 'bg-success-50 text-success-600')}>

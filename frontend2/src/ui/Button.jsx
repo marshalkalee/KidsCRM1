@@ -15,7 +15,7 @@ const VARIANTS = {
 }
 const SIZES = {
   sm: 'h-8 px-3.5 text-xs gap-1.5',
-  md: 'h-9 px-4 text-[13px] gap-1.5',
+  md: 'h-[38px] px-[18px] text-[13px] gap-1.5',
   icon: 'h-9 w-9 justify-center',
 }
 
