@@ -13,6 +13,21 @@ from domains.platform.tenants.models import Branch, Organization
 User = get_user_model()
 
 
+def check_role_change(actor, new_role, target=None):
+    """Кто кому какую роль может дать (TRU-90). Сотрудников заводят владелец
+    и управляющий (can_manage_staff — проверяет вьюха); здесь — то, что
+    зависит от ролей: владельца назначает и меняет только владелец, свою
+    роль не меняет никто (иначе управляющий повысил бы себя сам)."""
+    only_owner = "{} может только владелец."
+    if actor.role != User.Role.OWNER:
+        if new_role == User.Role.OWNER:
+            raise serializers.ValidationError({"role": only_owner.format("Назначить владельца")})
+        if target is not None and target.role == User.Role.OWNER:
+            raise serializers.ValidationError({"role": only_owner.format("Изменить владельца")})
+    if target is not None and target.pk == actor.pk and new_role and new_role != target.role:
+        raise serializers.ValidationError({"role": "Свою роль изменить нельзя."})
+
+
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True, required=False, style={"input_type": "password"}
@@ -41,6 +56,17 @@ class UserSerializer(serializers.ModelSerializer):
             self.fields["branches"].child_relation.queryset = Branch.objects.for_tenant(
                 request.user.organization
             )
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        if request is not None:
+            role = attrs.get("role")
+            if self.instance is not None:
+                # Любая правка владельца (пароль, телефон) — только владельцем.
+                check_role_change(request.user, role or self.instance.role, self.instance)
+            else:
+                check_role_change(request.user, role)
+        return attrs
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)
@@ -141,8 +167,12 @@ class InviteStaffSerializer(serializers.Serializer):
         validate_password(value)
         return value
 
+    def validate(self, attrs):
+        check_role_change(self.context["request"].user, attrs.get("role"))
+        return attrs
+
     def create(self, validated_data):
-        organization = self.context["request"].organization
+        organization = self.context["request"].user.organization
         user = User.objects.create_user(
             phone=validated_data["phone"],
             password=validated_data["password"],
