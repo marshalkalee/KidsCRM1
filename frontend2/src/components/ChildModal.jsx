@@ -87,7 +87,7 @@ export default function ChildModal({ child, onClose, onSaved }) {
         </Field>
         <Field label={t('Дата рождения')} required error={errors.birth_date}>
           {({ id, invalid }) => (
-            <DateInput id={id} invalid={invalid} value={form.birth_date} onChange={v => set('birth_date', v)} required />
+            <DateInput id={id} invalid={invalid} value={form.birth_date} onChange={v => set('birth_date', v)} max={new Date().toISOString().slice(0, 10)} required />
           )}
         </Field>
         <Field label={t('Пол')} required error={errors.gender}>

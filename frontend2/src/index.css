@@ -83,3 +83,16 @@
 [style*="Manrope"] {
   font-family: var(--font-sans) !important;
 }
+
+/*
+ * Кегли расписания — как на остальных экранах: заголовок страницы 22px
+ * (PageHeader), фильтры, пункты списков и сообщения 13px вместо 12px.
+ * Мелкие подписи в карточках занятий (9–11px) не трогаем — им нужна плотность.
+ */
+.kc-schedule h1 {
+  font-size: 22px !important;
+  letter-spacing: -0.01em;
+}
+.kc-schedule [style*="font-size: 12px"] {
+  font-size: 13px !important;
+}
