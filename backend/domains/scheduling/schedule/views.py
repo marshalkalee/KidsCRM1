@@ -1,9 +1,10 @@
 from django.db.models import Count, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import filters, status
+from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from domains.people.clients.models import ChildContact, CommunicationLog, ParentContact
@@ -12,9 +13,36 @@ from domains.platform.core.viewsets import TenantModelViewSet
 from domains.scheduling.groups.models import Group
 
 from .conflicts import compute_conflict_map, find_conflicting_lessons
-from .models import Lesson, RescheduleCallLog
+from .enrollment_service import EnrollOutcome, LessonService
+from .models import Lesson, LessonEnrollment, RescheduleCallLog
 from .reschedule_contacts import build_reschedule_message, build_who_to_call
-from .serializers import LessonSerializer
+from .serializers import LessonEnrollmentSerializer, LessonEnrollSerializer, LessonSerializer
+
+
+def _is_confirmed(request):
+    # Фронт шлёт confirm_conflict: true вторым запросом после того, как
+    # администратор увидел предупреждение и подтвердил сохранение (ТЗ п.
+    # 4.2: предупреждение, не запрет). Строка "true"/"1" — на случай
+    # multipart/form-data, где всё приходит строками.
+    value = request.data.get("confirm_conflict")
+    return value in (True, "true", "1", 1)
+
+
+def _cancel_reason_from_request(request):
+    """TRU-48: отмена без причины из справочника невозможна на уровне API
+    (критерий приёмки). category — обязателен всегда; comment — обязателен
+    только для category=OTHER (для остальных категорий сама категория уже
+    достаточно информативна)."""
+    category = request.data.get("reason_category", "")
+    comment = request.data.get("comment", "")
+    valid = {value for value, _ in Lesson.CancelReasonCategory.choices}
+    if category not in valid:
+        raise DRFValidationError(
+            {"reason_category": f"Укажите причину отмены — одну из: {', '.join(sorted(valid))}."}
+        )
+    if category == Lesson.CancelReasonCategory.OTHER and not comment.strip():
+        raise DRFValidationError({"comment": "Для причины «Другое» нужен комментарий."})
+    return category, comment
 
 
 def _is_confirmed(request):
@@ -410,3 +438,82 @@ class LessonViewSet(TenantModelViewSet):
         contact_id = request.data.get("parent_contact")
         RescheduleCallLog.objects.filter(lesson=lesson, parent_contact_id=contact_id).delete()
         return Response({"called": False})
+
+
+_ENROLL_ERROR_STATUS = {
+    EnrollOutcome.ALREADY_ENROLLED: (
+        status.HTTP_400_BAD_REQUEST,
+        "Ребёнок уже записан на это занятие.",
+    ),
+    EnrollOutcome.LESSON_CANCELLED: (
+        status.HTTP_400_BAD_REQUEST,
+        "Занятие отменено или перенесено.",
+    ),
+    EnrollOutcome.LESSON_IN_PAST: (status.HTTP_400_BAD_REQUEST, "Занятие уже прошло."),
+}
+
+
+class LessonEnrollmentViewSet(
+    mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+):
+    """Запись «поверх» группы (TRU-53) — отработки (M1) и пробные (M2).
+    Создание и отмена — не обычные create/destroy DRF, а вызов
+    LessonService (контроль вместимости, аудит, правило списания);
+    обычный POST/DELETE позволил бы это обойти."""
+
+    serializer_class = LessonEnrollmentSerializer
+    permission_classes = [IsAuthenticated, IsStaffOfOrganization]
+
+    def get_permissions(self):
+        if self.action in ["create", "cancel"]:
+            return [IsOwnerOrManager()]
+        return [IsStaffOfOrganization()]
+
+    def get_queryset(self):
+        qs = LessonEnrollment.objects.for_tenant(self.request.organization).select_related(
+            "child", "lesson", "enrolled_by"
+        )
+        lesson_id = self.request.query_params.get("lesson")
+        if lesson_id:
+            qs = qs.filter(lesson_id=lesson_id)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = LessonEnrollSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        result = LessonService.enroll(
+            data["lesson"].id,
+            data["child"].id,
+            data["kind"],
+            actor=request.user,
+            confirm_capacity=data["confirm_capacity"],
+        )
+
+        if result.outcome == EnrollOutcome.CAPACITY_EXCEEDED:
+            return Response(
+                {
+                    "detail": "Вместимость группы превышена. Отправьте confirm_capacity: true, "
+                    "чтобы записать всё равно.",
+                    "capacity": result.capacity,
+                    "current_count": result.current_count,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if result.outcome in _ENROLL_ERROR_STATUS:
+            code, detail = _ENROLL_ERROR_STATUS[result.outcome]
+            return Response({"detail": detail}, status=code)
+
+        enrollment = LessonEnrollment.objects.get(id=result.enrollment_id)
+        return Response(
+            LessonEnrollmentSerializer(enrollment, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        enrollment = self.get_object()
+        LessonService.cancel_enrollment(enrollment.id, actor=request.user)
+        enrollment.refresh_from_db()
+        return Response(LessonEnrollmentSerializer(enrollment, context={"request": request}).data)

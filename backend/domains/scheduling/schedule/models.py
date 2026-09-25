@@ -137,17 +137,30 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
     def participants(self):
         """Дети, которые должны быть на занятии — общий интерфейс
         независимо от того, групповое занятие или индивидуальное (TRU-47),
-        чтобы будущий экран посещаемости (TRU-56) не разветвлялся по типу
-        занятия. Групповое — активные на сейчас участники группы
-        (left_at=None); индивидуальное — individual_children напрямую."""
+        чтобы экран посещаемости (TRU-56) не разветвлялся по типу занятия.
+        Групповое — активные на сейчас участники группы (left_at=None);
+        индивидуальное — individual_children напрямую. Плюс в обоих
+        случаях — записанные «поверх» (LessonEnrollment, TRU-53: отработки
+        и пробные) с активной записью (cancelled_at=None). Единый источник
+        специально: если список участников занятия собирать по-разному в
+        разных местах (посещаемость, контроль вместимости, отмена/перенос),
+        они разойдутся — см. описание TRU-53."""
         from domains.people.clients.models import Child
 
         if self.group_id:
-            return Child.objects.filter(
+            base_ids = Child.objects.filter(
                 group_memberships__group_id=self.group_id,
                 group_memberships__left_at__isnull=True,
-            ).distinct()
-        return self.individual_children.all()
+            ).values_list("id", flat=True)
+        else:
+            base_ids = self.individual_children.values_list("id", flat=True)
+
+        enrolled_ids = self.enrollments.filter(cancelled_at__isnull=True).values_list(
+            "child_id", flat=True
+        )
+        return Child.objects.filter(
+            models.Q(id__in=base_ids) | models.Q(id__in=enrolled_ids)
+        ).distinct()
 
     def transition_to(self, new_status: str):
         allowed = ALLOWED_STATUS_TRANSITIONS.get(self.status, set())
@@ -282,3 +295,49 @@ class RescheduleCallLog(TenantModel):
 
     def __str__(self):
         return f"{self.lesson_id} — {self.parent_contact_id}"
+
+
+class LessonEnrollment(TenantModel):
+    """Запись ребёнка на занятие «поверх» состава группы (TRU-53, контракт
+    №3 из TRU-8) — один механизм для двух потребителей: отработка (ребёнок
+    из другой группы отрабатывает пропуск, M1) и пробное занятие (ребёнок
+    из заявки, ещё не студент, M2). Единственная точка входа —
+    LessonService.enroll()/cancel_enrollment() (enrollment_service.py), не
+    прямое создание — там же контроль вместимости и правило списания по
+    типу. cancelled_at — мягкая отмена (не delete): история должна
+    остаться, посещаемость по уже прошедшей записи не должна повиснуть
+    без объяснения."""
+
+    class Kind(models.TextChoices):
+        MAKEUP = "makeup", _("Отработка")
+        TRIAL = "trial", _("Пробное")
+
+    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="enrollments")
+    child = models.ForeignKey(
+        "clients.Child", on_delete=models.CASCADE, related_name="lesson_enrollments"
+    )
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    enrolled_by = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("Запись поверх группы")
+        verbose_name_plural = _("Записи поверх группы")
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lesson", "child"],
+                condition=models.Q(cancelled_at__isnull=True),
+                name="unique_active_enrollment_per_lesson_child",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.organization_id:
+            self.organization_id = self.lesson.organization_id
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.child} → {self.lesson} ({self.get_kind_display()})"

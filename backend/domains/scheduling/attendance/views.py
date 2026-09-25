@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsStaffOfOrganization
-from domains.scheduling.schedule.models import Lesson
+from domains.scheduling.schedule.models import Lesson, LessonEnrollment
 
 from .models import Attendance
 from .serializers import (
@@ -97,8 +97,21 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
                 lesson=lesson, child__in=participants
             )
         }
+        # TRU-53: записанные «поверх» группы (отработка/пробное) видны в
+        # ростере с пометкой типа — тот же список участников (уже
+        # включает их, см. Lesson.participants), плюс их kind отдельно.
+        enrollment_kinds = dict(
+            LessonEnrollment.objects.for_tenant(request.organization)
+            .filter(lesson=lesson, cancelled_at__isnull=True, child__in=participants)
+            .values_list("child_id", "kind")
+        )
         entries = [
-            {"child": child, "attendance": attendances.get(child.id)} for child in participants
+            {
+                "child": child,
+                "attendance": attendances.get(child.id),
+                "enrollment_kind": enrollment_kinds.get(child.id),
+            }
+            for child in participants
         ]
         data = AttendanceRosterEntrySerializer(
             entries, many=True, context={"request": request}
