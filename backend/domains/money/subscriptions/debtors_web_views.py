@@ -1,6 +1,5 @@
 """Экран «Задолженности» (ТЗ п. 4.4, критерий приёмки MVP №4)."""
 
-
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 
