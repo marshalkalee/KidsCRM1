@@ -7,14 +7,14 @@
  *
  * Стиль «первый React, ярче» (TRU-91, выбран по пробнику): шрифт Rubik,
  * кнопки — Manrope, коралловый градиент, уходящий в малиновый, сочные
- * статусы, фон с тёплым переходом.
+ * статусы. Фон ровный.
  */
 @theme {
   --font-sans: "Rubik", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-btn: "Manrope", "Rubik", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  --color-canvas: #fbf6f7;          /* фон приложения (под градиентом body) */
+  --color-canvas: #f8f9ff;          /* фон приложения — ровный, как в первом React */
   --color-surface: #ffffff;         /* карточки, таблицы, модалки */
   --color-surface-muted: #fcfafd;   /* поля ввода, выделение строк */
   --color-line: #f1e8ee;            /* границы */
@@ -57,8 +57,7 @@
     -webkit-text-size-adjust: 100%;
   }
   body {
-    @apply text-ink font-sans antialiased;
-    background: linear-gradient(180deg, #fff6f1 0%, #f7f5ff 100%) fixed;
+    @apply bg-canvas text-ink font-sans antialiased;
     font-size: 14px;
     line-height: 1.5;
   }
