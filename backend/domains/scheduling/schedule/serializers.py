@@ -222,6 +222,7 @@ class LessonEnrollmentSerializer(serializers.ModelSerializer):
             "child_name",
             "kind",
             "kind_display",
+            "source_attendance",
             "enrolled_by",
             "enrolled_by_name",
             "cancelled_at",
@@ -233,17 +234,102 @@ class LessonEnrollmentSerializer(serializers.ModelSerializer):
 class LessonEnrollSerializer(serializers.Serializer):
     """Вход для LessonService.enroll() — сам вызов сервиса делает view
     (нужен доступ к organization из request и обработка EnrollResult),
-    здесь только валидация и скоуп по организации."""
+    здесь только валидация и скоуп по организации. source_attendance —
+    только для kind=makeup (TRU-54): какой именно пропуск отрабатывается."""
 
     lesson = serializers.PrimaryKeyRelatedField(queryset=Lesson.objects.none())
     child = serializers.PrimaryKeyRelatedField(queryset=Child.objects.none())
     kind = serializers.ChoiceField(choices=LessonEnrollment.Kind.choices)
     confirm_capacity = serializers.BooleanField(required=False, default=False)
+    source_attendance = serializers.PrimaryKeyRelatedField(
+        queryset=Child.objects.none(), required=False, allow_null=True, default=None
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
         if request is not None and request.user.is_authenticated:
+            from domains.scheduling.attendance.models import Attendance
+
             org = request.organization
             self.fields["lesson"].queryset = Lesson.objects.for_tenant(org)
             self.fields["child"].queryset = Child.objects.for_tenant(org)
+            self.fields["source_attendance"].queryset = Attendance.objects.for_tenant(org)
+
+
+class AvailableMakeupSerializer(serializers.Serializer):
+    """TRU-54: строка в списке «доступных отработок» ребёнка — вход
+    {"attendance": Attendance, "expires_on": date, "days_left": int}
+    (см. enrollment_service.available_makeups_for_child)."""
+
+    attendance_id = serializers.UUIDField(source="attendance.id")
+    lesson = serializers.UUIDField(source="attendance.lesson.id")
+    group_name = serializers.SerializerMethodField()
+    room_name = serializers.SerializerMethodField()
+    starts_at_local = serializers.SerializerMethodField()
+    absence_reason_display = serializers.CharField(source="attendance.get_absence_reason_display")
+    expires_on = serializers.DateField()
+    days_left = serializers.IntegerField()
+
+    def get_group_name(self, obj):
+        group = obj["attendance"].lesson.group
+        return group.name if group else None
+
+    def get_room_name(self, obj):
+        room = obj["attendance"].lesson.room
+        return room.name if room else None
+
+    def get_starts_at_local(self, obj):
+        org = self.context["request"].organization
+        tz = timezone.zoneinfo.ZoneInfo(org.timezone or "Asia/Almaty")
+        return obj["attendance"].lesson.starts_at.astimezone(tz).isoformat()
+
+
+class MakeupCandidateSerializer(serializers.ModelSerializer):
+    """TRU-54: занятие-кандидат для отработки — с посчитанной вместимостью,
+    чтобы фронт мог показать «мест нет» до попытки записи (сама запись всё
+    равно пройдёт по подтверждению — см. LessonService.enroll)."""
+
+    starts_at_local = serializers.SerializerMethodField()
+    ends_at_local = serializers.SerializerMethodField()
+    group_name = serializers.CharField(source="group.name", default=None)
+    room_name = serializers.CharField(source="room.name", default=None)
+    teacher_name = serializers.CharField(source="teacher.full_name", default=None)
+    capacity = serializers.SerializerMethodField()
+    current_count = serializers.SerializerMethodField()
+    spots_left = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Lesson
+        fields = [
+            "id",
+            "group_name",
+            "room_name",
+            "teacher_name",
+            "starts_at_local",
+            "ends_at_local",
+            "capacity",
+            "current_count",
+            "spots_left",
+        ]
+
+    def get_starts_at_local(self, obj):
+        org = self.context["request"].organization
+        tz = timezone.zoneinfo.ZoneInfo(org.timezone or "Asia/Almaty")
+        return obj.starts_at.astimezone(tz).isoformat()
+
+    def get_ends_at_local(self, obj):
+        org = self.context["request"].organization
+        tz = timezone.zoneinfo.ZoneInfo(org.timezone or "Asia/Almaty")
+        return obj.ends_at.astimezone(tz).isoformat()
+
+    def get_capacity(self, obj):
+        return obj.group.capacity if obj.group_id else None
+
+    def get_current_count(self, obj):
+        return obj.participants().count()
+
+    def get_spots_left(self, obj):
+        if not obj.group_id:
+            return None
+        return obj.group.capacity - obj.participants().count()

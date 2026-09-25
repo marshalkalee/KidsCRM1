@@ -8,7 +8,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsStaffOfOrganization
+from domains.scheduling.schedule.enrollment_service import (
+    available_makeups_for_child,
+    makeup_candidate_lessons,
+)
 from domains.scheduling.schedule.models import Lesson, LessonEnrollment
+from domains.scheduling.schedule.serializers import (
+    AvailableMakeupSerializer,
+    MakeupCandidateSerializer,
+)
 
 from .models import Attendance
 from .serializers import (
@@ -208,3 +216,26 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
                     }
                 )
         return Response({"date": yesterday.isoformat(), "results": results})
+
+    @action(detail=False, methods=["get"], url_path="available-makeups")
+    def available_makeups(self, request):
+        """TRU-54: пропуски ребёнка, доступные для отработки (карточка
+        ребёнка) — не использованы и не сгорели (MAKEUP_EXPIRY_DAYS)."""
+        child_id = request.query_params.get("child")
+        if not child_id:
+            raise ValidationError({"child": "Обязателен."})
+        rows = available_makeups_for_child(request.organization, child_id)
+        data = AvailableMakeupSerializer(rows, many=True, context={"request": request}).data
+        return Response({"results": data})
+
+    @action(detail=True, methods=["get"], url_path="makeup-candidates")
+    def makeup_candidates(self, request, pk=None):
+        """TRU-54: занятия-кандидаты для отработки конкретного пропуска —
+        то же направление, ещё не наступившие. pk — id Attendance
+        (пропущенного занятия), не Lesson."""
+        attendance = self.get_object()
+        if attendance.status != Attendance.Status.ABSENT:
+            raise ValidationError({"detail": "Это занятие не помечено как пропущенное."})
+        candidates = makeup_candidate_lessons(attendance, request.organization)
+        data = MakeupCandidateSerializer(candidates, many=True, context={"request": request}).data
+        return Response({"results": data})

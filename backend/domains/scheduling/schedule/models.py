@@ -317,6 +317,18 @@ class LessonEnrollment(TenantModel):
         "clients.Child", on_delete=models.CASCADE, related_name="lesson_enrollments"
     )
     kind = models.CharField(max_length=16, choices=Kind.choices)
+    # TRU-54: для kind=MAKEUP — какое именно пропущенное занятие
+    # отрабатывается, чтобы один пропуск нельзя было отработать дважды
+    # (см. unique-constraint ниже — активная запись на source_attendance
+    # только одна) и чтобы посчитать срок (Lesson.starts_at пропуска + N
+    # дней). Для TRIAL всегда пусто — там нет «пропущенного занятия».
+    source_attendance = models.ForeignKey(
+        "attendance.Attendance",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="makeup_enrollments",
+    )
     enrolled_by = models.ForeignKey(
         "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
@@ -331,6 +343,15 @@ class LessonEnrollment(TenantModel):
                 fields=["lesson", "child"],
                 condition=models.Q(cancelled_at__isnull=True),
                 name="unique_active_enrollment_per_lesson_child",
+            ),
+            # Один пропуск — не больше одной активной отработки (TRU-54,
+            # критерий приёмки). NULL (kind=TRIAL, без source_attendance)
+            # уникальности не подчиняется — обычное поведение частичного
+            # уникального индекса в Postgres.
+            models.UniqueConstraint(
+                fields=["source_attendance"],
+                condition=models.Q(cancelled_at__isnull=True),
+                name="unique_active_makeup_per_source_attendance",
             ),
         ]
 

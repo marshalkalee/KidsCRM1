@@ -1,3 +1,4 @@
+import AttendanceTab from './AttendanceTab'
 import CommunicationsTab from './CommunicationsTab'
 import ContactsTab from './ContactsTab'
 
@@ -28,8 +29,9 @@ export const CHILD_CARD_TABS = [
   // Деньги (Bekzat, TRU-70) — заглушки до подключения.
   { key: 'subscriptions', label: 'Абонементы', order: 30, component: null, permission: 'can_view_client_money' },
   { key: 'payments', label: 'Оплаты', order: 40, component: null, permission: 'can_view_client_money' },
-  // Расписание (Дарья, TRU-55) — заглушка до подключения.
-  { key: 'attendance', label: 'Посещения', order: 50, component: null },
+  // TRU-54: пока только доступные отработки. Полная история посещений —
+  // TRU-55, расширит этот же компонент (AttendanceTab), не новую вкладку.
+  { key: 'attendance', label: 'Посещения', order: 50, component: AttendanceTab },
 ]
 
 export function visibleChildCardTabs(can) {
