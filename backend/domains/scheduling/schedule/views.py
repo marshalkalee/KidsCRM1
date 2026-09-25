@@ -450,6 +450,22 @@ _ENROLL_ERROR_STATUS = {
         "Занятие отменено или перенесено.",
     ),
     EnrollOutcome.LESSON_IN_PAST: (status.HTTP_400_BAD_REQUEST, "Занятие уже прошло."),
+    EnrollOutcome.SOURCE_CHILD_MISMATCH: (
+        status.HTTP_400_BAD_REQUEST,
+        "Пропущенное занятие принадлежит другому ребёнку.",
+    ),
+    EnrollOutcome.SOURCE_ALREADY_USED: (
+        status.HTTP_400_BAD_REQUEST,
+        "Этот пропуск уже отрабатывается другой записью.",
+    ),
+    EnrollOutcome.SOURCE_EXPIRED: (
+        status.HTTP_400_BAD_REQUEST,
+        "Срок отработки по этому пропуску истёк.",
+    ),
+    EnrollOutcome.SOURCE_DIRECTION_MISMATCH: (
+        status.HTTP_400_BAD_REQUEST,
+        "Отработать можно только в том же направлении, где пропустили.",
+    ),
 }
 
 
@@ -483,12 +499,14 @@ class LessonEnrollmentViewSet(
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        source_attendance = data.get("source_attendance")
         result = LessonService.enroll(
             data["lesson"].id,
             data["child"].id,
             data["kind"],
             actor=request.user,
             confirm_capacity=data["confirm_capacity"],
+            source_attendance_id=source_attendance.id if source_attendance else None,
         )
 
         if result.outcome == EnrollOutcome.CAPACITY_EXCEEDED:
