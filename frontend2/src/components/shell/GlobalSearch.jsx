@@ -93,7 +93,6 @@ export function GlobalSearch({ className }) {
           role="combobox"
           aria-expanded={showPanel}
         />
-        <kbd className="hidden whitespace-nowrap rounded border border-line bg-surface px-1.5 font-sans text-[11px] text-ink-subtle lg:inline">Ctrl K</kbd>
       </div>
 
       {showPanel && (

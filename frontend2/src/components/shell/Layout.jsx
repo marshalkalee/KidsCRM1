@@ -13,9 +13,9 @@ function readCollapsed() {
 }
 
 /**
- * Каркас приложения: боковое меню по ролям (на компьютере сворачивается до
- * иконок, выбор запоминается), шапка как в первом React — поиск,
- * переключатель филиала, уведомления, пользователь. Название раздела в шапке
+ * Каркас приложения: боковое меню по ролям с пользователем внизу (на
+ * компьютере сворачивается до иконок, выбор запоминается), шапка — поиск,
+ * переключатель филиала, уведомления. Название раздела в шапке
  * не дублируем — заголовок один, в PageHeader страницы (TRU-89). На
  * экранах уже 1024px меню — выезжающая шторка.
  */
@@ -69,7 +69,6 @@ export default function Layout() {
           <div className="ml-auto flex items-center gap-2">
             <BranchSwitcher />
             <Notifications />
-            <UserMenu />
           </div>
         </div>
       </header>
@@ -125,6 +124,8 @@ function Sidebar({ onNavigate, collapsed = false }) {
           </div>
         ))}
       </nav>
+
+      <UserMenu collapsed={collapsed} />
     </>
   )
 }
@@ -173,39 +174,31 @@ function Notifications() {
   )
 }
 
-/** Пользователь в шапке, как в первом React: аватар, имя, роль; в меню — «Выйти». */
-function UserMenu() {
+/** Пользователь внизу меню: аватар, имя, роль и «Выйти» (свёрнутое меню — только аватар и выход). */
+function UserMenu({ collapsed = false }) {
   const { user, roleLabel, logout } = useSession()
-  const { open, setOpen, ref } = usePopover()
   return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 rounded-[10px] p-1 hover:bg-surface-muted md:pr-2"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Профиль"
-      >
+    <div className={cn('border-t border-line p-3', collapsed && 'flex flex-col items-center gap-1 px-2')}>
+      <div className={cn('flex items-center gap-3 rounded-md py-2', collapsed ? 'justify-center px-0' : 'px-2')} title={collapsed ? `${user?.full_name} · ${roleLabel}` : undefined}>
         <span className="bg-brand-gradient flex size-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white">
           {initials(user?.full_name)}
         </span>
-        <span className="hidden min-w-0 text-left md:block">
-          <span className="block max-w-[140px] truncate text-[13px] font-semibold text-ink">{user?.full_name}</span>
-          <span className="block text-[11px] text-ink-subtle">{roleLabel}</span>
-        </span>
-        <ChevronDown className="hidden size-4 text-ink-subtle md:block" />
-      </button>
-      {open && (
-        <div role="menu" className="absolute right-0 top-12 z-40 w-60 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-pop">
-          <div className="border-b border-line px-4 py-3">
+        {!collapsed && (
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-ink">{user?.full_name}</p>
-            <p className="truncate text-xs text-ink-subtle">{roleLabel}{user?.phone ? ` · ${user.phone}` : ''}</p>
+            <p className="truncate text-xs text-ink-muted">{roleLabel}</p>
           </div>
-          <button type="button" role="menuitem" onClick={logout} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-ink hover:bg-surface-muted">
-            <LogOut className="size-4 text-ink-subtle" /> Выйти
+        )}
+        {!collapsed && (
+          <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title="Выйти" aria-label="Выйти">
+            <LogOut className="size-4" />
           </button>
-        </div>
+        )}
+      </div>
+      {collapsed && (
+        <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title="Выйти" aria-label="Выйти">
+          <LogOut className="size-4" />
+        </button>
       )}
     </div>
   )

@@ -5,13 +5,15 @@
  * tailwind.config.js нет. В компонентах — только классы на этих токенах
  * (bg-surface, text-ink-muted, bg-brand-600 …), не hex-коды.
  *
- * Стиль «первый React, ярче» (TRU-91, выбран по пробнику): шрифт Rubik,
- * кнопки — Manrope, коралловый градиент, уходящий в малиновый, сочные
+ * Стиль «первый React, ярче» (TRU-91, выбран по пробнику): шрифт Rubik
+ * везде (один на всё приложение), коралловый градиент, уходящий в малиновый, сочные
  * статусы. Фон ровный.
  */
 @theme {
   --font-sans: "Rubik", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-btn: "Manrope", "Rubik", ui-sans-serif, system-ui, sans-serif;
+  /* Один шрифт на всё приложение: font-btn оставлен как алиас, чтобы не
+     переписывать классы компонентов. */
+  --font-btn: "Rubik", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   --color-canvas: #f8f9ff;          /* фон приложения — ровный, как в первом React */
@@ -71,4 +73,13 @@
 /* Градиент бренда — главные кнопки, логотип, аватары по умолчанию. */
 @utility bg-brand-gradient {
   background-image: linear-gradient(135deg, #ff9d8a 0%, #f2706a 55%, #e0567a 100%);
+}
+
+/*
+ * Расписание (Schedule.jsx) задаёт шрифт Manrope прямо в style у кнопок,
+ * полей и модалок — из-за этого экран выглядел иначе остальных. Сам файл
+ * не трогаем (в нём открытые PR Дарьи), выравниваем шрифт здесь.
+ */
+[style*="Manrope"] {
+  font-family: var(--font-sans) !important;
 }
