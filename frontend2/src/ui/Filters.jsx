@@ -1,6 +1,7 @@
-import { useEffect, useId, useRef, useState } from 'react'
-import { Check, ChevronDown, Search, SlidersHorizontal, X } from 'lucide-react'
+import { useId } from 'react'
+import { Check, Search, SlidersHorizontal, X } from 'lucide-react'
 import { Button } from './Button'
+import { Dropdown } from './Dropdown'
 import { cn } from './cn'
 
 /**
@@ -71,63 +72,18 @@ export function FilterPanel({ children, checks, onApply, onReset, dirty, canRese
 
 /** Выпадающий список фильтра (как CustomSelect первого React). options: [[value, label]]. */
 export function FilterSelect({ label, value, onChange, options }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
   const id = useId()
-
-  useEffect(() => {
-    if (!open) return undefined
-    const onDown = e => { if (!ref.current?.contains(e.target)) setOpen(false) }
-    const onKey = e => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
-  }, [open])
-
-  const selected = options.find(([v]) => String(v) === String(value))
-  const active = value !== '' && value != null
   return (
-    <div ref={ref} className="relative w-full xl:w-40">
+    <div className="w-full xl:w-40">
       <p id={id} className="font-btn mb-1.5 text-[10px] font-bold uppercase tracking-[0.07em] text-ink-subtle">{label}</p>
-      <button
-        type="button"
-        aria-labelledby={id}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen(o => !o)}
-        className={cn(
-          'font-btn flex h-9 w-full items-center justify-between gap-2 rounded-md border-[1.5px] px-2.5 text-xs transition-colors',
-          active || open ? 'border-brand-400 bg-brand-50 font-semibold text-brand-600' : 'border-line-strong bg-surface-muted text-ink-muted',
-          open && 'ring-3 ring-brand-50',
-        )}
-      >
-        <span className="truncate">{selected ? selected[1] : options[0]?.[1]}</span>
-        <ChevronDown className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <ul role="listbox" aria-labelledby={id} className="absolute inset-x-0 top-[calc(100%+4px)] z-30 max-h-64 overflow-y-auto rounded-[10px] border-[1.5px] border-line bg-surface py-1 shadow-pop">
-          {options.map(([v, l]) => {
-            const isSelected = String(v) === String(value)
-            return (
-              <li key={v || 'all'}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  onClick={() => { onChange(v); setOpen(false) }}
-                  className={cn(
-                    'font-btn flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs',
-                    isSelected ? 'bg-brand-50 font-semibold text-brand-600' : 'text-ink hover:bg-surface-muted',
-                  )}
-                >
-                  <span className="truncate">{l}</span>
-                  {isSelected && <Check className="size-3.5 shrink-0" />}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+      <Dropdown
+        size="sm"
+        ariaLabelledby={id}
+        value={value}
+        onChange={onChange}
+        options={options.map(([v, l]) => ({ value: v, label: l }))}
+        placeholder={options[0]?.[1]}
+      />
     </div>
   )
 }

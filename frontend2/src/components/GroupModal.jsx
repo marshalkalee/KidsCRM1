@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/axios'
-import { Avatar, Button, Field, Input, Modal, Select, apiErrorMessage, cn, useToast } from '../ui'
+import { Button, Field, Input, Modal, MultiSelect, Select, apiErrorMessage, useToast } from '../ui'
 
 const listOf = response => response.data.results || response.data
 
@@ -37,7 +37,6 @@ export default function GroupModal({ group, onClose, onSaved }) {
   }, [group?.branch, group?.direction])
 
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
-  const toggleTeacher = id => set('teachers', form.teachers.includes(id) ? form.teachers.filter(x => x !== id) : [...form.teachers, id])
 
   // Направление доступно не во всех филиалах — показываем подходящие.
   const directions = form.branch
@@ -71,7 +70,6 @@ export default function GroupModal({ group, onClose, onSaved }) {
     <Modal
       open
       onClose={onClose}
-      size="lg"
       title={isEdit ? 'Редактировать группу' : 'Новая группа'}
       footer={
         <>
@@ -80,9 +78,9 @@ export default function GroupModal({ group, onClose, onSaved }) {
         </>
       }
     >
-      <form id="group-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+      <form id="group-form" onSubmit={submit} className="grid gap-3.5 sm:grid-cols-2">
         <Field label="Название" required error={errors.name} className="sm:col-span-2">
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => set('name', e.target.value)} placeholder="Например, Балет 4–6" required autoFocus />}
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => set('name', e.target.value)} placeholder="Балет — Младшая группа" required autoFocus />}
         </Field>
         <Field label="Филиал" required error={errors.branch}>
           {({ id, invalid }) => (
@@ -101,51 +99,39 @@ export default function GroupModal({ group, onClose, onSaved }) {
           )}
         </Field>
 
-        <Field label="Преподаватели" error={errors.teachers} className="sm:col-span-2" hint={options.teachers.length ? 'Можно выбрать нескольких' : 'Преподавателей пока нет — их заводит владелец или управляющий'}>
-          <div className="flex flex-wrap gap-2">
-            {options.teachers.map(t => {
-              const active = form.teachers.includes(String(t.id))
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => toggleTeacher(String(t.id))}
-                  className={cn(
-                    'inline-flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-[13px] font-medium transition-colors',
-                    active ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line text-ink-muted hover:border-line-strong hover:text-ink',
-                  )}
-                >
-                  <Avatar name={t.full_name} className="size-6 text-[10px]" />
-                  {t.full_name}
-                </button>
-              )
-            })}
-          </div>
+        <Field label="Преподаватели" error={errors.teachers} className="sm:col-span-2">
+          {({ id, invalid }) => (
+            <MultiSelect
+              id={id}
+              invalid={invalid}
+              value={form.teachers}
+              onChange={v => set('teachers', v)}
+              options={options.teachers.map(t => ({ value: String(t.id), label: t.full_name }))}
+              placeholder={options.teachers.length ? 'Не назначены' : 'Преподавателей нет'}
+            />
+          )}
         </Field>
 
-        <Field label="Вместимость" required error={errors.capacity}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={1} max={100} value={form.capacity} onChange={e => set('capacity', e.target.value)} required />}
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3.5 sm:col-span-2">
+          <Field label="Вместимость" required error={errors.capacity}>
+            {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={1} max={100} value={form.capacity} onChange={e => set('capacity', e.target.value)} required />}
+          </Field>
           <Field label="Возраст от" error={errors.age_min}>
             {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={0} max={99} value={form.age_min} onChange={e => set('age_min', e.target.value)} />}
           </Field>
-          <Field label="до" error={errors.age_max}>
+          <Field label="Возраст до" error={errors.age_max}>
             {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={0} max={99} value={form.age_max} onChange={e => set('age_max', e.target.value)} />}
           </Field>
         </div>
-        {isEdit && (
-          <Field label="Статус" error={errors.status}>
-            {({ id }) => (
-              <Select id={id} value={form.status} onChange={e => set('status', e.target.value)}>
-                <option value="active">Набирает</option>
-                <option value="paused">Приостановлена</option>
-                <option value="closed">Закрыта</option>
-              </Select>
-            )}
-          </Field>
-        )}
+        <Field label="Статус" error={errors.status} className="sm:col-span-2">
+          {({ id }) => (
+            <Select id={id} value={form.status} onChange={e => set('status', e.target.value)} required>
+              <option value="active">Набирает</option>
+              <option value="paused">Приостановлена</option>
+              <option value="closed">Закрыта</option>
+            </Select>
+          )}
+        </Field>
       </form>
     </Modal>
   )
