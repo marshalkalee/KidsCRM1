@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Archive, ArchiveRestore, Building2, Clock, DoorOpen, MapPin, Pencil, Phone, Plus } from 'lucide-react'
+import { Archive, ArchiveRestore, Building2, DoorOpen, Pencil, Plus } from 'lucide-react'
 import api from '../api/axios'
 import BranchModal from '../components/BranchModal'
 import { hoursSummary } from '../components/workingHours'
 import { useSession } from '../session/SessionContext'
-import { Badge, Button, Card, Checkbox, EmptyState, ErrorState, PageHeader, Skeleton, apiErrorMessage, cn, plural, useConfirm, useToast } from '../ui'
+import { Badge, Button, DataTable, EmptyState, PageHeader, apiErrorMessage, cn, plural, useConfirm, useToast } from '../ui'
 
 /**
  * Филиалы (TRU-85): карточки с часами работы и залами. Архивация — PATCH
@@ -18,7 +18,6 @@ export default function Branches() {
   const { reload: reloadSession } = useSession()
   const [branches, setBranches] = useState(null)
   const [error, setError] = useState(false)
-  const [showArchived, setShowArchived] = useState(false)
   const [editing, setEditing] = useState(null) // null | 'new' | branch
 
   const load = useCallback(() => {
@@ -49,55 +48,55 @@ export default function Branches() {
   }
 
   const active = branches?.filter(b => b.is_active) || []
-  const archived = branches?.filter(b => !b.is_active) || []
-  const shown = showArchived ? [...active, ...archived] : active
+  // Архивные — внизу, как в первом React: одна таблица со статусом.
+  const rows = [...active, ...(branches?.filter(b => !b.is_active) || [])]
+
+  const columns = [
+    { key: 'name', header: 'Название', primary: true, render: b => <span className={cn('font-semibold', b.is_active ? 'text-ink' : 'text-ink-muted')}>{b.name}</span> },
+    { key: 'address', header: 'Адрес', className: 'text-ink-muted', render: b => b.address || '—' },
+    { key: 'phone', header: 'Телефон', hideOnMobile: true, className: 'text-ink-muted whitespace-nowrap', render: b => b.phone || '—' },
+    { key: 'hours', header: 'Часы работы', hideOnMobile: true, className: 'text-ink-muted', render: b => hoursSummary(b.working_hours) },
+    {
+      key: 'rooms',
+      header: 'Залы',
+      render: b => (
+        <Link to={`/branches/${b.id}/rooms`} onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1.5 font-semibold text-brand-600 hover:underline">
+          <DoorOpen className="size-3.5" />{b.rooms_count ?? 0}
+        </Link>
+      ),
+    },
+    { key: 'status', header: 'Статус', mobileAside: true, render: b => (b.is_active ? <Badge tone="success">Активен</Badge> : <Badge>В архиве</Badge>) },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      render: b => (
+        <span className="inline-flex gap-1" onClick={e => e.stopPropagation()}>
+          <Button variant="ghost" size="icon" aria-label="Изменить" onClick={() => setEditing(b)}><Pencil className="size-4" /></Button>
+          <Button variant="ghost" size="icon" aria-label={b.is_active ? 'В архив' : 'Восстановить'} onClick={() => toggleArchive(b)}>
+            {b.is_active ? <Archive className="size-4" /> : <ArchiveRestore className="size-4" />}
+          </Button>
+        </span>
+      ),
+    },
+  ]
 
   return (
     <div>
       <PageHeader
         title="Филиалы"
         description={branches ? `${active.length} ${plural(active.length, ['активный филиал', 'активных филиала', 'активных филиалов'])}` : 'Загрузка…'}
-        actions={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>Добавить филиал</Button>}
+        actions={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>Новый филиал</Button>}
       />
-      {archived.length > 0 && (
-        <Checkbox className="mb-4" label={`Показать архивные (${archived.length})`} checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
-      )}
-      {error && <Card><ErrorState onRetry={load} /></Card>}
-      {!error && !branches && <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"><Skeleton className="h-48" /><Skeleton className="h-48" /></div>}
-      {branches && shown.length === 0 && (
-        <Card>
-          <EmptyState icon={Building2} title="Филиалов пока нет" description="Добавьте первый филиал — затем залы в нём и направления." action={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>Добавить филиал</Button>} />
-        </Card>
-      )}
-      {shown.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {shown.map(branch => (
-            <Card key={branch.id} className={cn('flex flex-col gap-3', !branch.is_active && 'opacity-70')}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-base font-bold text-ink">{branch.name}</p>
-                  {!branch.is_active && <Badge className="mt-1">В архиве</Badge>}
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <Button variant="ghost" size="icon" aria-label="Изменить" onClick={() => setEditing(branch)}><Pencil className="size-4" /></Button>
-                  <Button variant="ghost" size="icon" aria-label={branch.is_active ? 'В архив' : 'Восстановить'} onClick={() => toggleArchive(branch)}>
-                    {branch.is_active ? <Archive className="size-4" /> : <ArchiveRestore className="size-4" />}
-                  </Button>
-                </div>
-              </div>
-              <ul className="space-y-1.5 text-[13px] text-ink-muted">
-                {branch.address && <li className="flex gap-2"><MapPin className="mt-0.5 size-3.5 shrink-0" />{branch.address}</li>}
-                {branch.phone && <li className="flex gap-2"><Phone className="mt-0.5 size-3.5 shrink-0" />{branch.phone}</li>}
-                <li className="flex gap-2"><Clock className="mt-0.5 size-3.5 shrink-0" />{hoursSummary(branch.working_hours)}</li>
-              </ul>
-              <Link to={`/branches/${branch.id}/rooms`} className="mt-auto flex items-center justify-between rounded-md bg-surface-muted px-3 py-2 text-sm font-medium text-ink hover:bg-brand-50 hover:text-brand-700">
-                <span className="flex items-center gap-2"><DoorOpen className="size-4" /> Залы</span>
-                <span className="text-ink-muted">{branch.rooms_count ?? 0}</span>
-              </Link>
-            </Card>
-          ))}
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        rows={rows}
+        loading={!branches && !error}
+        error={error}
+        onRetry={load}
+        onRowClick={b => setEditing(b)}
+        empty={<EmptyState icon={Building2} title="Филиалов пока нет" description="Добавьте первый филиал — затем залы в нём и направления." action={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>Новый филиал</Button>} />}
+      />
       {editing && (
         <BranchModal
           branch={editing === 'new' ? null : editing}

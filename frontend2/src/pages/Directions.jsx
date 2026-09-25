@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Archive, ArchiveRestore, Pencil, Plus, Tag } from 'lucide-react'
 import api from '../api/axios'
 import DirectionModal from '../components/DirectionModal'
-import { Badge, Button, Checkbox, DataTable, EmptyState, PageHeader, apiErrorMessage, plural, useToast } from '../ui'
+import { Badge, Button, DataTable, EmptyState, PageHeader, apiErrorMessage, plural, useToast } from '../ui'
 
 function ageRange(d) {
   if (d.age_min != null && d.age_max != null) return `${d.age_min}–${d.age_max} лет`
@@ -18,7 +18,6 @@ export default function Directions() {
   const [directions, setDirections] = useState(null)
   const [branches, setBranches] = useState([])
   const [error, setError] = useState(false)
-  const [showArchived, setShowArchived] = useState(false)
   const [editing, setEditing] = useState(null)
 
   const load = useCallback(() => {
@@ -45,7 +44,8 @@ export default function Directions() {
   }
 
   const archivedCount = directions?.filter(d => !d.is_active).length || 0
-  const rows = (directions || []).filter(d => showArchived || d.is_active)
+  // Архивные — внизу, со статусом (как в первом React), без отдельного переключателя.
+  const rows = [...(directions || []).filter(d => d.is_active), ...(directions || []).filter(d => !d.is_active)]
   const activeCount = (directions || []).length - archivedCount
 
   const columns = [
@@ -57,7 +57,6 @@ export default function Directions() {
         <span className="flex items-center gap-2.5">
           <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: d.color || '#9aa3ad' }} />
           <span className="font-semibold text-ink">{d.name}</span>
-          {!d.is_active && <Badge>В архиве</Badge>}
         </span>
       ),
     },
@@ -69,11 +68,11 @@ export default function Directions() {
         ? <span className="flex flex-wrap gap-1">{d.branches.map(id => <Badge key={id}>{branchName[id] || '…'}</Badge>)}</span>
         : <span className="text-ink-subtle">не выбраны</span>),
     },
+    { key: 'status', header: 'Статус', mobileAside: true, render: d => (d.is_active ? <Badge tone="success">Активно</Badge> : <Badge>В архиве</Badge>) },
     {
       key: 'actions',
       header: '',
       align: 'right',
-      mobileAside: true,
       render: d => (
         <span className="inline-flex gap-1" onClick={e => e.stopPropagation()}>
           <Button variant="ghost" size="icon" aria-label="Изменить" onClick={() => setEditing(d)}><Pencil className="size-4" /></Button>
@@ -90,11 +89,8 @@ export default function Directions() {
       <PageHeader
         title="Направления"
         description={directions ? `${activeCount} ${plural(activeCount, ['направление', 'направления', 'направлений'])}` : 'Загрузка…'}
-        actions={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>Добавить направление</Button>}
+        actions={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>Новое направление</Button>}
       />
-      {archivedCount > 0 && (
-        <Checkbox className="mb-4" label={`Показать архивные (${archivedCount})`} checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
-      )}
       <DataTable
         columns={columns}
         rows={rows}

@@ -29,26 +29,26 @@ export function Modal({ open, onClose, title, description, size = 'md', footer, 
 
   if (!open) return null
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={e => { if (e.target === e.currentTarget) onClose?.() }}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-6" onMouseDown={e => { if (e.target === e.currentTarget) onClose?.() }}>
       <div
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={cn('flex max-h-[92vh] w-full flex-col rounded-t-xl bg-surface shadow-pop outline-none sm:rounded-xl', SIZES[size])}
+        className={cn('flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-surface shadow-pop outline-none sm:rounded-2xl', SIZES[size])}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+        <div className="flex items-start justify-between gap-4 px-6 pb-2 pt-6 sm:px-7 sm:pt-7">
           <div>
-            <h2 className="text-base font-bold text-ink">{title}</h2>
+            <h2 className="text-lg font-bold text-ink">{title}</h2>
             {description && <p className="mt-0.5 text-[13px] text-ink-muted">{description}</p>}
           </div>
           <button type="button" onClick={onClose} className="-mr-1 rounded-md p-1 text-ink-subtle hover:bg-surface-muted hover:text-ink" aria-label="Закрыть">
             <X className="size-5" />
           </button>
         </div>
-        <div className="overflow-y-auto px-5 py-4">{children}</div>
-        {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>}
+        <div className="overflow-y-auto px-6 py-4 sm:px-7">{children}</div>
+        {footer && <div className="flex flex-wrap justify-end gap-2.5 px-6 pb-6 pt-2 sm:px-7">{footer}</div>}
       </div>
     </div>,
     document.body,
