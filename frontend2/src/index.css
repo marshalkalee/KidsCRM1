@@ -1,24 +1,68 @@
-@import url('https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/*
+ * Дизайн-токены frontend2 (TRU-80). Tailwind v4 читает их из @theme —
+ * отдельного tailwind.config.js нет. В компонентах — только классы на этих
+ * токенах (bg-surface, text-ink-muted, bg-brand-600 …), не hex-коды: так
+ * смена оттенка делается в одном месте.
+ *
+ * Палитра — тёплая: кремовый фон и коралловый бренд True Ballet, тёмно-
+ * синий текст. Кнопки и ссылки — brand-600/700 (контраст с белым ≥ 4.5:1),
+ * светлые оттенки бренда — только фоны и акценты.
+ */
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-canvas: #faf6f2;          /* фон приложения */
+  --color-surface: #ffffff;         /* карточки, таблицы, модалки */
+  --color-surface-muted: #f7f1ec;   /* поля ввода, выделение строк */
+  --color-line: #eee4dc;            /* границы */
+  --color-line-strong: #e0d3c8;
+
+  --color-ink: #1f2233;             /* основной текст */
+  --color-ink-muted: #6b6f7e;       /* вторичный текст */
+  --color-ink-subtle: #9a9eab;      /* подписи, плейсхолдеры */
+
+  --color-brand-50: #fdf3f0;
+  --color-brand-100: #fbe4dd;
+  --color-brand-200: #f5c6ba;
+  --color-brand-300: #eea694;
+  --color-brand-400: #e8998d;
+  --color-brand-500: #d47f70;
+  --color-brand-600: #b9604f;
+  --color-brand-700: #9a4c3e;
+
+  --color-success-50: #ecfaf3;
+  --color-success-600: #15803d;
+  --color-warning-50: #fff7e6;
+  --color-warning-600: #b45309;
+  --color-danger-50: #fef1f1;
+  --color-danger-600: #c43d3d;
+  --color-info-50: #eef4ff;
+  --color-info-600: #2f5fd0;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  --shadow-card: 0 1px 2px rgb(31 34 51 / 0.04), 0 1px 1px rgb(31 34 51 / 0.02);
+  --shadow-pop: 0 12px 32px -8px rgb(31 34 51 / 0.18), 0 2px 6px rgb(31 34 51 / 0.06);
 }
 
-body {
-  font-family: 'Rubik', sans-serif;
-  background-color: #FDF6F0;
-  color: #1A1A2E;
-  font-size: 15px;
-}
-
-.react-datepicker-wrapper {
-  width: 100%;
-  display: block;
-}
-.react-datepicker__input-container {
-  width: 100%;
-  display: block;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  /* Видимый фокус для клавиатуры — не убираем outline «ради красоты». */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-400);
+    outline-offset: 2px;
+  }
 }
