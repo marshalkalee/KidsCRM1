@@ -5,6 +5,7 @@ import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
+import ChildImport from './pages/ChildImport'
 import ParentDetail from './pages/ParentDetail'
 import Parents from './pages/Parents'
 import Children from './pages/Children'
@@ -29,6 +30,7 @@ function App() {
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="children" element={<Children />} />
+                <Route path="children/import" element={<RequirePermission permission="can_manage_children"><ChildImport /></RequirePermission>} />
                 <Route path="children/:id" element={<ChildDetail />} />
                 <Route path="parents" element={<Parents />} />
                 <Route path="parents/:id" element={<ParentDetail />} />

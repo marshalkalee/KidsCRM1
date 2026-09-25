@@ -55,7 +55,7 @@ from .import_service import (
     rollback_blockers,
     rollback_import,
 )
-from .models import ImportColumnMapping, ImportJob
+from .models import ImportJob
 from .reporting import build_report_workbook
 from .web_views import CHILD_EDIT_ROLES
 
@@ -79,13 +79,6 @@ def _json_safe_rows(raw_rows):
     return [[row_number, [_json_safe(v) for v in values]] for row_number, values in raw_rows]
 
 
-def _find_saved_mapping(organization, headers):
-    headers_key = "|".join(headers)
-    return (
-        ImportColumnMapping.objects.for_tenant(organization).filter(headers_key=headers_key).first()
-    )
-
-
 def _mapping_rows(mapping):
     """(ключ, подпись, обязательно, текущая_колонка) — шаблон не умеет
     делать mapping[key] по переменному ключу, поэтому подстановка здесь."""
@@ -93,19 +86,6 @@ def _mapping_rows(mapping):
         (key, label, required, mapping.get(key))
         for key, label, required in column_mapping.SYSTEM_FIELDS
     ]
-
-
-def _save_mapping(organization, headers, mapping, meta):
-    headers_key = "|".join(headers)
-    ImportColumnMapping.objects.for_tenant(organization).filter(headers_key=headers_key).delete()
-    ImportColumnMapping.objects.create(
-        organization=organization,
-        headers_key=headers_key,
-        file_headers=headers,
-        mapping=mapping,
-        csv_delimiter=meta.get("delimiter", ""),
-        csv_encoding=meta.get("encoding", ""),
-    )
 
 
 @role_required(*CHILD_EDIT_ROLES)
@@ -125,7 +105,7 @@ def child_import_upload(request):
                 if not headers or not raw_rows:
                     form.add_error(None, "В файле не нашлось ни заголовков, ни строк с данными.")
                 else:
-                    saved = _find_saved_mapping(request.user.organization, headers)
+                    saved = import_jobs.saved_mapping(request.user.organization, headers)
                     mapping = saved.mapping if saved else column_mapping.guess_mapping(headers)
                     return render(
                         request,
@@ -183,7 +163,7 @@ def child_import_mapping_confirm(request):
         )
 
     org = request.user.organization
-    _save_mapping(org, headers, mapping, meta)
+    import_jobs.save_mapping(org, headers, mapping, meta)
 
     mapped_rows = column_mapping.apply_mapping(
         headers, [(rn, values) for rn, values in raw_rows], mapping
@@ -215,20 +195,13 @@ def _decision_context(job: ImportJob) -> dict:
                 ],
             }
         )
-    kinds = []
-    for kind, label in DUPLICATE_KIND_LABELS.items():
-        count = sum(1 for row in duplicate_rows if row["duplicate"]["kind"] == kind)
-        if count:
-            kinds.append(
-                {
-                    "kind": kind,
-                    "label": label,
-                    "count": count,
-                    "choices": [
-                        (value, DECISION_LABELS[kind][value]) for value in DECISION_OPTIONS[kind]
-                    ],
-                }
-            )
+    kinds = [
+        {
+            **kind,
+            "choices": [(option["value"], option["label"]) for option in kind["options"]],
+        }
+        for kind in import_jobs.duplicate_kinds(job)
+    ]
     return {
         "duplicate_rows": rows,
         "duplicate_rows_truncated": len(duplicate_rows) > DUPLICATE_ROW_LIMIT,

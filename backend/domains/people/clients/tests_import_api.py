@@ -5,7 +5,10 @@ API импорта (import_api_views.py, для frontend2) — тот же жи�
 """
 
 import datetime
+import io
+import json
 
+import openpyxl
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -13,13 +16,20 @@ from rest_framework.test import APIClient
 
 from domains.platform.tenants.models import Organization
 
-from .models import Child, ChildContact, ContactPhone, ImportJob, ParentContact
+from .models import (
+    Child,
+    ChildContact,
+    CommunicationLog,
+    ContactPhone,
+    ImportJob,
+    ParentContact,
+)
 from .tests_import_views import _run_celery_tasks_synchronously, _xlsx_file
 
 User = get_user_model()
 
 
-class ImportApiTests(TestCase):
+class ImportApiBase(TestCase):
     def setUp(self):
         self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
         self.owner = User.objects.create_user(
@@ -61,6 +71,8 @@ class ImportApiTests(TestCase):
             reverse("clients:import-preview"), {"file": file}, format="multipart"
         )
 
+
+class ImportApiTests(ImportApiBase):
     def test_preview_runs_dry_run_and_writes_nothing(self):
         response = self._preview()
 
@@ -160,3 +172,107 @@ class ImportApiTests(TestCase):
         response = self._preview()
 
         self.assertEqual(response.status_code, 403)
+
+
+# Нестандартные заголовки — автоматически не угадываются.
+ODD_HEADERS = ["Воспитанник", "ДР", "М/Ж", "Кто привёл", "Контакт"]
+ODD_MAPPING = {
+    "child_name": "Воспитанник",
+    "birth_date": "ДР",
+    "gender": "М/Ж",
+    "parent_name": "Кто привёл",
+    "phone": "Контакт",
+}
+
+
+class ImportMappingApiTests(ImportApiBase):
+    """Экран маппинга (analyze/ → preview/ с mapping), массовые решения,
+    отчёт файлом, история и причины отказа в откате (TRU-84)."""
+
+    def _odd_file(self):
+        return _xlsx_file(
+            [["Айгерим", "01.02.2017", "ж", "Сейтова Алма", "+77019998877"]], headers=ODD_HEADERS
+        )
+
+    def test_analyze_returns_headers_preview_and_missing_fields(self):
+        response = self.client.post(
+            reverse("clients:import-analyze"), {"file": self._odd_file()}, format="multipart"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["headers"], ODD_HEADERS)
+        self.assertFalse(response.data["mapping_saved"])
+        self.assertIn("ФИО ребёнка", response.data["missing_required"])
+        self.assertEqual(response.data["preview_rows"][0]["values"][0], "Айгерим")
+        self.assertEqual(response.data["total_rows"], 1)
+        self.assertEqual(ImportJob.objects.count(), 0)
+
+    def test_manual_mapping_imports_and_is_remembered(self):
+        response = self.client.post(
+            reverse("clients:import-preview"),
+            {"file": self._odd_file(), "mapping": json.dumps(ODD_MAPPING)},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 202, response.data)
+        job = self.client.get(
+            reverse("clients:import-job-detail", args=[response.data["job_id"]])
+        ).data
+        self.assertEqual(job["ready_count"], 1)
+
+        again = self.client.post(
+            reverse("clients:import-analyze"), {"file": self._odd_file()}, format="multipart"
+        )
+        self.assertTrue(again.data["mapping_saved"])
+        self.assertEqual(again.data["missing_required"], [])
+        self.assertEqual(again.data["mapping"]["phone"], "Контакт")
+
+    def test_mapping_without_required_field_is_400(self):
+        partial = {**ODD_MAPPING, "phone": None}
+        response = self.client.post(
+            reverse("clients:import-preview"),
+            {"file": self._odd_file(), "mapping": json.dumps(partial)},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("mapping", response.data)
+
+    def test_bulk_decision_applies_to_all_rows_of_kind(self):
+        dry_run_id = self._preview().data["job_id"]
+        job = self.client.get(reverse("clients:import-job-detail", args=[dry_run_id])).data
+        self.assertEqual(job["duplicate_kinds"][0]["kind"], "family")
+
+        response = self.client.post(
+            reverse("clients:import-decisions", args=[dry_run_id]),
+            {"bulk_kind": "family", "bulk_decision": "create_new"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["decisions"], {"2": "create_new"})
+
+    def test_report_downloads_as_xlsx(self):
+        dry_run_id = self._preview().data["job_id"]
+
+        response = self.client.get(reverse("clients:import-report", args=[dry_run_id]))
+
+        self.assertEqual(response.status_code, 200)
+        workbook = openpyxl.load_workbook(io.BytesIO(response.content))
+        self.assertGreater(workbook.active.max_row, 1)
+
+    def test_history_and_rollback_blockers(self):
+        dry_run_id = self._preview().data["job_id"]
+        execute_id = self.client.post(
+            reverse("clients:import-confirm"), {"job_id": dry_run_id}, format="json"
+        ).data["job_id"]
+        child = Child.objects.for_tenant(self.org).get(full_name="Алия")
+        CommunicationLog.objects.create(child=child, note="звонили", author=self.owner)
+
+        history = self.client.get(reverse("clients:import-jobs")).data["results"]
+        detail = self.client.get(reverse("clients:import-job-detail", args=[execute_id])).data
+        rollback = self.client.post(reverse("clients:import-rollback", args=[execute_id]))
+
+        self.assertEqual([h["job_id"] for h in history], [execute_id])
+        self.assertTrue(detail["rollback_blockers"])
+        self.assertEqual(rollback.status_code, 409)
+        self.assertIn("коммуникаций", rollback.data["detail"])
