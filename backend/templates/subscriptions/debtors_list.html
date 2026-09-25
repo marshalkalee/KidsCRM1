@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% load static %}
+{% block page_title %}
+  <span data-i18n="debtors.title">Задолженности</span>
+{% endblock page_title %}
+{% block content %}
+  <div class="kc-filters-toggle-row">
+    <button type="button" class="kc-btn kc-btn--secondary" data-filters-toggle>
+      <span data-i18n="debtors.filters_toggle">Фильтры</span>
+    </button>
+    <span data-filters-count></span>
+  </div>
+  <div class="kc-list-layout">
+    <aside class="kc-filters-panel" id="js-debtors-filters">
+      <div class="kc-filters-panel__header">
+        <strong data-i18n="debtors.filters_title">Фильтры</strong>
+        <span data-filters-count></span>
+      </div>
+      <div class="kc-filters-panel__body">
+        <label>
+          <span data-i18n="debtors.filter_branch">Филиал</span>
+          <select class="kc-form-input" data-filter="branch">
+            <option value="" data-i18n="debtors.filter_any">Все</option>
+            {% for branch in branches %}<option value="{{ branch.id }}">{{ branch.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>
+          <span data-i18n="debtors.filter_direction">Направление</span>
+          <select class="kc-form-input" data-filter="direction">
+            <option value="" data-i18n="debtors.filter_any">Все</option>
+            {% for direction in directions %}<option value="{{ direction.id }}">{{ direction.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>
+          <span data-i18n="debtors.filter_min_age">Давность больше, дней</span>
+          <input class="kc-form-input" type="number" data-filter="min_age_days">
+        </label>
+      </div>
+      <div class="kc-filters-panel__footer">
+        <button type="button" class="kc-btn kc-btn--secondary" data-filters-reset>
+          <span data-i18n="debtors.filters_reset">Сбросить</span>
+        </button>
+      </div>
+    </aside>
+    <div class="kc-list-layout__main">
+      <p>
+        <strong data-i18n="debtors.total_label">Итого по выборке:</strong> <span id="js-total-debt">0</span> ₸
+      </p>
+      <a class="kc-btn kc-btn--secondary"
+         href="{% url 'subscriptions_web:debtors-export' %}"
+         data-i18n="debtors.export">Экспорт в Excel</a>
+      <div id="js-debtors-table"></div>
+    </div>
+  </div>
+{% endblock content %}
+{% block extra_js %}
+  <script>
+    (function () {
+      "use strict";
+      var t = window.KidsCRM.t;
+
+      function formatTenge(value) {
+        var amount = Math.round(Number(value) || 0);
+        return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " ₸";
+      }
+
+      var columns = [
+        { key: "child_name", label: t("debtors.col_child"), sortable: true },
+        { key: "parent_name", label: t("debtors.col_parent") },
+        { key: "subscription_name", label: t("debtors.col_subscription") },
+        {
+          key: "debt", label: t("debtors.col_debt"), sortable: true,
+          render: function (row) { return formatTenge(row.debt); },
+        },
+        { key: "age_days", label: t("debtors.col_age"), sortable: true },
+        {
+          key: "actions", label: "",
+          render: function (row) {
+            var wrap = document.createElement("span");
+            if (row.call_url) {
+              var call = document.createElement("a");
+              call.href = row.call_url;
+              call.className = "kc-btn kc-btn--icon";
+              call.textContent = "📞";
+              wrap.appendChild(call);
+            }
+            if (row.whatsapp_url) {
+              var wa = document.createElement("a");
+              wa.href = row.whatsapp_url;
+              wa.target = "_blank";
+              wa.className = "kc-btn kc-btn--icon";
+              wa.textContent = "WhatsApp";
+              wrap.appendChild(wa);
+            }
+            var remind = document.createElement("button");
+            remind.type = "button";
+            remind.className = "kc-btn kc-btn--secondary";
+            remind.textContent = t("debtors.remind");
+            remind.addEventListener("click", function () {
+              $.post("/subscriptions/debtors/" + row.child_id + "/remind/").done(function () {
+                window.KidsCRM.toast.success(t("debtors.remind_created"));
+              });
+            });
+            wrap.appendChild(remind);
+            return wrap;
+          },
+        },
+      ];
+
+      var table = window.KidsCRM.table.init("#js-debtors-table", {
+        columns: columns,
+        pageSize: 50,
+        rowKey: function (row) { return row.child_id; },
+        emptyTextKey: "debtors.empty",
+        remote: { url: "{% url 'subscriptions_web:debtors-data' %}" },
+      });
+
+      var filtersPanel = window.KidsCRM.filtersPanel.init(
+        document.getElementById("js-debtors-filters"),
+        {
+          storageKey: "debtors_filters",
+          onChange: function (values) { table.setRemoteParams(values); },
+        }
+      );
+
+      table.on("load", function (data) {
+        filtersPanel.setCount(data.total);
+        document.getElementById("js-total-debt").textContent = formatTenge(data.total_debt);
+      });
+    })();
+  </script>
+{% endblock extra_js %}
