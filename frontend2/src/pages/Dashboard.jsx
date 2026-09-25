@@ -9,10 +9,10 @@ import { t } from '../i18n'
 // Главная — приветствие, прогресс настройки центра (владельцу, пока не
 // завершена) и быстрые переходы. Сводка по деньгам и посещаемости — позже.
 const SHORTCUTS = [
-  { to: '/children', label: t('Дети'), description: t('База, фильтры, карточки'), icon: Users },
-  { to: '/parents', label: t('Родители'), description: t('Контакты, долги, оплаты'), icon: Contact },
-  { to: '/groups', label: t('Группы'), description: t('Состав и заполняемость'), icon: UsersRound },
-  { to: '/schedule', label: t('Расписание'), description: t('Занятия на неделю'), icon: CalendarDays },
+  { to: '/children', get label() { return t('Дети') }, get description() { return t('База, фильтры, карточки') }, icon: Users },
+  { to: '/parents', get label() { return t('Родители') }, get description() { return t('Контакты, долги, оплаты') }, icon: Contact },
+  { to: '/groups', get label() { return t('Группы') }, get description() { return t('Состав и заполняемость') }, icon: UsersRound },
+  { to: '/schedule', get label() { return t('Расписание') }, get description() { return t('Занятия на неделю') }, icon: CalendarDays },
 ]
 
 function greeting() {

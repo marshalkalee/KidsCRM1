@@ -12,21 +12,21 @@ import { t } from '../../i18n'
  */
 export const NAV_SECTIONS = [
   {
-    label: t('Работа'),
+    get label() { return t('Работа') },
     items: [
-      { to: '/dashboard', label: t('Главная'), icon: Home },
-      { to: '/children', label: t('Дети'), icon: Users },
-      { to: '/parents', label: t('Родители'), icon: Contact },
-      { to: '/groups', label: t('Группы'), icon: UsersRound },
-      { to: '/schedule', label: t('Расписание'), icon: CalendarDays },
+      { to: '/dashboard', get label() { return t('Главная') }, icon: Home },
+      { to: '/children', get label() { return t('Дети') }, icon: Users },
+      { to: '/parents', get label() { return t('Родители') }, icon: Contact },
+      { to: '/groups', get label() { return t('Группы') }, icon: UsersRound },
+      { to: '/schedule', get label() { return t('Расписание') }, icon: CalendarDays },
     ],
   },
   {
-    label: t('Настройки'),
+    get label() { return t('Настройки') },
     items: [
-      { to: '/branches', label: t('Филиалы'), icon: Building2, permission: 'can_manage_branches' },
-      { to: '/directions', label: t('Направления'), icon: Tag, permission: 'can_manage_directions' },
-      { to: '/settings/organization', label: t('Организация'), icon: Settings, permission: 'can_manage_org_settings' },
+      { to: '/branches', get label() { return t('Филиалы') }, icon: Building2, permission: 'can_manage_branches' },
+      { to: '/directions', get label() { return t('Направления') }, icon: Tag, permission: 'can_manage_directions' },
+      { to: '/settings/organization', get label() { return t('Организация') }, icon: Settings, permission: 'can_manage_org_settings' },
     ],
   },
 ]

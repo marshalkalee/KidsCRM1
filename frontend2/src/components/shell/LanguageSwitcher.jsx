@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Globe } from 'lucide-react'
+import { Check, Globe } from 'lucide-react'
 import { LANGUAGES, lang, setLang, t } from '../../i18n'
 import { cn } from '../../ui'
 
-/** Переключатель языка RU / KK / EN, как в шапке старого веба (TRU-92). */
+/** Переключатель языка RU / KK / EN (TRU-92): иконка в шапке, язык меняется без перезагрузки. */
 export default function LanguageSwitcher({ className }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -23,15 +23,13 @@ export default function LanguageSwitcher({ className }) {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex h-10 items-center gap-1.5 rounded-[10px] border border-line bg-surface px-2.5 text-[13px] font-semibold text-ink hover:border-brand-300"
+        className="flex size-10 items-center justify-center rounded-[10px] border border-line bg-surface text-ink-muted hover:border-brand-300 hover:text-ink"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={t('Язык')}
-        title={t('Язык')}
+        aria-label={t('Язык: {name}', { name: current.label })}
+        title={t('Язык: {name}', { name: current.label })}
       >
-        <Globe className="size-4 text-ink-subtle" />
-        {current.short}
-        <ChevronDown className="size-3.5 text-ink-subtle" />
+        <Globe className="size-[18px]" />
       </button>
       {open && (
         <ul role="listbox" className="absolute right-0 top-12 z-40 w-44 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-pop">
@@ -41,7 +39,7 @@ export default function LanguageSwitcher({ className }) {
                 type="button"
                 role="option"
                 aria-selected={language.code === lang}
-                onClick={() => setLang(language.code)}
+                onClick={() => { setOpen(false); setLang(language.code) }}
                 className={cn(
                   'flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm',
                   language.code === lang ? 'bg-brand-50 font-semibold text-brand-600' : 'text-ink hover:bg-surface-muted',

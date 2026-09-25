@@ -16,11 +16,11 @@ import { t } from '../i18n'
 const SessionContext = createContext(null)
 
 export const ROLE_LABELS = {
-  owner: t('Владелец'),
-  manager: t('Управляющий'),
-  admin: t('Администратор'),
-  teacher: t('Преподаватель'),
-  accountant: t('Бухгалтер'),
+  get owner() { return t('Владелец') },
+  get manager() { return t('Управляющий') },
+  get admin() { return t('Администратор') },
+  get teacher() { return t('Преподаватель') },
+  get accountant() { return t('Бухгалтер') },
 }
 
 function readStoredBranch() {

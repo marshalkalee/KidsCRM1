@@ -12,7 +12,7 @@ import {
 import { t } from '../i18n'
 
 const PANEL_KEYS = ['branch', 'direction', 'teacher', 'status', 'underfilled']
-const STATUS_OPTIONS = [['', t('Все статусы')], ...Object.entries(GROUP_STATUSES).map(([v, s]) => [v, s.label])]
+const statusOptions = () => [['', t('Все статусы')], ...Object.entries(GROUP_STATUSES).map(([v, s]) => [v, s.label])]
 const listOf = r => r.data.results || r.data
 
 /**
@@ -188,7 +188,7 @@ function GroupFilters({ applied, onApply, onReset, branches, directions, teacher
       )}
       <FilterSelect label={t('Направление')} value={draft.direction} onChange={v => set('direction', v)} options={[['', t('Все направления')], ...directions.map(d => [String(d.id), d.name])]} />
       <FilterSelect label={t('Преподаватель')} value={draft.teacher} onChange={v => set('teacher', v)} options={[['', t('Все преподаватели')], ...teachers.map(tch => [String(tch.id), tch.full_name])]} />
-      <FilterSelect label={t('Статус')} value={draft.status} onChange={v => set('status', v)} options={STATUS_OPTIONS} />
+      <FilterSelect label={t('Статус')} value={draft.status} onChange={v => set('status', v)} options={statusOptions()} />
     </FilterPanel>
   )
 }

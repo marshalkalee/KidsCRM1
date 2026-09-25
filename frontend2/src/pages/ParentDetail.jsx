@@ -10,7 +10,7 @@ import {
 } from '../ui'
 import { t } from '../i18n'
 
-const PHONE_TYPES = { mobile: t('мобильный'), work: t('рабочий'), home: t('домашний') }
+const PHONE_TYPES = { get mobile() { return t('мобильный') }, get work() { return t('рабочий') }, get home() { return t('домашний') } }
 const PAYMENTS_PREVIEW = 5
 
 /**

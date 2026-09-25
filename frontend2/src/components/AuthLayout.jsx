@@ -1,9 +1,9 @@
 import { t } from '../i18n'
 import LanguageSwitcher from './shell/LanguageSwitcher'
 const FEATURES = [
-  t('База детей и родителей без дублей'),
-  t('Расписание, группы и посещаемость'),
-  t('Абонементы, оплаты и задолженности'),
+  'База детей и родителей без дублей',
+  'Расписание, группы и посещаемость',
+  'Абонементы, оплаты и задолженности',
 ]
 
 /** Макет страниц входа и регистрации: слева — бренд, справа — форма. */
@@ -32,7 +32,7 @@ export default function AuthLayout({ children }) {
             {FEATURES.map(f => (
               <li key={f} className="flex items-center gap-3 text-[15px] font-medium">
                 <span className="size-2 rounded-full bg-white" />
-                {f}
+                {t(f)}
               </li>
             ))}
           </ul>

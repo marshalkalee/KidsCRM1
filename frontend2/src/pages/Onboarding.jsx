@@ -16,12 +16,12 @@ import { t } from '../i18n'
 // Поэтому филиал, заведённый в «Настройках» мимо мастера, тоже засчитан.
 
 const STEP_INFO = {
-  organization: { description: t('Название, часовой пояс и когда подсвечивать продления и долги. Можно оставить как есть.') },
-  branch: { description: t('Где проходят занятия. У филиала — адрес, часы работы и залы.'), list: 'branches/', add: t('Добавить филиал') },
-  directions: { description: t('Чему учите: балет, растяжка, хореография. По направлениям строятся группы и абонементы.'), list: 'directions/', add: t('Добавить направление') },
-  subscription_types: { description: t('Какие абонементы продаёте: на 8 занятий, безлимит и т.п.') },
-  groups: { description: t('Группы с преподавателем и вместимостью — в них записываются дети.'), list: 'groups/', add: t('Создать группу') },
-  import: { description: t('Загрузите базу детей и родителей из Excel — дубли найдём и спросим, что с ними делать.') },
+  organization: { get description() { return t('Название, часовой пояс и когда подсвечивать продления и долги. Можно оставить как есть.') } },
+  branch: { get description() { return t('Где проходят занятия. У филиала — адрес, часы работы и залы.') }, list: 'branches/', get add() { return t('Добавить филиал') } },
+  directions: { get description() { return t('Чему учите: балет, растяжка, хореография. По направлениям строятся группы и абонементы.') }, list: 'directions/', get add() { return t('Добавить направление') } },
+  subscription_types: { get description() { return t('Какие абонементы продаёте: на 8 занятий, безлимит и т.п.') } },
+  groups: { get description() { return t('Группы с преподавателем и вместимостью — в них записываются дети.') }, list: 'groups/', get add() { return t('Создать группу') } },
+  import: { get description() { return t('Загрузите базу детей и родителей из Excel — дубли найдём и спросим, что с ними делать.') } },
 }
 
 export default function Onboarding() {

@@ -72,7 +72,7 @@ export default function BranchModal({ branch, onClose, onSaved }) {
               return (
                 <div key={code}>
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="font-btn w-[100px] shrink-0 text-xs text-[#374151]">{full}</span>
+                    <span className="font-btn w-[100px] shrink-0 text-xs text-[#374151]">{t(full)}</span>
                     <Checkbox className="w-[90px] shrink-0 text-xs" label={t('Выходной')} checked={day.closed} onChange={e => setDay(code, { closed: e.target.checked })} />
                     {!day.closed && (
                       <div className="flex items-center gap-1.5">

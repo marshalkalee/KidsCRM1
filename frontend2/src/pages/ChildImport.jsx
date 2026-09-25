@@ -16,11 +16,11 @@ import { t } from '../i18n'
 // одной транзакцией → итог и откат. Текущая задача — в адресе (?job=),
 // поэтому обновление страницы не теряет прогресс.
 const IMPORT_API = 'clients/children/import'
-const STEPS = [t('Файл'), t('Колонки'), t('Проверка'), t('Импорт')]
+const STEPS = ['Файл', 'Колонки', 'Проверка', 'Импорт']
 const LEVELS = {
-  ready: { tone: 'success', label: t('Готово') },
-  warning: { tone: 'warning', label: t('Предупреждение') },
-  error: { tone: 'danger', label: t('Ошибка') },
+  ready: { tone: 'success', get label() { return t('Готово') } },
+  warning: { tone: 'warning', get label() { return t('Предупреждение') } },
+  error: { tone: 'danger', get label() { return t('Ошибка') } },
 }
 const REPORT_PAGE = 50
 
@@ -75,7 +75,7 @@ function JobStepper({ step }) {
             )}>
               {done ? <CheckCircle2 className="size-4" /> : index + 1}
             </span>
-            <span className={cn('font-semibold', current ? 'text-ink' : 'text-ink-muted')}>{label}</span>
+            <span className={cn('font-semibold', current ? 'text-ink' : 'text-ink-muted')}>{t(label)}</span>
             {index < STEPS.length - 1 && <span className="mx-1 h-px w-6 bg-line-strong" />}
           </li>
         )
@@ -348,11 +348,11 @@ function ProgressCard({ job }) {
 }
 
 const FILTERS = [
-  ['all', t('Все')],
-  ['error', t('Ошибки')],
-  ['warning', t('Предупреждения')],
-  ['duplicate', t('Совпадения')],
-  ['ready', t('Готовы')],
+  ['all', 'Все'],
+  ['error', 'Ошибки'],
+  ['warning', 'Предупреждения'],
+  ['duplicate', 'Совпадения'],
+  ['ready', 'Готовы'],
 ]
 
 function DryRunReport({ job, setJob, openJob }) {
@@ -457,7 +457,7 @@ function DryRunReport({ job, setJob, openJob }) {
                     filter === value ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line text-ink-muted hover:text-ink',
                   )}
                 >
-                  {label} <span className="text-ink-subtle">{count}</span>
+                  {t(label)} <span className="text-ink-subtle">{count}</span>
                 </button>
               )
             })}
@@ -536,12 +536,12 @@ function Stat({ tone, icon: Icon, label, value, hint }) {
 }
 
 const RESULT_ROWS = [
-  ['children_created', t('Создано детей')],
-  ['parents_created', t('Создано родителей')],
-  ['attached_to_existing_parent', t('Привязано к существующим родителям')],
-  ['linked_to_existing_child', t('Дописано к существующим детям')],
-  ['enrolled_in_groups', t('Записано в группы')],
-  ['skipped', t('Пропущено по решению')],
+  ['children_created', 'Создано детей'],
+  ['parents_created', 'Создано родителей'],
+  ['attached_to_existing_parent', 'Привязано к существующим родителям'],
+  ['linked_to_existing_child', 'Дописано к существующим детям'],
+  ['enrolled_in_groups', 'Записано в группы'],
+  ['skipped', 'Пропущено по решению'],
 ]
 
 function ImportResult({ job, reload, openJob }) {
@@ -585,7 +585,7 @@ function ImportResult({ job, reload, openJob }) {
         <dl className="divide-y divide-line rounded-lg border border-line">
           {RESULT_ROWS.map(([key, label]) => (
             <div key={key} className="flex items-center justify-between px-4 py-2.5 text-sm">
-              <dt className="text-ink-muted">{label}</dt>
+              <dt className="text-ink-muted">{t(label)}</dt>
               <dd className="font-bold text-ink">{job[key] ?? 0}</dd>
             </div>
           ))}

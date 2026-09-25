@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { Bell, Building2, ChevronDown, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
+import { Bell, Building2, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
 import { useSession } from '../../session/SessionContext'
 import { cn, initials } from '../../ui'
 import { GlobalSearch } from './GlobalSearch'
@@ -76,7 +76,7 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
+      <main className="w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <Outlet />
       </main>
     </div>
@@ -209,7 +209,8 @@ function UserMenu({ collapsed = false }) {
 
 /**
  * Активный филиал: влияет на списки, которые умеют фильтровать по филиалу
- * (заголовок X-Branch-Id). Один филиал — переключать нечего, показываем просто название.
+ * (заголовок X-Branch-Id). В шапке — только иконка, как колокольчик: выбранный
+ * филиал отмечен точкой, его название — в подсказке и в списке.
  */
 function BranchSwitcher() {
   const { branches, activeBranch, activeBranchId, setActiveBranchId } = useSession()
@@ -238,16 +239,21 @@ function BranchSwitcher() {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex h-10 max-w-[220px] items-center gap-2 rounded-[10px] border border-line bg-surface px-3 text-sm font-medium text-ink hover:border-brand-300"
+        className={cn(
+          'relative flex size-10 items-center justify-center rounded-[10px] border bg-surface hover:border-brand-300 hover:text-ink',
+          activeBranchId ? 'border-brand-300 text-brand-600' : 'border-line text-ink-muted',
+        )}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={t('Филиал: {name}', { name: label })}
+        title={t('Филиал: {name}', { name: label })}
       >
-        <Building2 className="size-4 shrink-0 text-ink-subtle" />
-        <span className="hidden truncate sm:inline">{label}</span>
-        <ChevronDown className="size-4 shrink-0 text-ink-subtle" />
+        <Building2 className="size-[18px]" />
+        {activeBranchId && <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-brand-500 ring-2 ring-surface" />}
       </button>
       {open && (
-        <ul className="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-pop" role="listbox">
+        <ul className="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-pop" role="listbox" aria-label={t('Филиал')}>
+          <li className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-subtle" role="presentation">{t('Филиал')}</li>
           {[{ id: null, name: t('Все филиалы') }, ...branches].map(branch => (
             <li key={branch.id || 'all'}>
               <button

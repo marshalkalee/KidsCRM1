@@ -5,11 +5,13 @@
  * словари kk.json / en.json переводят его. Нет перевода — показывается
  * русский, экран не ломается. Подстановки: t('Свободно {n} мест', { n: 3 }).
  *
- * Язык читается один раз при загрузке страницы; переключение сохраняет
- * выбор и перезагружает страницу (как в старом вебе) — так на новом языке
- * сразу и константы модулей (статусы, роли, дни недели).
+ * Переключение без перезагрузки: setLang() меняет язык и оповещает
+ * подписчиков, App по useLang() перемонтирует экраны. Поэтому в константах
+ * модулей t() не вызывается при импорте: подписи — геттеры
+ * (get label() { return t('…') }) или русский текст, переводимый при показе.
  * Термины — как в словарях старого веба (backend/i18n_src).
  */
+import { useSyncExternalStore } from 'react'
 import en from './en.json'
 import kk from './kk.json'
 
@@ -29,14 +31,33 @@ function readLang() {
   return 'ru'
 }
 
-export const lang = readLang()
-export const locale = LANGUAGES.find(l => l.code === lang).locale
+export let lang = readLang()
+export let locale = localeOf(lang)
 if (typeof document !== 'undefined') document.documentElement.lang = lang
 
+function localeOf(code) {
+  return LANGUAGES.find(l => l.code === code).locale
+}
+
+const listeners = new Set()
+
 export function setLang(code) {
-  if (code === lang) return
+  if (code === lang || !LANGUAGES.some(l => l.code === code)) return
+  lang = code
+  locale = localeOf(code)
+  document.documentElement.lang = code
   try { localStorage.setItem(STORAGE_KEY, code) } catch { /* не запомнится */ }
-  window.location.reload()
+  listeners.forEach(listener => listener())
+}
+
+function subscribe(listener) {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+/** Текущий язык; компонент перерисуется при смене. */
+export function useLang() {
+  return useSyncExternalStore(subscribe, () => lang)
 }
 
 function fill(text, vars) {

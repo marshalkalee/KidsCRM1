@@ -4,7 +4,7 @@ import api from '../api/axios'
 import { Button, Field, Input, Modal, Select, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
 
-const PHONE_TYPES = { mobile: t('Мобильный'), work: t('Рабочий'), home: t('Домашний') }
+const PHONE_TYPES = { get mobile() { return t('Мобильный') }, get work() { return t('Рабочий') }, get home() { return t('Домашний') } }
 
 /**
  * Создание/редактирование родителя. Телефоны уходят списком целиком — сервер

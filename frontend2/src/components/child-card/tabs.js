@@ -24,13 +24,13 @@ import { t } from '../../i18n'
  * Подробнее — docs/contracts.md, раздел «Вкладки карточки ребёнка».
  */
 export const CHILD_CARD_TABS = [
-  { key: 'contacts', label: t('Контакты'), order: 10, component: ContactsTab },
-  { key: 'communications', label: t('Коммуникации'), order: 20, component: CommunicationsTab },
+  { key: 'contacts', get label() { return t('Контакты') }, order: 10, component: ContactsTab },
+  { key: 'communications', get label() { return t('Коммуникации') }, order: 20, component: CommunicationsTab },
   // Деньги (Bekzat, TRU-70) — заглушки до подключения.
-  { key: 'subscriptions', label: t('Абонементы'), order: 30, component: null, permission: 'can_view_client_money' },
-  { key: 'payments', label: t('Оплаты'), order: 40, component: null, permission: 'can_view_client_money' },
+  { key: 'subscriptions', get label() { return t('Абонементы') }, order: 30, component: null, permission: 'can_view_client_money' },
+  { key: 'payments', get label() { return t('Оплаты') }, order: 40, component: null, permission: 'can_view_client_money' },
   // Расписание (Дарья, TRU-55) — заглушка до подключения.
-  { key: 'attendance', label: t('Посещения'), order: 50, component: null },
+  { key: 'attendance', get label() { return t('Посещения') }, order: 50, component: null },
 ]
 
 export function visibleChildCardTabs(can) {

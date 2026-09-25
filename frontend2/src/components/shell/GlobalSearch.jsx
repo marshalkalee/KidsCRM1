@@ -10,8 +10,8 @@ const DEBOUNCE_MS = 250
 
 const MATCHED_ON = {
   child_name: null,
-  parent_name: t('родитель'),
-  phone: t('телефон'),
+  get parent_name() { return t('родитель') },
+  get phone() { return t('телефон') },
 }
 
 function resultUrl(result) {

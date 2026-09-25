@@ -7,9 +7,9 @@ import { t } from '../../i18n'
 
 // Как CommunicationLog.Channel на бэке.
 const CHANNELS = [
-  { value: 'call', label: t('Звонок'), icon: Phone, tone: 'bg-info-50 text-info-600' },
+  { value: 'call', get label() { return t('Звонок') }, icon: Phone, tone: 'bg-info-50 text-info-600' },
   { value: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, tone: 'bg-success-50 text-success-600' },
-  { value: 'comment', label: t('Комментарий'), icon: StickyNote, tone: 'bg-warning-50 text-warning-600' },
+  { value: 'comment', get label() { return t('Комментарий') }, icon: StickyNote, tone: 'bg-warning-50 text-warning-600' },
 ]
 const CHANNEL_BY_VALUE = Object.fromEntries(CHANNELS.map(c => [c.value, c]))
 

@@ -11,7 +11,7 @@ import {
 } from '../ui'
 import { t } from '../i18n'
 
-const GENDERS = { female: t('Девочка'), male: t('Мальчик') }
+const GENDERS = { get female() { return t('Девочка') }, get male() { return t('Мальчик') } }
 
 /**
  * Карточка ребёнка (TRU-82): шапка из GET children/<id>/card/ и вкладки из

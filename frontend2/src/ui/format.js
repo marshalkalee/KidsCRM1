@@ -1,13 +1,18 @@
 // Форматирование для экранов: деньги в тенге, даты по-русски, возраст.
-import { locale, plural } from '../i18n'
-import { t } from '../i18n'
+import { locale, plural, t } from '../i18n'
 
-const moneyFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 })
+// Форматтеры под текущий язык; пересоздаются при смене (setLang).
+const formatters = new Map()
+function formatter(kind, options) {
+  const key = `${kind}:${locale}`
+  if (!formatters.has(key)) formatters.set(key, new Intl[kind](locale, options))
+  return formatters.get(key)
+}
 
 export function money(value) {
   const number = Number(value)
   if (!Number.isFinite(number)) return '—'
-  return `${moneyFormat.format(number)} ₸`
+  return `${formatter('NumberFormat', { maximumFractionDigits: 0 }).format(number)} ₸`
 }
 
 /** '2018-03-12' → '12.03.2018' (без new Date — не сдвигается часовым поясом). */
@@ -24,26 +29,26 @@ export function ageLabel(age) {
 
 // Статусы ребёнка — как Child.Status на бэке.
 export const CHILD_STATUSES = {
-  active: { label: t('Активен'), tone: 'success' },
-  paused: { label: t('Приостановлен'), tone: 'warning' },
-  left: { label: t('Ушёл'), tone: 'neutral' },
+  active: { get label() { return t('Активен') }, tone: 'success' },
+  paused: { get label() { return t('Приостановлен') }, tone: 'warning' },
+  left: { get label() { return t('Ушёл') }, tone: 'neutral' },
 }
 
-const dateTimeFormat = new Intl.DateTimeFormat(locale, {
+const DATE_TIME = {
   day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-})
+}
 
 /** '2026-09-24T10:15:00+05:00' → '24 сент. 2026 г., 10:15' (время браузера). */
 export function formatDateTime(iso) {
   if (!iso) return '—'
-  return dateTimeFormat.format(new Date(iso))
+  return formatter('DateTimeFormat', DATE_TIME).format(new Date(iso))
 }
 
 // Роли контакта — как ChildContact.Role на бэке.
 export const CONTACT_ROLES = {
-  mother: t('Мама'),
-  father: t('Папа'),
-  guardian: t('Опекун'),
-  grandmother: t('Бабушка'),
-  other: t('Другое'),
+  get mother() { return t('Мама') },
+  get father() { return t('Папа') },
+  get guardian() { return t('Опекун') },
+  get grandmother() { return t('Бабушка') },
+  get other() { return t('Другое') },
 }

@@ -6,10 +6,10 @@ import { t } from '../i18n'
 // Пороги автостатусов (backend: tenants/org_settings.py) — по ним экраны
 // продлений, задолженностей и групп решают, кого подсветить.
 const THRESHOLDS = [
-  { key: 'subscription_ending_lessons_threshold', label: t('Мало занятий на абонементе'), hint: t('Попадает в «Продления»'), suffix: t('занятий и меньше'), max: 100 },
-  { key: 'subscription_ending_days_threshold', label: t('Абонемент скоро закончится'), hint: t('Попадает в «Продления»'), suffix: t('дней и меньше'), max: 365 },
-  { key: 'debt_overdue_days_threshold', label: t('Долг просрочен'), hint: t('Неоплаченный абонемент старше'), suffix: t('дней'), max: 365 },
-  { key: 'group_underfilled_percent_threshold', label: t('Группа недозаполнена'), hint: t('Заполненность группы'), suffix: t('% и меньше'), max: 100 },
+  { key: 'subscription_ending_lessons_threshold', get label() { return t('Мало занятий на абонементе') }, get hint() { return t('Попадает в «Продления»') }, get suffix() { return t('занятий и меньше') }, max: 100 },
+  { key: 'subscription_ending_days_threshold', get label() { return t('Абонемент скоро закончится') }, get hint() { return t('Попадает в «Продления»') }, get suffix() { return t('дней и меньше') }, max: 365 },
+  { key: 'debt_overdue_days_threshold', get label() { return t('Долг просрочен') }, get hint() { return t('Неоплаченный абонемент старше') }, get suffix() { return t('дней') }, max: 365 },
+  { key: 'group_underfilled_percent_threshold', get label() { return t('Группа недозаполнена') }, get hint() { return t('Заполненность группы') }, get suffix() { return t('% и меньше') }, max: 100 },
 ]
 
 /**

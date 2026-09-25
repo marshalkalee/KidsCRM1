@@ -12,7 +12,7 @@ import {
 } from '../ui'
 import { t } from '../i18n'
 
-const WEEKDAYS_FULL = [t('Понедельник'), t('Вторник'), t('Среда'), t('Четверг'), t('Пятница'), t('Суббота'), t('Воскресенье')]
+const WEEKDAYS_FULL = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 
 /**
  * Карточка группы (TRU-87): заполняемость, расписание, преподаватели,
@@ -130,7 +130,7 @@ export default function GroupDetail() {
             <ul className="space-y-2">
               {group.schedule.map(slot => (
                 <li key={`${slot.weekday}-${slot.start_time}`} className="flex items-center gap-3 text-sm">
-                  <span className="flex w-9 justify-center rounded-md bg-brand-50 py-1 text-xs font-bold text-brand-700" title={WEEKDAYS_FULL[slot.weekday]}>{WEEKDAYS_SHORT[slot.weekday]}</span>
+                  <span className="flex w-9 justify-center rounded-md bg-brand-50 py-1 text-xs font-bold text-brand-700" title={t(WEEKDAYS_FULL[slot.weekday])}>{t(WEEKDAYS_SHORT[slot.weekday])}</span>
                   <span className="font-semibold text-ink">{slot.start_time}</span>
                   <span className="text-ink-muted">{slot.duration_minutes} {t('мин')}</span>
                   {slot.room && <span className="ml-auto flex items-center gap-1 text-[13px] text-ink-subtle"><DoorOpen className="size-3.5" />{slot.room}</span>}

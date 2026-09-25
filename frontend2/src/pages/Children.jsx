@@ -20,7 +20,7 @@ const MONEY_KEYS = ['has_debt', 'expiring']
 const STORAGE_KEY = 'kc:children-list'
 const PAGE_SIZE = 25
 
-const STATUS_OPTIONS = [['', t('Все статусы')], ...Object.entries(CHILD_STATUSES).map(([value, s]) => [value, s.label])]
+const statusOptions = () => [['', t('Все статусы')], ...Object.entries(CHILD_STATUSES).map(([value, s]) => [value, s.label])]
 
 function readStored() {
   try { return localStorage.getItem(STORAGE_KEY) } catch { return null }
@@ -265,7 +265,7 @@ function ChildFilters({ params, update, branches, directions, groups, showMoney,
       )}
       <FilterSelect label={t('Направление')} value={draft.direction} onChange={v => set('direction', v)} options={[['', t('Все направления')], ...directions.map(d => [String(d.id), d.name])]} />
       <FilterSelect label={t('Группа')} value={draft.group} onChange={v => set('group', v)} options={[['', t('Все группы')], ...groups.map(g => [String(g.id), g.name])]} />
-      <FilterSelect label={t('Статус')} value={draft.status} onChange={v => set('status', v)} options={STATUS_OPTIONS} />
+      <FilterSelect label={t('Статус')} value={draft.status} onChange={v => set('status', v)} options={statusOptions()} />
     </FilterPanel>
   )
 }
