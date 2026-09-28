@@ -9,9 +9,10 @@
   русском или казахском, для отправки через wa.me вручную.
 
 Модель отвечает строго по JSON-схеме (structured outputs), поэтому ответ
-всегда разбирается. Без ANTHROPIC_API_KEY всё выключено (is_enabled).
+всегда разбирается. Провайдер — AI_PROVIDER: anthropic (Claude) или
+openai; без ключа выбранного провайдера всё выключено (is_enabled).
 
-Данные: в Claude уходит только то, что нужно для задачи. Для сообщения
+Данные: в модель уходит только то, что нужно для задачи. Для сообщения
 родителю — имя, ребёнок, направление, статус, комментарии; телефон не
 отправляем. Для разбора — сам вставленный текст (в нём обычно и есть
 телефон — это и есть задача).
@@ -38,7 +39,15 @@ class AIError(Exception):
     """Сообщение для пользователя — показывается как есть."""
 
 
+def provider() -> str:
+    """Провайдер модели: anthropic (по умолчанию) или openai — для показа
+    с имеющимся ключом. Переключается AI_PROVIDER, код экранов один."""
+    return settings.AI_PROVIDER
+
+
 def is_enabled() -> bool:
+    if provider() == "openai":
+        return bool(settings.OPENAI_API_KEY)
     return bool(settings.ANTHROPIC_API_KEY)
 
 
@@ -46,12 +55,31 @@ def _client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY, timeout=60, max_retries=2)
 
 
+def _openai_client():
+    import openai
+
+    return openai.OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60, max_retries=2)
+
+
 def _ask_json(*, system: str, user: str, schema: dict, max_tokens: int = 4000) -> dict:
-    """Один запрос, ответ строго по схеме. Короткие задачи — effort low:
-    быстрее и дешевле, качества хватает. Отказ модели — fallbacks по
-    умолчанию переигрывает запрос на подходящей модели на стороне API."""
+    """Один запрос, ответ строго по JSON-схеме — у обоих провайдеров."""
     if not is_enabled():
         raise AIError("ИИ-помощник не настроен.")
+    text = (
+        _ask_openai(system=system, user=user, schema=schema, max_tokens=max_tokens)
+        if provider() == "openai"
+        else _ask_anthropic(system=system, user=user, schema=schema, max_tokens=max_tokens)
+    )
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        logger.error("AI returned non-JSON (%s)", provider())
+        raise AIError("ИИ ответил неразборчиво — попробуйте ещё раз.") from exc
+
+
+def _ask_anthropic(*, system, user, schema, max_tokens) -> str:
+    """Claude: короткие задачи — effort low (быстрее и дешевле); отказ модели
+    fallbacks по умолчанию переигрывает на подходящей модели на стороне API."""
     try:
         response = _client().beta.messages.create(
             model=settings.AI_MODEL,
@@ -76,12 +104,42 @@ def _ask_json(*, system: str, user: str, schema: dict, max_tokens: int = 4000) -
         raise AIError("ИИ не стал обрабатывать этот текст.")
     if response.stop_reason == "max_tokens":
         raise AIError("Текст слишком длинный — сократите и попробуйте ещё раз.")
-    text = next((block.text for block in response.content if block.type == "text"), "")
+    return next((block.text for block in response.content if block.type == "text"), "")
+
+
+def _ask_openai(*, system, user, schema, max_tokens) -> str:
+    """OpenAI: Chat Completions со strict json_schema — ответ строго по схеме."""
+    import openai
+
     try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        logger.error("AI returned non-JSON (request %s)", getattr(response, "_request_id", "?"))
-        raise AIError("ИИ ответил неразборчиво — попробуйте ещё раз.") from exc
+        response = _openai_client().chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            max_completion_tokens=max_tokens,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "result", "schema": schema, "strict": True},
+            },
+        )
+    except openai.RateLimitError as exc:
+        logger.warning("OpenAI rate limited: %s", exc)
+        raise AIError("ИИ сейчас перегружен — попробуйте через минуту.") from exc
+    except openai.AuthenticationError as exc:
+        logger.error("OpenAI auth error: %s", exc)
+        raise AIError("Ключ ИИ не подошёл — проверьте OPENAI_API_KEY.") from exc
+    except openai.APIStatusError as exc:
+        logger.error("OpenAI API error %s: %s", exc.status_code, exc)
+        raise AIError("ИИ временно недоступен.") from exc
+    except openai.APIConnectionError as exc:
+        logger.error("OpenAI connection error: %s", exc)
+        raise AIError("Нет связи с ИИ — проверьте интернет.") from exc
+
+    choice = response.choices[0]
+    if choice.message.refusal:
+        raise AIError("ИИ не стал обрабатывать этот текст.")
+    if choice.finish_reason == "length":
+        raise AIError("Текст слишком длинный — сократите и попробуйте ещё раз.")
+    return choice.message.content or ""
 
 
 # --- Заявка из сообщения --------------------------------------------------

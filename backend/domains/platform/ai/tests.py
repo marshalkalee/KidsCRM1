@@ -233,3 +233,68 @@ class AIAccessTests(AIFixtures):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("не настроен", response.data["detail"])
+
+
+def openai_response(payload, refusal=None, finish_reason="stop"):
+    content = None if refusal else json.dumps(payload, ensure_ascii=False)
+    message = SimpleNamespace(content=content, refusal=refusal)
+    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=finish_reason)])
+
+
+def patched_openai(response=None, error=None):
+    create = mock.Mock(return_value=response, side_effect=error)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    return mock.patch.object(services, "_openai_client", return_value=client), create
+
+
+@override_settings(
+    AI_PROVIDER="openai", OPENAI_API_KEY="sk-test", OPENAI_MODEL="gpt-test", ANTHROPIC_API_KEY=""
+)
+class OpenAIProviderTests(AIFixtures):
+    def test_lead_from_text_via_openai(self):
+        payload = {
+            "parent_name": "Айгерим",
+            "phone": "87071112233",
+            "child_name": "Алия",
+            "child_age": 6,
+            "direction": "Классический балет",
+            "source": "",
+            "summary": "",
+        }
+        patch, create = patched_openai(openai_response(payload))
+        with patch:
+            response = self.client_api.post(
+                "/api/v1/ai/lead-from-text/", {"text": "балет, 6 лет"}, format="json"
+            )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(
+            (response.data["phone"], response.data["direction"]),
+            ("+77071112233", str(self.ballet.id)),
+        )
+        kwargs = create.call_args.kwargs
+        self.assertEqual(kwargs["model"], "gpt-test")
+        self.assertTrue(kwargs["response_format"]["json_schema"]["strict"])
+        self.assertEqual(kwargs["messages"][0]["role"], "system")
+
+    def test_openai_refusal_and_bad_key(self):
+        import openai
+
+        patch, _ = patched_openai(openai_response({}, refusal="нет"))
+        with patch:
+            result = self.client_api.post(
+                "/api/v1/ai/lead-from-text/", {"text": "x"}, format="json"
+            )
+        self.assertIn("не стал", result.data["detail"])
+        error = openai.AuthenticationError.__new__(openai.AuthenticationError)
+        Exception.__init__(error, "bad key")
+        patch, _ = patched_openai(error=error)
+        with patch:
+            result = self.client_api.post(
+                "/api/v1/ai/lead-from-text/", {"text": "x"}, format="json"
+            )
+        self.assertIn("OPENAI_API_KEY", result.data["detail"])
+
+    def test_enabled_by_openai_key(self):
+        self.assertTrue(self.client_api.get("/api/v1/ai/status/").data["enabled"])
+        with override_settings(OPENAI_API_KEY=""):
+            self.assertFalse(self.client_api.get("/api/v1/ai/status/").data["enabled"])

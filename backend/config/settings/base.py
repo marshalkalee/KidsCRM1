@@ -246,3 +246,7 @@ CELERY_BEAT_SCHEDULE = {
 # Ключ — только из окружения, в коде и репозитории его нет.
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 AI_MODEL = env("AI_MODEL", default="claude-opus-5")
+# Провайдер: anthropic (по умолчанию) или openai — для показа с ключом OpenAI.
+AI_PROVIDER = env("AI_PROVIDER", default="anthropic")
+OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
+OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-4o-mini")
