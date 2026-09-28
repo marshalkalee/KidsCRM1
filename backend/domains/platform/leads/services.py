@@ -13,7 +13,7 @@ from domains.people.clients.models import ChildContact, ParentContact
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.users.models import User
 
-from .models import Lead, LeadStatusChange
+from .models import Lead, LeadKind, LeadStatusChange
 
 # Через сколько дней в статусе заявка «висит без движения» (TRU-94).
 # Новая заявка без звонка сутки — уже потеря; «Думает» — дать неделю;
@@ -72,6 +72,7 @@ def change_status(lead, *, to_status, actor, rejection_reason=None, comment="") 
         if (
             rejection_reason.organization_id != lead.organization_id
             or not rejection_reason.is_active
+            or rejection_reason.kind != lead.kind
         ):
             raise LeadTransitionError("Такой причины отказа нет.")
     elif rejection_reason is not None:
@@ -135,7 +136,7 @@ def find_phone_matches(organization, phone) -> dict:
         return {"phone": None, "leads": [], "parents": []}
     leads = (
         Lead.objects.for_tenant(organization)
-        .filter(phone=normalized)
+        .filter(phone=normalized, kind=LeadKind.NEW)
         .exclude(status=Lead.Status.PURCHASED)
         .order_by("-created_at")[:5]
     )
@@ -175,3 +176,68 @@ def find_phone_matches(organization, phone) -> dict:
             for parent in parents
         ],
     }
+
+
+class RenewalError(ValueError):
+    """Продление не создать — сообщение для пользователя."""
+
+
+@transaction.atomic
+def create_renewal_lead(child, *, actor=None, assigned_to=None, comment="") -> tuple[Lead, bool]:
+    """
+    Заявка-продление по клиенту (TRU-98). Точки вызова — экран «Продления»
+    (Bekzat, TRU-69) и автоправило «абонемент заканчивается» (TRU-108,
+    actor=None — система).
+
+    Идемпотентно: если по ребёнку уже есть открытое продление, возвращает
+    его, а не заводит второе — автоправило может сработать каждый день.
+    Возвращает (заявка, создана ли сейчас). Контакт — плательщик ребёнка
+    (иначе первый контакт с телефоном).
+    """
+    organization = child.organization
+    open_lead = (
+        Lead.objects.for_tenant(organization)
+        .filter(kind=LeadKind.RENEWAL, child=child)
+        .exclude(status__in=[Lead.Status.PURCHASED, Lead.Status.REJECTED])
+        .first()
+    )
+    if open_lead is not None:
+        return open_lead, False
+    links = (
+        ChildContact.objects.for_tenant(organization)
+        .filter(child=child, parent_contact__deleted_at__isnull=True)
+        .select_related("parent_contact")
+        .prefetch_related("parent_contact__phones")
+        .order_by("-is_payer", "created_at")
+    )
+    contact, phone = None, None
+    for link in links:
+        parent = link.parent_contact
+        numbers = [p.number for p in parent.phones.all()] + (
+            [parent.whatsapp] if parent.whatsapp else []
+        )
+        if numbers:
+            contact, phone = parent, numbers[0]
+            break
+    if contact is None:
+        raise RenewalError("У ребёнка нет контакта с телефоном — добавьте его в карточке ребёнка.")
+    branch = (
+        child.group_memberships.filter(left_at__isnull=True, group__deleted_at__isnull=True)
+        .values_list("group__branch", flat=True)
+        .first()
+    )
+    lead = create_lead(
+        organization=organization,
+        actor=actor,
+        kind=LeadKind.RENEWAL,
+        child=child,
+        parent_name=contact.full_name,
+        phone=phone,
+        child_name=child.full_name,
+        child_age=getattr(child, "age", None),
+        branch_id=branch,
+        assigned_to=assigned_to or actor,
+    )
+    if comment:
+        lead.comments.create(organization=organization, author=actor, text=comment)
+    return lead, True

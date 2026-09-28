@@ -10,13 +10,14 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from domains.people.clients.models import Child
 from domains.platform.core.active_branch import get_active_branch
 from domains.platform.core.audit import AuditLog
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_manage_lead_dictionaries, can_manage_leads
 from domains.platform.core.viewsets import TenantModelViewSet
 
-from .models import Lead, LeadComment, LeadRejectionReason, LeadSource
+from .models import Lead, LeadComment, LeadKind, LeadRejectionReason, LeadSource
 from .reporting import leads_workbook
 from .serializers import (
     LeadBulkSerializer,
@@ -29,8 +30,10 @@ from .serializers import (
 )
 from .services import (
     LeadTransitionError,
+    RenewalError,
     change_status,
     create_lead,
+    create_renewal_lead,
     find_phone_matches,
     visible_leads,
 )
@@ -74,6 +77,10 @@ CLOSED_DAYS = 30
 CLOSED_STATUSES = [Lead.Status.PURCHASED, Lead.Status.REJECTED]
 
 
+def _kind(params):
+    return LeadKind.RENEWAL if params.get("kind") == LeadKind.RENEWAL else LeadKind.NEW
+
+
 def _values(raw):
     return [value for value in (raw or "").split(",") if value]
 
@@ -112,6 +119,8 @@ class LeadViewSet(TenantModelViewSet):
         if self.action not in ("list", "board", "export"):
             return qs
         params = self.request.query_params
+        # Новые и продления — разные воронки (TRU-98), по умолчанию — новые.
+        qs = qs.filter(kind=_kind(params))
         branch = get_active_branch(self.request)
         if branch is not None:
             qs = qs.filter(branch=branch)
@@ -195,6 +204,31 @@ class LeadViewSet(TenantModelViewSet):
         )
         return response
 
+    @action(detail=False, methods=["post"])
+    def renewal(self, request, version=None):
+        """
+        Продление по клиенту (TRU-98): {child, comment?} — для кнопки на экране
+        «Продления» (TRU-69). Уже есть открытое продление — вернёт его (200),
+        иначе создаст (201).
+        """
+        child = (
+            Child.objects.for_tenant(request.user.organization)
+            .filter(pk__in=_uuids([str(request.data.get("child", ""))]))
+            .first()
+        )
+        if child is None:
+            return Response({"child": ["Ребёнок не найден."]}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            lead, created = create_renewal_lead(
+                child, actor=request.user, comment=request.data.get("comment", "")
+            )
+        except RenewalError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            LeadSerializer(lead, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
     @action(detail=False, methods=["get"], url_path="check-phone")
     def check_phone(self, request, version=None):
         """Дубли по телефону для формы новой заявки (TRU-97)."""
@@ -223,7 +257,8 @@ class LeadViewSet(TenantModelViewSet):
         if not params.get("created_from") and not params.get("created_to"):
             since = timezone.now() - timedelta(days=CLOSED_DAYS)
             qs = qs.exclude(status__in=CLOSED_STATUSES, status_changed_at__lt=since)
-        statuses = Lead.Status.values
+        kind = _kind(params)
+        statuses = Lead.statuses_for(kind)
         if (column := params.get("column")) in statuses:
             statuses = [column]
         counts = dict(
@@ -248,7 +283,9 @@ class LeadViewSet(TenantModelViewSet):
             )
         # Куда можно перетащить карточку из каждой колонки — доска подсвечивает
         # только допустимые (сервер всё равно проверит переход).
-        transitions = {status: sorted(targets) for status, targets in Lead.TRANSITIONS.items()}
+        transitions = {
+            status: sorted(targets) for status, targets in Lead.transitions_for(kind).items()
+        }
         return Response(
             {"columns": columns, "closed_days": CLOSED_DAYS, "transitions": transitions}
         )
@@ -322,6 +359,10 @@ class LeadDictionaryViewSet(TenantModelViewSet):
         qs = self.model.objects.for_tenant(self.request.user.organization).annotate(
             usage_count=self.usage
         )
+        if self.model is LeadRejectionReason:
+            # Причины новых и продлений — разные списки (TRU-98).
+            if (kind := self.request.query_params.get("kind")) in LeadKind.values:
+                qs = qs.filter(kind=kind)
         if self.request.query_params.get("active") in ("1", "true"):
             qs = qs.filter(is_active=True)
         return qs.order_by("-is_active", "-usage_count", "name")

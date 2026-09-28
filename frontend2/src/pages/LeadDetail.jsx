@@ -114,6 +114,7 @@ export default function LeadDetail() {
         title={leadTitle(lead)}
         description={
           <span className="inline-flex flex-wrap items-center gap-2">
+            {lead.kind === 'renewal' && <Badge tone="info">{t('Продление')}</Badge>}
             <Badge tone={meta.tone} dot>{meta.label}</Badge>
             <span className={cn(lead.is_stale && 'font-semibold text-warning-600')}>
               {lead.days_in_status === 0 ? t('в статусе с сегодня') : t('в статусе {n} дн.', { n: lead.days_in_status })}
@@ -147,10 +148,15 @@ export default function LeadDetail() {
           <Card>
             <p className="text-[15px] font-bold text-ink">{t('О заявке')}</p>
             <dl className="mt-2 divide-y divide-line text-sm">
-              <Row label={t('Ребёнок')}>{lead.child_name || '—'}{lead.child_age != null && <span className="text-ink-muted"> · {ageLabel(lead.child_age)}</span>}</Row>
+              <Row label={t('Ребёнок')}>
+                {lead.child
+                  ? <Link to={`/children/${lead.child}`} className="text-brand-600 hover:underline">{lead.renewal_child_name}</Link>
+                  : lead.child_name || '—'}
+                {lead.child_age != null && <span className="text-ink-muted"> · {ageLabel(lead.child_age)}</span>}
+              </Row>
               <Row label={t('Направление')}>{lead.direction_name || '—'}</Row>
               <Row label={t('Филиал')}>{lead.branch_name || '—'}</Row>
-              <Row label={t('Источник')}>{lead.source_name ? t(lead.source_name) : '—'}</Row>
+              {lead.kind !== 'renewal' && <Row label={t('Источник')}>{lead.source_name ? t(lead.source_name) : '—'}</Row>}
               <div className="flex items-center justify-between gap-3 py-2.5">
                 <dt className="text-ink-subtle">{t('Ответственный')}</dt>
                 <dd className="w-44">
@@ -231,7 +237,7 @@ function StatusCard({ lead, onChange }) {
       <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3">
         {/* Точки подключения других доменов: запись на пробное — Дарья
             (TRU-100), задачи — Bekzat. Пока модулей нет, кнопки неактивны. */}
-        <Button size="sm" variant="ghost" icon={CalendarPlus} disabled title={t('Появится вместе с записью на пробное из календаря')}>{t('Записать на пробное')}</Button>
+        {lead.kind !== 'renewal' && <Button size="sm" variant="ghost" icon={CalendarPlus} disabled title={t('Появится вместе с записью на пробное из календаря')}>{t('Записать на пробное')}</Button>}
         <Button size="sm" variant="ghost" icon={ListTodo} disabled title={t('Появится вместе с модулем задач')}>{t('Создать задачу')}</Button>
       </div>
     </Card>

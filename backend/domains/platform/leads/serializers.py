@@ -37,10 +37,19 @@ class LeadSerializer(serializers.ModelSerializer):
     is_stale = serializers.SerializerMethodField()
     allowed_transitions = serializers.SerializerMethodField()
 
+    kind_label = serializers.CharField(source="get_kind_display", read_only=True)
+    renewal_child_name = serializers.CharField(
+        source="child.full_name", read_only=True, default=None
+    )
+
     class Meta:
         model = Lead
         fields = [
             "id",
+            "kind",
+            "kind_label",
+            "child",
+            "renewal_child_name",
             "parent_name",
             "phone",
             "child_name",
@@ -69,7 +78,11 @@ class LeadSerializer(serializers.ModelSerializer):
         ]
         # Статус и отказ меняются только через /status/ — там проверка
         # переходов, обязательная причина и запись в историю.
+        # Вид и клиент — только при создании продления через сервис (TRU-98);
+        # в API создаются только новые заявки.
         read_only_fields = [
+            "kind",
+            "child",
             "status",
             "status_changed_at",
             "rejection_reason",
@@ -105,7 +118,7 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def get_allowed_transitions(self, lead) -> list[str]:
         """Куда можно перевести — карточка показывает только эти кнопки."""
-        return [status for status in Lead.Status.values if lead.can_move_to(status)]
+        return [status for status in Lead.statuses_for(lead.kind) if lead.can_move_to(status)]
 
     def get_is_stale(self, lead) -> bool:
         limit = STALE_AFTER_DAYS.get(lead.status)
@@ -178,7 +191,7 @@ class LeadCommentSerializer(serializers.ModelSerializer):
         read_only_fields = ["author", "created_at"]
 
 
-class LeadDictionarySerializer(serializers.ModelSerializer):
+class LeadDictionarySerializer(serializers.ModelSerializer):  # noqa: D101
     """Источник или причина отказа. usage_count — сколько раз выбрано:
     по нему частые значения стоят в списке сверху."""
 
@@ -208,6 +221,26 @@ class LeadSourceSerializer(LeadDictionarySerializer):
 class LeadRejectionReasonSerializer(LeadDictionarySerializer):
     class Meta(LeadDictionarySerializer.Meta):
         model = LeadRejectionReason
+        fields = [*LeadDictionarySerializer.Meta.fields, "kind"]
+
+    def validate(self, attrs):
+        # Дубль проверяем внутри своего вида: «Дорого» есть и у новых, и у продлений.
+        return attrs
+
+    def validate_name(self, value):
+        name = " ".join(value.split())
+        if not name:
+            raise serializers.ValidationError("Введите название.")
+        kind = self.initial_data.get("kind") or (self.instance.kind if self.instance else "new")
+        organization = self.context["request"].user.organization
+        duplicates = LeadRejectionReason.objects.for_tenant(organization).filter(
+            name__iexact=name, kind=kind
+        )
+        if self.instance is not None:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise serializers.ValidationError("Такое значение уже есть.")
+        return name
 
 
 class LeadBulkSerializer(serializers.Serializer):

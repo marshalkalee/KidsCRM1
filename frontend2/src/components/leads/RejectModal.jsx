@@ -8,7 +8,9 @@ import { leadTitle } from './format'
  * Перевод заявки в «Отказ» (TRU-94): причина из справочника обязательна,
  * комментарий — по желанию. «Отмена» — заявка остаётся где была.
  */
-export default function RejectModal({ lead, subject, onCancel, onConfirm }) {
+export default function RejectModal({ lead, subject, kind, onCancel, onConfirm }) {
+  // У продлений свои причины отказа (TRU-98).
+  const reasonKind = kind || lead?.kind || 'new'
   const [reasons, setReasons] = useState(null)
   const [reason, setReason] = useState('')
   const [comment, setComment] = useState('')
@@ -16,10 +18,10 @@ export default function RejectModal({ lead, subject, onCancel, onConfirm }) {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    api.get('leads/rejection-reasons/', { params: { active: 1 } })
+    api.get('leads/rejection-reasons/', { params: { active: 1, kind: reasonKind } })
       .then(res => setReasons(res.data))
       .catch(() => setReasons([]))
-  }, [])
+  }, [reasonKind])
 
   async function submit(e) {
     e.preventDefault()

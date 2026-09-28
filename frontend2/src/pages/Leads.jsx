@@ -9,7 +9,7 @@ import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/forma
 import { useSession } from '../session/SessionContext'
 import {
   Avatar, Button, DateInput, Dropdown, EmptyState, ErrorState, FilterBar, FilterPanel, FilterSelect, PageHeader, SearchInput,
-  Skeleton, ageLabel, apiErrorMessage, cn, plural, useFilterDraft, useToast,
+  Skeleton, Tabs, ageLabel, apiErrorMessage, cn, plural, useFilterDraft, useToast,
 } from '../ui'
 import { t } from '../i18n'
 
@@ -36,10 +36,12 @@ export default function Leads() {
   const [tableCount, setTableCount] = useState(null)
   // Вид — в адресе, как и фильтры: переключение не сбрасывает фильтры (TRU-95).
   const view = params.get('view') === 'table' ? 'table' : 'board'
+  // Новые заявки и продления — две воронки, не смешиваются (TRU-98).
+  const kind = params.get('kind') === 'renewal' ? 'renewal' : 'new'
 
   const query = useMemo(() => {
     const q = {}
-    for (const key of ['q', ...FILTER_KEYS]) if (params.get(key)) q[key] = params.get(key)
+    for (const key of ['q', 'kind', ...FILTER_KEYS]) if (params.get(key)) q[key] = params.get(key)
     return q
   }, [params])
   const queryKey = JSON.stringify(query)
@@ -135,9 +137,16 @@ export default function Leads() {
         actions={
           <>
             <ViewToggle view={view} onChange={next => update({ view: next === 'table' ? 'table' : '', page: '' })} />
-            <Button variant="primary" icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>
+            {kind === 'new' && <Button variant="primary" icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>}
           </>
         }
+      />
+
+      <Tabs
+        className="mb-4"
+        value={kind}
+        onChange={next => update({ kind: next === 'renewal' ? 'renewal' : '' })}
+        tabs={[{ key: 'new', label: t('Новые заявки') }, { key: 'renewal', label: t('Продления') }]}
       />
 
       <div className="mb-4 space-y-3">
@@ -170,7 +179,11 @@ export default function Leads() {
           {activeFilters || params.get('q') ? (
             <EmptyState icon={Search} title={t('Ничего не нашли')} description={t('Попробуйте изменить поиск или сбросить фильтры.')} action={<Button size="sm" onClick={resetFilters}>{t('Сбросить фильтры')}</Button>} />
           ) : (
-            <EmptyState icon={Inbox} title={t('Заявок пока нет')} description={t('Заявки из Instagram, WhatsApp и звонков появятся здесь — по колонкам воронки.')} action={<Button variant="primary" icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>} />
+            kind === 'renewal' ? (
+              <EmptyState icon={Inbox} title={t('Продлений пока нет')} description={t('Продления появятся здесь, когда их создадут с экрана «Продления» или автоматически — когда абонемент заканчивается.')} />
+            ) : (
+              <EmptyState icon={Inbox} title={t('Заявок пока нет')} description={t('Заявки из Instagram, WhatsApp и звонков появятся здесь — по колонкам воронки.')} action={<Button variant="primary" icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>} />
+            )
           )}
         </div>
       ) : (

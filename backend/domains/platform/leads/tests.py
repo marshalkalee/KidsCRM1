@@ -31,7 +31,9 @@ class LeadFixtures(TestCase):
         self.direction = Direction.objects.create(organization=self.org, name="Балет")
         # Значения по умолчанию заводятся сигналом при создании организации (TRU-93).
         self.instagram = LeadSource.objects.get(organization=self.org, name="Instagram")
-        self.expensive = LeadRejectionReason.objects.get(organization=self.org, name="Дорого")
+        self.expensive = LeadRejectionReason.objects.get(
+            organization=self.org, name="Дорого", kind="new"
+        )
         self.owner = self.make_user("77010000001", User.Role.OWNER)
         self.admin = self.make_user("77010000002", User.Role.ADMIN)
         self.client_owner = make_client(self.owner)
@@ -429,7 +431,11 @@ class LeadDictionaryDefaultsTests(TestCase):
             sorted(DEFAULT_SOURCES),
         )
         self.assertEqual(
-            sorted(LeadRejectionReason.objects.for_tenant(org).values_list("name", flat=True)),
+            sorted(
+                LeadRejectionReason.objects.for_tenant(org)
+                .filter(kind="new")
+                .values_list("name", flat=True)
+            ),
             sorted(DEFAULT_REJECTION_REASONS),
         )
 
@@ -870,3 +876,196 @@ class LeadTableTests(LeadFixtures):
     def test_export_requires_permission(self):
         teacher = self.make_user("77100000002", User.Role.TEACHER)
         self.assertEqual(make_client(teacher).get(f"{URL}export/").status_code, 403)
+
+
+class RenewalLeadTests(LeadFixtures):
+    def setUp(self):
+        super().setUp()
+        from domains.people.clients.models import Child, ChildContact, ContactPhone, ParentContact
+
+        self.child = Child.objects.create(
+            organization=self.org,
+            full_name="Алия Сейтова",
+            birth_date="2019-03-14",
+            gender="female",
+        )
+        grandma = ParentContact.objects.create(organization=self.org, full_name="Бабушка")
+        ContactPhone.objects.create(
+            organization=self.org, parent_contact=grandma, number="+77010000077"
+        )
+        ChildContact.objects.create(
+            organization=self.org, child=self.child, parent_contact=grandma, role="grandmother"
+        )
+        self.mother = ParentContact.objects.create(
+            organization=self.org, full_name="Айгерим Сейтова"
+        )
+        ContactPhone.objects.create(
+            organization=self.org, parent_contact=self.mother, number="+77071234567"
+        )
+        ChildContact.objects.create(
+            organization=self.org,
+            child=self.child,
+            parent_contact=self.mother,
+            role="mother",
+            is_payer=True,
+        )
+        self.renewal_reason = LeadRejectionReason.objects.get(
+            organization=self.org, name="Переезд", kind="renewal"
+        )
+
+    def create(self, **payload):
+        return self.client_owner.post(
+            f"{URL}renewal/", {"child": str(self.child.id), **payload}, format="json"
+        )
+
+    def test_created_from_payer_and_idempotent(self):
+        response = self.create(comment="Абонемент заканчивается")
+        self.assertEqual(response.status_code, 201, response.data)
+        data = response.data
+        self.assertEqual(
+            (data["kind"], data["child"], data["renewal_child_name"]),
+            ("renewal", self.child.id, "Алия Сейтова"),
+        )
+        self.assertEqual((data["parent_name"], data["phone"]), ("Айгерим Сейтова", "+77071234567"))
+        self.assertEqual(
+            data["allowed_transitions"], ["contacted", "thinking", "purchased", "rejected"]
+        )
+        again = self.create()
+        self.assertEqual((again.status_code, again.data["id"]), (200, data["id"]))
+        self.assertEqual(Lead.objects.filter(kind="renewal").count(), 1)
+
+    def test_new_renewal_after_previous_closed(self):
+        from .services import create_renewal_lead
+
+        lead, _ = create_renewal_lead(self.child, actor=None)
+        change_status(lead, to_status=Lead.Status.PURCHASED, actor=None)
+        second, created = create_renewal_lead(self.child, actor=None)
+        self.assertTrue(created)
+        self.assertNotEqual(second.id, lead.id)
+        # actor=None — система (автоправило): в истории без автора.
+        self.assertIsNone(second.status_changes.get().changed_by)
+
+    def test_child_without_phone(self):
+        from domains.people.clients.models import Child
+
+        lonely = Child.objects.create(
+            organization=self.org, full_name="Без контактов", birth_date="2018-01-01", gender="male"
+        )
+        response = self.client_owner.post(
+            f"{URL}renewal/", {"child": str(lonely.id)}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("нет контакта", response.data["detail"])
+
+    def test_unknown_or_foreign_child(self):
+        self.assertEqual(
+            self.client_owner.post(f"{URL}renewal/", {"child": "x"}, format="json").status_code, 400
+        )
+        org_b = Organization.objects.create(name="Чужой", slug="b4")
+        client_b = make_client(self.make_user("77110000001", User.Role.OWNER, organization=org_b))
+        self.assertEqual(
+            client_b.post(
+                f"{URL}renewal/", {"child": str(self.child.id)}, format="json"
+            ).status_code,
+            400,
+        )
+
+    def test_separate_funnel(self):
+        new = self.make_lead()
+        renewal = self.create().data
+        self.assertEqual(
+            [r["id"] for r in self.client_owner.get(URL).data["results"]], [str(new.id)]
+        )
+        self.assertEqual(
+            [r["id"] for r in self.client_owner.get(URL, {"kind": "renewal"}).data["results"]],
+            [renewal["id"]],
+        )
+        board = self.client_owner.get(f"{URL}board/", {"kind": "renewal"}).data
+        self.assertEqual(
+            [c["status"] for c in board["columns"]],
+            ["new", "contacted", "thinking", "purchased", "rejected"],
+        )
+        self.assertEqual(sum(c["count"] for c in board["columns"]), 1)
+        self.assertNotIn("trial_scheduled", board["transitions"]["new"])
+        new_board = self.client_owner.get(f"{URL}board/").data
+        self.assertEqual(sum(c["count"] for c in new_board["columns"]), 1)
+
+    def test_no_trial_statuses(self):
+        lead_id = self.create().data["id"]
+        response = self.client_owner.post(
+            f"{URL}{lead_id}/status/", {"status": "trial_scheduled"}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_rejection_needs_renewal_reason(self):
+        lead_id = self.create().data["id"]
+        wrong = self.client_owner.post(
+            f"{URL}{lead_id}/status/",
+            {"status": "rejected", "rejection_reason": str(self.expensive.id)},
+            format="json",
+        )
+        self.assertEqual(wrong.status_code, 400)
+        right = self.client_owner.post(
+            f"{URL}{lead_id}/status/",
+            {"status": "rejected", "rejection_reason": str(self.renewal_reason.id)},
+            format="json",
+        )
+        self.assertEqual(right.status_code, 200, right.data)
+        # И наоборот: у новой заявки причина продления не подходит.
+        new = self.make_lead()
+        self.assertEqual(
+            self.move(new, "rejected", rejection_reason=str(self.renewal_reason.id)).status_code,
+            400,
+        )
+
+    def test_reason_lists_by_kind(self):
+        names = [
+            r["name"]
+            for r in self.client_owner.get(f"{URL}rejection-reasons/", {"kind": "renewal"}).data
+        ]
+        self.assertEqual(
+            sorted(names),
+            sorted(["Дорого", "Ушли из центра", "Сменили направление", "Переезд", "Другое"]),
+        )
+        self.assertNotIn(
+            "Переезд",
+            [
+                r["name"]
+                for r in self.client_owner.get(f"{URL}rejection-reasons/", {"kind": "new"}).data
+            ],
+        )
+        # «Дорого» есть в обоих списках — дубль проверяется внутри вида.
+        response = self.client_owner.post(
+            f"{URL}rejection-reasons/", {"name": "Болеет", "kind": "renewal"}, format="json"
+        )
+        self.assertEqual((response.status_code, response.data["kind"]), (201, "renewal"))
+        dup = self.client_owner.post(
+            f"{URL}rejection-reasons/", {"name": "переезд", "kind": "renewal"}, format="json"
+        )
+        self.assertEqual(dup.status_code, 400)
+
+    def test_conversion_data_does_not_mix(self):
+        # Сырьё для отчётов M3: история статусов разделяется по виду заявки.
+        new = self.make_lead()
+        change_status(new, to_status=Lead.Status.CONTACTED, actor=self.owner)
+        renewal_id = self.create().data["id"]
+        self.client_owner.post(f"{URL}{renewal_id}/status/", {"status": "purchased"}, format="json")
+        new_purchases = LeadStatusChange.objects.filter(
+            lead__kind="new", to_status="purchased"
+        ).count()
+        renewal_purchases = LeadStatusChange.objects.filter(
+            lead__kind="renewal", to_status="purchased"
+        ).count()
+        self.assertEqual((new_purchases, renewal_purchases), (0, 1))
+
+    def test_check_phone_ignores_renewals(self):
+        self.create()
+        self.assertEqual(
+            self.client_owner.get(f"{URL}check-phone/", {"phone": "+77071234567"}).data["leads"], []
+        )
+
+    def test_kind_not_writable_through_api(self):
+        response = self.client_owner.post(
+            URL, {"parent_name": "А", "phone": "+77070000001", "kind": "renewal"}, format="json"
+        )
+        self.assertEqual(response.data["kind"], "new")

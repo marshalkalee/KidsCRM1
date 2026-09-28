@@ -19,12 +19,27 @@ const DICTIONARIES = {
   },
   reasons: {
     url: 'leads/rejection-reasons/',
+    params: { kind: 'new' },
+    create: { kind: 'new' },
     get tab() { return t('Причины отказа') },
     get hint() { return t('Обязательны при переводе заявки в «Отказ» — по ним строится отчёт, почему уходят клиенты.') },
     get added() { return t('Причина добавлена') },
     get newTitle() { return t('Новая причина отказа') },
     get editTitle() { return t('Переименовать причину') },
     get placeholder() { return t('Например, переезжают') },
+    usage: n => `${n} ${plural(n, ['отказ', 'отказа', 'отказов'])}`,
+  },
+  // Отказ от продления (TRU-98) — клиент уже свой, свой список причин.
+  renewalReasons: {
+    url: 'leads/rejection-reasons/',
+    params: { kind: 'renewal' },
+    create: { kind: 'renewal' },
+    get tab() { return t('Отказ от продления') },
+    get hint() { return t('Почему клиент не продлил абонемент — отдельно от причин отказа новых заявок, чтобы не путать отчёты.') },
+    get added() { return t('Причина добавлена') },
+    get newTitle() { return t('Новая причина отказа от продления') },
+    get editTitle() { return t('Переименовать причину') },
+    get placeholder() { return t('Например, болеет') },
     usage: n => `${n} ${plural(n, ['отказ', 'отказа', 'отказов'])}`,
   },
 }
@@ -34,15 +49,16 @@ const DICTIONARIES = {
 export default function LeadDictionaries() {
   const toast = useToast()
   const [kind, setKind] = useState('sources')
-  const [data, setData] = useState({ sources: null, reasons: null })
+  const [data, setData] = useState({ sources: null, reasons: null, renewalReasons: null })
   const [error, setError] = useState(false)
   const [editing, setEditing] = useState(null)
   const dict = DICTIONARIES[kind]
 
   const load = useCallback(() => {
-    Promise.all([api.get(DICTIONARIES.sources.url), api.get(DICTIONARIES.reasons.url)])
-      .then(([sources, reasons]) => {
-        setData({ sources: sources.data, reasons: reasons.data })
+    const keys = Object.keys(DICTIONARIES)
+    Promise.all(keys.map(key => api.get(DICTIONARIES[key].url, { params: DICTIONARIES[key].params })))
+      .then(responses => {
+        setData(Object.fromEntries(keys.map((key, i) => [key, responses[i].data])))
         setError(false)
       })
       .catch(() => setError(true))
@@ -127,7 +143,7 @@ function DictionaryItemModal({ dict, item, onClose, onSaved }) {
     setError(null)
     try {
       if (item) await api.patch(`${dict.url}${item.id}/`, { name })
-      else await api.post(dict.url, { name })
+      else await api.post(dict.url, { name, ...dict.create })
       toast.success(item ? t('Сохранено') : dict.added)
       onSaved()
     } catch (err) {

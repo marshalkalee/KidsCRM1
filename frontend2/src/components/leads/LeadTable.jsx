@@ -165,6 +165,7 @@ export default function LeadTable({ query, params, update, reloadKey, staff, onC
 
       {rejecting && (
         <RejectModal
+          kind={query.kind || 'new'}
           subject={`${selected.size} ${plural(selected.size, ['заявка', 'заявки', 'заявок'])}`}
           onCancel={() => setRejecting(false)}
           onConfirm={async extra => { setRejecting(false); await bulk({ action: 'status', status: 'rejected', ...extra }) }}
