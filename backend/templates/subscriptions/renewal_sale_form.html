@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block page_title %}
+  <span data-i18n="renewals.sale_title">Продать продление</span>
+{% endblock page_title %}
+{% block content %}
+  <form method="post">
+    {% csrf_token %}
+    {% include "subscriptions/_renewal_sale_fields.html" %}
+  </form>
+{% endblock content %}
