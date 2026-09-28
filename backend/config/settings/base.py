@@ -59,6 +59,7 @@ DOMAIN_APPS = [
     "domains.platform.notifications",
     "domains.platform.tasks",
     "domains.platform.leads",
+    "domains.platform.ai",
     "domains.scheduling.schedule_templates",
 ]
 
@@ -240,3 +241,8 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=0, minute=5),  # сразу после полуночи — "утром уже истёк"
     },
 }
+
+# ИИ-помощник (эксперимент): без ключа функции выключены, экраны их не показывают.
+# Ключ — только из окружения, в коде и репозитории его нет.
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+AI_MODEL = env("AI_MODEL", default="claude-opus-5")
