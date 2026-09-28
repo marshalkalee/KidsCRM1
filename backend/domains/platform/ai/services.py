@@ -140,6 +140,8 @@ def _ask_openai(*, system, user, schema, max_tokens, image=None) -> str:
         response = _openai_client().chat.completions.create(
             model=settings.OPENAI_MODEL,
             max_completion_tokens=max_tokens,
+            # Разбор и фильтры должны быть предсказуемыми: одна фраза — один ответ.
+            temperature=0,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": _openai_content(user, image)},
@@ -329,6 +331,8 @@ SEARCH_SYSTEM = """Ты переводишь запрос сотрудника �
 - leads — заявки. Фильтры: branch, direction, lead_source, lead_kind (new — новые продажи, renewal — продления), only_mine (мои заявки), created_from/created_to (дата создания ГГГГ-ММ-ДД), text (имя или телефон).
 Правила:
 - Выбирай значения только из переданных списков. Не подходит ничего — пустая строка или false.
+- «Должники», «долг» — has_debt. Долг «давно», «больше недели», «старше N дней», «просрочен» — ещё и debt_overdue.
+- «Без абонемента», «не оплатили абонемент» — no_subscription; «абонемент заканчивается», «продлить» — expiring.
 - Даты считай от сегодняшней: «за сентябрь», «за неделю», «вчера». Не про даты — пустые строки.
 - text — только если в запросе есть конкретное имя или телефон.
 - explanation — одна короткая фраза по-русски, что ты отфильтровал (например «Дети с просроченным долгом, филиал Орбита»)."""
@@ -469,11 +473,72 @@ def search_to_filters(user, query: str) -> dict:
 
 # --- Посещаемость по фото -------------------------------------------------
 
-PHOTO_SYSTEM = """Ты помогаешь преподавателю детского центра отметить посещаемость по фото бумажного журнала, доски или листа.
-Тебе дают пронумерованный список детей занятия и фото.
-Для каждого ребёнка из списка определи по фото: present (был — отметка, галочка, «+», «б», «был»), absent (не был — «н», «нб», «-», пропуск, крестик в колонке отсутствия) или unknown (ребёнка на фото нет или отметку не разобрать).
-Имена на фото могут быть сокращены, с опечатками, на казахском или латиницей — сопоставляй по смыслу. Если сомневаешься — unknown, не угадывай.
-Если на фото несколько дат — бери колонку за дату занятия. note — коротко по-русски, если что-то неясно, иначе пусто."""
+# Модель только переписывает таблицу с фото как есть. Какую колонку взять
+# (по дате занятия), кто есть кто (фамилии → дети группы) и что значит значок —
+# решает код ниже: так точнее и не зависит от того, насколько модель
+# «догадливая» (проверено: переписать таблицу модели удаётся заметно лучше,
+# чем сразу выставить отметки).
+PHOTO_SYSTEM = """Перепиши таблицу посещаемости с фото бумажного журнала, доски или листа — ровно как написано, ничего не исправляя и не додумывая.
+- dates — заголовки колонок с отметками слева направо, как написаны (например «14.10», «16.10», «пн»). Если колонка одна и без заголовка — [""].
+- rows — строки с детьми сверху вниз: name — как написано в строке (фамилия, имя, сокращения); marks — значок в каждой колонке из dates, по порядку: «+», «н», «нб», «б», «✓», «-» или то, что написано. Пустая клетка — "". Длина marks = длина dates.
+- Строки, где нет имени ребёнка (заголовки, итоги), пропусти.
+note — коротко по-русски, если фото нечитаемо местами, иначе пусто."""
+
+PRESENT_MARKS = {"+", "б", "был", "была", "✓", "v", "1", "да", "п"}
+ABSENT_MARKS = {"н", "нб", "н/б", "-", "–", "—", "0", "x", "х", "✗", "нет", "б/п", "бол", "болеет"}
+
+
+def _norm(text: str) -> str:
+    return " ".join(str(text or "").lower().replace("ё", "е").replace(".", " ").split())
+
+
+def _mark_status(mark: str) -> str:
+    mark = _norm(mark).replace(" ", "")
+    if mark in PRESENT_MARKS:
+        return "present"
+    if mark in ABSENT_MARKS:
+        return "absent"
+    return "unknown"
+
+
+def _date_column(dates: list[str], lesson_date) -> int | None:
+    """Колонка за дату занятия: «16.10», «16/10», «16» — сравниваем день и
+    месяц; одна колонка — она и есть; не нашли — None (всё «не разобрано»)."""
+    import re
+
+    if len(dates) == 1:
+        return 0
+    for index, header in enumerate(dates):
+        numbers = [int(n) for n in re.findall(r"\d+", header or "")]
+        if numbers[:2] == [lesson_date.day, lesson_date.month] or numbers == [lesson_date.day]:
+            return index
+    return None
+
+
+def _match_children(participants, rows):
+    """Строка журнала → ребёнок группы. Фамилия должна совпасть; однофамильцев
+    различаем по имени или первой букве имени. Сомнительно — не сопоставляем."""
+
+    def first_name_fits(first_name, tokens):
+        # «Санжар» целиком или первая буква («С.» после _norm — «с»).
+        return any(t == first_name or (len(t) == 1 and first_name.startswith(t)) for t in tokens)
+
+    people = [(child, _norm(child.full_name).split()) for child in participants]
+    matched = {}
+    for row_index, row in enumerate(rows):
+        tokens = _norm(row.get("name")).split()
+        candidates = [(child, parts) for child, parts in people if parts and parts[0] in tokens]
+        if len(candidates) > 1:  # однофамильцы — различаем по имени
+            candidates = [
+                (child, parts)
+                for child, parts in candidates
+                if len(parts) > 1
+                and first_name_fits(parts[1], [t for t in tokens if t != parts[0]])
+            ]
+        if len(candidates) == 1 and candidates[0][0].id not in matched:
+            matched[candidates[0][0].id] = row_index
+    return matched
+
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -493,51 +558,54 @@ def attendance_from_photo(lesson, participants, uploaded) -> dict:
     if not participants:
         raise AIError("На занятии нет детей.")
     image = (uploaded.content_type, base64.b64encode(uploaded.read()).decode())
-    roster = "\n".join(
-        f"{index}. {child.full_name}" for index, child in enumerate(participants, start=1)
-    )
-    local_start = timezone.localtime(lesson.starts_at)
     data = _ask_json(
         system=PHOTO_SYSTEM,
-        user=f"Дата занятия: {local_start:%d.%m.%Y}.\nДети:\n{roster}",
+        user="Перепиши таблицу с фото.",
         schema={
             "type": "object",
             "properties": {
-                "marks": {
+                "dates": {"type": "array", "items": {"type": "string"}},
+                "rows": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "number": {"type": "integer"},
-                            "status": {"type": "string", "enum": ["present", "absent", "unknown"]},
+                            "name": {"type": "string"},
+                            "marks": {"type": "array", "items": {"type": "string"}},
                         },
-                        "required": ["number", "status"],
+                        "required": ["name", "marks"],
                         "additionalProperties": False,
                     },
                 },
                 "note": {"type": "string"},
             },
-            "required": ["marks", "note"],
+            "required": ["dates", "rows", "note"],
             "additionalProperties": False,
         },
-        max_tokens=3000,
+        max_tokens=4000,
         image=image,
     )
-    statuses = {
-        mark.get("number"): mark.get("status")
-        for mark in data.get("marks") or []
-        if mark.get("status") in ("present", "absent", "unknown")
-    }
+    rows = data.get("rows") or []
+    lesson_date = timezone.localtime(lesson.starts_at).date()
+    column = _date_column(data.get("dates") or [], lesson_date)
+    notes = [(data.get("note") or "").strip()]
+    if column is None:
+        notes.append(f"На фото не нашлась колонка за {lesson_date:%d.%m} — отметьте вручную.")
+    matched = _match_children(participants, rows) if column is not None else {}
+
+    def status_for(child):
+        row_index = matched.get(child.id)
+        if row_index is None:
+            return "unknown"
+        marks = rows[row_index].get("marks") or []
+        return _mark_status(marks[column]) if column < len(marks) else "unknown"
+
     return {
         "marks": [
-            {
-                "child": str(child.id),
-                "full_name": child.full_name,
-                "status": statuses.get(index, "unknown"),
-            }
-            for index, child in enumerate(participants, start=1)
+            {"child": str(child.id), "full_name": child.full_name, "status": status_for(child)}
+            for child in participants
         ],
-        "note": (data.get("note") or "").strip(),
+        "note": " ".join(n for n in notes if n),
     }
 
 

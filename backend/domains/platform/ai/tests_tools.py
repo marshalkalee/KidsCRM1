@@ -144,23 +144,60 @@ class AttendancePhotoTests(AIFixtures):
             "/api/v1/ai/attendance-photo/", {"lesson": str(self.lesson.id), "image": image}
         )
 
-    def test_marks_mapped_by_roster_order(self):
-        # Список уходит в модель по алфавиту: 1 Абаева, 2 Бекова, 3 Ким.
-        answer = {
-            "marks": [{"number": 1, "status": "present"}, {"number": 2, "status": "absent"}],
-            "note": "",
-        }
-        patch, create = patched_client(fake_response(answer))
+    def transcribed(self, dates, rows):
+        return fake_response(
+            {"dates": dates, "rows": [{"name": n, "marks": m} for n, m in rows], "note": ""}
+        )
+
+    def test_marks_from_lesson_date_column(self):
+        # Модель только переписала таблицу: колонка за другую дату — обманка,
+        # фамилии в другом порядке и с сокращениями.
+        today = timezone.localtime(self.lesson.starts_at).strftime("%d.%m")
+        answer = self.transcribed(
+            ["01.01", today],
+            [("Ким Е.", ["н", "+"]), ("Бекова Алия", ["+", "нб"]), ("Абаева", ["+", "?"])],
+        )
+        patch, create = patched_client(answer)
         with patch:
             response = self.upload(self.teacher_client)
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(
             [(m["full_name"], m["status"]) for m in response.data["marks"]],
-            [("Абаева Дана", "present"), ("Бекова Алия", "absent"), ("Ким Ева", "unknown")],
+            [("Абаева Дана", "unknown"), ("Бекова Алия", "absent"), ("Ким Ева", "present")],
         )
         content = create.call_args.kwargs["messages"][0]["content"]
         self.assertEqual(content[0]["type"], "image")
-        self.assertIn("1. Абаева Дана", content[1]["text"])
+
+    def test_homonyms_by_first_name(self):
+        from domains.people.clients.models import Child as ChildModel
+
+        twin = ChildModel.objects.create(
+            organization=self.org,
+            full_name="Ким Лея",
+            birth_date=datetime.date(2019, 1, 1),
+            gender="female",
+        )
+        GroupMembership.objects.create(
+            organization=self.org,
+            group=self.lesson.group,
+            child=twin,
+            joined_at=datetime.date.today(),
+        )
+        answer = self.transcribed([""], [("Ким Л.", ["+"]), ("Ким Ева", ["н"]), ("Ким", ["+"])])
+        patch, _ = patched_client(answer)
+        with patch:
+            marks = {
+                m["full_name"]: m["status"] for m in self.upload(self.teacher_client).data["marks"]
+            }
+        self.assertEqual((marks["Ким Лея"], marks["Ким Ева"]), ("present", "absent"))
+
+    def test_no_column_for_lesson_date(self):
+        answer = self.transcribed(["01.01", "02.01"], [("Ким Ева", ["+", "+"])])
+        patch, _ = patched_client(answer)
+        with patch:
+            data = self.upload(self.teacher_client).data
+        self.assertTrue(all(m["status"] == "unknown" for m in data["marks"]))
+        self.assertIn("не нашлась колонка", data["note"])
 
     def test_other_teacher_forbidden(self):
         _, other = as_user(User.Role.TEACHER, self.org, "77010000042")
