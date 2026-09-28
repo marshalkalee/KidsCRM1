@@ -4,6 +4,8 @@ from .models import Payment
 
 
 class PaymentSerializer(serializers.ModelSerializer):
+    received_by_name = serializers.CharField(source="received_by.full_name", read_only=True)
+
     class Meta:
         model = Payment
         fields = [
@@ -16,6 +18,7 @@ class PaymentSerializer(serializers.ModelSerializer):
             "status",
             "confirmed_at",
             "received_by",
+            "received_by_name",
             "comment",
             "paid_at",
             "cancelled_reason",
@@ -28,6 +31,7 @@ class PaymentSerializer(serializers.ModelSerializer):
             "status",
             "confirmed_at",
             "received_by",
+            "received_by_name",
             "paid_at",
             "cancelled_reason",
             "deleted_at",
