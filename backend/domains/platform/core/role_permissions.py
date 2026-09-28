@@ -85,6 +85,14 @@ CHILD_MANAGE_ROLES = {
     User.Role.ADMIN,
 }
 
+# Заявки воронки продаж (TRU-99) — их разбирают администраторы и
+# управляющие; преподавателю и бухгалтеру воронка в работе не нужна.
+LEAD_MANAGE_ROLES = {
+    User.Role.OWNER,
+    User.Role.MANAGER,
+    User.Role.ADMIN,
+}
+
 
 def can_view_financials(user) -> bool:
     return user.role in FINANCE_ROLES
@@ -134,6 +142,10 @@ def can_manage_children(user) -> bool:
     return user.role in CHILD_MANAGE_ROLES
 
 
+def can_manage_leads(user) -> bool:
+    return user.role in LEAD_MANAGE_ROLES
+
+
 def get_user_permissions(user) -> dict:
     return {
         "can_view_financials": can_view_financials(user),
@@ -148,4 +160,5 @@ def get_user_permissions(user) -> dict:
         "can_manage_groups": can_manage_groups(user),
         "can_view_client_money": can_view_client_money(user),
         "can_manage_children": can_manage_children(user),
+        "can_manage_leads": can_manage_leads(user),
     }
