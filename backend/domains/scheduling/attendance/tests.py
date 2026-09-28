@@ -367,6 +367,159 @@ class AttendanceMarkApiTest(APITestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["child"], self.child.id)
 
+    def test_reset_removes_mark_and_returns_consumed_session(self):
+        client = _authenticated_client(self.owner)
+        client.post(
+            "/api/v1/attendance/mark/",
+            {"lesson": str(self.lesson.id), "child": str(self.child.id), "status": "present"},
+        )
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.sessions_remaining_cache, 7)
+
+        response = client.post(
+            "/api/v1/attendance/reset/",
+            {"lesson": str(self.lesson.id), "child": str(self.child.id)},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["reset"])
+        self.assertFalse(Attendance.objects.filter(lesson=self.lesson, child=self.child).exists())
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.sessions_remaining_cache, 8)
+        log = AuditLog.objects.filter(action=AuditLog.Action.MARK_ATTENDANCE).latest("created_at")
+        self.assertTrue(log.after["reset"])
+        self.assertIsNone(log.after["status"])
+
+    def test_reset_is_idempotent_when_child_is_already_unmarked(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/attendance/reset/",
+            {"lesson": str(self.lesson.id), "child": str(self.child.id)},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["reset"])
+
+
+class AttendanceHistoryApiTest(AttendanceFixtureMixin, APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = _authenticated_client(self.owner)
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+
+        self.lesson.starts_at = datetime.datetime(2026, 9, 5, 12, 0, tzinfo=tz)
+        self.lesson.ends_at = datetime.datetime(2026, 9, 5, 13, 0, tzinfo=tz)
+        self.lesson.save(update_fields=["starts_at", "ends_at", "updated_at"])
+        self.present = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.PRESENT,
+            consumed_from_subscription=True,
+            subscription_id="11111111-1111-1111-1111-111111111111",
+            consume_outcome=ConsumeOutcome.CONSUMED.value,
+            marked_by=self.owner,
+            marked_at=timezone.now(),
+        )
+
+        self.absent_lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            starts_at=datetime.datetime(2026, 9, 15, 18, 30, tzinfo=tz),
+            ends_at=datetime.datetime(2026, 9, 15, 19, 30, tzinfo=tz),
+        )
+        self.absent = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.absent_lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+            absence_reason=Attendance.AbsenceReason.ILLNESS,
+            is_retroactive_edit=True,
+            marked_by=self.owner,
+            marked_at=timezone.now(),
+        )
+
+        self.makeup_lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            starts_at=datetime.datetime(2026, 9, 30, 23, 30, tzinfo=tz),
+            ends_at=datetime.datetime(2026, 10, 1, 0, 30, tzinfo=tz),
+        )
+        self.makeup = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.makeup_lesson,
+            child=self.child,
+            status=Attendance.Status.MAKEUP,
+            consume_outcome="makeup_no_charge",
+            marked_by=self.owner,
+            marked_at=timezone.now(),
+        )
+
+    def test_history_returns_details_consumption_and_summary(self):
+        response = self.client.get(
+            "/api/v1/attendance/history/",
+            {"child": str(self.child.id), "date_from": "2026-09-01", "date_to": "2026-09-30"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["summary"], {"present": 1, "absent": 1, "makeup": 1})
+        self.assertEqual(response.data["count"], 3)
+        self.assertEqual(response.data["results"][0]["id"], str(self.makeup.id))
+        row = next(item for item in response.data["results"] if item["id"] == str(self.present.id))
+        self.assertEqual(row["lesson_name"], self.direction.name)
+        self.assertEqual(row["group_name"], self.group.name)
+        self.assertTrue(row["consumed_from_subscription"])
+        self.assertEqual(row["consumption_display"], "Списано с абонемента")
+
+        absent = next(
+            item for item in response.data["results"] if item["id"] == str(self.absent.id)
+        )
+        self.assertEqual(absent["absence_reason_display"], "Болезнь")
+        self.assertTrue(absent["is_retroactive_edit"])
+
+    def test_history_period_uses_organization_local_date(self):
+        response = self.client.get(
+            "/api/v1/attendance/history/",
+            {"child": str(self.child.id), "date_from": "2026-09-30", "date_to": "2026-09-30"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], str(self.makeup.id))
+
+    def test_history_filters_arbitrary_period_and_recalculates_summary(self):
+        response = self.client.get(
+            "/api/v1/attendance/history/",
+            {"child": str(self.child.id), "date_from": "2026-09-10", "date_to": "2026-09-20"},
+        )
+
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["summary"], {"present": 0, "absent": 1, "makeup": 0})
+
+    def test_history_rejects_inverted_period(self):
+        response = self.client.get(
+            "/api/v1/attendance/history/",
+            {"child": str(self.child.id), "date_from": "2026-09-20", "date_to": "2026-09-10"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_to", response.data)
+
+    def test_history_does_not_expose_another_organization_child(self):
+        other_org = Organization.objects.create(name="Другая", slug="other-history")
+        other_child = Child.objects.create(
+            organization=other_org,
+            full_name="Чужой ребёнок",
+            birth_date=datetime.date(2019, 1, 1),
+            gender=Child.Gender.FEMALE,
+        )
+
+        response = self.client.get("/api/v1/attendance/history/", {"child": str(other_child.id)})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("child", response.data)
+
 
 class AttendanceRosterAndBulkApiTest(APITestCase):
     """TRU-56: список детей занятия для экрана отметки + «отметить всех
@@ -459,6 +612,12 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
         self.assertEqual(response.data["marked_count"], 0)
         statuses = {row["status"] for row in response.data["results"]}
         self.assertEqual(statuses, {None})
+        first_row = response.data["results"][0]
+        self.assertEqual(first_row["child_age"], self.children[0].age)
+        self.assertEqual(first_row["child_gender"], Child.Gender.FEMALE)
+        self.assertEqual(first_row["child_status"], Child.Status.ACTIVE)
+        self.assertEqual(first_row["child_photo_url"], "")
+        self.assertEqual(first_row["child_birth_date"], self.children[0].birth_date.isoformat())
 
     def test_roster_reflects_already_marked_attendance_on_reopen(self):
         client = _authenticated_client(self.owner)
@@ -523,6 +682,20 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
 
         self.assertEqual(response.data["marked_count"], 0)
         self.assertEqual(Attendance.objects.filter(lesson=self.lesson).count(), 3)
+
+    def test_reset_all_clears_roster_and_returns_consumption(self):
+        client = _authenticated_client(self.owner)
+        client.post("/api/v1/attendance/mark-all-present/", {"lesson": str(self.lesson.id)})
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.sessions_remaining_cache, 7)
+
+        response = client.post("/api/v1/attendance/reset-all/", {"lesson": str(self.lesson.id)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["reset_count"], 3)
+        self.assertFalse(Attendance.objects.filter(lesson=self.lesson).exists())
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.sessions_remaining_cache, 8)
 
     def test_teacher_can_access_own_lesson(self):
         client = _authenticated_client(self.teacher)

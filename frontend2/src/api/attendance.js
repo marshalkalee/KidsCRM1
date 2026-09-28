@@ -22,3 +22,11 @@ export function markAttendance({ lesson, child, status, absenceReason }) {
 export function markAllPresent(lessonId) {
   return api.post('attendance/mark-all-present/', { lesson: lessonId }).then(res => res.data)
 }
+
+export function resetAttendance({ lesson, child }) {
+  return api.post('attendance/reset/', { lesson, child }).then(res => res.data)
+}
+
+export function resetAllAttendance(lessonId) {
+  return api.post('attendance/reset-all/', { lesson: lessonId }).then(res => res.data)
+}

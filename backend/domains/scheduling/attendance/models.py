@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -140,6 +140,34 @@ class Attendance(TenantModel):
             },
         )
         return self
+
+    @transaction.atomic
+    def clear_mark(self, *, actor):
+        """Снять отметку полностью и вернуть списание, если оно было.
+
+        Attendance без статуса в модели намеренно не существует: после
+        сброса запись удаляется физически, чтобы повторная отметка снова
+        создавалась через обычный get_or_create. Аудит остаётся и хранит
+        прежние значения независимо от удаления исходной записи.
+        """
+        from domains.platform.core.audit import AuditLog
+
+        before = {
+            "status": self.status,
+            "absence_reason": self.absence_reason,
+            "consumed_from_subscription": self.consumed_from_subscription,
+            "no_subscription_flag": self.no_subscription_flag,
+            "is_retroactive_edit": self.is_retroactive_edit,
+        }
+        self._revert()
+        AuditLog.record(
+            actor=actor,
+            action=AuditLog.Action.MARK_ATTENDANCE,
+            entity=self,
+            before=before,
+            after={"status": None, "reset": True, "consumed_from_subscription": False},
+        )
+        self.hard_delete()
 
     def _lesson_already_happened(self):
         tz = timezone.zoneinfo.ZoneInfo(self.organization.timezone or "Asia/Almaty")
