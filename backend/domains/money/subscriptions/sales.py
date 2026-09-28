@@ -57,13 +57,17 @@ def sell_subscription(
             delta=subscription_type_version.quota_sessions,
         )
 
-    payment = record_payment(
-        actor=actor,
-        subscription=subscription,
-        amount=paid_amount,
-        method=payment_method,
-        comment=comment,
-    )
+    # Продажа без оплаты (весь абонемент в долг) — законный случай: оплаты
+    # нет, а не оплата на 0 ₸.
+    payment = None
+    if paid_amount and paid_amount > 0:
+        payment = record_payment(
+            actor=actor,
+            subscription=subscription,
+            amount=paid_amount,
+            method=payment_method,
+            comment=comment,
+        )
 
     AuditLog.record(
         actor=actor,

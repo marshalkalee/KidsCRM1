@@ -92,3 +92,21 @@ def unfreeze_subscription(
         after={"ends_on": subscription.ends_on.isoformat()},
     )
     return freeze
+
+
+@transaction.atomic
+def finish_freeze(subscription: Subscription) -> None:
+    """
+    Заморозка закончилась по плану — абонемент снова активен (ночная задача,
+    statuses.update_all_subscription_statuses). Срок не сдвигаем: вся длина
+    заморозки уже добавлена к ends_on при заморозке. unfreeze_subscription
+    здесь не подходит — она ищет заморозку, которая ещё идёт, и для
+    закончившейся падала с «Активной заморозки не найдено».
+    """
+    transition_status(subscription, Subscription.Status.ACTIVE)
+    AuditLog.record(
+        actor=None,
+        action=AuditLog.Action.UNFREEZE,
+        entity=subscription,
+        after={"ends_on": subscription.ends_on.isoformat(), "reason": "заморозка закончилась"},
+    )

@@ -14,12 +14,15 @@ from django.shortcuts import get_object_or_404, render
 
 from domains.money.subscriptions.models import Subscription
 from domains.people.clients.models import Child
+from domains.platform.core.decorators import role_required
+from domains.platform.core.role_permissions import CHILD_MANAGE_ROLES, CLIENT_MONEY_VIEW_ROLES
 
 from .debt import debt_for_child
 from .models import Payment
 from .services import record_payment
 
 
+@role_required(*CLIENT_MONEY_VIEW_ROLES)
 def child_payments_tab(request, child_id):
     child = get_object_or_404(Child.objects.for_tenant(request.user.organization), pk=child_id)
     subscription = (
@@ -38,6 +41,9 @@ def child_payments_tab(request, child_id):
     return render(request, "payments/_child_payments_tab.html", context)
 
 
+# Принимать оплату — как в API (IsOwnerOrManagerOrAdmin): не преподаватель
+# и не бухгалтер.
+@role_required(*CHILD_MANAGE_ROLES)
 def record_payment_view(request, child_id):
     if request.method != "POST":
         return HttpResponseBadRequest()
@@ -54,14 +60,17 @@ def record_payment_view(request, child_id):
     if not amount or not method or not idempotency_key:
         return JsonResponse({"error": "Не хватает обязательных полей"}, status=400)
 
-    payment = record_payment(
-        actor=request.user,
-        subscription=subscription,
-        amount=amount,
-        method=method,
-        comment=request.POST.get("comment", ""),
-        idempotency_key=idempotency_key,
-    )
+    try:
+        payment = record_payment(
+            actor=request.user,
+            subscription=subscription,
+            amount=amount,
+            method=method,
+            comment=request.POST.get("comment", ""),
+            idempotency_key=idempotency_key,
+        )
+    except (ValueError, ArithmeticError) as exc:
+        return JsonResponse({"error": str(exc) or "Некорректная сумма"}, status=400)
     return JsonResponse(
         {
             "paid_amount": str(payment.amount),
