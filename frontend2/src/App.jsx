@@ -21,6 +21,7 @@ import Branches from './pages/Branches'
 import BranchRooms from './pages/BranchRooms'
 import Directions from './pages/Directions'
 import OrganizationSettings from './pages/OrganizationSettings'
+import LeadDictionaries from './pages/LeadDictionaries'
 
 function App() {
   // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
@@ -50,6 +51,7 @@ function App() {
                 <Route path="branches" element={<RequirePermission permission="can_manage_branches"><Branches /></RequirePermission>} />
                 <Route path="branches/:id/rooms" element={<BranchRooms />} />
                 <Route path="directions" element={<RequirePermission permission="can_manage_directions"><Directions /></RequirePermission>} />
+                <Route path="settings/sales" element={<RequirePermission permission="can_manage_lead_dictionaries"><LeadDictionaries /></RequirePermission>} />
                 <Route path="settings/organization" element={<RequirePermission permission="can_manage_org_settings"><OrganizationSettings /></RequirePermission>} />
                 <Route path="*" element={<NotFound />} />
               </Route>
