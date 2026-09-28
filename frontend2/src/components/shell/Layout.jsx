@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet } from 'react-router-dom'
 import { Bell, Building2, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
 import { useSession } from '../../session/SessionContext'
 import { cn, initials } from '../../ui'
 import { GlobalSearch } from './GlobalSearch'
 import LanguageSwitcher from './LanguageSwitcher'
 import { QuickLeadLauncher } from '../leads/QuickLead'
+import { NotificationList, useNotifications } from '../notifications/NotificationList'
 import { visibleSections } from './navigation'
 import { t } from '../../i18n'
 
@@ -151,28 +152,51 @@ function usePopover() {
 }
 
 /**
- * Колокольчик, как в шапке первого React. Серверной части уведомлений ещё
- * нет (domains/platform/notifications пустой) — поэтому честно «пока нет»,
- * без точки «есть новое».
+ * Колокольчик — центр уведомлений (TRU-72): точка, когда есть новое;
+ * в окне — что требует внимания, клик ведёт прямо в нужный экран.
  */
 function Notifications() {
   const { open, setOpen, ref } = usePopover()
+  const { data, markSeen } = useNotifications()
+  const unread = data?.unread || 0
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex size-10 items-center justify-center rounded-[10px] border border-line bg-surface text-ink-muted hover:border-brand-300 hover:text-ink"
-        aria-label={t('Уведомления')}
+        className={cn(
+          'relative flex size-10 items-center justify-center rounded-[10px] border bg-surface hover:border-brand-300 hover:text-ink',
+          unread ? 'border-brand-300 text-brand-600' : 'border-line text-ink-muted',
+        )}
+        aria-label={unread ? t('Уведомления: новых {n}', { n: unread }) : t('Уведомления')}
+        title={t('Уведомления')}
         aria-expanded={open}
       >
         <Bell className="size-[18px]" />
+        {unread > 0 && (
+          <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold text-white ring-2 ring-surface">
+            {unread}
+          </span>
+        )}
       </button>
       {open && (
-        <div className="absolute right-0 top-12 z-40 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-surface p-5 text-center shadow-pop">
-          <span className="mx-auto mb-2 flex size-10 items-center justify-center rounded-full bg-brand-50 text-brand-500"><Bell className="size-5" /></span>
-          <p className="text-sm font-semibold text-ink">{t('Уведомлений пока нет')}</p>
-          <p className="mt-1 text-[13px] text-ink-muted">{t('Здесь будут напоминания о продлениях, долгах и занятиях.')}</p>
+        <div className="fixed inset-x-3 top-16 z-40 overflow-hidden rounded-lg border border-line bg-surface shadow-pop sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-96">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+            <p className="text-sm font-bold text-ink">{t('Уведомления')}</p>
+            {unread > 0 && (
+              <button type="button" onClick={() => markSeen('all')} className="text-[13px] font-semibold text-brand-600 hover:underline">
+                {t('Прочитать все')}
+              </button>
+            )}
+          </div>
+          {data ? (
+            <NotificationList items={data.items} onMarkSeen={markSeen} onNavigate={() => setOpen(false)} compact />
+          ) : (
+            <p className="px-4 py-6 text-center text-sm text-ink-muted">{t('Загрузка…')}</p>
+          )}
+          <Link to="/notifications" onClick={() => setOpen(false)} className="block border-t border-line px-4 py-2.5 text-center text-[13px] font-semibold text-ink-muted hover:bg-surface-muted hover:text-ink">
+            {t('Все уведомления')}
+          </Link>
         </div>
       )}
     </div>
