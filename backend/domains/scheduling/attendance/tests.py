@@ -367,6 +367,40 @@ class AttendanceMarkApiTest(APITestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["child"], self.child.id)
 
+    def test_reset_removes_mark_and_returns_consumed_session(self):
+        client = _authenticated_client(self.owner)
+        client.post(
+            "/api/v1/attendance/mark/",
+            {"lesson": str(self.lesson.id), "child": str(self.child.id), "status": "present"},
+        )
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.sessions_remaining_cache, 7)
+
+        response = client.post(
+            "/api/v1/attendance/reset/",
+            {"lesson": str(self.lesson.id), "child": str(self.child.id)},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["reset"])
+        self.assertFalse(Attendance.objects.filter(lesson=self.lesson, child=self.child).exists())
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.sessions_remaining_cache, 8)
+        log = AuditLog.objects.filter(action=AuditLog.Action.MARK_ATTENDANCE).latest("created_at")
+        self.assertTrue(log.after["reset"])
+        self.assertIsNone(log.after["status"])
+
+    def test_reset_is_idempotent_when_child_is_already_unmarked(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            "/api/v1/attendance/reset/",
+            {"lesson": str(self.lesson.id), "child": str(self.child.id)},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["reset"])
+
 
 class AttendanceHistoryApiTest(AttendanceFixtureMixin, APITestCase):
     def setUp(self):
@@ -578,6 +612,12 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
         self.assertEqual(response.data["marked_count"], 0)
         statuses = {row["status"] for row in response.data["results"]}
         self.assertEqual(statuses, {None})
+        first_row = response.data["results"][0]
+        self.assertEqual(first_row["child_age"], self.children[0].age)
+        self.assertEqual(first_row["child_gender"], Child.Gender.FEMALE)
+        self.assertEqual(first_row["child_status"], Child.Status.ACTIVE)
+        self.assertEqual(first_row["child_photo_url"], "")
+        self.assertEqual(first_row["child_birth_date"], self.children[0].birth_date.isoformat())
 
     def test_roster_reflects_already_marked_attendance_on_reopen(self):
         client = _authenticated_client(self.owner)
@@ -642,6 +682,20 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
 
         self.assertEqual(response.data["marked_count"], 0)
         self.assertEqual(Attendance.objects.filter(lesson=self.lesson).count(), 3)
+
+    def test_reset_all_clears_roster_and_returns_consumption(self):
+        client = _authenticated_client(self.owner)
+        client.post("/api/v1/attendance/mark-all-present/", {"lesson": str(self.lesson.id)})
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.sessions_remaining_cache, 7)
+
+        response = client.post("/api/v1/attendance/reset-all/", {"lesson": str(self.lesson.id)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["reset_count"], 3)
+        self.assertFalse(Attendance.objects.filter(lesson=self.lesson).exists())
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.sessions_remaining_cache, 8)
 
     def test_teacher_can_access_own_lesson(self):
         client = _authenticated_client(self.teacher)

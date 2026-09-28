@@ -198,6 +198,11 @@ class AttendanceRosterEntrySerializer(serializers.Serializer):
 
     child = serializers.UUIDField(source="child.id")
     child_name = serializers.CharField(source="child.full_name")
+    child_birth_date = serializers.DateField(source="child.birth_date")
+    child_age = serializers.IntegerField(source="child.age")
+    child_gender = serializers.CharField(source="child.gender")
+    child_photo_url = serializers.URLField(source="child.photo_url", allow_blank=True)
+    child_status = serializers.CharField(source="child.status")
     attendance_id = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
