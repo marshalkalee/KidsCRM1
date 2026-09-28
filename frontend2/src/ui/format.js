@@ -4,7 +4,7 @@ import { locale, plural, t } from '../i18n'
 // Форматтеры под текущий язык; пересоздаются при смене (setLang).
 const formatters = new Map()
 function formatter(kind, options) {
-  const key = `${kind}:${locale}`
+  const key = `${kind}:${locale}:${JSON.stringify(options)}`
   if (!formatters.has(key)) formatters.set(key, new Intl[kind](locale, options))
   return formatters.get(key)
 }
@@ -41,7 +41,10 @@ const DATE_TIME = {
 /** '2026-09-24T10:15:00+05:00' → '24 сент. 2026 г., 10:15' (время браузера). */
 export function formatDateTime(iso) {
   if (!iso) return '—'
-  return formatter('DateTimeFormat', DATE_TIME).format(new Date(iso))
+  // Казахских названий месяцев нет в части сборок браузеров («2026 M09 28») —
+  // для kk месяц цифрами.
+  const options = locale.startsWith('kk') ? { ...DATE_TIME, month: '2-digit' } : DATE_TIME
+  return formatter('DateTimeFormat', options).format(new Date(iso))
 }
 
 // Роли контакта — как ChildContact.Role на бэке.

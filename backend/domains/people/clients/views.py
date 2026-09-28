@@ -13,9 +13,11 @@ from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOf
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.role_permissions import (
     can_manage_children,
+    can_manage_leads,
     can_view_client_money,
     can_view_phone,
 )
+from domains.platform.leads.models import Lead
 from domains.scheduling.groups.models import GroupMembership
 
 from . import search
@@ -111,6 +113,21 @@ class ChildViewSet(viewsets.ModelViewSet):
                     for m in memberships
                 ],
                 "money": money,
+                # Из какой заявки пришёл (TRU-96): связь «заявка ↔ ребёнок» видна
+                # с обеих сторон — вход в аналитику источников.
+                "leads": [
+                    {
+                        "id": str(lead.id),
+                        "source_name": lead.source.name if lead.source else None,
+                        "created_at": lead.created_at,
+                        "status": lead.status,
+                    }
+                    for lead in Lead.objects.for_tenant(organization)
+                    .filter(converted_child=child)
+                    .select_related("source")
+                ]
+                if can_manage_leads(request.user)
+                else [],
                 "permissions": {
                     "can_edit": can_manage_children(request.user),
                     "can_manage_contacts": can_manage_children(request.user),

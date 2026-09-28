@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { AlertTriangle, Plus } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { AlertTriangle } from 'lucide-react'
 import api from '../../api/axios'
 import { useSession } from '../../session/SessionContext'
 import { Button, Field, Input, Modal, Select, apiErrorMessage, cn, useToast } from '../../ui'
@@ -19,9 +19,10 @@ function isTyping(target) {
 }
 
 /**
- * Быстрая заявка (TRU-97): кнопка в шапке, горячая клавиша N (или Alt+N
- * из любого поля) и сама форма. Живёт в Layout — открывается на любом
- * экране, не уводя со страницы.
+ * Быстрая заявка (TRU-97): горячая клавиша N (или Alt+N из любого поля),
+ * кнопка на доске и сама форма. Живёт в Layout — открывается на любом
+ * экране. Кнопку в шапке убрали по просьбе владельца: шапка — для поиска
+ * и переключателей, заявку заводят с доски или клавишей.
  */
 export function QuickLeadLauncher() {
   const { can } = useSession()
@@ -46,28 +47,15 @@ export function QuickLeadLauncher() {
     }
   }, [allowed])
 
-  if (!allowed) return null
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="bg-brand-gradient flex h-10 items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-semibold text-white shadow-sm hover:opacity-95"
-        title={t('Новая заявка (N)')}
-        aria-label={t('Новая заявка')}
-      >
-        <Plus className="size-4" />
-        <span className="hidden sm:inline">{t('Заявка')}</span>
-      </button>
-      {open && <QuickLeadModal onClose={() => setOpen(false)} />}
-    </>
-  )
+  if (!allowed || !open) return null
+  return <QuickLeadModal onClose={() => setOpen(false)} />
 }
 
 const EMPTY = { phone: '', parent_name: '', child_name: '', child_age: '', direction: '', source: '' }
 
 function QuickLeadModal({ onClose }) {
   const toast = useToast()
+  const navigate = useNavigate()
   const { activeBranchId, branches } = useSession()
   const [form, setForm] = useState(EMPTY)
   const [branch, setBranch] = useState(activeBranchId ? String(activeBranchId) : '')
@@ -120,7 +108,7 @@ function QuickLeadModal({ onClose }) {
       branch: branch || null,
     }
     try {
-      await api.post('leads/', payload)
+      const res = await api.post('leads/', payload)
       toast.success(t('Заявка сохранена'))
       window.dispatchEvent(new CustomEvent(LEAD_CREATED_EVENT))
       if (again) {
@@ -129,6 +117,7 @@ function QuickLeadModal({ onClose }) {
         phoneRef.current?.focus()
       } else {
         onClose()
+        navigate(`/leads/${res.data.id}`)
       }
     } catch (err) {
       const data = err.response?.data
