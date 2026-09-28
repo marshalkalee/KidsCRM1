@@ -24,7 +24,13 @@ from .serializers import (
     LeadStatusChangeSerializer,
     LeadStatusSerializer,
 )
-from .services import LeadTransitionError, change_status, create_lead, visible_leads
+from .services import (
+    LeadTransitionError,
+    change_status,
+    create_lead,
+    find_phone_matches,
+    visible_leads,
+)
 
 
 class CanManageLeads(IsStaffOfOrganization):
@@ -109,6 +115,13 @@ class LeadViewSet(TenantModelViewSet):
                 condition |= Q(phone__contains=digits)
             qs = qs.filter(condition)
         return qs
+
+    @action(detail=False, methods=["get"], url_path="check-phone")
+    def check_phone(self, request, version=None):
+        """Дубли по телефону для формы новой заявки (TRU-97)."""
+        return Response(
+            find_phone_matches(request.user.organization, request.query_params.get("phone", ""))
+        )
 
     @action(detail=False, methods=["get"])
     def board(self, request, version=None):

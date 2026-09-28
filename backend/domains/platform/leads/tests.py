@@ -659,3 +659,66 @@ class LeadBoardTests(LeadFixtures):
     def test_board_requires_lead_permission(self):
         teacher = self.make_user("77060000001", User.Role.TEACHER)
         self.assertEqual(make_client(teacher).get(BOARD_URL).status_code, 403)
+
+
+class LeadPhoneCheckTests(LeadFixtures):
+    def check(self, phone, client=None):
+        return (client or self.client_owner).get(f"{URL}check-phone/", {"phone": phone}).data
+
+    def test_finds_open_leads_by_any_phone_format(self):
+        lead = self.make_lead(child_name="Алия")
+        data = self.check("8 707 111 22 33")
+        self.assertEqual(data["phone"], "+77071112233")
+        self.assertEqual([row["id"] for row in data["leads"]], [str(lead.id)])
+        self.assertEqual(data["leads"][0]["status_label"], "Новая")
+
+    def test_purchased_leads_not_reported(self):
+        lead = self.make_lead()
+        for step in (Lead.Status.CONTACTED, Lead.Status.PURCHASED):
+            change_status(lead, to_status=step, actor=self.owner)
+        self.assertEqual(self.check("+77071112233")["leads"], [])
+
+    def test_finds_parent_with_children(self):
+        from domains.people.clients.models import Child, ChildContact, ContactPhone, ParentContact
+
+        parent = ParentContact.objects.create(organization=self.org, full_name="Айгерим Сейтова")
+        ContactPhone.objects.create(
+            organization=self.org, parent_contact=parent, number="+77071112233"
+        )
+        child = Child.objects.create(
+            organization=self.org,
+            full_name="Алия Сейтова",
+            birth_date="2019-03-14",
+            gender="female",
+        )
+        ChildContact.objects.create(
+            organization=self.org, child=child, parent_contact=parent, role="mother"
+        )
+        data = self.check("+7 707 111 2233")
+        self.assertEqual(
+            data["parents"],
+            [
+                {
+                    "id": str(parent.id),
+                    "full_name": "Айгерим Сейтова",
+                    "children": [{"id": str(child.id), "full_name": "Алия Сейтова"}],
+                }
+            ],
+        )
+
+    def test_incomplete_phone_gives_empty_answer(self):
+        self.make_lead()
+        self.assertEqual(self.check("+7707"), {"phone": None, "leads": [], "parents": []})
+
+    def test_other_org_not_visible(self):
+        self.make_lead()
+        org_b = Organization.objects.create(name="Чужой", slug="b2")
+        client_b = make_client(self.make_user("77080000001", User.Role.OWNER, organization=org_b))
+        self.assertEqual(self.check("+77071112233", client=client_b)["leads"], [])
+
+    def test_requires_lead_permission(self):
+        teacher = self.make_user("77080000002", User.Role.TEACHER)
+        self.assertEqual(
+            make_client(teacher).get(f"{URL}check-phone/", {"phone": "+77071112233"}).status_code,
+            403,
+        )
