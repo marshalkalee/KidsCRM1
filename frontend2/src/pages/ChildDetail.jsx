@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, Building2, CalendarClock, Clock3, Layers, Pencil, SearchX, Sparkles, Users, Wallet } from 'lucide-react'
 import api from '../api/axios'
 import ChildModal from '../components/ChildModal'
@@ -89,6 +89,19 @@ export default function ChildDetail() {
               <Fact icon={Layers} label={t('Направления')} values={card.directions.map(d => d.name)} />
               <Fact icon={Users} label={t('Группы')} values={card.groups.map(g => g.name)} />
             </dl>
+            {card.leads?.length > 0 && (
+              <p className="text-sm text-ink-muted">
+                {t('Пришёл из заявки')}:{' '}
+                {card.leads.map((lead, index) => (
+                  <span key={lead.id}>
+                    {index > 0 && ', '}
+                    <Link to={`/leads/${lead.id}`} className="font-semibold text-brand-600 hover:underline">
+                      {lead.source_name ? t(lead.source_name) : t('заявка')} · {formatDate(lead.created_at)}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            )}
             {child.status === 'left' && child.leave_reason && (
               <p className="text-sm text-ink-muted"><span className="font-semibold text-ink">{t('Причина ухода:')}</span> {child.leave_reason}</p>
             )}

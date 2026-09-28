@@ -88,7 +88,7 @@ class LeadViewSet(TenantModelViewSet):
 
     def get_queryset(self):
         qs = visible_leads(self.request.user).select_related(
-            "branch", "direction", "source", "assigned_to", "rejection_reason"
+            "branch", "direction", "source", "assigned_to", "rejection_reason", "converted_child"
         )
         if self.action not in ("list", "board"):
             return qs

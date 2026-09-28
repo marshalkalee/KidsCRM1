@@ -105,6 +105,10 @@ class LeadCreateTests(LeadFixtures):
         self.assertEqual(response.data["assigned_to_name"], self.admin.full_name)
         self.assertEqual(response.data["status_label"], "Новая")
         self.assertEqual(response.data["days_in_status"], 0)
+        self.assertEqual(
+            response.data["allowed_transitions"],
+            ["contacted", "trial_scheduled", "thinking", "rejected"],
+        )
 
     def test_archived_source_not_accepted_for_new_lead(self):
         self.instagram.is_active = False
@@ -721,4 +725,42 @@ class LeadPhoneCheckTests(LeadFixtures):
         self.assertEqual(
             make_client(teacher).get(f"{URL}check-phone/", {"phone": "+77071112233"}).status_code,
             403,
+        )
+
+
+class LeadChildLinkTests(LeadFixtures):
+    def setUp(self):
+        super().setUp()
+        from domains.people.clients.models import Child
+
+        self.child = Child.objects.create(
+            organization=self.org,
+            full_name="Алия Сейтова",
+            birth_date="2019-03-14",
+            gender="female",
+        )
+        self.lead = self.make_lead(source=self.instagram)
+        Lead.objects.filter(pk=self.lead.pk).update(converted_child=self.child)
+
+    def test_lead_shows_child(self):
+        data = self.client_owner.get(f"{URL}{self.lead.id}/").data
+        self.assertEqual(
+            (data["converted_child"], data["converted_child_name"]), (self.child.id, "Алия Сейтова")
+        )
+
+    def test_child_card_shows_lead(self):
+        data = self.client_owner.get(f"/api/v1/clients/children/{self.child.id}/card/").data
+        self.assertEqual(
+            [(row["id"], row["source_name"]) for row in data["leads"]],
+            [(str(self.lead.id), "Instagram")],
+        )
+
+    def test_child_card_hides_leads_without_permission(self):
+        teacher = self.make_user("77090000001", User.Role.TEACHER)
+        data = make_client(teacher).get(f"/api/v1/clients/children/{self.child.id}/card/").data
+        self.assertEqual(data["leads"], [])
+
+    def test_me_has_organization_name(self):
+        self.assertEqual(
+            self.client_owner.get("/api/v1/users/auth/me/").data["organization_name"], "Балет"
         )

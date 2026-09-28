@@ -144,6 +144,8 @@ class MeView(APIView):
                 "phone": user.phone,
                 "role": user.role,
                 "organization_id": str(user.organization_id) if user.organization_id else None,
+                # Название — в готовом тексте WhatsApp из карточки заявки (TRU-96).
+                "organization_name": user.organization.name if user.organization_id else None,
                 "branches": [str(b.id) for b in user.branches.all()],
                 "permissions": get_user_permissions(user),
             }

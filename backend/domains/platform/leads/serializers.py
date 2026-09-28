@@ -30,8 +30,12 @@ class LeadSerializer(serializers.ModelSerializer):
     rejection_reason_name = serializers.CharField(
         source="rejection_reason.name", read_only=True, default=None
     )
+    converted_child_name = serializers.CharField(
+        source="converted_child.full_name", read_only=True, default=None
+    )
     days_in_status = serializers.SerializerMethodField()
     is_stale = serializers.SerializerMethodField()
+    allowed_transitions = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
@@ -54,10 +58,12 @@ class LeadSerializer(serializers.ModelSerializer):
             "status_changed_at",
             "days_in_status",
             "is_stale",
+            "allowed_transitions",
             "rejection_reason",
             "rejection_reason_name",
             "rejection_comment",
             "converted_child",
+            "converted_child_name",
             "created_at",
             "updated_at",
         ]
@@ -94,7 +100,12 @@ class LeadSerializer(serializers.ModelSerializer):
         )
 
     def get_days_in_status(self, lead) -> int:
-        return (timezone.now() - lead.status_changed_at).days
+        # Не меньше нуля: доли секунды расхождения часов не должны давать «−1 день».
+        return max(0, (timezone.now() - lead.status_changed_at).days)
+
+    def get_allowed_transitions(self, lead) -> list[str]:
+        """Куда можно перевести — карточка показывает только эти кнопки."""
+        return [status for status in Lead.Status.values if lead.can_move_to(status)]
 
     def get_is_stale(self, lead) -> bool:
         limit = STALE_AFTER_DAYS.get(lead.status)

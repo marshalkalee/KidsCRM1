@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlarmClock, ArrowRightLeft, Inbox, Plus, Search } from 'lucide-react'
 import api from '../api/axios'
 import { LEAD_CREATED_EVENT, openQuickLead } from '../components/leads/QuickLead'
@@ -311,6 +311,7 @@ function ColumnHeader({ column, meta }) {
 }
 
 function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDragEnd, onMove, transitions }) {
+  const navigate = useNavigate()
   const targets = transitions[lead.status] || []
   const details = [lead.child_age != null && ageLabel(lead.child_age), lead.direction_name].filter(Boolean).join(' · ')
   return (
@@ -318,8 +319,12 @@ function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDr
       draggable={draggable}
       onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', lead.id); onDragStart?.() }}
       onDragEnd={onDragEnd}
+      onClick={() => navigate(`/leads/${lead.id}`)}
+      onKeyDown={e => { if (e.key === 'Enter') navigate(`/leads/${lead.id}`) }}
+      tabIndex={0}
       className={cn(
-        'rounded-lg border bg-surface p-3 shadow-xs transition',
+        'cursor-pointer rounded-lg border bg-surface p-3 shadow-xs transition hover:border-brand-300 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand-50',
+
         draggable && 'cursor-grab active:cursor-grabbing',
         lead.is_stale ? 'border-warning-600/40' : 'border-line',
         dragging && 'opacity-40',
@@ -349,7 +354,7 @@ function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDr
 function MoveMenu({ lead, targets, onMove }) {
   const options = LEAD_STATUSES.filter(s => targets.includes(s.value)).map(s => ({ value: s.value, label: s.label }))
   return (
-    <span className="shrink-0">
+    <span className="shrink-0" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
       <Dropdown
         size="sm"
         value=""
