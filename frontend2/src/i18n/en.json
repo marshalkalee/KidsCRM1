@@ -21,9 +21,17 @@
   "group",
   "groups"
  ],
+ "plural:занятие без отметки": [
+  "lesson not marked",
+  "lessons not marked"
+ ],
  "plural:заявка": [
   "lead",
   "leads"
+ ],
+ "plural:заявка ждёт звонка": [
+  "lead is waiting for a call",
+  "leads are waiting for a call"
  ],
  "plural:контакт": [
   "contact",
@@ -45,6 +53,10 @@
   "child",
   "children"
  ],
+ "plural:ребёнок занимается": [
+  "child attends",
+  "children attend"
+ ],
  "plural:строка": [
   "row",
   "rows"
@@ -53,6 +65,7 @@
   "row",
   "rows"
  ],
+ "{children} · {total}, старше {days} дн.": "{children} · {total}, older than {days} d",
  "{day}, закрытие": "{day}, closes",
  "{day}, открытие": "{day}, opens",
  "{from}–{to} лет": "{from}–{to} years",
@@ -84,6 +97,7 @@
  "Балет": "Ballet",
  "Балет — Младшая группа": "Ballet — Junior group",
  "Балет, растяжка, хореография — по ним строятся группы и абонементы.": "Ballet, stretching, choreography — groups and subscriptions are built on them.",
+ "Без абонемента": "No pass",
  "Без контакта": "No contact",
  "Бухгалтер": "Accountant",
  "В архив": "Archive",
@@ -120,7 +134,9 @@
  "Все оплаты ({n})": "All payments ({n})",
  "Все преподаватели": "All teachers",
  "Все статусы": "All statuses",
+ "Все уведомления": "All notifications",
  "Все филиалы": "All branches",
+ "Всё в порядке": "All good",
  "Всё верно, дальше": "All correct, next",
  "Всё на месте: филиалы, направления и группы. Можно работать.": "Everything is in place: branches, directions and groups. You can start working.",
  "Вт": "Tue",
@@ -182,7 +198,7 @@
  "Добрый день": "Good afternoon",
  "Долг": "Debt",
  "Долг по всем детям": "Debt across all children",
- "Долг просрочен": "Debt overdue",
+ "Долг просрочен": "Overdue debt",
  "Домашний": "Home",
  "Дописано к существующим детям": "Added to existing children",
  "Дорого": "Too expensive",
@@ -367,6 +383,7 @@
  "Нет долга": "No debt",
  "Нет доступа": "No access",
  "Нет связи с сервером.": "No connection to the server.",
+ "Нет того, что требует внимания прямо сейчас.": "Nothing needs attention right now.",
  "Неудобное время": "Inconvenient time",
  "Никого не нашли": "Nobody found",
  "Ничего не найдено": "Nothing found",
@@ -379,7 +396,10 @@
  "Новая заявка (N)": "New lead (N)",
  "Новая причина отказа": "New rejection reason",
  "Новая причина отказа от продления": "New renewal decline reason",
+ "Нового нет": "Nothing new",
+ "Новое": "New",
  "Новое направление": "New direction",
+ "Новое: {n}": "New: {n}",
  "Новые заявки": "New leads",
  "Новый зал, например «Большой»": "New room, e.g. «Large»",
  "Новый источник": "New source",
@@ -462,11 +482,13 @@
  "Попробуйте изменить поиск или сбросить фильтры.": "Try changing the search or resetting filters.",
  "Пороги автостатусов": "Auto-status thresholds",
  "Посещаемость": "Attendance",
+ "Посещаемость за вчера": "Yesterday's attendance",
  "Посещения": "Attendance",
  "Похожий ребёнок в базе": "Similar child in the database",
  "Почему клиент не продлил абонемент — отдельно от причин отказа новых заявок, чтобы не путать отчёты.": "Why a client didn't renew — kept apart from new-lead rejection reasons so the reports don't mix.",
  "Появится вместе с записью на пробное из календаря": "Coming with trial booking from the calendar",
  "Появится вместе с модулем задач": "Coming with the tasks module",
+ "Появятся вместе с модулем задач": "Coming with the tasks module",
  "Предупреждение": "Warning",
  "Предупреждения": "Warnings",
  "Предыдущая страница": "Previous page",
@@ -503,6 +525,9 @@
  "Пропущенные шаги можно пройти сейчас или позже — они останутся на главной, пока вы не завершите настройку.": "You can do skipped steps now or later — they stay on the home page until you finish setup.",
  "Пропущено": "Skipped",
  "Пропущено по решению": "Skipped by decision",
+ "Просроченные долги": "Overdue debts",
+ "Просроченные задачи": "Overdue tasks",
+ "Прочитать все": "Mark all as read",
  "Прошедшие занятия в этом зале останутся в истории.": "Past lessons in this room stay in the history.",
  "Прошлые импорты": "Past imports",
  "Пт": "Fri",
@@ -631,6 +656,7 @@
  "Убрать телефон": "Remove phone",
  "Уведомлений пока нет": "No notifications yet",
  "Уведомления": "Notifications",
+ "Уведомления: новых {n}": "Notifications: {n} new",
  "Удалить": "Delete",
  "Удалить зал «{name}»?": "Delete room «{name}»?",
  "Удалить заявку": "Delete lead",
@@ -681,11 +707,13 @@
  "Этот раздел недоступен для вашей роли.": "This section is not available for your role.",
  "Язык": "Language",
  "Язык: {name}": "Language: {name}",
+ "без действующего абонемента": "without a valid pass",
  "будут импортированы": "will be imported",
  "в одном месте": "in one place",
  "в статусе {n} дн.": "in this status for {n} d",
  "в статусе с сегодня": "in this status since today",
  "вместимость не указана": "capacity not set",
+ "всё в порядке": "all good",
  "дд.мм.гггг": "dd.mm.yyyy",
  "дней": "days",
  "дней и меньше": "days or fewer",
@@ -717,6 +745,7 @@
  "сегодня": "today",
  "сейчас": "now",
  "система": "system",
+ "скоро": "soon",
  "создана {date}": "created {date}",
  "строка": "row",
  "телефон": "phone",
