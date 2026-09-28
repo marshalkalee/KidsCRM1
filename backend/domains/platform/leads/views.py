@@ -2,6 +2,7 @@ import uuid
 from datetime import timedelta
 
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status
@@ -16,7 +17,9 @@ from domains.platform.core.role_permissions import can_manage_lead_dictionaries,
 from domains.platform.core.viewsets import TenantModelViewSet
 
 from .models import Lead, LeadComment, LeadRejectionReason, LeadSource
+from .reporting import leads_workbook
 from .serializers import (
+    LeadBulkSerializer,
     LeadCommentSerializer,
     LeadRejectionReasonSerializer,
     LeadSerializer,
@@ -49,6 +52,22 @@ class CanManageLeadDictionaries(CanManageLeads):
             request.user
         )
 
+
+# Сортировка таблицы (TRU-95): ключ колонки → поле. «Дней в статусе» —
+# это давность status_changed_at, поэтому направление обратное.
+ORDERING = {
+    "child_name": ["child_name", "parent_name"],
+    "child_age": ["child_age"],
+    "parent_name": ["parent_name"],
+    "phone": ["phone"],
+    "direction": ["direction__name"],
+    "source": ["source__name"],
+    "status": ["status"],
+    "assigned_to": ["assigned_to__full_name"],
+    "created_at": ["created_at"],
+    "days_in_status": ["-status_changed_at"],
+}
+BULK_LIMIT = 200
 
 BOARD_LIMIT = 20
 CLOSED_DAYS = 30
@@ -90,7 +109,7 @@ class LeadViewSet(TenantModelViewSet):
         qs = visible_leads(self.request.user).select_related(
             "branch", "direction", "source", "assigned_to", "rejection_reason", "converted_child"
         )
-        if self.action not in ("list", "board"):
+        if self.action not in ("list", "board", "export"):
             return qs
         params = self.request.query_params
         branch = get_active_branch(self.request)
@@ -114,7 +133,67 @@ class LeadViewSet(TenantModelViewSet):
             if len(digits) >= 3:
                 condition |= Q(phone__contains=digits)
             qs = qs.filter(condition)
-        return qs
+        return self.ordered(qs)
+
+    def ordered(self, qs):
+        key = self.request.query_params.get("ordering", "")
+        fields = ORDERING.get(key.lstrip("-"))
+        if not fields:
+            return qs.order_by("-created_at")
+        if key.startswith("-"):
+            fields = [field[1:] if field.startswith("-") else f"-{field}" for field in fields]
+        # id — чтобы при равных значениях страницы не перемешивались.
+        return qs.order_by(*fields, "-created_at", "id")
+
+    @action(detail=False, methods=["post"])
+    def bulk(self, request, version=None):
+        """
+        Массовые действия таблицы (TRU-95): {ids, action: "status"|"assign", …}.
+        Статус меняется по одной заявке через change_status — у каждой своя
+        запись в истории и своя проверка перехода; что не получилось, не
+        отменяет остальное, а возвращается списком с причиной.
+        """
+        serializer = LeadBulkSerializer(data=request.data, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        leads = list(self.get_queryset().filter(pk__in=data["ids"]))
+        updated, failed = 0, []
+        for lead in leads:
+            if data["action"] == "assign":
+                lead.assigned_to = data.get("assigned_to")
+                lead.save(update_fields=["assigned_to", "updated_at"])
+                updated += 1
+                continue
+            try:
+                change_status(
+                    lead,
+                    to_status=data["status"],
+                    actor=request.user,
+                    rejection_reason=data.get("rejection_reason"),
+                    comment=data.get("comment", ""),
+                )
+                updated += 1
+            except LeadTransitionError as exc:
+                failed.append(
+                    {
+                        "id": str(lead.id),
+                        "name": lead.child_name or lead.parent_name,
+                        "error": str(exc),
+                    }
+                )
+        return Response({"updated": updated, "failed": failed})
+
+    @action(detail=False, methods=["get"], url_path="export")
+    def export(self, request, version=None):
+        """Выгрузка отфильтрованных заявок в Excel — те же фильтры, что у таблицы."""
+        response = HttpResponse(
+            leads_workbook(self.get_queryset()),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = (
+            f'attachment; filename="leads-{timezone.localdate():%Y-%m-%d}.xlsx"'
+        )
+        return response
 
     @action(detail=False, methods=["get"], url_path="check-phone")
     def check_phone(self, request, version=None):
@@ -147,7 +226,9 @@ class LeadViewSet(TenantModelViewSet):
         statuses = Lead.Status.values
         if (column := params.get("column")) in statuses:
             statuses = [column]
-        counts = dict(qs.values_list("status").annotate(n=Count("id")).values_list("status", "n"))
+        counts = dict(
+            qs.order_by().values_list("status").annotate(n=Count("id")).values_list("status", "n")
+        )
         context = self.get_serializer_context()
         columns = []
         for value in statuses:
