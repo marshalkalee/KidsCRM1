@@ -1,1 +1,160 @@
-from rest_framework import serializers  # noqa: F401
+from django.db.models import Q
+from django.utils import timezone
+from rest_framework import serializers
+
+from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.tenants.models import Branch, Direction
+from domains.platform.users.models import User
+
+from .models import Lead, LeadComment, LeadRejectionReason, LeadSource, LeadStatusChange
+
+
+def _active_or_current(queryset, current):
+    """Архивные значения справочника не выбрать заново, но уже стоящее у
+    заявки сохраняется при правке других полей."""
+    condition = Q(is_active=True)
+    if current is not None:
+        condition |= Q(pk=current.pk)
+    return queryset.filter(condition)
+
+
+class LeadSerializer(serializers.ModelSerializer):
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True, default=None)
+    direction_name = serializers.CharField(source="direction.name", read_only=True, default=None)
+    source_name = serializers.CharField(source="source.name", read_only=True, default=None)
+    assigned_to_name = serializers.CharField(
+        source="assigned_to.full_name", read_only=True, default=None
+    )
+    rejection_reason_name = serializers.CharField(
+        source="rejection_reason.name", read_only=True, default=None
+    )
+    days_in_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Lead
+        fields = [
+            "id",
+            "parent_name",
+            "phone",
+            "child_name",
+            "child_age",
+            "branch",
+            "branch_name",
+            "direction",
+            "direction_name",
+            "source",
+            "source_name",
+            "assigned_to",
+            "assigned_to_name",
+            "status",
+            "status_label",
+            "status_changed_at",
+            "days_in_status",
+            "rejection_reason",
+            "rejection_reason_name",
+            "rejection_comment",
+            "converted_child",
+            "created_at",
+            "updated_at",
+        ]
+        # Статус и отказ меняются только через /status/ — там проверка
+        # переходов, обязательная причина и запись в историю.
+        read_only_fields = [
+            "status",
+            "status_changed_at",
+            "rejection_reason",
+            "rejection_comment",
+            "converted_child",
+            "created_at",
+            "updated_at",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            return
+        organization = request.user.organization
+        instance = self.instance if isinstance(self.instance, Lead) else None
+        self.fields["branch"].queryset = _active_or_current(
+            Branch.objects.for_tenant(organization), instance and instance.branch
+        )
+        self.fields["direction"].queryset = _active_or_current(
+            Direction.objects.for_tenant(organization), instance and instance.direction
+        )
+        self.fields["source"].queryset = _active_or_current(
+            LeadSource.objects.for_tenant(organization), instance and instance.source
+        )
+        self.fields["assigned_to"].queryset = User.objects.filter(
+            organization=organization, is_active=True
+        )
+
+    def get_days_in_status(self, lead) -> int:
+        return (timezone.now() - lead.status_changed_at).days
+
+    def validate_phone(self, value):
+        try:
+            return normalize_phone_number(value)
+        except InvalidPhoneNumberError as exc:
+            raise serializers.ValidationError("Не похоже на номер телефона.") from exc
+
+    def validate_child_age(self, value):
+        if value is not None and value > 25:
+            raise serializers.ValidationError("Проверьте возраст ребёнка.")
+        return value
+
+
+class LeadStatusSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=Lead.Status.choices)
+    rejection_reason = serializers.PrimaryKeyRelatedField(
+        queryset=LeadRejectionReason.objects.none(), required=False, allow_null=True
+    )
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            self.fields["rejection_reason"].queryset = LeadRejectionReason.objects.for_tenant(
+                request.user.organization
+            ).filter(is_active=True)
+
+
+class LeadStatusChangeSerializer(serializers.ModelSerializer):
+    from_status_label = serializers.SerializerMethodField()
+    to_status_label = serializers.CharField(source="get_to_status_display", read_only=True)
+    changed_by_name = serializers.CharField(
+        source="changed_by.full_name", read_only=True, default=None
+    )
+    rejection_reason_name = serializers.CharField(
+        source="rejection_reason.name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = LeadStatusChange
+        fields = [
+            "id",
+            "from_status",
+            "from_status_label",
+            "to_status",
+            "to_status_label",
+            "changed_by",
+            "changed_by_name",
+            "changed_at",
+            "rejection_reason",
+            "rejection_reason_name",
+            "comment",
+        ]
+
+    def get_from_status_label(self, change) -> str:
+        return change.get_from_status_display() if change.from_status else ""
+
+
+class LeadCommentSerializer(serializers.ModelSerializer):
+    author_name = serializers.CharField(source="author.full_name", read_only=True, default=None)
+
+    class Meta:
+        model = LeadComment
+        fields = ["id", "text", "author", "author_name", "created_at"]
+        read_only_fields = ["author", "created_at"]

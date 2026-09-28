@@ -33,6 +33,7 @@
 | 4   | Деньги → всем: `AuditLog.record` | Bekzat | все домены | [`backend/domains/platform/core/audit.py`](../domains/platform/core/audit.py) |
 | 5   | Деньги → всем: `debt_for_child` / `debt_for_parent` / `debt_for_subscription` | Bekzat | Анель (список детей, карточка родителя), экраны «Задолженности», вкладка «Оплаты» | [`backend/domains/money/payments/debt.py`](../domains/money/payments/debt.py) |
 | 6   | Люди → всем: вкладки карточки ребёнка (frontend2) | Анель | Bekzat («Абонементы», «Оплаты»), Дарья («Посещения») | [`frontend2/src/components/child-card/tabs.js`](../../frontend2/src/components/child-card/tabs.js) |
+| 7   | Продажи → всем: `create_lead` / `change_status` | Анель | Дарья (пробные, TRU-100), Bekzat (задачи, продления), приём с сайта | [`backend/domains/platform/leads/services.py`](../domains/platform/leads/services.py) |
 
 
 
@@ -178,3 +179,39 @@ domains/money/subscriptions/debt.py (не payments/debt.py — устарел).
 (Дарья, TRU-55).
 
 Владелец: Анель. Потребители: Bekzat, Дарья.
+
+
+## 7. Продажи → всем (заявки, TRU-99)
+
+Заявка (`leads.Lead`) меняет статус только через сервис — так правило
+«отказ без причины невозможен» и запись истории не обойти ни из API, ни из
+кода других доменов.
+
+```python
+from domains.platform.leads.services import LeadTransitionError, change_status, create_lead
+
+lead = create_lead(organization=org, actor=user, parent_name="Айгерим", phone="+77071112233")
+change_status(lead, to_status=Lead.Status.TRIAL_SCHEDULED, actor=user)
+change_status(lead, to_status=Lead.Status.REJECTED, actor=user, rejection_reason=reason, comment="")
+```
+
+- Статусы (фиксированы в MVP): `new` → `contacted` → `trial_scheduled` →
+  `trial_attended` → `purchased`, сбоку `thinking` и `rejected`.
+  Допустимые переходы — `Lead.TRANSITIONS`; недопустимый —
+  `LeadTransitionError` с текстом для пользователя.
+- `rejected` требует активную `LeadRejectionReason` своей организации.
+- Каждый вызов пишет `LeadStatusChange` (из, в, кто, когда, причина) —
+  сырьё для конверсии в M3. `actor=None` — система (автоправила, сайт).
+- `create_lead` не подставляет ответственного — это делает точка входа
+  (API ставит текущего пользователя).
+- API: `GET/POST /api/v1/leads/`, `PATCH/DELETE /api/v1/leads/<id>/`,
+  `POST /api/v1/leads/<id>/status/`, `GET /api/v1/leads/<id>/history/`,
+  `GET/POST /api/v1/leads/<id>/comments/`. Право — `can_manage_leads`
+  (владелец, управляющий, администратор).
+
+Пробное занятие (Дарья, TRU-100): при записи —
+`change_status(..., TRIAL_SCHEDULED)`, при отметке присутствия —
+`TRIAL_ATTENDED`. Если заявка уже дальше по воронке, переход вернёт
+`LeadTransitionError` — его можно молча пропустить.
+
+Владелец: Анель. Потребители: Дарья, Bekzat.
