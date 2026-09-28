@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlarmClock, ArrowRightLeft, Inbox, Plus, Search } from 'lucide-react'
+import { AlarmClock, ArrowRightLeft, Columns3, Inbox, Plus, Search, Table2 } from 'lucide-react'
 import api from '../api/axios'
 import { LEAD_CREATED_EVENT, openQuickLead } from '../components/leads/QuickLead'
+import LeadTable from '../components/leads/LeadTable'
 import RejectModal from '../components/leads/RejectModal'
 import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/format'
 import { useSession } from '../session/SessionContext'
@@ -32,6 +33,9 @@ export default function Leads() {
   const [lists, setLists] = useState({ sources: [], directions: [], staff: [] })
   const [rejecting, setRejecting] = useState(null)
   const [mobileStatus, setMobileStatus] = useState('new')
+  const [tableCount, setTableCount] = useState(null)
+  // Вид — в адресе, как и фильтры: переключение не сбрасывает фильтры (TRU-95).
+  const view = params.get('view') === 'table' ? 'table' : 'board'
 
   const query = useMemo(() => {
     const q = {}
@@ -44,17 +48,20 @@ export default function Leads() {
     setParams(current => {
       const next = new URLSearchParams(current)
       Object.entries(changes).forEach(([key, value]) => (value ? next.set(key, value) : next.delete(key)))
+      // Поменяли фильтры, поиск или сортировку — таблица с первой страницы.
+      if (!('page' in changes)) next.delete('page')
       return next
     }, { replace: true })
   }, [setParams])
 
   useEffect(() => {
+    if (view !== 'board') return undefined
     let alive = true
     api.get('leads/board/', { params: { ...JSON.parse(queryKey), limit: LIMIT } })
       .then(res => { if (alive) { setBoard(res.data); setError(false) } })
       .catch(() => { if (alive) setError(true) })
     return () => { alive = false }
-  }, [queryKey, reloadKey])
+  }, [queryKey, reloadKey, view])
 
   useEffect(() => {
     const reload = () => setReloadKey(k => k + 1)
@@ -118,13 +125,19 @@ export default function Leads() {
   }
 
   const resetFilters = () => update(Object.fromEntries(FILTER_KEYS.map(key => [key, ''])))
+  const count = view === 'table' ? tableCount : board ? total : null
 
   return (
     <div>
       <PageHeader
         title={t('Заявки')}
-        description={board ? `${total} ${plural(total, ['заявка', 'заявки', 'заявок'])}` : t('Загрузка…')}
-        actions={<Button variant="primary" icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>}
+        description={count == null ? t('Загрузка…') : `${count} ${plural(count, ['заявка', 'заявки', 'заявок'])}`}
+        actions={
+          <>
+            <ViewToggle view={view} onChange={next => update({ view: next === 'table' ? 'table' : '', page: '' })} />
+            <Button variant="primary" icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>
+          </>
+        }
       />
 
       <div className="mb-4 space-y-3">
@@ -137,7 +150,18 @@ export default function Leads() {
         {filtersOpen && <LeadFilters params={params} update={update} lists={lists} branches={branches} onReset={resetFilters} />}
       </div>
 
-      {error ? (
+      {view === 'table' ? (
+        <LeadTable
+          query={query}
+          params={params}
+          update={update}
+          reloadKey={reloadKey}
+          staff={lists.staff}
+          onCount={setTableCount}
+          onReset={resetFilters}
+          hasFilters={Boolean(activeFilters || params.get('q'))}
+        />
+      ) : error ? (
         <ErrorState onRetry={() => setReloadKey(k => k + 1)} />
       ) : !board ? (
         <BoardSkeleton />
@@ -166,6 +190,34 @@ export default function Leads() {
           onConfirm={async extra => { const lead = rejecting; setRejecting(null); await move(lead, 'rejected', extra) }}
         />
       )}
+    </div>
+  )
+}
+
+/** Доска или таблица — два вида одной воронки с общими фильтрами. */
+function ViewToggle({ view, onChange }) {
+  const options = [
+    { value: 'board', label: t('Доска'), icon: Columns3 },
+    { value: 'table', label: t('Таблица'), icon: Table2 },
+  ]
+  return (
+    <div className="flex rounded-[10px] bg-surface-muted p-1" role="tablist" aria-label={t('Вид')}>
+      {options.map(({ value, label, icon: Icon }) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={view === value}
+          onClick={() => onChange(value)}
+          className={cn(
+            'flex h-8 items-center gap-1.5 rounded-lg px-3 text-[13px] font-semibold transition-colors',
+            view === value ? 'bg-surface text-brand-600 shadow-sm' : 'text-ink-muted hover:text-ink',
+          )}
+        >
+          <Icon className="size-4" />
+          {label}
+        </button>
+      ))}
     </div>
   )
 }

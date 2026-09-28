@@ -208,3 +208,39 @@ class LeadSourceSerializer(LeadDictionarySerializer):
 class LeadRejectionReasonSerializer(LeadDictionarySerializer):
     class Meta(LeadDictionarySerializer.Meta):
         model = LeadRejectionReason
+
+
+class LeadBulkSerializer(serializers.Serializer):
+    ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False, max_length=200)
+    action = serializers.ChoiceField(choices=["status", "assign"])
+    status = serializers.ChoiceField(choices=Lead.Status.choices, required=False)
+    rejection_reason = serializers.PrimaryKeyRelatedField(
+        queryset=LeadRejectionReason.objects.none(), required=False, allow_null=True
+    )
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+    assigned_to = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.none(), required=False, allow_null=True
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            organization = request.user.organization
+            self.fields["rejection_reason"].queryset = LeadRejectionReason.objects.for_tenant(
+                organization
+            ).filter(is_active=True)
+            self.fields["assigned_to"].queryset = User.objects.filter(
+                organization=organization, is_active=True
+            )
+
+    def validate(self, attrs):
+        if attrs["action"] == "status":
+            if not attrs.get("status"):
+                raise serializers.ValidationError({"status": "Выберите статус."})
+            # Массовый отказ — тоже только с причиной (критерий TRU-95).
+            if attrs["status"] == Lead.Status.REJECTED and not attrs.get("rejection_reason"):
+                raise serializers.ValidationError({"rejection_reason": "Укажите причину отказа."})
+        elif "assigned_to" not in attrs:
+            raise serializers.ValidationError({"assigned_to": "Выберите ответственного."})
+        return attrs

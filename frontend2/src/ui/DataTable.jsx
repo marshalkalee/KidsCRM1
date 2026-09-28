@@ -104,7 +104,7 @@ export function DataTable({
               className={cn('px-4 py-3.5', onRowClick && 'cursor-pointer active:bg-surface-muted')}
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 font-semibold text-ink">{cell(primary, row)}</div>
+                <div className="min-w-0 font-semibold text-ink">{mobileCell(primary, row) ?? cell(primary, row)}</div>
                 {aside && <div className="shrink-0">{cell(aside, row)}</div>}
               </div>
               <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px]">

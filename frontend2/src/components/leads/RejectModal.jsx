@@ -8,7 +8,7 @@ import { leadTitle } from './format'
  * Перевод заявки в «Отказ» (TRU-94): причина из справочника обязательна,
  * комментарий — по желанию. «Отмена» — заявка остаётся где была.
  */
-export default function RejectModal({ lead, onCancel, onConfirm }) {
+export default function RejectModal({ lead, subject, onCancel, onConfirm }) {
   const [reasons, setReasons] = useState(null)
   const [reason, setReason] = useState('')
   const [comment, setComment] = useState('')
@@ -41,7 +41,7 @@ export default function RejectModal({ lead, onCancel, onConfirm }) {
       onClose={onCancel}
       size="sm"
       title={t('Отказ')}
-      description={t('Заявка: {name}', { name: leadTitle(lead) })}
+      description={subject || t('Заявка: {name}', { name: leadTitle(lead) })}
       footer={
         <>
           <Button onClick={onCancel}>{t('Отмена')}</Button>

@@ -764,3 +764,109 @@ class LeadChildLinkTests(LeadFixtures):
         self.assertEqual(
             self.client_owner.get("/api/v1/users/auth/me/").data["organization_name"], "Балет"
         )
+
+
+class LeadTableTests(LeadFixtures):
+    def setUp(self):
+        super().setUp()
+        self.a = self.make_lead(
+            parent_name="Айгерим", child_name="Бота", child_age=7, source=self.instagram
+        )
+        self.b = self.make_lead(
+            parent_name="Дина", child_name="Алия", child_age=5, phone="+77019998877"
+        )
+        self.c = self.make_lead(
+            parent_name="Вера", child_name="Вика", child_age=9, phone="+77019998866"
+        )
+        Lead.objects.filter(pk=self.c.pk).update(
+            status_changed_at=timezone.now() - timedelta(days=5)
+        )
+
+    def names(self, ordering):
+        return [
+            row["child_name"]
+            for row in self.client_owner.get(URL, {"ordering": ordering}).data["results"]
+        ]
+
+    def test_ordering(self):
+        self.assertEqual(self.names("child_name"), ["Алия", "Бота", "Вика"])
+        self.assertEqual(self.names("-child_age"), ["Вика", "Бота", "Алия"])
+        self.assertEqual(self.names("-days_in_status")[0], "Вика")
+        self.assertEqual(self.names("days_in_status")[-1], "Вика")
+        self.assertEqual(len(self.names("nonsense")), 3)
+
+    def bulk(self, payload, client=None):
+        return (client or self.client_owner).post(f"{URL}bulk/", payload, format="json")
+
+    def test_bulk_status_writes_history_for_each(self):
+        response = self.bulk(
+            {"ids": [str(self.a.id), str(self.b.id)], "action": "status", "status": "contacted"}
+        )
+        self.assertEqual(response.data, {"updated": 2, "failed": []})
+        for lead in (self.a, self.b):
+            self.assertEqual(
+                list(lead.status_changes.values_list("to_status", flat=True)), ["new", "contacted"]
+            )
+
+    def test_bulk_reports_invalid_transitions_and_keeps_others(self):
+        change_status(self.a, to_status=Lead.Status.CONTACTED, actor=self.owner)
+        response = self.bulk(
+            {"ids": [str(self.a.id), str(self.b.id)], "action": "status", "status": "purchased"}
+        )
+        self.assertEqual(response.data["updated"], 1)
+        self.assertEqual([row["id"] for row in response.data["failed"]], [str(self.b.id)])
+        self.assertIn("нельзя перейти", response.data["failed"][0]["error"])
+
+    def test_bulk_reject_requires_reason(self):
+        response = self.bulk({"ids": [str(self.a.id)], "action": "status", "status": "rejected"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("rejection_reason", response.data)
+        response = self.bulk(
+            {
+                "ids": [str(self.a.id)],
+                "action": "status",
+                "status": "rejected",
+                "rejection_reason": str(self.expensive.id),
+            }
+        )
+        self.assertEqual(response.data["updated"], 1)
+
+    def test_bulk_assign(self):
+        response = self.bulk(
+            {
+                "ids": [str(self.a.id), str(self.c.id)],
+                "action": "assign",
+                "assigned_to": str(self.admin.id),
+            }
+        )
+        self.assertEqual(response.data["updated"], 2)
+        self.assertEqual(Lead.objects.filter(assigned_to=self.admin).count(), 2)
+
+    def test_bulk_ignores_invisible_and_foreign_leads(self):
+        org_b = Organization.objects.create(name="Чужой", slug="b3")
+        owner_b = self.make_user("77100000001", User.Role.OWNER, organization=org_b)
+        response = self.bulk(
+            {"ids": [str(self.a.id)], "action": "status", "status": "contacted"},
+            client=make_client(owner_b),
+        )
+        self.assertEqual(response.data["updated"], 0)
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.status, "new")
+
+    def test_export_xlsx_uses_filters(self):
+        import io
+
+        import openpyxl
+
+        response = self.client_owner.get(f"{URL}export/", {"source": str(self.instagram.id)})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spreadsheetml", response["Content-Type"])
+        sheet = openpyxl.load_workbook(io.BytesIO(response.content)).active
+        rows = list(sheet.iter_rows(values_only=True))
+        self.assertEqual(rows[0][:3], ("Ребёнок", "Возраст", "Родитель"))
+        self.assertEqual([row[0] for row in rows[1:]], ["Бота"])
+        self.assertEqual(rows[1][6], "Новая")
+
+    def test_export_requires_permission(self):
+        teacher = self.make_user("77100000002", User.Role.TEACHER)
+        self.assertEqual(make_client(teacher).get(f"{URL}export/").status_code, 403)
