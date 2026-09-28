@@ -108,7 +108,8 @@ export function Dropdown({
           aria-multiselectable={multiple || undefined}
           style={{
             position: 'fixed',
-            left: rect.left,
+            // У правого края экрана список не вылезает за окно.
+            left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.max(rect.width, 180) - 8)),
             width: Math.max(rect.width, 180),
             maxHeight: LIST_MAX,
             ...(openUp ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),

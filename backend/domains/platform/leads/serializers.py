@@ -7,6 +7,7 @@ from domains.platform.tenants.models import Branch, Direction
 from domains.platform.users.models import User
 
 from .models import Lead, LeadComment, LeadRejectionReason, LeadSource, LeadStatusChange
+from .services import STALE_AFTER_DAYS
 
 
 def _active_or_current(queryset, current):
@@ -30,6 +31,7 @@ class LeadSerializer(serializers.ModelSerializer):
         source="rejection_reason.name", read_only=True, default=None
     )
     days_in_status = serializers.SerializerMethodField()
+    is_stale = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
@@ -51,6 +53,7 @@ class LeadSerializer(serializers.ModelSerializer):
             "status_label",
             "status_changed_at",
             "days_in_status",
+            "is_stale",
             "rejection_reason",
             "rejection_reason_name",
             "rejection_comment",
@@ -92,6 +95,10 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def get_days_in_status(self, lead) -> int:
         return (timezone.now() - lead.status_changed_at).days
+
+    def get_is_stale(self, lead) -> bool:
+        limit = STALE_AFTER_DAYS.get(lead.status)
+        return limit is not None and self.get_days_in_status(lead) >= limit
 
     def validate_phone(self, value):
         try:

@@ -549,3 +549,113 @@ class LeadDictionaryTenantIsolationTests(LeadFixtures):
         )
         self.assertEqual(response.status_code, 404)
         self.assertEqual(client_b.get(f"{REASONS_URL}{self.expensive.id}/").status_code, 404)
+
+
+BOARD_URL = f"{URL}board/"
+
+
+class LeadBoardTests(LeadFixtures):
+    def column(self, data, status):
+        return next(c for c in data["columns"] if c["status"] == status)
+
+    def test_columns_counts_and_order(self):
+        older = self.make_lead(parent_name="Старая")
+        Lead.objects.filter(pk=older.pk).update(
+            status_changed_at=timezone.now() - timedelta(days=2)
+        )
+        newer = self.make_lead(parent_name="Новая")
+        contacted = self.make_lead()
+        change_status(contacted, to_status=Lead.Status.CONTACTED, actor=self.owner)
+        data = self.client_owner.get(BOARD_URL).data
+        self.assertEqual([c["status"] for c in data["columns"]], Lead.Status.values)
+        new = self.column(data, "new")
+        self.assertEqual(new["count"], 2)
+        self.assertEqual(new["label"], "Новая")
+        self.assertEqual([r["id"] for r in new["results"]], [str(newer.id), str(older.id)])
+        self.assertEqual(self.column(data, "contacted")["count"], 1)
+        self.assertEqual(self.column(data, "thinking")["results"], [])
+        self.assertIn("contacted", data["transitions"]["new"])
+        self.assertEqual(data["transitions"]["purchased"], [])
+
+    def test_limit_and_load_more(self):
+        for i in range(5):
+            self.make_lead(parent_name=f"Родитель {i}")
+        first = self.column(self.client_owner.get(f"{BOARD_URL}?limit=2").data, "new")
+        self.assertEqual((len(first["results"]), first["count"], first["has_more"]), (2, 5, True))
+        more = self.client_owner.get(f"{BOARD_URL}?limit=2&column=new&offset=4").data
+        self.assertEqual(len(more["columns"]), 1)
+        self.assertEqual(
+            (len(more["columns"][0]["results"]), more["columns"][0]["has_more"]), (1, False)
+        )
+
+    def test_closed_columns_only_recent(self):
+        old = self.make_lead()
+        change_status(
+            old, to_status=Lead.Status.REJECTED, actor=self.owner, rejection_reason=self.expensive
+        )
+        Lead.objects.filter(pk=old.pk).update(status_changed_at=timezone.now() - timedelta(days=40))
+        recent = self.make_lead()
+        change_status(
+            recent,
+            to_status=Lead.Status.REJECTED,
+            actor=self.owner,
+            rejection_reason=self.expensive,
+        )
+        rejected = self.column(self.client_owner.get(BOARD_URL).data, "rejected")
+        self.assertEqual([r["id"] for r in rejected["results"]], [str(recent.id)])
+        # Явный период — показываем и старые.
+        rejected = self.column(
+            self.client_owner.get(f"{BOARD_URL}?created_from=2000-01-01").data, "rejected"
+        )
+        self.assertEqual(rejected["count"], 2)
+
+    def test_open_columns_not_limited_by_period(self):
+        lead = self.make_lead()
+        Lead.objects.filter(pk=lead.pk).update(
+            status_changed_at=timezone.now() - timedelta(days=90)
+        )
+        self.assertEqual(self.column(self.client_owner.get(BOARD_URL).data, "new")["count"], 1)
+
+    def test_filters_apply(self):
+        self.make_lead(source=self.instagram)
+        self.make_lead()
+        data = self.client_owner.get(f"{BOARD_URL}?source={self.instagram.id}").data
+        self.assertEqual(self.column(data, "new")["count"], 1)
+
+    def test_stale_flag(self):
+        lead = self.make_lead()
+        self.assertFalse(self.client_owner.get(f"{URL}{lead.id}/").data["is_stale"])
+        Lead.objects.filter(pk=lead.pk).update(
+            status_changed_at=timezone.now() - timedelta(days=1, hours=1)
+        )
+        self.assertTrue(self.client_owner.get(f"{URL}{lead.id}/").data["is_stale"])
+        change_status(lead, to_status=Lead.Status.CONTACTED, actor=self.owner)
+        Lead.objects.filter(pk=lead.pk).update(status_changed_at=timezone.now() - timedelta(days=2))
+        self.assertFalse(self.client_owner.get(f"{URL}{lead.id}/").data["is_stale"])
+
+    def test_closed_never_stale(self):
+        lead = self.make_lead()
+        change_status(
+            lead, to_status=Lead.Status.REJECTED, actor=self.owner, rejection_reason=self.expensive
+        )
+        Lead.objects.filter(pk=lead.pk).update(
+            status_changed_at=timezone.now() - timedelta(days=20)
+        )
+        self.assertFalse(self.client_owner.get(f"{URL}{lead.id}/").data["is_stale"])
+
+    def test_board_query_count_does_not_grow_with_leads(self):
+        for i in range(60):
+            self.make_lead(
+                parent_name=f"Родитель {i}",
+                source=self.instagram,
+                direction=self.direction,
+                branch=self.branch,
+            )
+        # Счётчики одним запросом + по запросу на колонку, связи — select_related.
+        with self.assertNumQueries(12):
+            response = self.client_owner.get(BOARD_URL)
+        self.assertEqual(self.column(response.data, "new")["count"], 60)
+
+    def test_board_requires_lead_permission(self):
+        teacher = self.make_user("77060000001", User.Role.TEACHER)
+        self.assertEqual(make_client(teacher).get(BOARD_URL).status_code, 403)

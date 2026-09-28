@@ -13,6 +13,18 @@ from domains.platform.users.models import User
 
 from .models import Lead, LeadStatusChange
 
+# Через сколько дней в статусе заявка «висит без движения» (TRU-94).
+# Новая заявка без звонка сутки — уже потеря; «Думает» — дать неделю;
+# «Записан на пробное» — пробное бывает через несколько дней. Закрытые
+# статусы не залеживаются.
+STALE_AFTER_DAYS = {
+    Lead.Status.NEW: 1,
+    Lead.Status.CONTACTED: 3,
+    Lead.Status.TRIAL_SCHEDULED: 7,
+    Lead.Status.TRIAL_ATTENDED: 2,
+    Lead.Status.THINKING: 7,
+}
+
 
 class LeadTransitionError(ValueError):
     """Переход запрещён — сообщение показывается пользователю как есть."""
