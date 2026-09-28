@@ -36,6 +36,7 @@ class LeadSerializer(serializers.ModelSerializer):
     days_in_status = serializers.SerializerMethodField()
     is_stale = serializers.SerializerMethodField()
     allowed_transitions = serializers.SerializerMethodField()
+    trial_booking = serializers.SerializerMethodField()
 
     kind_label = serializers.CharField(source="get_kind_display", read_only=True)
     renewal_child_name = serializers.CharField(
@@ -68,6 +69,7 @@ class LeadSerializer(serializers.ModelSerializer):
             "days_in_status",
             "is_stale",
             "allowed_transitions",
+            "trial_booking",
             "rejection_reason",
             "rejection_reason_name",
             "rejection_comment",
@@ -124,6 +126,39 @@ class LeadSerializer(serializers.ModelSerializer):
         limit = STALE_AFTER_DAYS.get(lead.status)
         return limit is not None and self.get_days_in_status(lead) >= limit
 
+    def get_trial_booking(self, lead):
+        view = self.context.get("view")
+        if view is not None and view.action in ("list", "board", "export"):
+            return None
+        enrollment = (
+            lead.trial_enrollments.filter(cancelled_at__isnull=True)
+            .select_related(
+                "child",
+                "lesson__group__branch",
+                "lesson__group__direction",
+                "lesson__room",
+                "lesson__teacher",
+            )
+            .first()
+        )
+        if enrollment is None:
+            return None
+        lesson = enrollment.lesson
+        tz = timezone.zoneinfo.ZoneInfo(lead.organization.timezone or "Asia/Almaty")
+        return {
+            "enrollment_id": str(enrollment.id),
+            "lesson_id": str(lesson.id),
+            "child_id": str(enrollment.child_id),
+            "child_name": enrollment.child.full_name,
+            "starts_at_local": lesson.starts_at.astimezone(tz).isoformat(),
+            "ends_at_local": lesson.ends_at.astimezone(tz).isoformat(),
+            "group_name": lesson.group.name,
+            "branch_name": lesson.group.branch.name,
+            "direction_name": lesson.group.direction.name,
+            "room_name": lesson.room.name if lesson.room else None,
+            "teacher_name": lesson.teacher.full_name if lesson.teacher else None,
+        }
+
     def validate_phone(self, value):
         try:
             return normalize_phone_number(value)
@@ -150,6 +185,40 @@ class LeadStatusSerializer(serializers.Serializer):
             self.fields["rejection_reason"].queryset = LeadRejectionReason.objects.for_tenant(
                 request.user.organization
             ).filter(is_active=True)
+
+
+class TrialBookingSerializer(serializers.Serializer):
+    lesson = serializers.UUIDField()
+
+
+class TrialLessonSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    starts_at_local = serializers.SerializerMethodField()
+    ends_at_local = serializers.SerializerMethodField()
+    group_name = serializers.CharField(source="group.name")
+    branch_name = serializers.CharField(source="group.branch.name")
+    direction_name = serializers.CharField(source="group.direction.name")
+    room_name = serializers.CharField(source="room.name", allow_null=True)
+    teacher_name = serializers.CharField(source="teacher.full_name", allow_null=True)
+    age_min = serializers.IntegerField(source="group.age_min", allow_null=True)
+    age_max = serializers.IntegerField(source="group.age_max", allow_null=True)
+    capacity = serializers.IntegerField(source="group.capacity")
+    occupied_count = serializers.IntegerField()
+    spots_left = serializers.SerializerMethodField()
+
+    def _local(self, value):
+        organization = self.context["request"].user.organization
+        tz = timezone.zoneinfo.ZoneInfo(organization.timezone or "Asia/Almaty")
+        return value.astimezone(tz).isoformat()
+
+    def get_starts_at_local(self, lesson):
+        return self._local(lesson.starts_at)
+
+    def get_ends_at_local(self, lesson):
+        return self._local(lesson.ends_at)
+
+    def get_spots_left(self, lesson):
+        return lesson.group.capacity - lesson.occupied_count
 
 
 class LeadStatusChangeSerializer(serializers.ModelSerializer):

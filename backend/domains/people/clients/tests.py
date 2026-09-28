@@ -231,6 +231,24 @@ class ChildAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["leave_reason"], "Переезд")
 
+    def test_list_search_filters_by_name_prefix(self):
+        for full_name in ("Амина Серикова", "Аружан Касымова", "Данияр Тестов"):
+            Child.objects.create(
+                organization=self.org,
+                full_name=full_name,
+                birth_date=_today_minus_years(10),
+                gender=Child.Gender.FEMALE,
+            )
+        self.client.force_authenticate(self.owner)
+
+        response = self.client.get("/api/v1/clients/children/", {"search": "а"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            {child["full_name"] for child in response.data["results"]},
+            {"Амина Серикова", "Аружан Касымова"},
+        )
+
     def test_teacher_cannot_create_child(self):
         self.client.force_authenticate(self.teacher)
 

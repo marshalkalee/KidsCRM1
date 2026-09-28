@@ -51,9 +51,13 @@ class ChildViewSet(viewsets.ModelViewSet):
         return [IsStaffOfOrganization()]
 
     def get_queryset(self):
-        return Child.objects.for_tenant(self.request.user.organization).prefetch_related(
+        queryset = Child.objects.for_tenant(self.request.user.organization).prefetch_related(
             "directions"
         )
+        name_prefix = self.request.query_params.get("search", "").strip()
+        if name_prefix:
+            queryset = queryset.filter(full_name__istartswith=name_prefix)
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(organization=self.request.user.organization)

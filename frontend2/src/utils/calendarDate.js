@@ -1,3 +1,5 @@
+import { t } from '../i18n'
+
 export const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const MONTH_LABELS = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -39,16 +41,16 @@ export function formatWeekRange(monday) {
   const sameMonth = monday.getMonth() === sunday.getMonth()
   const sameYear = monday.getFullYear() === sunday.getFullYear()
   if (sameMonth) {
-    return `${monday.getDate()}–${sunday.getDate()} ${MONTH_LABELS[monday.getMonth()]} ${monday.getFullYear()}`
+    return `${monday.getDate()}–${sunday.getDate()} ${t(MONTH_LABELS[monday.getMonth()])} ${monday.getFullYear()}`
   }
   if (sameYear) {
-    return `${monday.getDate()} ${MONTH_LABELS[monday.getMonth()]} – ${sunday.getDate()} ${MONTH_LABELS[sunday.getMonth()]} ${monday.getFullYear()}`
+    return `${monday.getDate()} ${t(MONTH_LABELS[monday.getMonth()])} – ${sunday.getDate()} ${t(MONTH_LABELS[sunday.getMonth()])} ${monday.getFullYear()}`
   }
-  return `${monday.getDate()} ${MONTH_LABELS[monday.getMonth()]} ${monday.getFullYear()} – ${sunday.getDate()} ${MONTH_LABELS[sunday.getMonth()]} ${sunday.getFullYear()}`
+  return `${monday.getDate()} ${t(MONTH_LABELS[monday.getMonth()])} ${monday.getFullYear()} – ${sunday.getDate()} ${t(MONTH_LABELS[sunday.getMonth()])} ${sunday.getFullYear()}`
 }
 
 export function formatDayLabel(date) {
-  return `${WEEKDAY_LABELS[date.getDay() === 0 ? 6 : date.getDay() - 1]}, ${date.getDate()} ${MONTH_LABELS[date.getMonth()]}`
+  return `${t(WEEKDAY_LABELS[date.getDay() === 0 ? 6 : date.getDay() - 1])}, ${date.getDate()} ${t(MONTH_LABELS[date.getMonth()])}`
 }
 
 // API отдаёт *_local как ISO-строку с уже посчитанным офсетом организации
