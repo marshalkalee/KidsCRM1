@@ -9,6 +9,8 @@ frontend2 смотрели на десятках строк, а не на трё
 (оплата, журнал занятий, аудит), уроки — generate_lessons_from_template.
 Детерминированно (--seed) и один раз на организацию: повторный запуск
 ничего не дублирует (метка в Organization.settings["demo_seed"]).
+Заявки воронки (TRU-94) — своей меткой "demo_leads": досеиваются и в уже
+наполненную организацию.
 Только DEBUG — в проде команда откажется работать.
 """
 
@@ -31,6 +33,8 @@ from domains.people.clients.models import (
     ContactPhone,
     ParentContact,
 )
+from domains.platform.leads.models import Lead, LeadRejectionReason, LeadSource, LeadStatusChange
+from domains.platform.leads.services import change_status, create_lead
 from domains.platform.tenants.models import Branch, Direction, Room
 from domains.platform.tenants.working_hours import default_working_hours
 from domains.scheduling.groups.models import Group, GroupMembership
@@ -39,6 +43,29 @@ from domains.scheduling.schedule_templates.services import generate_lessons_from
 
 User = get_user_model()
 MARKER = "demo_seed"
+LEADS_MARKER = "demo_leads"
+
+# Пути заявок по воронке: где заявка остановилась. Вес — сколько таких.
+LEAD_PATHS = [
+    ([], 10),
+    (["contacted"], 9),
+    (["contacted", "trial_scheduled"], 7),
+    (["contacted", "trial_scheduled", "trial_attended"], 5),
+    (["contacted", "trial_scheduled", "trial_attended", "purchased"], 8),
+    (["contacted", "purchased"], 3),
+    (["contacted", "thinking"], 6),
+    (["contacted", "trial_scheduled", "trial_attended", "thinking"], 3),
+    (["contacted", "rejected"], 5),
+    (["contacted", "trial_scheduled", "rejected"], 3),
+    (["rejected"], 2),
+]
+LEAD_COMMENTS = [
+    "Просили перезвонить после 18:00",
+    "Интересует группа выходного дня",
+    "Спрашивали про скидку для второго ребёнка",
+    "Узнали от подруги, хотят на пробное",
+    "Сравнивают с другой студией",
+]
 
 BRANCHES = [
     ("Центр на Абая", "пр. Абая, 150, 2 этаж", "+77272501010"),
@@ -143,15 +170,20 @@ class Command(BaseCommand):
         if owner is None or owner.organization is None:
             raise CommandError(f"Нет владельца организации с телефоном {phone}.")
         org = owner.organization
-        if (org.settings or {}).get(MARKER):
-            self.stdout.write(f"«{org.name}» уже наполнена демо-данными — пропускаю.")
-            return
-
         self.rng = random.Random(seed)
         self.org = org
         self.owner = owner
         self.today = timezone.localdate()
         self.used_phones = set(ContactPhone.objects.values_list("number", flat=True))
+        if (org.settings or {}).get(MARKER):
+            if not (org.settings or {}).get(LEADS_MARKER):
+                with transaction.atomic():
+                    leads = self.seed_leads()
+                self.stdout.write(self.style.SUCCESS(f"«{org.name}»: добавлено {leads} заявок."))
+                return
+            self.stdout.write(f"«{org.name}» уже наполнена демо-данными — пропускаю.")
+            return
+
         self.filled = {}
         with transaction.atomic():
             branches = self.seed_branches()
@@ -164,6 +196,7 @@ class Command(BaseCommand):
             self.seed_communications(kids)
             org.settings = {**(org.settings or {}), MARKER: str(self.today)}
             org.save(update_fields=["settings"])
+            self.seed_leads()
         lessons = self.seed_lessons(groups)
         self.stdout.write(
             self.style.SUCCESS(
@@ -438,3 +471,74 @@ class Command(BaseCommand):
                         days=self.rng.randint(0, 30), hours=self.rng.randint(0, 10)
                     )
                 )
+
+    # --- заявки воронки (TRU-94) --------------------------------------------
+
+    def seed_leads(self):
+        """~60 заявок на разных этапах за последние полтора месяца — через
+        create_lead/change_status, как в приложении, затем время сдвигается
+        назад, чтобы «висит N дней» и история выглядели живыми."""
+        sources = list(LeadSource.objects.for_tenant(self.org).filter(is_active=True))
+        reasons = list(LeadRejectionReason.objects.for_tenant(self.org).filter(is_active=True))
+        branches = list(Branch.objects.for_tenant(self.org).filter(is_active=True))
+        directions = list(Direction.objects.for_tenant(self.org).filter(is_active=True))
+        staff = list(
+            User.objects.filter(
+                organization=self.org,
+                role__in=[User.Role.OWNER, User.Role.ADMIN, User.Role.MANAGER],
+            )
+        )
+        paths = [path for path, weight in LEAD_PATHS for _ in range(weight)]
+        now = timezone.now()
+        for _ in range(len(paths)):
+            path = self.rng.choice(paths)
+            girl = self.rng.random() < 0.78
+            _, surname_f = self.rng.choice(SURNAMES)
+            lead = create_lead(
+                organization=self.org,
+                actor=self.owner,
+                parent_name=f"{self.rng.choice(MOTHERS)} {surname_f}",
+                phone=self.phone(),
+                child_name=self.rng.choice(GIRLS if girl else BOYS)
+                if self.rng.random() < 0.8
+                else "",
+                child_age=self.rng.randint(4, 14) if self.rng.random() < 0.8 else None,
+                source=self.rng.choice(sources) if sources else None,
+                branch=self.rng.choice(branches) if branches and self.rng.random() < 0.85 else None,
+                direction=self.rng.choice(directions)
+                if directions and self.rng.random() < 0.8
+                else None,
+                assigned_to=self.rng.choice(staff) if staff else self.owner,
+            )
+            for step in path:
+                change_status(
+                    lead,
+                    to_status=step,
+                    actor=self.owner,
+                    rejection_reason=self.rng.choice(reasons)
+                    if step == "rejected" and reasons
+                    else None,
+                )
+            if self.rng.random() < 0.5:
+                lead.comments.create(
+                    organization=self.org, author=self.owner, text=self.rng.choice(LEAD_COMMENTS)
+                )
+            # Время: создание 1–45 дней назад, шаги — через 0–4 дня, не позже «сейчас».
+            moment = now - datetime.timedelta(
+                days=self.rng.randint(1, 45), hours=self.rng.randint(0, 10)
+            )
+            Lead.objects.filter(pk=lead.pk).update(created_at=moment)
+            for change in LeadStatusChange.objects.filter(lead=lead).order_by("changed_at"):
+                if change.from_status:
+                    moment = min(
+                        now,
+                        moment
+                        + datetime.timedelta(
+                            days=self.rng.randint(0, 4), hours=self.rng.randint(1, 8)
+                        ),
+                    )
+                LeadStatusChange.objects.filter(pk=change.pk).update(changed_at=moment)
+            Lead.objects.filter(pk=lead.pk).update(status_changed_at=moment)
+        self.org.settings = {**(self.org.settings or {}), LEADS_MARKER: str(self.today)}
+        self.org.save(update_fields=["settings"])
+        return len(paths)

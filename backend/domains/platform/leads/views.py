@@ -1,6 +1,8 @@
 import uuid
+from datetime import timedelta
 
 from django.db.models import Count, Q
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.decorators import action
@@ -42,6 +44,11 @@ class CanManageLeadDictionaries(CanManageLeads):
         )
 
 
+BOARD_LIMIT = 20
+CLOSED_DAYS = 30
+CLOSED_STATUSES = [Lead.Status.PURCHASED, Lead.Status.REJECTED]
+
+
 def _values(raw):
     return [value for value in (raw or "").split(",") if value]
 
@@ -61,7 +68,8 @@ class LeadViewSet(TenantModelViewSet):
     """
     Заявки воронки продаж (TRU-99).
 
-    Фильтры списка (общие для будущих доски и таблицы — TRU-94/95):
+    Фильтры списка и доски (общие, чтобы доска и таблица показывали одно
+    и то же — TRU-94/95):
     status, source, direction, branch, assigned_to — через запятую
     (assigned_to=me — мои); q — имя родителя, ребёнка или телефон;
     created_from / created_to — дата создания, ГГГГ-ММ-ДД. Активный
@@ -76,7 +84,7 @@ class LeadViewSet(TenantModelViewSet):
         qs = visible_leads(self.request.user).select_related(
             "branch", "direction", "source", "assigned_to", "rejection_reason"
         )
-        if self.action != "list":
+        if self.action not in ("list", "board"):
             return qs
         params = self.request.query_params
         branch = get_active_branch(self.request)
@@ -101,6 +109,55 @@ class LeadViewSet(TenantModelViewSet):
                 condition |= Q(phone__contains=digits)
             qs = qs.filter(condition)
         return qs
+
+    @action(detail=False, methods=["get"])
+    def board(self, request, version=None):
+        """
+        Kanban-доска (TRU-94): колонки по статусам, в каждой — счётчик и
+        первые `limit` карточек (свежие сверху). «Показать ещё» —
+        `?column=<статус>&offset=N`, тогда в ответе одна колонка.
+
+        Закрытые колонки («Купил», «Отказ») — только за последние
+        CLOSED_DAYS дней, если период не задан явно: иначе через год доска
+        тащила бы всю историю.
+        """
+        try:
+            limit = min(max(int(request.query_params.get("limit", BOARD_LIMIT)), 1), 100)
+            offset = max(int(request.query_params.get("offset", 0)), 0)
+        except ValueError:
+            limit, offset = BOARD_LIMIT, 0
+        qs = self.get_queryset()
+        params = request.query_params
+        if not params.get("created_from") and not params.get("created_to"):
+            since = timezone.now() - timedelta(days=CLOSED_DAYS)
+            qs = qs.exclude(status__in=CLOSED_STATUSES, status_changed_at__lt=since)
+        statuses = Lead.Status.values
+        if (column := params.get("column")) in statuses:
+            statuses = [column]
+        counts = dict(qs.values_list("status").annotate(n=Count("id")).values_list("status", "n"))
+        context = self.get_serializer_context()
+        columns = []
+        for value in statuses:
+            items = list(
+                qs.filter(status=value).order_by("-status_changed_at", "-created_at")[
+                    offset : offset + limit
+                ]
+            )
+            columns.append(
+                {
+                    "status": value,
+                    "label": Lead.Status(value).label,
+                    "count": counts.get(value, 0),
+                    "has_more": offset + len(items) < counts.get(value, 0),
+                    "results": LeadSerializer(items, many=True, context=context).data,
+                }
+            )
+        # Куда можно перетащить карточку из каждой колонки — доска подсвечивает
+        # только допустимые (сервер всё равно проверит переход).
+        transitions = {status: sorted(targets) for status, targets in Lead.TRANSITIONS.items()}
+        return Response(
+            {"columns": columns, "closed_days": CLOSED_DAYS, "transitions": transitions}
+        )
 
     def perform_create(self, serializer):
         data = dict(serializer.validated_data)
