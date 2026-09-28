@@ -38,7 +38,14 @@ def patched_client(response=None, error=None):
     return mock.patch.object(services, "_client", return_value=client), create
 
 
-@override_settings(ANTHROPIC_API_KEY="test-key", AI_MODEL="claude-opus-5")
+# Провайдер и ключи фиксированы: .env разработчика (AI_PROVIDER=openai,
+# настоящий ключ) не должен отправлять тестовые запросы в сеть.
+@override_settings(
+    AI_PROVIDER="anthropic",
+    ANTHROPIC_API_KEY="test-key",
+    AI_MODEL="claude-opus-5",
+    OPENAI_API_KEY="",
+)
 class AIFixtures(TestCase):
     def setUp(self):
         self.org = Organization.objects.create(name="True Ballet", slug="tb")
@@ -223,7 +230,12 @@ class AIAccessTests(AIFixtures):
         )
         client = APIClient()
         client.force_authenticate(user=teacher)
-        self.assertEqual(client.get("/api/v1/ai/status/").status_code, 403)
+        # Статус видят все сотрудники (фото журнала — для преподавателя),
+        # а функции заявок — только с правом на заявки.
+        self.assertEqual(client.get("/api/v1/ai/status/").status_code, 200)
+        self.assertEqual(
+            client.post("/api/v1/ai/lead-from-text/", {"text": "x"}, format="json").status_code, 403
+        )
 
     @override_settings(ANTHROPIC_API_KEY="")
     def test_disabled_without_key(self):

@@ -61,15 +61,20 @@ def _openai_client():
     return openai.OpenAI(api_key=settings.OPENAI_API_KEY, timeout=60, max_retries=2)
 
 
-def _ask_json(*, system: str, user: str, schema: dict, max_tokens: int = 4000) -> dict:
-    """Один запрос, ответ строго по JSON-схеме — у обоих провайдеров."""
+def _ask_json(
+    *,
+    system: str,
+    user: str,
+    schema: dict,
+    max_tokens: int = 4000,
+    image: tuple[str, str] | None = None,
+) -> dict:
+    """Один запрос, ответ строго по JSON-схеме — у обоих провайдеров.
+    image — (media_type, base64) для задач по фото."""
     if not is_enabled():
         raise AIError("ИИ-помощник не настроен.")
-    text = (
-        _ask_openai(system=system, user=user, schema=schema, max_tokens=max_tokens)
-        if provider() == "openai"
-        else _ask_anthropic(system=system, user=user, schema=schema, max_tokens=max_tokens)
-    )
+    ask = _ask_openai if provider() == "openai" else _ask_anthropic
+    text = ask(system=system, user=user, schema=schema, max_tokens=max_tokens, image=image)
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:
@@ -77,7 +82,27 @@ def _ask_json(*, system: str, user: str, schema: dict, max_tokens: int = 4000) -
         raise AIError("ИИ ответил неразборчиво — попробуйте ещё раз.") from exc
 
 
-def _ask_anthropic(*, system, user, schema, max_tokens) -> str:
+def _anthropic_content(user, image):
+    if image is None:
+        return user
+    media_type, data = image
+    return [
+        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}},
+        {"type": "text", "text": user},
+    ]
+
+
+def _openai_content(user, image):
+    if image is None:
+        return user
+    media_type, data = image
+    return [
+        {"type": "text", "text": user},
+        {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{data}"}},
+    ]
+
+
+def _ask_anthropic(*, system, user, schema, max_tokens, image=None) -> str:
     """Claude: короткие задачи — effort low (быстрее и дешевле); отказ модели
     fallbacks по умолчанию переигрывает на подходящей модели на стороне API."""
     try:
@@ -87,7 +112,7 @@ def _ask_anthropic(*, system, user, schema, max_tokens) -> str:
             betas=[FALLBACK_BETA],
             fallbacks="default",
             system=system,
-            messages=[{"role": "user", "content": user}],
+            messages=[{"role": "user", "content": _anthropic_content(user, image)}],
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
         )
     except anthropic.RateLimitError as exc:
@@ -107,7 +132,7 @@ def _ask_anthropic(*, system, user, schema, max_tokens) -> str:
     return next((block.text for block in response.content if block.type == "text"), "")
 
 
-def _ask_openai(*, system, user, schema, max_tokens) -> str:
+def _ask_openai(*, system, user, schema, max_tokens, image=None) -> str:
     """OpenAI: Chat Completions со strict json_schema — ответ строго по схеме."""
     import openai
 
@@ -115,7 +140,10 @@ def _ask_openai(*, system, user, schema, max_tokens) -> str:
         response = _openai_client().chat.completions.create(
             model=settings.OPENAI_MODEL,
             max_completion_tokens=max_tokens,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": _openai_content(user, image)},
+            ],
             response_format={
                 "type": "json_schema",
                 "json_schema": {"name": "result", "schema": schema, "strict": True},
@@ -204,7 +232,8 @@ def lead_from_text(organization, text: str) -> dict:
     )
     data = _ask_json(
         system=LEAD_SYSTEM,
-        user=f"{lists}\n\nТекст:\n<message>\n{text}\n</message>",
+        # Сегодняшняя дата — иначе «2017 г.р.» превращается в неверный возраст.
+        user=f"Сегодня: {timezone.localdate():%d.%m.%Y}\n{lists}\n\nТекст:\n<message>\n{text}\n</message>",
         schema=_lead_schema(list(directions), list(sources)),
     )
     phone = (data.get("phone") or "").strip()
@@ -246,7 +275,10 @@ MESSAGE_SYSTEM = """Ты пишешь сообщения родителям от
 - Используй только факты из данных о заявке. Не придумывай цены, скидки, расписание и обещания.
 - Если чего-то не знаешь (например времени занятий) — спроси у родителя, а не выдумывай.
 - Без подписи с именем администратора, если её нет в данных.
-- Пиши только на указанном языке. Для казахского — естественный разговорный казахский."""
+- Обращайся по имени родителя, без фамилии (если имя с отчеством — можно с отчеством).
+- Не обещай «варианты», «предложения» или время, которых нет в данных, — вместо этого спроси, какое время удобно.
+- Эмодзи — только нейтральный (🙂 или 🌸), без сердечек.
+- Пиши только на указанном языке. Для казахского — естественный разговорный казахский, без дословного перевода с русского."""
 
 
 def lead_message(lead: Lead, *, goal: str, language: str, note: str = "") -> str:
@@ -287,3 +319,370 @@ def lead_message(lead: Lead, *, goal: str, language: str, note: str = "") -> str
     if not text:
         raise AIError("ИИ не смог составить сообщение — попробуйте ещё раз.")
     return text
+
+
+# --- Поиск обычным языком ------------------------------------------------
+
+SEARCH_SYSTEM = """Ты переводишь запрос сотрудника детского центра в фильтры CRM. Сам ничего не ищешь и данных не знаешь.
+Экраны:
+- children — список детей. Фильтры: branch, direction, group, child_status, has_debt (есть долг), debt_overdue (долг просрочен), expiring (абонемент скоро заканчивается), no_subscription (занимается без абонемента), text (поиск по имени).
+- leads — заявки. Фильтры: branch, direction, lead_source, lead_kind (new — новые продажи, renewal — продления), only_mine (мои заявки), created_from/created_to (дата создания ГГГГ-ММ-ДД), text (имя или телефон).
+Правила:
+- Выбирай значения только из переданных списков. Не подходит ничего — пустая строка или false.
+- Даты считай от сегодняшней: «за сентябрь», «за неделю», «вчера». Не про даты — пустые строки.
+- text — только если в запросе есть конкретное имя или телефон.
+- explanation — одна короткая фраза по-русски, что ты отфильтровал (например «Дети с просроченным долгом, филиал Орбита»)."""
+
+
+def search_to_filters(user, query: str) -> dict:
+    """Фраза → адрес экрана с нашими же фильтрами. ИИ выбирает только из
+    справочников организации, данные остаются на сервере — ответ проверяемый:
+    сотрудник видит обычный список с выставленными фильтрами."""
+    from urllib.parse import urlencode
+
+    from django.utils.dateparse import parse_date
+
+    from domains.platform.core.role_permissions import can_manage_leads, can_view_client_money
+    from domains.platform.tenants.models import Branch
+    from domains.scheduling.groups.models import Group
+
+    query = (query or "").strip()
+    if not query:
+        raise AIError("Напишите, что найти.")
+    if len(query) > 300:
+        raise AIError("Слишком длинный запрос.")
+    organization = user.organization
+    branches = {b.name: b for b in Branch.objects.for_tenant(organization).filter(is_active=True)}
+    directions = {
+        d.name: d for d in Direction.objects.for_tenant(organization).filter(is_active=True)
+    }
+    groups = {
+        f"{g.name} ({g.branch.name})" if g.branch_id else g.name: g
+        for g in Group.objects.for_tenant(organization).select_related("branch")
+    }
+    sources = {
+        s.name: s for s in LeadSource.objects.for_tenant(organization).filter(is_active=True)
+    }
+    screens = ["children", *(["leads"] if can_manage_leads(user) else [])]
+
+    def enum(values):
+        return {"type": "string", "enum": [*values, ""]}
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "screen": {"type": "string", "enum": screens},
+            "text": {"type": "string"},
+            "branch": enum(branches),
+            "direction": enum(directions),
+            "group": enum(groups),
+            "child_status": enum(["active", "paused", "left"]),
+            "has_debt": {"type": "boolean"},
+            "debt_overdue": {"type": "boolean"},
+            "expiring": {"type": "boolean"},
+            "no_subscription": {"type": "boolean"},
+            "lead_kind": {"type": "string", "enum": ["new", "renewal"]},
+            "lead_source": enum(sources),
+            "only_mine": {"type": "boolean"},
+            "created_from": {"type": "string"},
+            "created_to": {"type": "string"},
+            "explanation": {"type": "string"},
+        },
+        "required": [
+            "screen",
+            "text",
+            "branch",
+            "direction",
+            "group",
+            "child_status",
+            "has_debt",
+            "debt_overdue",
+            "expiring",
+            "no_subscription",
+            "lead_kind",
+            "lead_source",
+            "only_mine",
+            "created_from",
+            "created_to",
+            "explanation",
+        ],
+        "additionalProperties": False,
+    }
+    lists = {
+        "сегодня": timezone.localdate().isoformat(),
+        "филиалы": list(branches),
+        "направления": list(directions),
+        "группы": list(groups),
+        "источники заявок": list(sources),
+    }
+    data = _ask_json(
+        system=SEARCH_SYSTEM,
+        user=f"{json.dumps(lists, ensure_ascii=False)}\n\nЗапрос: {query}",
+        schema=schema,
+        max_tokens=1500,
+    )
+
+    def pick(mapping, key):
+        item = mapping.get(data.get(key) or "")
+        return str(item.id) if item else ""
+
+    params = {"q": (data.get("text") or "").strip()}
+    if data.get("screen") == "leads" and "leads" in screens:
+        path = "/leads"
+        created_from, created_to = (
+            parse_date(data.get("created_from") or ""),
+            parse_date(data.get("created_to") or ""),
+        )
+        params.update(
+            {
+                "branch": pick(branches, "branch"),
+                "direction": pick(directions, "direction"),
+                "source": pick(sources, "lead_source"),
+                "kind": "renewal" if data.get("lead_kind") == "renewal" else "",
+                "assigned_to": "me" if data.get("only_mine") else "",
+                "created_from": created_from.isoformat() if created_from else "",
+                "created_to": created_to.isoformat() if created_to else "",
+                "view": "table",
+            }
+        )
+    else:
+        path = "/children"
+        params.update(
+            {
+                "branch": pick(branches, "branch"),
+                "direction": pick(directions, "direction"),
+                "group": pick(groups, "group"),
+                "status": data.get("child_status") or "",
+            }
+        )
+        if can_view_client_money(user):
+            for flag in ("has_debt", "debt_overdue", "expiring", "no_subscription"):
+                params[flag] = "1" if data.get(flag) else ""
+            if params["debt_overdue"]:
+                params["has_debt"] = "1"
+    query_string = urlencode({key: value for key, value in params.items() if value})
+    return {
+        "path": f"{path}?{query_string}" if query_string else path,
+        "explanation": (data.get("explanation") or "").strip(),
+    }
+
+
+# --- Посещаемость по фото -------------------------------------------------
+
+PHOTO_SYSTEM = """Ты помогаешь преподавателю детского центра отметить посещаемость по фото бумажного журнала, доски или листа.
+Тебе дают пронумерованный список детей занятия и фото.
+Для каждого ребёнка из списка определи по фото: present (был — отметка, галочка, «+», «б», «был»), absent (не был — «н», «нб», «-», пропуск, крестик в колонке отсутствия) или unknown (ребёнка на фото нет или отметку не разобрать).
+Имена на фото могут быть сокращены, с опечатками, на казахском или латиницей — сопоставляй по смыслу. Если сомневаешься — unknown, не угадывай.
+Если на фото несколько дат — бери колонку за дату занятия. note — коротко по-русски, если что-то неясно, иначе пусто."""
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+
+def attendance_from_photo(lesson, participants, uploaded) -> dict:
+    """Предлагаемые отметки по фото: [{child, full_name, status}]. Ничего не
+    сохраняет — преподаватель проверяет и сохраняет обычными отметками."""
+    import base64
+
+    if uploaded is None:
+        raise AIError("Прикрепите фото журнала.")
+    if uploaded.content_type not in ALLOWED_IMAGE_TYPES:
+        raise AIError("Нужна фотография: JPG, PNG или WebP.")
+    if uploaded.size > MAX_IMAGE_BYTES:
+        raise AIError("Фото больше 8 МБ — сделайте снимок поменьше.")
+    if not participants:
+        raise AIError("На занятии нет детей.")
+    image = (uploaded.content_type, base64.b64encode(uploaded.read()).decode())
+    roster = "\n".join(
+        f"{index}. {child.full_name}" for index, child in enumerate(participants, start=1)
+    )
+    local_start = timezone.localtime(lesson.starts_at)
+    data = _ask_json(
+        system=PHOTO_SYSTEM,
+        user=f"Дата занятия: {local_start:%d.%m.%Y}.\nДети:\n{roster}",
+        schema={
+            "type": "object",
+            "properties": {
+                "marks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "number": {"type": "integer"},
+                            "status": {"type": "string", "enum": ["present", "absent", "unknown"]},
+                        },
+                        "required": ["number", "status"],
+                        "additionalProperties": False,
+                    },
+                },
+                "note": {"type": "string"},
+            },
+            "required": ["marks", "note"],
+            "additionalProperties": False,
+        },
+        max_tokens=3000,
+        image=image,
+    )
+    statuses = {
+        mark.get("number"): mark.get("status")
+        for mark in data.get("marks") or []
+        if mark.get("status") in ("present", "absent", "unknown")
+    }
+    return {
+        "marks": [
+            {
+                "child": str(child.id),
+                "full_name": child.full_name,
+                "status": statuses.get(index, "unknown"),
+            }
+            for index, child in enumerate(participants, start=1)
+        ],
+        "note": (data.get("note") or "").strip(),
+    }
+
+
+# --- Импорт: «грязная» таблица → наш шаблон -------------------------------
+
+IMPORT_SYSTEM = """Ты приводишь таблицу детского центра к шаблону импорта CRM. Таблицы у центров «грязные»: несколько телефонов в одной ячейке, роль родителя вместе с телефоном («мама 8707…»), имя и дата рождения в одной колонке, даты словами, пол по имени не указан, объединённые ячейки.
+Для каждой строки исходной таблицы с ребёнком верни строку шаблона (row — номер исходной строки). Если в одной строке двое детей — верни две строки с тем же row. Строки без ребёнка (итоги, пустые, заголовки разделов) пропусти.
+Поля:
+- child_name — ФИО ребёнка как в таблице, без лишних пометок.
+- birth_date — ДД.ММ.ГГГГ. Если только год или возраст — пусто (не выдумывай число и месяц).
+- gender — «Ж» или «М». Если в таблице нет, определи по имени и фамилии, только если уверен; иначе пусто.
+- parent_name — ФИО родителя (контактного лица).
+- phone — телефон(ы) родителя; несколько — через запятую. Цифры как в таблице.
+- role — мама, папа, бабушка, опекун или другое; пусто, если неизвестно.
+- medical_notes — аллергии и особенности здоровья, если есть.
+- reported_balance — остаток занятий числом, если есть колонка с остатком.
+- direction, group — как в таблице, если есть.
+- problem — коротко по-русски, что пришлось угадать (например «пол определён по имени», «остаток один на двоих детей»). Пусто, если ничего не угадывал.
+Ничего не придумывай: чего нет в таблице — пустая строка."""
+
+IMPORT_FIELDS = [
+    "child_name",
+    "birth_date",
+    "gender",
+    "parent_name",
+    "phone",
+    "role",
+    "medical_notes",
+    "reported_balance",
+    "direction",
+    "group",
+]
+IMPORT_MAX_ROWS = 300
+IMPORT_CHUNK = 40
+
+
+def _import_schema():
+    row = {
+        "type": "object",
+        "properties": {
+            "row": {"type": "integer"},
+            **{field: {"type": "string"} for field in IMPORT_FIELDS},
+            "gender": {"type": "string", "enum": ["Ж", "М", ""]},
+            "role": {"type": "string", "enum": ["мама", "папа", "бабушка", "опекун", "другое", ""]},
+            "problem": {"type": "string"},
+        },
+        "required": ["row", *IMPORT_FIELDS, "problem"],
+        "additionalProperties": False,
+    }
+    return {
+        "type": "object",
+        "properties": {"rows": {"type": "array", "items": row}},
+        "required": ["rows"],
+        "additionalProperties": False,
+    }
+
+
+def _cell(value):
+    if value is None:
+        return ""
+    return value.strftime("%d.%m.%Y") if hasattr(value, "strftime") else str(value).strip()
+
+
+def _import_problems(row) -> str:
+    """Что проверить в строке — обязательные поля шаблона проверяем сами, не
+    полагаясь на то, что модель заметит; её пометку добавляем после."""
+    problems = []
+    if not (row.get("birth_date") or "").strip():
+        problems.append("нет даты рождения")
+    if not (row.get("gender") or "").strip():
+        problems.append("не указан пол")
+    if not (row.get("phone") or "").strip():
+        problems.append("нет телефона")
+    if not (row.get("parent_name") or "").strip():
+        problems.append("нет ФИО родителя")
+    note = (row.get("problem") or "").strip()
+    if note and note.lower() not in "; ".join(problems):
+        problems.append(note)
+    return "; ".join(problems)
+
+
+def clean_import_file(uploaded) -> dict:
+    """Файл центра → строки шаблона импорта + .xlsx в формате шаблона.
+    Дальше файл идёт обычным путём импорта (маппинг, сухой прогон, дубли) —
+    запись в базу делает не ИИ."""
+    import io
+    from concurrent.futures import ThreadPoolExecutor
+
+    import openpyxl
+    from openpyxl.styles import Font
+
+    from domains.people.clients import column_mapping
+
+    if uploaded is None:
+        raise AIError("Прикрепите файл.")
+    try:
+        headers, raw_rows, _meta = column_mapping.read_uploaded_file(uploaded, uploaded.name)
+    except Exception as exc:  # noqa: BLE001 — битый файл — ошибка пользователя, не 500
+        raise AIError("Не удалось прочитать файл — нужен .xlsx или .csv.") from exc
+    if not raw_rows:
+        raise AIError("В файле нет строк с данными.")
+    if len(raw_rows) > IMPORT_MAX_ROWS:
+        raise AIError(
+            f"В пробной версии — до {IMPORT_MAX_ROWS} строк за раз. Разбейте файл на части."
+        )
+
+    def ask(chunk):
+        table = [{"row": number, "cells": [_cell(v) for v in values]} for number, values in chunk]
+        data = _ask_json(
+            system=IMPORT_SYSTEM,
+            user=f"Заголовки: {json.dumps(headers, ensure_ascii=False)}\nСтроки: {json.dumps(table, ensure_ascii=False)}",
+            schema=_import_schema(),
+            max_tokens=16000,
+        )
+        return data.get("rows") or []
+
+    chunks = [raw_rows[i : i + IMPORT_CHUNK] for i in range(0, len(raw_rows), IMPORT_CHUNK)]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(ask, chunks))
+    rows = sorted((row for chunk in results for row in chunk), key=lambda r: r.get("row") or 0)
+    for row in rows:
+        row["problem"] = _import_problems(row)
+
+    labels = {key: label for key, label, _ in column_mapping.SYSTEM_FIELDS}
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Дети"
+    sheet.append(
+        [labels[field] for field in IMPORT_FIELDS]
+        + ["Строка исходного файла", "Что проверить (ИИ)"]
+    )
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    for row in rows:
+        sheet.append(
+            [row.get(field, "") for field in IMPORT_FIELDS]
+            + [row.get("row"), row.get("problem", "")]
+        )
+    for index, width in enumerate([28, 14, 6, 28, 26, 10, 24, 10, 18, 18, 10, 40], start=1):
+        sheet.column_dimensions[openpyxl.utils.get_column_letter(index)].width = width
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return {
+        "rows": rows,
+        "source_rows": len(raw_rows),
+        "problems": sum(1 for row in rows if (row.get("problem") or "").strip()),
+        "xlsx": buffer.getvalue(),
+    }
