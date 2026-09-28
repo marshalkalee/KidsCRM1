@@ -34,7 +34,12 @@ from domains.people.clients.models import (
     ParentContact,
 )
 from domains.platform.leads.models import Lead, LeadRejectionReason, LeadSource, LeadStatusChange
-from domains.platform.leads.services import change_status, create_lead
+from domains.platform.leads.services import (
+    RenewalError,
+    change_status,
+    create_lead,
+    create_renewal_lead,
+)
 from domains.platform.tenants.models import Branch, Direction, Room
 from domains.platform.tenants.working_hours import default_working_hours
 from domains.scheduling.groups.models import Group, GroupMembership
@@ -479,7 +484,12 @@ class Command(BaseCommand):
         create_lead/change_status, как в приложении, затем время сдвигается
         назад, чтобы «висит N дней» и история выглядели живыми."""
         sources = list(LeadSource.objects.for_tenant(self.org).filter(is_active=True))
-        reasons = list(LeadRejectionReason.objects.for_tenant(self.org).filter(is_active=True))
+        # Причины отказа новых заявок — у продлений свой список (TRU-98).
+        reasons = list(
+            LeadRejectionReason.objects.for_tenant(self.org).filter(
+                is_active=True, kind=Lead.Kind.NEW
+            )
+        )
         branches = list(Branch.objects.for_tenant(self.org).filter(is_active=True))
         directions = list(Direction.objects.for_tenant(self.org).filter(is_active=True))
         staff = list(
@@ -539,6 +549,31 @@ class Command(BaseCommand):
                     )
                 LeadStatusChange.objects.filter(pk=change.pk).update(changed_at=moment)
             Lead.objects.filter(pk=lead.pk).update(status_changed_at=moment)
+        self.seed_renewals()
         self.org.settings = {**(self.org.settings or {}), LEADS_MARKER: str(self.today)}
         self.org.save(update_fields=["settings"])
         return len(paths)
+
+    def seed_renewals(self):
+        """Продления (TRU-98) по активным детям: часть в работе, часть продлили."""
+        kids = list(Child.objects.for_tenant(self.org).filter(status=Child.Status.ACTIVE)[:40])
+        paths = [
+            [],
+            [],
+            ["contacted"],
+            ["contacted", "thinking"],
+            ["contacted", "purchased"],
+            ["purchased"],
+        ]
+        created = 0
+        for kid in self.rng.sample(kids, k=min(len(kids), 10)):
+            try:
+                lead, _ = create_renewal_lead(
+                    kid, actor=self.owner, comment="Абонемент заканчивается"
+                )
+            except RenewalError:
+                continue
+            for step in self.rng.choice(paths):
+                change_status(lead, to_status=step, actor=self.owner)
+            created += 1
+        return created

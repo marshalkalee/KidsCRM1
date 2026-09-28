@@ -214,4 +214,25 @@ change_status(lead, to_status=Lead.Status.REJECTED, actor=user, rejection_reason
 `TRIAL_ATTENDED`. Если заявка уже дальше по воронке, переход вернёт
 `LeadTransitionError` — его можно молча пропустить.
 
+### Продления (TRU-98) — для экрана «Продления» (TRU-69) и автоправила (TRU-108)
+
+```python
+from domains.platform.leads.services import RenewalError, create_renewal_lead
+
+lead, created = create_renewal_lead(child, actor=user, comment="")   # экран «Продления»
+lead, created = create_renewal_lead(child, actor=None)               # автоправило — система
+```
+
+- Идемпотентно: открытое продление по ребёнку уже есть — вернёт его
+  (`created=False`), второе не заведёт. Автоправило может вызывать каждый день.
+- Контакт — плательщик ребёнка (иначе первый контакт с телефоном); без
+  телефона — `RenewalError` с текстом для пользователя.
+- API для кнопки: `POST /api/v1/leads/renewal/ {child, comment?}` → 201 или
+  200 (уже было), 400 — ребёнок не найден / нет телефона.
+- Продления — отдельная воронка (`kind=renewal`): без пробного, свои причины
+  отказа (`rejection-reasons/?kind=renewal`), в списке и на доске —
+  `?kind=renewal`. В конверсию новых заявок не попадают.
+- «Продлил» — `change_status(lead, to_status=PURCHASED)` после продажи
+  абонемента.
+
 Владелец: Анель. Потребители: Дарья, Bekzat.

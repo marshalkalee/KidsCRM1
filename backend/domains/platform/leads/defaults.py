@@ -1,10 +1,10 @@
 """
 Значения справочников по умолчанию (ТЗ п. 5.1; TRU-93). Заводятся у каждой
-новой организации (signals.py) и миграцией 0003 — у уже существующих.
+новой организации (signals.py) и миграциями 0003/0005 — у уже существующих.
 Дальше центр правит их сам: переименовывает, добавляет, архивирует.
 """
 
-from .models import LeadRejectionReason, LeadSource
+from .models import LeadKind, LeadRejectionReason, LeadSource
 
 DEFAULT_SOURCES = ["Instagram", "WhatsApp", "Сайт", "Звонок", "Рекомендация", "Офлайн", "Другое"]
 DEFAULT_REJECTION_REASONS = [
@@ -15,6 +15,14 @@ DEFAULT_REJECTION_REASONS = [
     "Не пришёл на пробное",
     "Другое",
 ]
+# Отказ от продления (TRU-98) — клиент уже свой, причины другие.
+DEFAULT_RENEWAL_REJECTION_REASONS = [
+    "Дорого",
+    "Ушли из центра",
+    "Сменили направление",
+    "Переезд",
+    "Другое",
+]
 
 
 def ensure_default_dictionaries(
@@ -22,10 +30,16 @@ def ensure_default_dictionaries(
 ):
     """Идемпотентно: справочник, где уже есть хоть одно значение, не трогаем.
     Модели передаются параметрами — миграция данных зовёт с историческими."""
-    for model, names in (
-        (source_model, DEFAULT_SOURCES),
-        (reason_model, DEFAULT_REJECTION_REASONS),
+    if not source_model.objects.filter(organization=organization).exists():
+        source_model.objects.bulk_create(
+            source_model(organization=organization, name=name) for name in DEFAULT_SOURCES
+        )
+    for kind, names in (
+        (LeadKind.NEW, DEFAULT_REJECTION_REASONS),
+        (LeadKind.RENEWAL, DEFAULT_RENEWAL_REJECTION_REASONS),
     ):
-        if model.objects.filter(organization=organization).exists():
+        if reason_model.objects.filter(organization=organization, kind=kind).exists():
             continue
-        model.objects.bulk_create(model(organization=organization, name=name) for name in names)
+        reason_model.objects.bulk_create(
+            reason_model(organization=organization, name=name, kind=kind) for name in names
+        )

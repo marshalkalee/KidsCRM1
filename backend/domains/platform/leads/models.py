@@ -44,8 +44,23 @@ class LeadSource(LeadDictionary):
     """Откуда пришла заявка: Instagram, WhatsApp, сайт, звонок, рекомендация…"""
 
 
+class LeadKind(models.TextChoices):
+    """
+    Два вида продаж (TRU-98). Новая — контакт с улицы, проходит воронку с
+    пробным. Продление — клиент уже свой: без пробного и источника, со
+    своими причинами отказа. Смешивать нельзя — испортится конверсия:
+    продления покажут 80% там, где у новых 20%.
+    """
+
+    NEW = "new", "Новая продажа"
+    RENEWAL = "renewal", "Продление"
+
+
 class LeadRejectionReason(LeadDictionary):
-    """Почему отказались: дорого, неудобное время, далеко…"""
+    """Почему отказались: дорого, неудобное время, далеко… У продлений —
+    свой список (ушли из центра, переезд), поэтому причина знает свой вид."""
+
+    kind = models.CharField(max_length=10, choices=LeadKind.choices, default=LeadKind.NEW)
 
 
 class Lead(TenantModel):
@@ -92,8 +107,35 @@ class Lead(TenantModel):
         Status.PURCHASED: set(),
     }
 
+    # Продление (TRU-98): пробного нет — связались, думает, продлил или отказ.
+    RENEWAL_STATUSES = [
+        Status.NEW,
+        Status.CONTACTED,
+        Status.THINKING,
+        Status.PURCHASED,
+        Status.REJECTED,
+    ]
+    RENEWAL_TRANSITIONS = {
+        Status.NEW: {Status.CONTACTED, Status.THINKING, Status.PURCHASED, Status.REJECTED},
+        Status.CONTACTED: {Status.THINKING, Status.PURCHASED, Status.REJECTED},
+        Status.THINKING: {Status.CONTACTED, Status.PURCHASED, Status.REJECTED},
+        Status.REJECTED: {Status.CONTACTED},
+        Status.PURCHASED: set(),
+    }
+
+    Kind = LeadKind
+
+    kind = models.CharField(max_length=10, choices=LeadKind.choices, default=LeadKind.NEW)
     branch = models.ForeignKey(
         "tenants.Branch", on_delete=models.PROTECT, null=True, blank=True, related_name="leads"
+    )
+    # Продление — о каком клиенте (TRU-98). У новой заявки пусто.
+    child = models.ForeignKey(
+        "clients.Child",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="renewal_leads",
     )
     parent_name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20)
@@ -129,6 +171,7 @@ class Lead(TenantModel):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["organization", "status"]),
+            models.Index(fields=["organization", "kind", "status"]),
             models.Index(fields=["organization", "phone"]),
         ]
 
@@ -139,8 +182,16 @@ class Lead(TenantModel):
         self.phone = normalize_phone_number(self.phone)
         super().save(*args, **kwargs)
 
+    @classmethod
+    def transitions_for(cls, kind):
+        return cls.RENEWAL_TRANSITIONS if kind == LeadKind.RENEWAL else cls.TRANSITIONS
+
+    @classmethod
+    def statuses_for(cls, kind):
+        return cls.RENEWAL_STATUSES if kind == LeadKind.RENEWAL else cls.Status.values
+
     def can_move_to(self, status) -> bool:
-        return status in self.TRANSITIONS[self.status]
+        return status in self.transitions_for(self.kind).get(self.status, set())
 
 
 class LeadStatusChange(UUIDPrimaryKeyModel):
