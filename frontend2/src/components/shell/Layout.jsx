@@ -5,6 +5,7 @@ import { useSession } from '../../session/SessionContext'
 import { cn, initials } from '../../ui'
 import { GlobalSearch } from './GlobalSearch'
 import LanguageSwitcher from './LanguageSwitcher'
+import { QuickLeadLauncher } from '../leads/QuickLead'
 import { visibleSections } from './navigation'
 import { t } from '../../i18n'
 
@@ -69,6 +70,7 @@ export default function Layout() {
           </button>
           <GlobalSearch className="min-w-0 flex-1 md:max-w-md" />
           <div className="ml-auto flex items-center gap-2">
+            <QuickLeadLauncher />
             <BranchSwitcher />
             <LanguageSwitcher />
             <Notifications />

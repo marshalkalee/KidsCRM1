@@ -9,6 +9,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from domains.people.clients.models import ChildContact, ParentContact
+from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.users.models import User
 
 from .models import Lead, LeadStatusChange
@@ -118,3 +120,58 @@ def visible_leads(user):
     if not branch_ids:
         return qs
     return qs.filter(Q(branch_id__in=branch_ids) | Q(branch__isnull=True) | Q(assigned_to=user))
+
+
+def find_phone_matches(organization, phone) -> dict:
+    """
+    Кто уже есть с этим телефоном (TRU-97): заявки (кроме закрытых
+    покупкой — это уже клиенты, они придут вторым списком) и родители в
+    базе клиентов с их детьми. Показывается в форме ДО сохранения — иначе
+    на одного ребёнка заведут три заявки. Неполный номер — пустой ответ.
+    """
+    try:
+        normalized = normalize_phone_number(phone)
+    except InvalidPhoneNumberError:
+        return {"phone": None, "leads": [], "parents": []}
+    leads = (
+        Lead.objects.for_tenant(organization)
+        .filter(phone=normalized)
+        .exclude(status=Lead.Status.PURCHASED)
+        .order_by("-created_at")[:5]
+    )
+    parents = list(
+        ParentContact.objects.for_tenant(organization)
+        .filter(Q(phones__number=normalized) | Q(whatsapp=normalized))
+        .distinct()[:5]
+    )
+    children = {}
+    links = (
+        ChildContact.objects.for_tenant(organization)
+        .filter(parent_contact__in=parents, child__deleted_at__isnull=True)
+        .select_related("child")
+    )
+    for link in links:
+        children.setdefault(link.parent_contact_id, []).append(
+            {"id": str(link.child_id), "full_name": link.child.full_name}
+        )
+    return {
+        "phone": normalized,
+        "leads": [
+            {
+                "id": str(lead.id),
+                "parent_name": lead.parent_name,
+                "child_name": lead.child_name,
+                "status": lead.status,
+                "status_label": lead.get_status_display(),
+            }
+            for lead in leads
+        ],
+        "parents": [
+            {
+                "id": str(parent.id),
+                "full_name": parent.full_name,
+                "children": children.get(parent.id, []),
+            }
+            for parent in parents
+        ],
+    }

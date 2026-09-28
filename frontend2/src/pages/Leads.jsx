@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { AlarmClock, ArrowRightLeft, Inbox, Search } from 'lucide-react'
+import { AlarmClock, ArrowRightLeft, Inbox, Plus, Search } from 'lucide-react'
 import api from '../api/axios'
+import { LEAD_CREATED_EVENT, openQuickLead } from '../components/leads/QuickLead'
 import RejectModal from '../components/leads/RejectModal'
 import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/format'
 import { useSession } from '../session/SessionContext'
@@ -56,9 +57,13 @@ export default function Leads() {
   }, [queryKey, reloadKey])
 
   useEffect(() => {
-    const onBranch = () => setReloadKey(k => k + 1)
-    window.addEventListener('kc:branch-changed', onBranch)
-    return () => window.removeEventListener('kc:branch-changed', onBranch)
+    const reload = () => setReloadKey(k => k + 1)
+    window.addEventListener('kc:branch-changed', reload)
+    window.addEventListener(LEAD_CREATED_EVENT, reload)
+    return () => {
+      window.removeEventListener('kc:branch-changed', reload)
+      window.removeEventListener(LEAD_CREATED_EVENT, reload)
+    }
   }, [])
 
   useEffect(() => {
@@ -119,6 +124,7 @@ export default function Leads() {
       <PageHeader
         title={t('Заявки')}
         description={board ? `${total} ${plural(total, ['заявка', 'заявки', 'заявок'])}` : t('Загрузка…')}
+        actions={<Button variant="primary" icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>}
       />
 
       <div className="mb-4 space-y-3">
@@ -140,7 +146,7 @@ export default function Leads() {
           {activeFilters || params.get('q') ? (
             <EmptyState icon={Search} title={t('Ничего не нашли')} description={t('Попробуйте изменить поиск или сбросить фильтры.')} action={<Button size="sm" onClick={resetFilters}>{t('Сбросить фильтры')}</Button>} />
           ) : (
-            <EmptyState icon={Inbox} title={t('Заявок пока нет')} description={t('Заявки из Instagram, WhatsApp и звонков появятся здесь — по колонкам воронки.')} />
+            <EmptyState icon={Inbox} title={t('Заявок пока нет')} description={t('Заявки из Instagram, WhatsApp и звонков появятся здесь — по колонкам воронки.')} action={<Button variant="primary" icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>} />
           )}
         </div>
       ) : (
