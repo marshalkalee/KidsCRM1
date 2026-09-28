@@ -368,6 +368,125 @@ class AttendanceMarkApiTest(APITestCase):
         self.assertEqual(results[0]["child"], self.child.id)
 
 
+class AttendanceHistoryApiTest(AttendanceFixtureMixin, APITestCase):
+    def setUp(self):
+        super().setUp()
+        self.client = _authenticated_client(self.owner)
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+
+        self.lesson.starts_at = datetime.datetime(2026, 9, 5, 12, 0, tzinfo=tz)
+        self.lesson.ends_at = datetime.datetime(2026, 9, 5, 13, 0, tzinfo=tz)
+        self.lesson.save(update_fields=["starts_at", "ends_at", "updated_at"])
+        self.present = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.PRESENT,
+            consumed_from_subscription=True,
+            subscription_id="11111111-1111-1111-1111-111111111111",
+            consume_outcome=ConsumeOutcome.CONSUMED.value,
+            marked_by=self.owner,
+            marked_at=timezone.now(),
+        )
+
+        self.absent_lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            starts_at=datetime.datetime(2026, 9, 15, 18, 30, tzinfo=tz),
+            ends_at=datetime.datetime(2026, 9, 15, 19, 30, tzinfo=tz),
+        )
+        self.absent = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.absent_lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+            absence_reason=Attendance.AbsenceReason.ILLNESS,
+            is_retroactive_edit=True,
+            marked_by=self.owner,
+            marked_at=timezone.now(),
+        )
+
+        self.makeup_lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            starts_at=datetime.datetime(2026, 9, 30, 23, 30, tzinfo=tz),
+            ends_at=datetime.datetime(2026, 10, 1, 0, 30, tzinfo=tz),
+        )
+        self.makeup = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.makeup_lesson,
+            child=self.child,
+            status=Attendance.Status.MAKEUP,
+            consume_outcome="makeup_no_charge",
+            marked_by=self.owner,
+            marked_at=timezone.now(),
+        )
+
+    def test_history_returns_details_consumption_and_summary(self):
+        response = self.client.get(
+            "/api/v1/attendance/history/",
+            {"child": str(self.child.id), "date_from": "2026-09-01", "date_to": "2026-09-30"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["summary"], {"present": 1, "absent": 1, "makeup": 1})
+        self.assertEqual(response.data["count"], 3)
+        self.assertEqual(response.data["results"][0]["id"], str(self.makeup.id))
+        row = next(item for item in response.data["results"] if item["id"] == str(self.present.id))
+        self.assertEqual(row["lesson_name"], self.direction.name)
+        self.assertEqual(row["group_name"], self.group.name)
+        self.assertTrue(row["consumed_from_subscription"])
+        self.assertEqual(row["consumption_display"], "Списано с абонемента")
+
+        absent = next(
+            item for item in response.data["results"] if item["id"] == str(self.absent.id)
+        )
+        self.assertEqual(absent["absence_reason_display"], "Болезнь")
+        self.assertTrue(absent["is_retroactive_edit"])
+
+    def test_history_period_uses_organization_local_date(self):
+        response = self.client.get(
+            "/api/v1/attendance/history/",
+            {"child": str(self.child.id), "date_from": "2026-09-30", "date_to": "2026-09-30"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], str(self.makeup.id))
+
+    def test_history_filters_arbitrary_period_and_recalculates_summary(self):
+        response = self.client.get(
+            "/api/v1/attendance/history/",
+            {"child": str(self.child.id), "date_from": "2026-09-10", "date_to": "2026-09-20"},
+        )
+
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["summary"], {"present": 0, "absent": 1, "makeup": 0})
+
+    def test_history_rejects_inverted_period(self):
+        response = self.client.get(
+            "/api/v1/attendance/history/",
+            {"child": str(self.child.id), "date_from": "2026-09-20", "date_to": "2026-09-10"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_to", response.data)
+
+    def test_history_does_not_expose_another_organization_child(self):
+        other_org = Organization.objects.create(name="Другая", slug="other-history")
+        other_child = Child.objects.create(
+            organization=other_org,
+            full_name="Чужой ребёнок",
+            birth_date=datetime.date(2019, 1, 1),
+            gender=Child.Gender.FEMALE,
+        )
+
+        response = self.client.get("/api/v1/attendance/history/", {"child": str(other_child.id)})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("child", response.data)
+
+
 class AttendanceRosterAndBulkApiTest(APITestCase):
     """TRU-56: список детей занятия для экрана отметки + «отметить всех
     пришедшими» + RBAC (преподаватель — только свои занятия)."""

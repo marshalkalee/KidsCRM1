@@ -185,6 +185,10 @@ SPECTACULAR_SETTINGS = {
 
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.Argon2PasswordHasher",
+    # Legacy users created before Argon2 was enabled still have PBKDF2 hashes.
+    # Keep the hasher available for verification; Django upgrades the hash to
+    # the first hasher (Argon2) after their next successful login.
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
     "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
 ]
 

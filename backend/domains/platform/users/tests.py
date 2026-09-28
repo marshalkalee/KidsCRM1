@@ -1,3 +1,4 @@
+from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
 from django.test import TestCase, tag
 from rest_framework import status
@@ -153,6 +154,19 @@ class AuthTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("access", response.data)
         self.assertIn("refresh", response.data)
+
+    def test_login_accepts_legacy_pbkdf2_password_and_upgrades_hash(self):
+        self.owner.password = make_password("StrongPass123!", hasher="pbkdf2_sha256")
+        self.owner.save(update_fields=["password"])
+
+        response = self.client.post(
+            "/api/v1/users/auth/login/",
+            {"phone": "77001234567", "password": "StrongPass123!"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.owner.refresh_from_db()
+        self.assertTrue(self.owner.password.startswith("argon2"))
 
     def _login(self):
         return self.client.post(

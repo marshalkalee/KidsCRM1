@@ -153,7 +153,7 @@ export function DateInput({ id, value, onChange, invalid, required, min, max }) 
   const close = useCallback(() => setOpen(false), [])
   if (value !== synced) {
     setSynced(value)
-    if (value) setText(toDisplay(value))
+    setText(toDisplay(value))
   }
   function change(raw) {
     let digits = raw.replace(/\D/g, '').slice(0, 8)
