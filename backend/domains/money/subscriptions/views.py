@@ -116,3 +116,52 @@ class SubscriptionViewSet(
             payment_method=request.data["payment_method"],
         )
         return Response(SubscriptionSerializer(new_sub).data, status=201)
+
+    @action(detail=False, methods=["get"])
+    def without_subscription(self, request):
+        from .no_subscription import children_without_subscription, total_unpaid_lessons
+
+        organization = request.user.organization
+        rows = list(children_without_subscription(organization))
+        return Response(
+            {
+                "rows": [
+                    {
+                        "child_id": str(r["child_id"]),
+                        "child_name": r["child__full_name"],
+                        "lessons_count": r["lessons_count"],
+                        "since": r["since"].isoformat(),
+                    }
+                    for r in rows
+                ],
+                "total_unpaid_lessons": total_unpaid_lessons(organization),
+            }
+        )
+
+    @action(detail=False, methods=["post"])
+    def sell_and_cover(self, request):
+        from .no_subscription import sell_and_cover as sell_and_cover_service
+
+        organization = request.user.organization
+        child = Child.objects.for_tenant(organization).get(pk=request.data["child_id"])
+        subscription_type = get_selectable_subscription_types(organization).get(
+            pk=request.data["subscription_type_id"]
+        )
+        branch = Branch.objects.for_tenant(organization).get(pk=request.data["branch_id"])
+        direction = Direction.objects.for_tenant(organization).get(pk=request.data["direction_id"])
+        subscription, _payment, covered = sell_and_cover_service(
+            child,
+            actor=request.user,
+            subscription_type_version=subscription_type.versions.latest(),
+            direction=direction,
+            branch=branch,
+            starts_on=request.data["starts_on"],
+            ends_on=request.data["ends_on"],
+            discount_amount=request.data.get("discount_amount", 0),
+            discount_reason=request.data.get("discount_reason", ""),
+            paid_amount=request.data["paid_amount"],
+            payment_method=request.data["payment_method"],
+        )
+        return Response(
+            {"subscription_id": str(subscription.id), "covered_lessons": covered}, status=201
+        )
