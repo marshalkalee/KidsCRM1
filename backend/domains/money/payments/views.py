@@ -1,3 +1,5 @@
+import uuid
+
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -54,3 +56,13 @@ class PaymentViewSet(
             return Response({"detail": "Укажите причину отмены"}, status=400)
         cancel_payment(payment, actor=request.user, reason=reason)
         return Response(PaymentSerializer(payment).data)
+
+    @action(detail=False, methods=["get"])
+    def child_debt(self, request):
+        from domains.money.subscriptions.debt import debt_by_child
+
+        child_id = request.query_params.get("child_id")
+        if not child_id:
+            return Response({"detail": "child_id обязателен"}, status=400)
+        debts = debt_by_child(request.user.organization, [child_id])
+        return Response({"debt": str(debts.get(uuid.UUID(child_id), 0))})

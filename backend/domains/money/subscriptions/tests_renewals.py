@@ -5,19 +5,23 @@ expiring_child_ids() — единая точка правды "абонемен�
 """
 
 from datetime import date, timedelta
+from decimal import Decimal
 
 from django.test import TestCase
 
+from domains.money.payments.models import Payment
 from domains.people.clients.models import Child
-from domains.platform.tenants.models import Direction, Organization
+from domains.platform.tenants.models import Branch, Direction, Organization
 from domains.platform.tenants.org_settings import (
     SUBSCRIPTION_ENDING_DAYS_THRESHOLD,
     SUBSCRIPTION_ENDING_LESSONS_THRESHOLD,
 )
+from domains.platform.users.models import User
 
-from .models import Subscription
-from .renewals import expiring_child_ids
+from .models import RenewalContact, Subscription
+from .renewals import expiring_child_ids, expiring_subscriptions, mark_contacted, sell_renewal
 from .subscription_types import create_type
+from .subscriptions import add_ledger_entry
 
 TODAY = date(2026, 9, 21)
 
@@ -176,3 +180,70 @@ class ExpiringChildIdsTests(TestCase):
         )
 
         self.assertNotIn(other_child.id, self._expiring_ids())
+
+
+class RenewalScreenServiceTests(TestCase):
+    """expiring_subscriptions/mark_contacted/sell_renewal — часть экрана
+    «Продления» (TRU-69), поверх той же expiring_child_ids выше."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
+        self.branch = Branch.objects.create(organization=self.org, name="Филиал на Абая")
+        self.ballet = Direction.objects.create(organization=self.org, name="Балет")
+        self.child = Child.objects.create(
+            organization=self.org,
+            full_name="Иванов Алихан",
+            birth_date=date(2018, 1, 1),
+            gender=Child.Gender.MALE,
+        )
+        self.admin = User.objects.create_user(
+            phone="77001112233",
+            password="pass",
+            full_name="Админ",
+            organization=self.org,
+            role=User.Role.ADMIN,
+        )
+        self.st = create_type(
+            self.org,
+            name="8 занятий",
+            price=Decimal("30000"),
+            quota_sessions=8,
+            duration_days=30,
+            directions=[self.ballet],
+        )
+        self.sub = Subscription.objects.create(
+            organization=self.org,
+            child=self.child,
+            subscription_type_version=self.st.versions.latest(),
+            direction=self.ballet,
+            branch=self.branch,
+            starts_on=TODAY - timedelta(days=25),
+            ends_on=TODAY + timedelta(days=3),
+            list_price=Decimal("30000"),
+            price=Decimal("30000"),
+        )
+        add_ledger_entry(self.sub, kind="initial_grant", delta=8)
+
+    def test_expiring_subscriptions_returns_full_objects(self):
+        results = list(expiring_subscriptions(self.org, today=TODAY))
+        self.assertIn(self.sub, results)
+
+    def test_mark_contacted_saves_record(self):
+        mark_contacted(self.sub, actor=self.admin, note="Договорились на завтра")
+        self.assertEqual(RenewalContact.objects.filter(subscription=self.sub).count(), 1)
+
+    def test_sell_renewal_links_to_old_subscription(self):
+        new_sub, _payment = sell_renewal(
+            self.sub,
+            actor=self.admin,
+            child=self.child,
+            subscription_type_version=self.st.versions.latest(),
+            direction=self.ballet,
+            branch=self.branch,
+            starts_on=self.sub.ends_on,
+            ends_on=self.sub.ends_on + timedelta(days=30),
+            paid_amount=30000,
+            payment_method=Payment.Method.CASH,
+        )
+        self.assertEqual(new_sub.renewed_from_id, self.sub.id)
+        self.assertIn(new_sub, self.sub.renewals.all())
