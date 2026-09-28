@@ -7,6 +7,7 @@ Subscription.status, а результат вычисления на лету: �
 Пороги — только через get_org_setting() (TRU-23), никаких чисел здесь.
 """
 
+import logging
 from datetime import date
 
 from domains.platform.tenants.org_settings import (
@@ -15,9 +16,11 @@ from domains.platform.tenants.org_settings import (
     get_org_setting,
 )
 
-from .freezes import unfreeze_subscription
+from .freezes import finish_freeze
 from .models import Subscription
 from .subscriptions import transition_status
+
+logger = logging.getLogger(__name__)
 
 ENDING_SOON = "ending_soon"  # только для отображения, никогда не пишется в Subscription.status
 
@@ -55,14 +58,30 @@ def update_all_subscription_statuses() -> int:
     today = date.today()
     changed = 0
 
+    def safely(action, subscription):
+        # Один сбойный абонемент не должен обрывать ночную задачу для всех
+        # остальных — ошибку в лог, идём дальше.
+        try:
+            action(subscription)
+            return True
+        except Exception:
+            logger.exception("Автостатус абонемента %s не обновлён", subscription.pk)
+            return False
+
+    def expire(subscription):
+        transition_status(subscription, Subscription.Status.EXPIRED)
+        suggest_renewal(subscription)
+
+    def exhaust(subscription):
+        transition_status(subscription, Subscription.Status.EXHAUSTED)
+        suggest_renewal(subscription)
+
     expiring = Subscription.objects.filter(
         status__in=[Subscription.Status.ACTIVE, Subscription.Status.FROZEN],
         ends_on__lt=today,
     ).select_related("organization")
     for subscription in expiring.iterator():
-        transition_status(subscription, Subscription.Status.EXPIRED)
-        suggest_renewal(subscription)
-        changed += 1
+        changed += safely(expire, subscription)
 
     exhausted = Subscription.objects.filter(
         status=Subscription.Status.ACTIVE,
@@ -70,9 +89,7 @@ def update_all_subscription_statuses() -> int:
         sessions_remaining_cache__lte=0,
     ).select_related("organization")
     for subscription in exhausted.iterator():
-        transition_status(subscription, Subscription.Status.EXHAUSTED)
-        suggest_renewal(subscription)
-        changed += 1
+        changed += safely(exhaust, subscription)
 
     still_active = Subscription.objects.filter(status=Subscription.Status.ACTIVE).select_related(
         "organization"
@@ -81,11 +98,11 @@ def update_all_subscription_statuses() -> int:
         if get_display_status(subscription) == ENDING_SOON:
             suggest_renewal(subscription)
 
-    overdue_freezes = Subscription.objects.filter(
-        status=Subscription.Status.FROZEN,
-        freezes__ends_on__lt=today,
-    ).distinct()
-    for subscription in overdue_freezes.iterator():
-        unfreeze_subscription(subscription, actor=None)
+    # Заморозка закончилась — по ПОСЛЕДНЕЙ заморозке: старая закончившаяся
+    # при новой, ещё идущей, не должна размораживать абонемент.
+    for subscription in Subscription.objects.filter(status=Subscription.Status.FROZEN).iterator():
+        latest = subscription.freezes.order_by("-starts_on").first()
+        if latest is not None and latest.ends_on is not None and latest.ends_on < today:
+            changed += safely(finish_freeze, subscription)
 
     return changed

@@ -1,5 +1,6 @@
 import datetime
 
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -18,8 +19,11 @@ from domains.scheduling.schedule.serializers import (
     MakeupCandidateSerializer,
 )
 
+from .history import attendance_history_queryset, attendance_history_summary
 from .models import Attendance
 from .serializers import (
+    AttendanceHistoryQuerySerializer,
+    AttendanceHistorySerializer,
     AttendanceMarkSerializer,
     AttendanceRosterEntrySerializer,
     AttendanceSerializer,
@@ -62,6 +66,48 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
             qs = qs.filter(child_id=child_id)
         return qs
 
+    @action(detail=False, methods=["get"])
+    def history(self, request):
+        """TRU-55: история ребёнка за произвольный локальный период.
+
+        Сводка считается по всей отфильтрованной выборке, а не только по
+        текущей странице. Сам queryset вынесен в attendance.history, чтобы
+        аналитика оттока позже использовала те же первичные данные.
+        """
+        query = AttendanceHistoryQuerySerializer(
+            data=request.query_params, context={"request": request}
+        )
+        query.is_valid(raise_exception=True)
+        child = query.validated_data["child"]
+        date_from = query.validated_data.get("date_from")
+        date_to = query.validated_data.get("date_to")
+        queryset = attendance_history_queryset(
+            request.organization, child.id, date_from=date_from, date_to=date_to
+        )
+        summary = attendance_history_summary(queryset)
+        page = self.paginate_queryset(queryset)
+        rows = page if page is not None else queryset
+        data = AttendanceHistorySerializer(rows, many=True, context={"request": request}).data
+
+        if page is not None:
+            response = self.get_paginated_response(data)
+            response.data["period"] = {
+                "date_from": date_from.isoformat() if date_from else None,
+                "date_to": date_to.isoformat() if date_to else None,
+            }
+            response.data["summary"] = summary
+            return response
+        return Response(
+            {
+                "period": {
+                    "date_from": date_from.isoformat() if date_from else None,
+                    "date_to": date_to.isoformat() if date_to else None,
+                },
+                "summary": summary,
+                "results": data,
+            }
+        )
+
     @action(detail=False, methods=["post"])
     def mark(self, request):
         serializer = AttendanceMarkSerializer(data=request.data, context={"request": request})
@@ -84,6 +130,44 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
         )
         attendance.mark(status_value, actor=request.user, absence_reason=absence_reason)
         return Response(AttendanceSerializer(attendance, context={"request": request}).data)
+
+    @action(detail=False, methods=["post"])
+    def reset(self, request):
+        """Снять отметку ребёнка и откатить связанное списание."""
+        lesson_id = request.data.get("lesson")
+        child_id = request.data.get("child")
+        if not lesson_id:
+            raise ValidationError({"lesson": "Обязателен."})
+        if not child_id:
+            raise ValidationError({"child": "Обязателен."})
+        lesson = _get_lesson_scoped(request, lesson_id)
+        attendance = (
+            Attendance.objects.for_tenant(request.organization)
+            .filter(lesson=lesson, child_id=child_id)
+            .first()
+        )
+        if attendance is None:
+            return Response({"reset": False, "lesson": str(lesson.id), "child": str(child_id)})
+
+        attendance.clear_mark(actor=request.user)
+        return Response({"reset": True, "lesson": str(lesson.id), "child": str(child_id)})
+
+    @action(detail=False, methods=["post"], url_path="reset-all")
+    def reset_all(self, request):
+        """Снять все отметки занятия и вернуть связанные списания."""
+        lesson_id = request.data.get("lesson")
+        if not lesson_id:
+            raise ValidationError({"lesson": "Обязателен."})
+        lesson = _get_lesson_scoped(request, lesson_id)
+        with transaction.atomic():
+            attendances = list(
+                Attendance.objects.for_tenant(request.organization)
+                .select_for_update()
+                .filter(lesson=lesson)
+            )
+            for attendance in attendances:
+                attendance.clear_mark(actor=request.user)
+        return Response({"reset_count": len(attendances), "lesson": str(lesson.id)})
 
     @action(detail=False, methods=["get"])
     def roster(self, request):

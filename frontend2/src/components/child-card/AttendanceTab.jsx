@@ -1,33 +1,132 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CalendarClock, CalendarPlus, Clock, MapPin, Users } from 'lucide-react'
+import {
+  CalendarClock, CalendarPlus, CheckCircle2, Clock, History, MapPin, RotateCcw, Users, XCircle,
+} from 'lucide-react'
 import api from '../../api/axios'
 import {
-  Badge, Button, Card, EmptyState, ErrorState, Modal, Skeleton, apiErrorMessage, formatDateTime, useConfirm, useToast,
+  Badge, Button, Card, CardHeader, DataTable, DateInput, EmptyState, ErrorState, Field, Modal,
+  Skeleton, apiErrorMessage, formatDateTime, useConfirm, useToast,
 } from '../../ui'
 
+const PAGE_SIZE = 50
+
+const STATUS_META = {
+  present: { label: 'Посещено', tone: 'success' },
+  absent: { label: 'Пропущено', tone: 'danger' },
+  makeup: { label: 'Отработка', tone: 'brand' },
+}
+
+function dateIso(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function defaultPeriod() {
+  const today = new Date()
+  return {
+    dateFrom: dateIso(new Date(today.getFullYear(), today.getMonth() - 2, 1)),
+    dateTo: dateIso(today),
+  }
+}
+
 /**
- * Вкладка «Посещения» карточки ребёнка — пока только список доступных
- * отработок (TRU-54). Полная история посещений — отдельная задача TRU-55,
- * которая расширит этот же компонент, не добавляя новую вкладку.
+ * Вкладка «Посещения» (TRU-55): история и списания за период, сводка и
+ * доступные отработки. Подключается только через реестр tabs.js (TRU-82).
  */
 export default function AttendanceTab({ child, onCountChange }) {
+  const initialPeriod = defaultPeriod()
   const toast = useToast()
   const confirm = useConfirm()
-  const [rows, setRows] = useState(null)
-  const [error, setError] = useState(false)
-  const [pickingFor, setPickingFor] = useState(null) // null | строка из rows
+  const [draftPeriod, setDraftPeriod] = useState(initialPeriod)
+  const [period, setPeriod] = useState(initialPeriod)
+  const [periodError, setPeriodError] = useState('')
+  const [page, setPage] = useState(1)
+  const [history, setHistory] = useState(null)
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [historyError, setHistoryError] = useState(false)
+  const [makeups, setMakeups] = useState(null)
+  const [makeupsError, setMakeupsError] = useState(false)
+  const [pickingFor, setPickingFor] = useState(null)
 
-  const load = useCallback(() => {
-    api.get('attendance/available-makeups/', { params: { child: child.id } })
-      .then(r => {
-        setRows(r.data.results)
-        setError(false)
-        onCountChange?.(r.data.results.length)
+  const loadHistory = useCallback(() => {
+    api.get('attendance/history/', {
+      params: {
+        child: child.id,
+        date_from: period.dateFrom || undefined,
+        date_to: period.dateTo || undefined,
+        page,
+      },
+    })
+      .then(response => {
+        setHistory({
+          rows: response.data.results,
+          total: response.data.count ?? response.data.results.length,
+          summary: response.data.summary,
+        })
+        setHistoryError(false)
       })
-      .catch(() => setError(true))
+      .catch(() => setHistoryError(true))
+      .finally(() => setHistoryLoading(false))
+  }, [child.id, page, period.dateFrom, period.dateTo])
+
+  const loadMakeups = useCallback(() => {
+    api.get('attendance/available-makeups/', { params: { child: child.id } })
+      .then(response => {
+        setMakeups(response.data.results)
+        setMakeupsError(false)
+        onCountChange?.(response.data.results.length)
+      })
+      .catch(() => setMakeupsError(true))
   }, [child.id, onCountChange])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { loadHistory() }, [loadHistory])
+  useEffect(() => { loadMakeups() }, [loadMakeups])
+
+  function startHistoryLoad() {
+    setHistoryLoading(true)
+    setHistoryError(false)
+  }
+
+  function applyPeriod(event) {
+    event.preventDefault()
+    if (draftPeriod.dateFrom && draftPeriod.dateTo && draftPeriod.dateFrom > draftPeriod.dateTo) {
+      setPeriodError('Конец периода не может быть раньше начала.')
+      return
+    }
+    setPeriodError('')
+    startHistoryLoad()
+    if (page === 1 && period.dateFrom === draftPeriod.dateFrom && period.dateTo === draftPeriod.dateTo) {
+      loadHistory()
+      return
+    }
+    setPage(1)
+    setPeriod({ ...draftPeriod })
+  }
+
+  function showAllHistory() {
+    const all = { dateFrom: '', dateTo: '' }
+    setDraftPeriod(all)
+    setPeriodError('')
+    startHistoryLoad()
+    if (page === 1 && !period.dateFrom && !period.dateTo) {
+      loadHistory()
+      return
+    }
+    setPage(1)
+    setPeriod(all)
+  }
+
+  function retryHistory() {
+    startHistoryLoad()
+    loadHistory()
+  }
+
+  function changePage(nextPage) {
+    startHistoryLoad()
+    setPage(nextPage)
+  }
 
   async function enroll(row, candidateLessonId, confirmCapacity = false) {
     try {
@@ -40,56 +139,193 @@ export default function AttendanceTab({ child, onCountChange }) {
       })
       toast.success('Записан(а) на отработку')
       setPickingFor(null)
-      load()
-    } catch (err) {
-      if (err.response?.status === 409) {
+      loadMakeups()
+    } catch (error) {
+      if (error.response?.status === 409) {
         const ok = await confirm({
           title: 'Мест нет',
-          message: `Вместимость группы уже заполнена (${err.response.data.current_count}/${err.response.data.capacity}). Записать всё равно?`,
+          message: `Вместимость группы уже заполнена (${error.response.data.current_count}/${error.response.data.capacity}). Записать всё равно?`,
           confirmText: 'Записать',
         })
         if (ok) return enroll(row, candidateLessonId, true)
         return
       }
-      toast.error(apiErrorMessage(err))
+      toast.error(apiErrorMessage(error))
     }
   }
 
-  if (error) return <Card><ErrorState onRetry={load} /></Card>
-  if (!rows) return <Skeleton className="h-32" />
+  const columns = [
+    {
+      key: 'date',
+      header: 'Дата и время',
+      primary: true,
+      render: row => (
+        <div>
+          <span className="font-semibold">{formatDateTime(row.starts_at_local)}</span>
+          {row.is_retroactive_edit && (
+            <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-info-600">
+              <History className="size-3" /> Изменено задним числом
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'lesson',
+      header: 'Занятие',
+      render: row => (
+        <div>
+          <span className="font-medium">{row.lesson_name}</span>
+          {row.teacher_name && <p className="text-xs text-ink-subtle">{row.teacher_name}</p>}
+        </div>
+      ),
+    },
+    {
+      key: 'group',
+      header: 'Группа',
+      render: row => (
+        <div>
+          <span>{row.group_name || 'Индивидуальное'}</span>
+          {row.branch_name && <p className="text-xs text-ink-subtle">{row.branch_name}</p>}
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Статус',
+      mobileAside: true,
+      render: row => {
+        const meta = STATUS_META[row.status] || { label: row.status_display, tone: 'neutral' }
+        return <Badge tone={meta.tone}>{meta.label}</Badge>
+      },
+    },
+    {
+      key: 'reason',
+      header: 'Причина пропуска',
+      render: row => row.absence_reason_display || '—',
+      mobileRender: row => row.absence_reason_display || null,
+    },
+    {
+      key: 'consumption',
+      header: 'Абонемент',
+      render: row => (
+        <div title={row.consumption_display}>
+          <Badge tone={row.consumed_from_subscription ? 'success' : 'neutral'}>
+            {row.consumed_from_subscription ? 'Списано' : 'Не списано'}
+          </Badge>
+          {!row.consumed_from_subscription && row.consume_outcome && (
+            <p className="mt-1 max-w-48 text-xs text-ink-subtle">{row.consumption_display}</p>
+          )}
+        </div>
+      ),
+    },
+  ]
 
   return (
-    <>
-      {rows.length === 0 ? (
-        <Card>
-          <EmptyState icon={CalendarClock} title="Нет пропусков, доступных для отработки" description="Здесь появятся занятия, которые ребёнок пропустил и ещё может отработать." />
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {rows.map(row => (
-            <Card key={row.attendance_id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="font-semibold text-ink">{row.group_name || 'Индивидуальное занятие'}</p>
-                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-muted">
-                  <span className="inline-flex items-center gap-1"><Clock className="size-3.5" />{formatDateTime(row.starts_at_local)}</span>
-                  {row.room_name && <span className="inline-flex items-center gap-1"><MapPin className="size-3.5" />{row.room_name}</span>}
-                </div>
-                {row.absence_reason_display && (
-                  <p className="mt-1 text-[13px] text-ink-muted">Причина: {row.absence_reason_display}</p>
-                )}
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <Badge tone={row.days_left <= 3 ? 'warning' : 'neutral'}>
-                  сгорает через {row.days_left} {pluralDays(row.days_left)}
-                </Badge>
-                <Button variant="primary" size="sm" icon={CalendarPlus} onClick={() => setPickingFor(row)}>
-                  Отработать
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
+    <div className="space-y-5">
+      <Card>
+        <CardHeader
+          title="История посещений"
+          description="Отметки и фактические списания совпадают с журналом занятий."
+        />
+        <form onSubmit={applyPeriod} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <Field label="С даты" error={periodError} className="sm:w-48">
+            {({ id, invalid }) => (
+              <DateInput
+                id={id}
+                value={draftPeriod.dateFrom}
+                onChange={value => setDraftPeriod(current => ({ ...current, dateFrom: value }))}
+                invalid={invalid}
+                max={draftPeriod.dateTo || dateIso(new Date())}
+              />
+            )}
+          </Field>
+          <Field label="По дату" className="sm:w-48">
+            {({ id }) => (
+              <DateInput
+                id={id}
+                value={draftPeriod.dateTo}
+                onChange={value => setDraftPeriod(current => ({ ...current, dateTo: value }))}
+                min={draftPeriod.dateFrom || undefined}
+                max={dateIso(new Date())}
+              />
+            )}
+          </Field>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" variant="primary" loading={historyLoading}>Показать</Button>
+            <Button type="button" variant="ghost" onClick={showAllHistory}>За всё время</Button>
+          </div>
+        </form>
+      </Card>
+
+      {!history && historyLoading && <HistorySkeleton />}
+      {historyError && <Card><ErrorState onRetry={retryHistory} /></Card>}
+      {history && !historyError && (
+        <>
+          <Summary summary={history.summary} loading={historyLoading} />
+          <DataTable
+            columns={columns}
+            rows={history.rows}
+            loading={historyLoading}
+            pagination={{ page, pageSize: PAGE_SIZE, total: history.total }}
+            onPageChange={changePage}
+            empty={(
+              <EmptyState
+                icon={CalendarClock}
+                title="За этот период отметок нет"
+                description="Выберите другой период или проверьте журнал занятий."
+              />
+            )}
+          />
+        </>
       )}
+
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-[15px] font-bold text-ink">Доступные отработки</h2>
+            <p className="mt-0.5 text-[13px] text-ink-muted">Пропуски, которые ещё можно отработать.</p>
+          </div>
+          {makeups && <Badge tone={makeups.length ? 'warning' : 'neutral'}>{makeups.length}</Badge>}
+        </div>
+        {makeupsError && <Card><ErrorState onRetry={loadMakeups} /></Card>}
+        {!makeupsError && !makeups && <Skeleton className="h-32" />}
+        {!makeupsError && makeups && makeups.length === 0 && (
+          <Card>
+            <EmptyState
+              icon={CalendarClock}
+              title="Нет пропусков, доступных для отработки"
+              description="Здесь появятся занятия, которые ребёнок пропустил и ещё может отработать."
+            />
+          </Card>
+        )}
+        {!makeupsError && makeups && makeups.length > 0 && (
+          <div className="space-y-3">
+            {makeups.map(row => (
+              <Card key={row.attendance_id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="font-semibold text-ink">{row.group_name || 'Индивидуальное занятие'}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-muted">
+                    <span className="inline-flex items-center gap-1"><Clock className="size-3.5" />{formatDateTime(row.starts_at_local)}</span>
+                    {row.room_name && <span className="inline-flex items-center gap-1"><MapPin className="size-3.5" />{row.room_name}</span>}
+                  </div>
+                  {row.absence_reason_display && (
+                    <p className="mt-1 text-[13px] text-ink-muted">Причина: {row.absence_reason_display}</p>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:justify-end">
+                  <Badge tone={row.days_left <= 3 ? 'warning' : 'neutral'}>
+                    до {formatShortDate(row.expires_on)} · {row.days_left} {pluralDays(row.days_left)}
+                  </Badge>
+                  <Button variant="primary" size="sm" icon={CalendarPlus} onClick={() => setPickingFor(row)}>
+                    Отработать
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
 
       {pickingFor && (
         <MakeupCandidatesModal
@@ -98,8 +334,50 @@ export default function AttendanceTab({ child, onCountChange }) {
           onPick={lessonId => enroll(pickingFor, lessonId)}
         />
       )}
-    </>
+    </div>
   )
+}
+
+function Summary({ summary, loading }) {
+  const items = [
+    { key: 'present', label: 'Посещено', icon: CheckCircle2, className: 'text-success-600 bg-success-50' },
+    { key: 'absent', label: 'Пропущено', icon: XCircle, className: 'text-danger-600 bg-danger-50' },
+    { key: 'makeup', label: 'Отработано', icon: RotateCcw, className: 'text-brand-700 bg-brand-50' },
+  ]
+  return (
+    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-3 ${loading ? 'opacity-60' : ''}`}>
+      {items.map(item => (
+        <Card key={item.key} className="flex items-center gap-3 p-4">
+          <span className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${item.className}`}>
+            <item.icon className="size-5" />
+          </span>
+          <div>
+            <p className="text-2xl font-bold leading-none text-ink">{summary[item.key]}</p>
+            <p className="mt-1 text-xs font-semibold text-ink-muted">{item.label}</p>
+          </div>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+function HistorySkeleton() {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Skeleton className="h-20" />
+        <Skeleton className="h-20" />
+        <Skeleton className="h-20" />
+      </div>
+      <Skeleton className="h-64" />
+    </div>
+  )
+}
+
+function formatShortDate(iso) {
+  if (!iso) return '—'
+  const [year, month, day] = iso.split('-')
+  return `${day}.${month}.${year}`
 }
 
 function pluralDays(n) {
@@ -116,7 +394,7 @@ function MakeupCandidatesModal({ row, onClose, onPick }) {
 
   useEffect(() => {
     api.get(`attendance/${row.attendance_id}/makeup-candidates/`)
-      .then(r => setCandidates(r.data.results))
+      .then(response => setCandidates(response.data.results))
       .catch(() => setError(true))
   }, [row.attendance_id])
 
@@ -139,6 +417,7 @@ function MakeupCandidatesModal({ row, onClose, onPick }) {
             return (
               <button
                 key={lesson.id}
+                type="button"
                 onClick={() => onPick(lesson.id)}
                 className="flex w-full items-center justify-between gap-3 rounded-md border border-line px-3.5 py-3 text-left transition-colors hover:border-brand-300 hover:bg-brand-50/40"
               >

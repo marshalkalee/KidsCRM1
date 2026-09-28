@@ -29,6 +29,8 @@ class ManualProvider(PaymentProvider):
         self.method = method
 
     def record(self, *, subscription, amount, actor, comment="", idempotency_key=None) -> Payment:
+        if to_tenge(amount) <= 0:
+            raise ValueError("Сумма оплаты должна быть больше нуля.")
         now = timezone.now()
         defaults = dict(
             organization=subscription.organization,

@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 
 from domains.people.clients.models import Child
@@ -52,6 +53,111 @@ class AttendanceSerializer(serializers.ModelSerializer):
         ]
 
 
+class AttendanceHistoryQuerySerializer(serializers.Serializer):
+    child = serializers.PrimaryKeyRelatedField(queryset=Child.objects.none())
+    date_from = serializers.DateField(required=False)
+    date_to = serializers.DateField(required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            self.fields["child"].queryset = Child.objects.for_tenant(request.organization)
+
+    def validate(self, attrs):
+        if attrs.get("date_from") and attrs.get("date_to"):
+            if attrs["date_from"] > attrs["date_to"]:
+                raise serializers.ValidationError(
+                    {"date_to": "Конец периода не может быть раньше начала."}
+                )
+        return attrs
+
+
+class AttendanceHistorySerializer(serializers.ModelSerializer):
+    """Строка истории для карточки ребёнка и будущей аналитики пропусков."""
+
+    starts_at_local = serializers.SerializerMethodField()
+    ends_at_local = serializers.SerializerMethodField()
+    lesson_name = serializers.SerializerMethodField()
+    group_id = serializers.UUIDField(source="lesson.group_id", read_only=True, allow_null=True)
+    group_name = serializers.CharField(source="lesson.group.name", read_only=True, default=None)
+    branch_name = serializers.CharField(
+        source="lesson.group.branch.name", read_only=True, default=None
+    )
+    direction_name = serializers.CharField(
+        source="lesson.group.direction.name", read_only=True, default=None
+    )
+    room_name = serializers.CharField(source="lesson.room.name", read_only=True, default=None)
+    teacher_name = serializers.CharField(
+        source="lesson.teacher.full_name", read_only=True, default=None
+    )
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    absence_reason_display = serializers.CharField(
+        source="get_absence_reason_display", read_only=True
+    )
+    consumption_display = serializers.SerializerMethodField()
+    marked_by_name = serializers.CharField(
+        source="marked_by.full_name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = Attendance
+        fields = [
+            "id",
+            "lesson",
+            "starts_at_local",
+            "ends_at_local",
+            "lesson_name",
+            "group_id",
+            "group_name",
+            "branch_name",
+            "direction_name",
+            "room_name",
+            "teacher_name",
+            "status",
+            "status_display",
+            "absence_reason",
+            "absence_reason_display",
+            "consumed_from_subscription",
+            "subscription_id",
+            "consume_outcome",
+            "consumption_display",
+            "no_subscription_flag",
+            "is_retroactive_edit",
+            "marked_by_name",
+            "marked_at",
+        ]
+
+    def _local_datetime(self, value):
+        organization = self.context["request"].organization
+        tz = timezone.zoneinfo.ZoneInfo(organization.timezone or "Asia/Almaty")
+        return value.astimezone(tz).isoformat()
+
+    def get_starts_at_local(self, obj):
+        return self._local_datetime(obj.lesson.starts_at)
+
+    def get_ends_at_local(self, obj):
+        return self._local_datetime(obj.lesson.ends_at)
+
+    def get_lesson_name(self, obj):
+        if obj.lesson.group_id:
+            return obj.lesson.group.direction.name
+        return "Индивидуальное занятие"
+
+    def get_consumption_display(self, obj):
+        if obj.consumed_from_subscription:
+            return "Списано с абонемента"
+        labels = {
+            "no_active_subscription": "Не списано: нет активного абонемента",
+            "subscription_exhausted": "Не списано: занятия закончились",
+            "subscription_frozen": "Не списано: абонемент заморожен",
+            "rule_forbids": "Не списано: правило абонемента запрещает списание",
+            "makeup_no_charge": "Не списано: отработка без нового списания",
+            "trial_no_charge": "Не списано: пробное занятие",
+        }
+        return labels.get(obj.consume_outcome, "Не списано")
+
+
 class AttendanceMarkSerializer(serializers.Serializer):
     """Единственный вход для смены статуса (см. Attendance.mark) — создаёт
     запись посещаемости при первой отметке (get_or_create по паре
@@ -92,6 +198,11 @@ class AttendanceRosterEntrySerializer(serializers.Serializer):
 
     child = serializers.UUIDField(source="child.id")
     child_name = serializers.CharField(source="child.full_name")
+    child_birth_date = serializers.DateField(source="child.birth_date")
+    child_age = serializers.IntegerField(source="child.age")
+    child_gender = serializers.CharField(source="child.gender")
+    child_photo_url = serializers.URLField(source="child.photo_url", allow_blank=True)
+    child_status = serializers.CharField(source="child.status")
     attendance_id = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
