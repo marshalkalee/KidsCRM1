@@ -1,6 +1,6 @@
 import uuid
 
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.decorators import action
@@ -10,13 +10,15 @@ from rest_framework.response import Response
 from domains.platform.core.active_branch import get_active_branch
 from domains.platform.core.audit import AuditLog
 from domains.platform.core.permissions import IsStaffOfOrganization
-from domains.platform.core.role_permissions import can_manage_leads
+from domains.platform.core.role_permissions import can_manage_lead_dictionaries, can_manage_leads
 from domains.platform.core.viewsets import TenantModelViewSet
 
-from .models import LeadComment
+from .models import Lead, LeadComment, LeadRejectionReason, LeadSource
 from .serializers import (
     LeadCommentSerializer,
+    LeadRejectionReasonSerializer,
     LeadSerializer,
+    LeadSourceSerializer,
     LeadStatusChangeSerializer,
     LeadStatusSerializer,
 )
@@ -26,6 +28,18 @@ from .services import LeadTransitionError, change_status, create_lead, visible_l
 class CanManageLeads(IsStaffOfOrganization):
     def has_permission(self, request, view):
         return super().has_permission(request, view) and can_manage_leads(request.user)
+
+
+class CanManageLeadDictionaries(CanManageLeads):
+    """Читать справочники — всем, кто работает с заявками; менять — владельцу
+    и управляющему."""
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        return request.method in ("GET", "HEAD", "OPTIONS") or can_manage_lead_dictionaries(
+            request.user
+        )
 
 
 def _values(raw):
@@ -137,3 +151,40 @@ class LeadViewSet(TenantModelViewSet):
             .select_related("author")
         )
         return Response(LeadCommentSerializer(comments, many=True).data)
+
+
+class LeadDictionaryViewSet(TenantModelViewSet):
+    """
+    Справочник воронки (TRU-93). Удаления нет — только архивация
+    (PATCH is_active=false): в старых заявках значение должно остаться.
+    Порядок: активные, затем самые частые, затем по алфавиту.
+    ?active=1 — только активные (для выбора в новой заявке).
+    """
+
+    permission_classes = [IsAuthenticated, CanManageLeadDictionaries]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+    pagination_class = None
+    model = None
+    usage = None
+
+    def get_queryset(self):
+        qs = self.model.objects.for_tenant(self.request.user.organization).annotate(
+            usage_count=self.usage
+        )
+        if self.request.query_params.get("active") in ("1", "true"):
+            qs = qs.filter(is_active=True)
+        return qs.order_by("-is_active", "-usage_count", "name")
+
+
+class LeadSourceViewSet(LeadDictionaryViewSet):
+    serializer_class = LeadSourceSerializer
+    model = LeadSource
+    usage = Count("leads", filter=Q(leads__deleted_at__isnull=True))
+
+
+class LeadRejectionReasonViewSet(LeadDictionaryViewSet):
+    serializer_class = LeadRejectionReasonSerializer
+    model = LeadRejectionReason
+    # По событиям отказа, а не по текущим заявкам: вернули заявку в работу —
+    # отказ всё равно был и в отчёт по причинам попадает.
+    usage = Count("status_changes", filter=Q(status_changes__to_status=Lead.Status.REJECTED))

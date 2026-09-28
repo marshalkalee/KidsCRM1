@@ -8,6 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from domains.platform.tenants.models import Branch, Direction, Organization
 from domains.platform.users.models import User
 
+from .defaults import DEFAULT_REJECTION_REASONS, DEFAULT_SOURCES, ensure_default_dictionaries
 from .models import Lead, LeadRejectionReason, LeadSource, LeadStatusChange
 from .services import LeadTransitionError, change_status, create_lead
 
@@ -28,8 +29,9 @@ class LeadFixtures(TestCase):
         self.branch = Branch.objects.create(organization=self.org, name="Центр")
         self.other_branch = Branch.objects.create(organization=self.org, name="Орбита")
         self.direction = Direction.objects.create(organization=self.org, name="Балет")
-        self.instagram = LeadSource.objects.create(organization=self.org, name="Instagram")
-        self.expensive = LeadRejectionReason.objects.create(organization=self.org, name="Дорого")
+        # Значения по умолчанию заводятся сигналом при создании организации (TRU-93).
+        self.instagram = LeadSource.objects.get(organization=self.org, name="Instagram")
+        self.expensive = LeadRejectionReason.objects.get(organization=self.org, name="Дорого")
         self.owner = self.make_user("77010000001", User.Role.OWNER)
         self.admin = self.make_user("77010000002", User.Role.ADMIN)
         self.client_owner = make_client(self.owner)
@@ -409,3 +411,141 @@ class LeadTenantIsolationTests(LeadFixtures):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(LeadStatusChange.objects.filter(lead=lead_b).count(), 1)
+
+
+SOURCES_URL = f"{URL}sources/"
+REASONS_URL = f"{URL}rejection-reasons/"
+
+
+class LeadDictionaryDefaultsTests(TestCase):
+    def test_new_organization_gets_defaults(self):
+        org = Organization.objects.create(name="Новый центр", slug="new")
+        self.assertEqual(
+            sorted(LeadSource.objects.for_tenant(org).values_list("name", flat=True)),
+            sorted(DEFAULT_SOURCES),
+        )
+        self.assertEqual(
+            sorted(LeadRejectionReason.objects.for_tenant(org).values_list("name", flat=True)),
+            sorted(DEFAULT_REJECTION_REASONS),
+        )
+
+    def test_signup_gets_defaults(self):
+        response = APIClient().post(
+            "/api/v1/users/auth/register/",
+            {
+                "org_name": "Студия",
+                "full_name": "Владелец",
+                "phone": "+77075550011",
+                "password": "Str0ng-pass-42",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        org = User.objects.get(phone="+77075550011").organization
+        self.assertEqual(LeadSource.objects.for_tenant(org).count(), len(DEFAULT_SOURCES))
+
+    def test_ensure_defaults_is_idempotent_and_keeps_custom_values(self):
+        org = Organization.objects.create(name="Центр", slug="c")
+        LeadSource.objects.for_tenant(org).update(is_active=False)
+        LeadSource.objects.create(organization=org, name="Блогер")
+        ensure_default_dictionaries(org)
+        # Уже есть значения (пусть архивные) — не добавляем заново.
+        self.assertEqual(LeadSource.objects.for_tenant(org).count(), len(DEFAULT_SOURCES) + 1)
+        self.assertEqual(LeadSource.objects.for_tenant(org).filter(is_active=True).count(), 1)
+
+
+class LeadDictionaryApiTests(LeadFixtures):
+    def setUp(self):
+        super().setUp()
+        self.manager = self.make_user("77040000001", User.Role.MANAGER)
+
+    def names(self, url, client=None):
+        return [row["name"] for row in (client or self.client_owner).get(url).data]
+
+    def test_list_orders_frequent_first(self):
+        website = LeadSource.objects.get(organization=self.org, name="Сайт")
+        for _ in range(2):
+            self.make_lead(source=website)
+        self.make_lead(source=self.instagram)
+        rows = self.client_owner.get(SOURCES_URL).data
+        self.assertEqual([r["name"] for r in rows[:2]], ["Сайт", "Instagram"])
+        self.assertEqual(rows[0]["usage_count"], 2)
+
+    def test_rejection_reasons_counted_by_rejections(self):
+        far = LeadRejectionReason.objects.get(organization=self.org, name="Далеко")
+        lead = self.make_lead()
+        change_status(lead, to_status=Lead.Status.REJECTED, actor=self.owner, rejection_reason=far)
+        change_status(lead, to_status=Lead.Status.CONTACTED, actor=self.owner)
+        rows = self.client_owner.get(REASONS_URL).data
+        self.assertEqual((rows[0]["name"], rows[0]["usage_count"]), ("Далеко", 1))
+
+    def test_create_rename_archive_restore(self):
+        response = self.client_owner.post(
+            SOURCES_URL, {"name": "  Реклама у блогера "}, format="json"
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["name"], "Реклама у блогера")
+        source_id = response.data["id"]
+        response = self.client_owner.patch(
+            f"{SOURCES_URL}{source_id}/", {"name": "Блогер"}, format="json"
+        )
+        self.assertEqual(response.data["name"], "Блогер")
+        self.client_owner.patch(f"{SOURCES_URL}{source_id}/", {"is_active": False}, format="json")
+        self.assertNotIn("Блогер", self.names(f"{SOURCES_URL}?active=1"))
+        self.assertEqual(self.names(SOURCES_URL)[-1], "Блогер")  # архивные — в конце
+        self.client_owner.patch(f"{SOURCES_URL}{source_id}/", {"is_active": True}, format="json")
+        self.assertIn("Блогер", self.names(f"{SOURCES_URL}?active=1"))
+
+    def test_duplicate_name_rejected(self):
+        response = self.client_owner.post(SOURCES_URL, {"name": "instagram"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            self.client_owner.post(REASONS_URL, {"name": " "}, format="json").status_code, 400
+        )
+
+    def test_no_delete(self):
+        response = self.client_owner.delete(f"{SOURCES_URL}{self.instagram.id}/")
+        self.assertEqual(response.status_code, 405)
+
+    def test_archived_value_stays_on_old_lead(self):
+        lead = self.make_lead(source=self.instagram)
+        self.client_owner.patch(
+            f"{SOURCES_URL}{self.instagram.id}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(self.client_owner.get(f"{URL}{lead.id}/").data["source_name"], "Instagram")
+
+    def test_roles(self):
+        teacher = self.make_user("77040000002", User.Role.TEACHER)
+        admin_client = make_client(self.admin)
+        self.assertEqual(admin_client.get(SOURCES_URL).status_code, 200)
+        self.assertEqual(
+            admin_client.post(SOURCES_URL, {"name": "Новый"}, format="json").status_code, 403
+        )
+        self.assertEqual(
+            make_client(self.manager)
+            .post(SOURCES_URL, {"name": "Новый"}, format="json")
+            .status_code,
+            201,
+        )
+        self.assertEqual(make_client(teacher).get(SOURCES_URL).status_code, 403)
+        flags = make_client(self.manager).get("/api/v1/users/auth/me/").data["permissions"]
+        self.assertTrue(flags["can_manage_lead_dictionaries"])
+        self.assertFalse(
+            admin_client.get("/api/v1/users/auth/me/").data["permissions"][
+                "can_manage_lead_dictionaries"
+            ]
+        )
+
+
+@tag("tenant_isolation")
+class LeadDictionaryTenantIsolationTests(LeadFixtures):
+    def test_foreign_org_cannot_see_or_edit(self):
+        org_b = Organization.objects.create(name="Чужой", slug="b")
+        client_b = make_client(self.make_user("77050000001", User.Role.OWNER, organization=org_b))
+        ids = {row["id"] for row in client_b.get(SOURCES_URL).data}
+        self.assertNotIn(str(self.instagram.id), ids)
+        response = client_b.patch(
+            f"{SOURCES_URL}{self.instagram.id}/", {"name": "X"}, format="json"
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(client_b.get(f"{REASONS_URL}{self.expensive.id}/").status_code, 404)

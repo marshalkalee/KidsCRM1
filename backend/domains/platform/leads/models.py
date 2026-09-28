@@ -159,7 +159,11 @@ class LeadStatusChange(UUIDPrimaryKeyModel):
     )
     changed_at = models.DateTimeField(default=timezone.now)
     rejection_reason = models.ForeignKey(
-        LeadRejectionReason, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+        LeadRejectionReason,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="status_changes",
     )
     comment = models.TextField(blank=True)
 

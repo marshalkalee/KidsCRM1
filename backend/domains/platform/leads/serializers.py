@@ -158,3 +158,35 @@ class LeadCommentSerializer(serializers.ModelSerializer):
         model = LeadComment
         fields = ["id", "text", "author", "author_name", "created_at"]
         read_only_fields = ["author", "created_at"]
+
+
+class LeadDictionarySerializer(serializers.ModelSerializer):
+    """Источник или причина отказа. usage_count — сколько раз выбрано:
+    по нему частые значения стоят в списке сверху."""
+
+    usage_count = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        fields = ["id", "name", "is_active", "usage_count"]
+
+    def validate_name(self, value):
+        name = " ".join(value.split())
+        if not name:
+            raise serializers.ValidationError("Введите название.")
+        organization = self.context["request"].user.organization
+        duplicates = self.Meta.model.objects.for_tenant(organization).filter(name__iexact=name)
+        if self.instance is not None:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise serializers.ValidationError("Такое значение уже есть.")
+        return name
+
+
+class LeadSourceSerializer(LeadDictionarySerializer):
+    class Meta(LeadDictionarySerializer.Meta):
+        model = LeadSource
+
+
+class LeadRejectionReasonSerializer(LeadDictionarySerializer):
+    class Meta(LeadDictionarySerializer.Meta):
+        model = LeadRejectionReason
