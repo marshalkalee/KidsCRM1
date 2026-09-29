@@ -90,6 +90,11 @@ export default function ChildModal({ child, onClose, onSaved }) {
             <DateInput id={id} invalid={invalid} value={form.birth_date} onChange={v => set('birth_date', v)} max={new Date().toISOString().slice(0, 10)} required />
           )}
         </Field>
+        {child?.birth_date_is_estimated && (
+          <p className="-mt-2 text-xs text-warning-600 sm:col-span-2">
+            {t('Дата рассчитана из возраста заявки. Уточните её у родителя и сохраните карточку.')}
+          </p>
+        )}
         <Field label={t('Пол')} required error={errors.gender}>
           {({ id, invalid }) => (
             <Select id={id} invalid={invalid} value={form.gender} onChange={e => set('gender', e.target.value)} required>
@@ -102,6 +107,7 @@ export default function ChildModal({ child, onClose, onSaved }) {
         <Field label={t('Статус')} error={errors.status}>
           {({ id, invalid }) => (
             <Select id={id} invalid={invalid} value={form.status} onChange={e => set('status', e.target.value)}>
+              {form.status === 'trial' && <option value="trial">{t('Пробный')}</option>}
               <option value="active">{t('Активен')}</option>
               <option value="paused">{t('Приостановлен')}</option>
               <option value="left">{t('Ушёл')}</option>

@@ -329,6 +329,16 @@ class LessonEnrollment(TenantModel):
         blank=True,
         related_name="makeup_enrollments",
     )
+    # Для пробного — заявка, из которой создана запись. Связь находится в
+    # расписании, чтобы отмена/перенос (TRU-105) сохраняли всю историю
+    # записей, а карточка заявки находила текущую активную.
+    source_lead = models.ForeignKey(
+        "leads.Lead",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="trial_enrollments",
+    )
     enrolled_by = models.ForeignKey(
         "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
@@ -352,6 +362,15 @@ class LessonEnrollment(TenantModel):
                 fields=["source_attendance"],
                 condition=models.Q(cancelled_at__isnull=True),
                 name="unique_active_makeup_per_source_attendance",
+            ),
+            models.UniqueConstraint(
+                fields=["source_lead"],
+                condition=models.Q(cancelled_at__isnull=True),
+                name="unique_active_trial_per_source_lead",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(source_lead__isnull=True) | models.Q(kind="trial"),
+                name="source_lead_only_for_trial",
             ),
         ]
 

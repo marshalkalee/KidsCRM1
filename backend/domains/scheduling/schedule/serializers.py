@@ -223,12 +223,19 @@ class LessonEnrollmentSerializer(serializers.ModelSerializer):
             "kind",
             "kind_display",
             "source_attendance",
+            "source_lead",
             "enrolled_by",
             "enrolled_by_name",
             "cancelled_at",
             "created_at",
         ]
-        read_only_fields = ["id", "enrolled_by", "cancelled_at", "created_at"]
+        read_only_fields = [
+            "id",
+            "source_lead",
+            "enrolled_by",
+            "cancelled_at",
+            "created_at",
+        ]
 
 
 class LessonEnrollSerializer(serializers.Serializer):

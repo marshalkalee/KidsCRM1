@@ -12,6 +12,7 @@
 | 0002 | Стек, структура репозитория и формат API | `backend/docs/adr-002-stack-repo-api`; раздел «Frontend» заменён ADR-004 |
 | 0003 | Абстракция провайдера оплаты | `backend/docs/adr-003-payment-provider-abstraction.md` |
 | 0004 | Фронтенд — React SPA (frontend2) поверх REST API | `backend/docs/adr-004-frontend-spa.md` — принято |
+| 0005 | Ребёнок-кандидат для пробного занятия | предложено в TRU-100, требуется ревью Анель |
 
 ADR-001 и ADR-002 пока лежат в `backend/docs/` на своих ветках (это было
 до появления соглашения о единой папке `docs/adr/` в корне). При мерже

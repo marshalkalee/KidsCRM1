@@ -18,6 +18,7 @@ class ChildSerializer(serializers.ModelSerializer):
             "organization",
             "full_name",
             "birth_date",
+            "birth_date_is_estimated",
             "age",
             "gender",
             "directions",
@@ -29,7 +30,13 @@ class ChildSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "organization", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "organization",
+            "birth_date_is_estimated",
+            "created_at",
+            "updated_at",
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -66,6 +73,12 @@ class ChildSerializer(serializers.ModelSerializer):
                         {"status": (f"Недопустимый переход статуса: {previous} → {new}.")}
                     )
         return attrs
+
+    def update(self, instance, validated_data):
+        # Ручное сохранение даты в карточке подтверждает её точность.
+        if "birth_date" in validated_data:
+            validated_data["birth_date_is_estimated"] = False
+        return super().update(instance, validated_data)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
