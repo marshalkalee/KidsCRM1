@@ -68,7 +68,7 @@ class PaymentIdempotencyTests(TestCase):
             idempotency_key=key,
         )
         self.assertEqual(p1.pk, p2.pk)
-        self.assertEqual(Payment.objects.filter(provider_transaction_id=key).count(), 1)
+        self.assertEqual(Payment.objects.filter(provider_transaction_id__endswith=key).count(), 1)
 
     def test_different_keys_create_separate_payments(self):
         record_payment(

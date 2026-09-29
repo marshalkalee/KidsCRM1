@@ -30,6 +30,20 @@ from .models import Subscription
 _CONFIRMED_PAYMENT = Q(payments__status=Payment.Status.CONFIRMED, payments__deleted_at__isnull=True)
 
 
+def paid_sum():
+    """Сколько оплачено по абонементу — для .annotate(paid=paid_sum())."""
+    return Coalesce(Sum("payments__amount", filter=_CONFIRMED_PAYMENT), Decimal(0))
+
+
+def subscription_debt(subscription) -> Decimal:
+    """Долг по одному абонементу, по той же формуле, что списки: не меньше
+    нуля. Берёт annotate(paid=…), если он есть, иначе считает сам."""
+    paid = getattr(subscription, "paid", None)
+    if paid is None:
+        paid = Subscription.objects.filter(pk=subscription.pk).aggregate(paid=paid_sum())["paid"]
+    return max(subscription.price - paid, Decimal(0))
+
+
 def debtor_child_ids(organization):
     """Подзапрос id детей с хотя бы одним недоплаченным абонементом —
     предназначен для `Child.objects.filter(id__in=debtor_child_ids(org))`,
@@ -38,7 +52,7 @@ def debtor_child_ids(organization):
     детей за ≤1с)."""
     return (
         Subscription.objects.for_tenant(organization)
-        .annotate(paid=Coalesce(Sum("payments__amount", filter=_CONFIRMED_PAYMENT), Decimal(0)))
+        .annotate(paid=paid_sum())
         .filter(price__gt=F("paid"))
         .values("child_id")
     )
@@ -53,7 +67,7 @@ def debt_by_child(organization, child_ids) -> dict:
     rows = (
         Subscription.objects.for_tenant(organization)
         .filter(child_id__in=child_ids)
-        .annotate(paid=Coalesce(Sum("payments__amount", filter=_CONFIRMED_PAYMENT), Decimal(0)))
+        .annotate(paid=paid_sum())
         .filter(price__gt=F("paid"))
         .values_list("child_id", "price", "paid")
     )
@@ -71,7 +85,7 @@ def debtor_subscriptions(organization, *, branch=None, direction=None, min_age_d
     направлениям одновременно)."""
     qs = (
         Subscription.objects.for_tenant(organization)
-        .annotate(paid=Coalesce(Sum("payments__amount", filter=_CONFIRMED_PAYMENT), Decimal(0)))
+        .annotate(paid=paid_sum())
         .filter(price__gt=F("paid"))
         .annotate(debt=F("price") - F("paid"))
         .select_related("child", "subscription_type_version", "direction", "branch")

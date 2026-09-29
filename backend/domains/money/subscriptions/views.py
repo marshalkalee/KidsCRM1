@@ -10,6 +10,7 @@ from domains.platform.core.permissions import IsNotTeacher, IsOwnerOrManager
 from domains.platform.core.utils import today_for_org
 from domains.platform.tenants.models import Branch, Direction
 
+from .debt import paid_sum
 from .freezes import freeze_subscription, unfreeze_subscription
 from .models import BalanceDiscrepancy, Subscription
 from .reconciliation import manual_recompute
@@ -41,6 +42,7 @@ class SubscriptionViewSet(
                 "branch",
             )
             .prefetch_related("freezes")
+            .annotate(paid=paid_sum())
         )
         child_id = self.request.query_params.get("child_id")
         if child_id:

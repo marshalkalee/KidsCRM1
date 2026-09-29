@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .debt import subscription_debt
 from .models import Subscription, SubscriptionFreeze, SubscriptionLedgerEntry
 from .statuses import DISPLAY_LABELS, get_display_status
 
@@ -28,6 +29,8 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     display_status_label = serializers.SerializerMethodField()
     # История заморозок — в карточке ребёнка (TRU-63), без отдельного запроса.
     freezes = SubscriptionFreezeSerializer(many=True, read_only=True)
+    # Долг по этому абонементу — сумма по умолчанию в «Принять оплату» (TRU-67).
+    debt = serializers.SerializerMethodField()
 
     class Meta:
         model = Subscription
@@ -48,9 +51,13 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "discount_amount",
             "discount_reason",
             "price",
+            "debt",
             "renewed_from",
             "freezes",
         ]
+
+    def get_debt(self, obj):
+        return str(subscription_debt(obj))
 
     def get_display_status(self, obj):
         return get_display_status(obj)
