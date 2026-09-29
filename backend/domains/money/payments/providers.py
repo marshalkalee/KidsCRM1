@@ -43,9 +43,11 @@ class ManualProvider(PaymentProvider):
             comment=comment,
         )
         if idempotency_key:
+            # Ключ присылает клиент — с префиксом организации, чтобы ключ
+            # чужого центра не вернул его оплату и не упёрся в unique.
             payment, created = Payment.objects.get_or_create(
                 provider=Payment.Provider.MANUAL,
-                provider_transaction_id=str(idempotency_key),
+                provider_transaction_id=f"{subscription.organization_id}:{idempotency_key}",
                 defaults=defaults,
             )
         else:
