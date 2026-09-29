@@ -90,3 +90,24 @@ def debt_age_days(subscription: Subscription) -> int:
     """Давность — от даты продажи (starts_on): отдельного поля 'плановая
     дата оплаты' в модели нет. Появится — поправить только здесь."""
     return (date.today() - subscription.starts_on).days
+
+
+def debt_for_child(organization, child_id) -> Decimal:
+    """Долг одного ребёнка — тонкая обёртка над debt_by_child для мест,
+    где нужен ровно один ребёнок, не список (например, вкладка «Оплаты»)."""
+    return debt_by_child(organization, [child_id]).get(child_id, Decimal(0))
+
+
+def debt_for_parent(organization, parent) -> Decimal:
+    """Долг родителя — сумма по ВСЕМ привязанным детям (любая роль в
+    ChildContact, не только is_payer) — так уже считает карточка
+    родителя (people.clients.parents.parent_money); эта функция даёт то
+    же самое через общий debt_by_child, а не отдельную формулу."""
+    from domains.people.clients.models import ChildContact
+
+    child_ids = list(
+        ChildContact.objects.for_tenant(organization)
+        .filter(parent_contact=parent, child__deleted_at__isnull=True)
+        .values_list("child_id", flat=True)
+    )
+    return sum(debt_by_child(organization, child_ids).values(), Decimal(0))

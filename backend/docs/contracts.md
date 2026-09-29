@@ -130,22 +130,20 @@ AuditLog.record(actor, action: str, entity: AuditEntity, before: dict | None, af
 
 debtor_child_ids(organization) -> QuerySet[child_id]
 debt_by_child(organization, child_ids) -> dict[child_id, Decimal]
+debt_for_child(organization, child_id) -> Decimal
+debt_for_parent(organization, parent) -> Decimal
 debtor_subscriptions(organization, branch=None, direction=None, min_age_days=None) -> QuerySet[Subscription]
 
 Единственный источник правды для долга (ТЗ п. 3.1, критерий приёмки
 MVP №4). Долг — по каждому абонементу отдельно (price > paid), без
-взаимозачёта между абонементами одного ребёнка. Код —
-domains/money/subscriptions/debt.py (не payments/debt.py — устарел).
+взаимозачёта между абонементами одного ребёнка. Долг родителя — сумма
+по всем привязанным детям (любая роль в ChildContact, не только
+is_payer) — так же, как уже считает карточка родителя. Код —
+domains/money/subscriptions/debt.py — единственный модуль, второй
+(payments/debt.py) удалён (TRU-73).
 
-Владелец: Bekzat. Потребители: Анель (список детей, карточка родителя).
-
-> **Внимание (TRU-73):** в коде пока два расчёта долга —
-> `domains/money/payments/debt.py` (этот контракт) и
-> `domains/money/subscriptions/debt.py` (`debtor_child_ids`,
-> `debt_by_child` — сейчас ими пользуются список детей, фильтр «есть
-> долг» и карточка родителя). Они расходятся в учёте переплаты, в долге
-> родителя (только где он плательщик или по всем детям) и в статусе
-> оплаты. До закрытия TRU-73 цифры на экранах могут различаться.
+Владелец: Bekzat. Потребители: Анель (список детей, карточка родителя,
+экран «Задолженности», вкладка «Оплаты»).
 
 ## 6. Люди → всем (вкладки карточки ребёнка, frontend2)
 
