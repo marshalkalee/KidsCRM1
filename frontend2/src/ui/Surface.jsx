@@ -52,7 +52,7 @@ export function PageHeader({ title, description, actions, back }) {
     <div className="mb-5 flex flex-col gap-4 rounded-xl border border-line bg-surface px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
       <div className="min-w-0">
         {back && (
-          <Link to={back.to} className="-ml-1 mb-1 inline-flex items-center gap-0.5 rounded px-1 text-xs font-semibold text-ink-subtle transition-colors hover:text-brand-600">
+          <Link to={back.to} className="-ml-1 mb-1 inline-flex min-h-9 items-center gap-0.5 rounded px-1 text-xs font-semibold text-ink-subtle transition-colors hover:text-brand-600 sm:min-h-0">
             <ChevronLeft className="size-3.5" />
             {back.label}
           </Link>

@@ -166,6 +166,16 @@ class Lead(TenantModel):
     converted_child = models.ForeignKey(
         "clients.Child", on_delete=models.SET_NULL, null=True, blank=True, related_name="leads"
     )
+    # TRU-103: конкретный результат закрытия продажи. FK остаётся даже
+    # после завершения воронки, чтобы из заявки всегда открыть именно тот
+    # абонемент, который был продан в этом потоке.
+    sold_subscription = models.ForeignKey(
+        "subscriptions.Subscription",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_leads",
+    )
 
     class Meta:
         ordering = ["-created_at"]

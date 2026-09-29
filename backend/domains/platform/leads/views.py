@@ -20,12 +20,14 @@ from domains.platform.core.viewsets import TenantModelViewSet
 from .conversion import LeadConversionError, conversion_preview, convert_lead
 from .models import Lead, LeadComment, LeadKind, LeadRejectionReason, LeadSource
 from .reporting import leads_workbook
+from .sale import LeadSaleError, sale_options, sell_from_lead
 from .serializers import (
     LeadBulkSerializer,
     LeadCommentSerializer,
     LeadConversionQuerySerializer,
     LeadConversionSerializer,
     LeadRejectionReasonSerializer,
+    LeadSaleSerializer,
     LeadSerializer,
     LeadSourceSerializer,
     LeadStatusChangeSerializer,
@@ -120,7 +122,13 @@ class LeadViewSet(TenantModelViewSet):
 
     def get_queryset(self):
         qs = visible_leads(self.request.user).select_related(
-            "branch", "direction", "source", "assigned_to", "rejection_reason", "converted_child"
+            "branch",
+            "direction",
+            "source",
+            "assigned_to",
+            "rejection_reason",
+            "converted_child",
+            "sold_subscription__subscription_type_version",
         )
         if self.action not in ("list", "board", "export"):
             return qs
@@ -372,6 +380,28 @@ class LeadViewSet(TenantModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             LeadSerializer(lead, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["get", "post"], url_path="sale")
+    def sale(self, request, pk=None, version=None):
+        """Подбор абонемента/группы и атомарное закрытие продажи TRU-103."""
+        lead = self.get_object()
+        if request.method == "GET":
+            return Response(sale_options(lead))
+
+        serializer = LeadSaleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lead, membership, created = sell_from_lead(
+                lead, actor=request.user, data=serializer.validated_data
+            )
+        except LeadSaleError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        result = LeadSerializer(lead, context=self.get_serializer_context()).data
+        result["group_membership_id"] = str(membership.id) if membership else None
+        return Response(
+            result,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 

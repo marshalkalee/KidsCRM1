@@ -25,7 +25,6 @@ const LIMIT = 20
  */
 export default function Leads() {
   const toast = useToast()
-  const navigate = useNavigate()
   const { branches } = useSession()
   const location = useLocation()
   const [params, setParams] = useSearchParams()
@@ -115,9 +114,6 @@ export default function Leads() {
       const res = await api.post(`leads/${lead.id}/status/`, { status: to, ...extra })
       setBoard(current => replaceCard(current, res.data))
       toast.success(t('«{name}» → {status}', { name: leadTitle(lead), status: LEAD_STATUS[to].label }))
-      if (to === 'trial_attended' && !res.data.converted_child) {
-        navigate(`/leads/${lead.id}`, { state: { leadsReturnTo: returnTo } })
-      }
     } catch (err) {
       setBoard(snapshot)
       toast.error(apiErrorMessage(err))

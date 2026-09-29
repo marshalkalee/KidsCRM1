@@ -1,6 +1,7 @@
 import AttendanceTab from './AttendanceTab'
 import CommunicationsTab from './CommunicationsTab'
 import ContactsTab from './ContactsTab'
+import SubscriptionsTab from './SubscriptionsTab'
 import { t } from '../../i18n'
 
 /**
@@ -27,8 +28,8 @@ import { t } from '../../i18n'
 export const CHILD_CARD_TABS = [
   { key: 'contacts', get label() { return t('Контакты') }, order: 10, component: ContactsTab },
   { key: 'communications', get label() { return t('Коммуникации') }, order: 20, component: CommunicationsTab },
-  // Деньги (Bekzat, TRU-70) — заглушки до подключения.
-  { key: 'subscriptions', label: 'Абонементы', order: 30, component: null, permission: 'can_view_client_money' },
+  { key: 'subscriptions', get label() { return t('Абонементы') }, order: 30, component: SubscriptionsTab, permission: 'can_view_client_money' },
+  // История оплат остаётся отдельной задачей денежного домена.
   { key: 'payments', label: 'Оплаты', order: 40, component: null, permission: 'can_view_client_money' },
   // История посещений, списания и доступные отработки (TRU-55).
   { key: 'attendance', label: 'Посещения', order: 50, component: AttendanceTab },

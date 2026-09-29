@@ -100,7 +100,7 @@ function AttendanceDateInput({ value, onChange }) {
   }
 
   return (
-    <div className="w-[150px]">
+    <div className="w-full min-w-0 sm:w-[150px]">
       <label className="sr-only" htmlFor="attendance-date">{t('Выбрать дату')}</label>
       <DateInput id="attendance-date" value={draft} onChange={handleChange} />
     </div>
@@ -155,14 +155,14 @@ function DailyLessonsList({ selectedDate }) {
         title={t('Посещаемость')}
         description={t('Занятия за {date}', { date: formatDate(selectedDate) })}
         actions={(
-          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
+          <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:w-auto sm:flex-wrap">
             <Button
               icon={ChevronLeft}
               onClick={() => shiftDate(-1)}
               aria-label={t('Предыдущий день')}
               title={t('Предыдущий день')}
             >
-              {t('Назад')}
+              <span className="hidden sm:inline">{t('Назад')}</span>
             </Button>
             <AttendanceDateInput key={selectedDate} value={selectedDate} onChange={selectDate} />
             <Button
@@ -171,9 +171,9 @@ function DailyLessonsList({ selectedDate }) {
               aria-label={t('Следующий день')}
               title={t('Следующий день')}
             >
-              {t('Вперёд')}
+              <span className="hidden sm:inline">{t('Вперёд')}</span>
             </Button>
-            {selectedDate !== today && <Button onClick={() => selectDate(today)}>{t('Сегодня')}</Button>}
+            {selectedDate !== today && <Button className="col-span-3 justify-center sm:col-auto" onClick={() => selectDate(today)}>{t('Сегодня')}</Button>}
           </div>
         )}
       />
@@ -184,7 +184,7 @@ function DailyLessonsList({ selectedDate }) {
         <Card><EmptyState icon={CalendarDays} title={t('На выбранную дату занятий нет')} description={t('Выберите другую дату или проверьте расписание.')} /></Card>
       )}
 
-      <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2 xl:grid-cols-3">
         {lessons.map(lesson => (
           <button
             key={lesson.id}
@@ -378,7 +378,7 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
         back={{ to: `/attendance?date=${listDate}`, label: t('К списку занятий') }}
         title={lessonLabel(lesson)}
         description={[
-          `${localDatePart(lesson.starts_at_local)} · ${localTimePart(lesson.starts_at_local)}–${localTimePart(lesson.ends_at_local)}`,
+          `${formatDate(localDatePart(lesson.starts_at_local))} · ${localTimePart(lesson.starts_at_local)}–${localTimePart(lesson.ends_at_local)}`,
           lesson.room_name,
           t('{marked}/{total} отмечено', { marked: markedCount, total: rows.length }),
         ].filter(Boolean).join(' · ')}
@@ -503,7 +503,7 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark, onRese
       {row.enrollment_kind === 'trial' && row.source_lead_id && (
         <Link
           to={`/leads/${row.source_lead_id}`}
-          style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', textDecoration: 'none', whiteSpace: 'nowrap' }}
+          style={{ display: 'inline-flex', minHeight: 32, alignItems: 'center', padding: '0 6px', borderRadius: 6, fontSize: 10, fontWeight: 700, color: '#7C3AED', textDecoration: 'none', whiteSpace: 'nowrap' }}
         >
           {t('Открыть заявку')}
         </Link>
