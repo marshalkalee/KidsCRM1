@@ -123,12 +123,15 @@ class ChildViewSet(viewsets.ModelViewSet):
                     {
                         "id": str(lead.id),
                         "source_name": lead.source.name if lead.source else None,
+                        "branch_name": lead.branch.name if lead.branch else None,
+                        "direction_name": lead.direction.name if lead.direction else None,
+                        "lead_child_age": lead.child_age,
                         "created_at": lead.created_at,
                         "status": lead.status,
                     }
                     for lead in Lead.objects.for_tenant(organization)
                     .filter(converted_child=child)
-                    .select_related("source")
+                    .select_related("source", "branch", "direction")
                 ]
                 if can_manage_leads(request.user)
                 else [],

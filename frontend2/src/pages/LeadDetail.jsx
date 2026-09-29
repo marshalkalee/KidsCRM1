@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowRight, CalendarPlus, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Trash2, UserRound,
+  ArrowRight, CalendarPlus, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Trash2, UserRound, UserRoundPlus,
 } from 'lucide-react'
 import api from '../api/axios'
+import LeadConversionModal from '../components/leads/LeadConversionModal'
 import LeadModal from '../components/leads/LeadModal'
 import RejectModal from '../components/leads/RejectModal'
 import TrialBookingModal from '../components/leads/TrialBookingModal'
@@ -44,6 +45,7 @@ export default function LeadDetail() {
   const [editing, setEditing] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [bookingTrial, setBookingTrial] = useState(false)
+  const [converting, setConverting] = useState(false)
   const [staff, setStaff] = useState([])
 
   const loadExtras = useCallback(() => {
@@ -53,7 +55,11 @@ export default function LeadDetail() {
 
   const load = useCallback(() => {
     api.get(`leads/${id}/`)
-      .then(res => { setLead(res.data); setState('ready') })
+      .then(res => {
+        setLead(res.data)
+        setState('ready')
+        if (res.data.status === 'trial_attended' && !res.data.converted_child) setConverting(true)
+      })
       .catch(err => setState(err.response?.status === 404 ? 'missing' : 'error'))
     loadExtras()
   }, [id, loadExtras])
@@ -85,6 +91,7 @@ export default function LeadDetail() {
     try {
       const res = await api.post(`leads/${lead.id}/status/`, { status: to, ...extra })
       setLead(res.data)
+      if (to === 'trial_attended' && !res.data.converted_child) setConverting(true)
       loadExtras()
       toast.success(t('Статус: {status}', { status: LEAD_STATUS[to].label }))
     } catch (err) {
@@ -194,6 +201,17 @@ export default function LeadDetail() {
 
         <div className="min-w-0 space-y-6">
           {lead.trial_booking && <TrialBookingCard booking={lead.trial_booking} />}
+          {lead.status === 'trial_attended' && !lead.converted_child && (
+            <Card className="border-brand-200 bg-[linear-gradient(135deg,#fff7f5,#ffffff)]">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-bold text-ink">{t('Пробное посещено — оформите клиента')}</p>
+                  <p className="mt-1 text-sm text-ink-muted">{t('Проверьте дубли и дополните обязательные данные ребёнка и родителя.')}</p>
+                </div>
+                <Button variant="primary" icon={UserRoundPlus} onClick={() => setConverting(true)}>{t('Оформить клиента')}</Button>
+              </div>
+            </Card>
+          )}
           <StatusCard
             lead={lead}
             onBookTrial={() => setBookingTrial(true)}
@@ -216,6 +234,17 @@ export default function LeadDetail() {
           onBooked={saved => {
             setLead(saved)
             setBookingTrial(false)
+            loadExtras()
+          }}
+        />
+      )}
+      {converting && (
+        <LeadConversionModal
+          lead={lead}
+          onClose={() => setConverting(false)}
+          onConverted={saved => {
+            setLead(saved)
+            setConverting(false)
             loadExtras()
           }}
         />

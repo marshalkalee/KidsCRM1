@@ -17,11 +17,14 @@ from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_manage_lead_dictionaries, can_manage_leads
 from domains.platform.core.viewsets import TenantModelViewSet
 
+from .conversion import LeadConversionError, conversion_preview, convert_lead
 from .models import Lead, LeadComment, LeadKind, LeadRejectionReason, LeadSource
 from .reporting import leads_workbook
 from .serializers import (
     LeadBulkSerializer,
     LeadCommentSerializer,
+    LeadConversionQuerySerializer,
+    LeadConversionSerializer,
     LeadRejectionReasonSerializer,
     LeadSerializer,
     LeadSourceSerializer,
@@ -350,6 +353,26 @@ class LeadViewSet(TenantModelViewSet):
         return Response(
             LeadSerializer(lead, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["get", "post"], url_path="conversion")
+    def conversion(self, request, pk=None, version=None):
+        """Предпросмотр дублей и явное подтверждение конвертации TRU-102."""
+        lead = self.get_object()
+        if request.method == "GET":
+            query = LeadConversionQuerySerializer(data=request.query_params)
+            query.is_valid(raise_exception=True)
+            return Response(conversion_preview(lead, **query.validated_data))
+
+        serializer = LeadConversionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lead, created = convert_lead(lead, actor=request.user, data=serializer.validated_data)
+        except (LeadConversionError, Child.DoesNotExist) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            LeadSerializer(lead, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
     @action(detail=True, methods=["get"])

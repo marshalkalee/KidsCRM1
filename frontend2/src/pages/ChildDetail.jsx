@@ -97,6 +97,8 @@ export default function ChildDetail() {
                     {index > 0 && ', '}
                     <Link to={`/leads/${lead.id}`} className="font-semibold text-brand-600 hover:underline">
                       {lead.source_name ? t(lead.source_name) : t('заявка')} · {formatDate(lead.created_at)}
+                      {lead.branch_name ? ` · ${lead.branch_name}` : ''}
+                      {lead.direction_name ? ` · ${lead.direction_name}` : ''}
                     </Link>
                   </span>
                 ))}

@@ -2,6 +2,7 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
+from domains.people.clients.models import Child, ChildContact
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.text_validation import normalize_entity_name, normalize_person_name
 from domains.platform.tenants.models import Branch, Direction
@@ -196,6 +197,59 @@ class LeadStatusSerializer(serializers.Serializer):
 
 class TrialBookingSerializer(serializers.Serializer):
     lesson = serializers.UUIDField()
+
+
+class LeadConversionQuerySerializer(serializers.Serializer):
+    child_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    birth_date = serializers.DateField(required=False)
+
+    def validate_child_name(self, value):
+        return normalize_person_name(value) if value else value
+
+
+class LeadConversionSerializer(serializers.Serializer):
+    decision = serializers.ChoiceField(choices=["create_new", "existing_parent", "existing_child"])
+    child_id = serializers.UUIDField(required=False)
+    parent_id = serializers.UUIDField(required=False)
+    child_name = serializers.CharField(max_length=255)
+    birth_date = serializers.DateField()
+    gender = serializers.ChoiceField(choices=Child.Gender.choices)
+    parent_name = serializers.CharField(max_length=255)
+    link_role = serializers.ChoiceField(
+        choices=ChildContact.Role.choices, default=ChildContact.Role.MOTHER
+    )
+    consent_given = serializers.BooleanField()
+
+    def validate_child_name(self, value):
+        value = normalize_person_name(value)
+        if len(value.split()) < 2:
+            raise serializers.ValidationError("Укажите фамилию и имя ребёнка.")
+        return value
+
+    def validate_parent_name(self, value):
+        value = normalize_person_name(value)
+        if len(value.split()) < 2:
+            raise serializers.ValidationError("Укажите фамилию и имя родителя.")
+        return value
+
+    def validate_birth_date(self, value):
+        if value > timezone.localdate():
+            raise serializers.ValidationError("Дата рождения не может быть в будущем.")
+        return value
+
+    def validate_consent_given(self, value):
+        if not value:
+            raise serializers.ValidationError(
+                "Подтвердите согласие на обработку персональных данных."
+            )
+        return value
+
+    def validate(self, attrs):
+        if attrs["decision"] == "existing_child" and not attrs.get("child_id"):
+            raise serializers.ValidationError({"child_id": "Выберите ребёнка."})
+        if attrs["decision"] == "existing_parent" and not attrs.get("parent_id"):
+            raise serializers.ValidationError({"parent_id": "Выберите родителя."})
+        return attrs
 
 
 class TrialLessonSerializer(serializers.Serializer):
