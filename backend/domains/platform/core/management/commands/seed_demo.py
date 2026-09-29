@@ -162,6 +162,9 @@ NOTES = [
 
 class Command(BaseCommand):
     help = "Наполняет организацию демо-данными для разработки (только DEBUG)."
+    # Телефоны педагогов уникальны на всю базу — у другой демо-организации
+    # (seed_showcase) свой префикс, иначе get_or_create вернул бы чужих.
+    teacher_phone = "+7700900{:04d}"
 
     def add_arguments(self, parser):
         parser.add_argument("--phone", default="+77011234567", help="Телефон владельца.")
@@ -253,7 +256,7 @@ class Command(BaseCommand):
         teachers = []
         for index, full_name in enumerate(TEACHERS, start=1):
             teacher, created = User.objects.get_or_create(
-                phone=f"+7700900{index:04d}",
+                phone=self.teacher_phone.format(index),
                 defaults={
                     "full_name": full_name,
                     "organization": self.org,
