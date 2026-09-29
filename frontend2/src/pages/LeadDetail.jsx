@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowRight, CalendarPlus, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Trash2, UserRound,
 } from 'lucide-react'
@@ -8,6 +8,7 @@ import LeadModal from '../components/leads/LeadModal'
 import RejectModal from '../components/leads/RejectModal'
 import TrialBookingModal from '../components/leads/TrialBookingModal'
 import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/format'
+import { getLeadsViewPreference } from '../components/leads/viewPreference'
 import { useSession } from '../session/SessionContext'
 import {
   Avatar, Badge, Button, Card, Dropdown, EmptyState, ErrorState, PageHeader, Skeleton, Textarea, ageLabel, apiErrorMessage, cn,
@@ -32,6 +33,7 @@ function whatsappUrl(lead, organizationName) {
 export default function LeadDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const toast = useToast()
   const confirm = useConfirm()
   const { user } = useSession()
@@ -61,7 +63,11 @@ export default function LeadDetail() {
     api.get('users/').then(res => setStaff((res.data.results || res.data).filter(u => ['owner', 'manager', 'admin'].includes(u.role) && u.is_active !== false))).catch(() => {})
   }, [])
 
-  const back = { to: '/leads', label: t('Заявки') }
+  const storedReturnTo = location.state?.leadsReturnTo
+  const leadsReturnTo = typeof storedReturnTo === 'string' && storedReturnTo.startsWith('/leads')
+    ? storedReturnTo
+    : `/leads?view=${getLeadsViewPreference()}`
+  const back = { to: leadsReturnTo, label: t('Заявки') }
   if (state === 'loading') {
     return (
       <div>
@@ -71,7 +77,7 @@ export default function LeadDetail() {
     )
   }
   if (state === 'missing') {
-    return <Card><EmptyState icon={SearchX} title={t('Заявка не найдена')} description={t('Возможно, её удалили или ссылка неверная.')} action={<Button to="/leads">{t('К заявкам')}</Button>} /></Card>
+    return <Card><EmptyState icon={SearchX} title={t('Заявка не найдена')} description={t('Возможно, её удалили или ссылка неверная.')} action={<Button to={leadsReturnTo}>{t('К заявкам')}</Button>} /></Card>
   }
   if (state === 'error') return <Card><ErrorState onRetry={load} /></Card>
 
@@ -102,7 +108,7 @@ export default function LeadDetail() {
     try {
       await api.delete(`leads/${lead.id}/`)
       toast.success(t('Заявка удалена'))
-      navigate('/leads', { replace: true })
+      navigate(leadsReturnTo, { replace: true })
     } catch (err) {
       toast.error(apiErrorMessage(err))
     }
@@ -252,7 +258,7 @@ function TrialBookingCard({ booking }) {
           {booking.teacher_name && <p className="mt-1 text-xs text-ink-subtle">{booking.teacher_name}</p>}
         </div>
         <Button
-          to={`/schedule?date=${booking.starts_at_local.slice(0, 10)}&view=day`}
+          to={`/schedule?date=${booking.starts_at_local.slice(0, 10)}&view=day&lesson=${booking.lesson_id}`}
           icon={CalendarPlus}
         >
           {t('Открыть в календаре')}
@@ -346,7 +352,7 @@ function CommentsCard({ leadId, comments, onAdded }) {
         </ul>
       )}
       <form onSubmit={submit} className="mt-3 flex items-end gap-2">
-        <Textarea rows={2} value={text} onChange={e => setText(e.target.value)} placeholder={t('Новый комментарий')} aria-label={t('Новый комментарий')} className="flex-1" />
+        <Textarea rows={2} value={text} onChange={e => setText(e.target.value)} placeholder={t('Новый комментарий')} aria-label={t('Новый комментарий')} className="flex-1" maxLength={2000} />
         <Button type="submit" variant="primary" size="icon" loading={saving} disabled={!text.trim()} aria-label={t('Добавить комментарий')}><Send className="size-4" /></Button>
       </form>
     </Card>

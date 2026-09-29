@@ -103,7 +103,16 @@ class LessonViewSet(TenantModelViewSet):
             Lesson.objects.for_tenant(self.request.organization)
             .select_related("room", "teacher", "schedule_slot")
             .prefetch_related(
-                Prefetch("group", queryset=groups_qs), "rescheduled_to", "individual_children"
+                Prefetch("group", queryset=groups_qs),
+                Prefetch(
+                    "enrollments",
+                    queryset=LessonEnrollment.objects.filter(
+                        cancelled_at__isnull=True
+                    ).select_related("child", "source_lead"),
+                    to_attr="active_enrollments",
+                ),
+                "rescheduled_to",
+                "individual_children",
             )
         )
 

@@ -1066,6 +1066,6 @@ class RenewalLeadTests(LeadFixtures):
 
     def test_kind_not_writable_through_api(self):
         response = self.client_owner.post(
-            URL, {"parent_name": "А", "phone": "+77070000001", "kind": "renewal"}, format="json"
+            URL, {"parent_name": "Ан", "phone": "+77070000001", "kind": "renewal"}, format="json"
         )
         self.assertEqual(response.data["kind"], "new")

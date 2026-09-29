@@ -5,6 +5,7 @@ import api from '../api/axios'
 import { useSession } from '../session/SessionContext'
 import { Button, Card, EmptyState, ErrorState, Input, PageHeader, Skeleton, apiErrorMessage, useConfirm, useToast } from '../ui'
 import { t } from '../i18n'
+import { entityNameInputProps } from '../utils/formValidation'
 
 /**
  * Залы филиала (TRU-85) — нужны для проверки конфликтов расписания.
@@ -112,8 +113,8 @@ function RoomForm({ room, onSave, onCancel }) {
 
   return (
     <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
-      <Input aria-label={t('Название зала')} placeholder={room ? '' : t('Новый зал, например «Большой»')} className="h-9 min-w-40 flex-1" value={name} onChange={e => setName(e.target.value)} autoFocus={Boolean(room)} />
-      <Input aria-label={t('Вместимость')} type="number" min={1} placeholder={t('Мест')} className="h-9 w-24" value={capacity} onChange={e => setCapacity(e.target.value)} />
+      <Input aria-label={t('Название зала')} placeholder={room ? '' : t('Новый зал, например «Большой»')} className="h-9 min-w-40 flex-1" value={name} onChange={e => setName(e.target.value)} autoFocus={Boolean(room)} required {...entityNameInputProps} maxLength={100} />
+      <Input aria-label={t('Вместимость')} type="number" min={1} max={1000} placeholder={t('Мест')} className="h-9 w-24" value={capacity} onChange={e => setCapacity(e.target.value)} />
       {room ? (
         <>
           <Button variant="primary" size="icon" type="submit" aria-label={t('Сохранить')} loading={saving}><Check className="size-4" /></Button>

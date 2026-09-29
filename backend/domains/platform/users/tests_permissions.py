@@ -67,7 +67,12 @@ class UserPermissionTests(TestCase):
     def test_manager_can_create_teacher(self):
         response = self.as_(self.manager).post(
             URL,
-            {"phone": "+77010000010", "full_name": "T", "role": "teacher", "password": "pass12345"},
+            {
+                "phone": "+77010000010",
+                "full_name": "Teacher",
+                "role": "teacher",
+                "password": "pass12345",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, 201, response.content)

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import api from '../api/axios'
 import { Button, Field, Input, Modal, MultiSelect, Select, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
+import { entityNameInputProps } from '../utils/formValidation'
 
 const listOf = response => response.data.results || response.data
 
@@ -81,7 +82,7 @@ export default function GroupModal({ group, onClose, onSaved }) {
     >
       <form id="group-form" onSubmit={submit} className="grid gap-3.5 sm:grid-cols-2">
         <Field label={t('Название')} required error={errors.name} className="sm:col-span-2">
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => set('name', e.target.value)} placeholder={t('Балет — Младшая группа')} required autoFocus />}
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => set('name', e.target.value)} placeholder={t('Балет — Младшая группа')} required autoFocus {...entityNameInputProps} />}
         </Field>
         <Field label={t('Филиал')} required error={errors.branch}>
           {({ id, invalid }) => (

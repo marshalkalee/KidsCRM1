@@ -212,9 +212,14 @@ class AttendanceRosterEntrySerializer(serializers.Serializer):
     is_retroactive_edit = serializers.SerializerMethodField()
     marked_at = serializers.SerializerMethodField()
     enrollment_kind = serializers.SerializerMethodField()
+    source_lead_id = serializers.SerializerMethodField()
 
     def get_enrollment_kind(self, obj):
         return obj.get("enrollment_kind")
+
+    def get_source_lead_id(self, obj):
+        source_lead_id = obj.get("source_lead_id")
+        return str(source_lead_id) if source_lead_id else None
 
     def get_attendance_id(self, obj):
         attendance = obj["attendance"]

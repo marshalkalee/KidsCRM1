@@ -7,6 +7,7 @@ import {
   Skeleton, apiErrorMessage, cn, useConfirm, useToast,
 } from '../../ui'
 import { t } from '../../i18n'
+import { personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../../utils/formValidation'
 
 /**
  * Вкладка «Контакты»: родители и контактные лица ребёнка (ChildContact).
@@ -242,10 +243,10 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
         {!isEdit && mode === 'new' && (
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label={t('ФИО')} required error={errors.full_name}>
-              {({ id, invalid }) => <Input id={id} invalid={invalid} value={parent.full_name} onChange={e => setParent(p => ({ ...p, full_name: e.target.value }))} autoFocus />}
+              {({ id, invalid }) => <Input id={id} invalid={invalid} value={parent.full_name} onChange={e => setParent(p => ({ ...p, full_name: personNameInput(e.target.value) }))} required autoFocus {...personNameInputProps} />}
             </Field>
             <Field label={t('Телефон')} required error={errors.phone}>
-              {({ id, invalid }) => <Input id={id} invalid={invalid} type="tel" inputMode="tel" placeholder="+7 700 000 00 00" value={parent.phone} onChange={e => setParent(p => ({ ...p, phone: e.target.value }))} />}
+              {({ id, invalid }) => <Input id={id} invalid={invalid} placeholder="77000000000" value={parent.phone} onChange={e => setParent(p => ({ ...p, phone: phoneDigits(e.target.value) }))} required {...phoneInputProps} />}
             </Field>
           </div>
         )}

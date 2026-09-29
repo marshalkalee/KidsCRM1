@@ -15,9 +15,11 @@ from domains.money.subscriptions.subscription_types import create_type
 from domains.money.subscriptions.subscriptions import add_ledger_entry
 from domains.people.clients.models import Child
 from domains.platform.core.audit import AuditLog
+from domains.platform.leads.models import Lead, LeadStatusChange
+from domains.platform.leads.services import change_status, create_lead
 from domains.platform.tenants.models import Branch, Direction, Organization
 from domains.scheduling.groups.models import Group, GroupMembership
-from domains.scheduling.schedule.models import Lesson
+from domains.scheduling.schedule.models import Lesson, LessonEnrollment
 
 from .models import Attendance
 
@@ -602,6 +604,40 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
         add_ledger_entry(self.sub, kind=SubscriptionLedgerEntry.Kind.INITIAL_GRANT, delta=8)
         # children[1] и children[2] — намеренно без абонемента.
 
+    def _create_trial_enrollment(self, *, child_name="Пробная ученица"):
+        lead = create_lead(
+            organization=self.org,
+            actor=self.owner,
+            parent_name="Родитель пробной ученицы",
+            phone="+77015550000",
+            child_name=child_name,
+            child_age=7,
+            branch=self.branch,
+            direction=self.direction,
+        )
+        lead = change_status(
+            lead,
+            to_status=Lead.Status.TRIAL_SCHEDULED,
+            actor=self.owner,
+            comment="Запись на пробное для теста.",
+        )
+        child = Child.objects.create(
+            organization=self.org,
+            full_name=child_name,
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 7),
+            gender=Child.Gender.FEMALE,
+            status=Child.Status.TRIAL,
+        )
+        LessonEnrollment.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=child,
+            kind=LessonEnrollment.Kind.TRIAL,
+            source_lead=lead,
+            enrolled_by=self.owner,
+        )
+        return lead, child
+
     def test_roster_lists_all_participants_unmarked_by_default(self):
         client = _authenticated_client(self.owner)
 
@@ -682,6 +718,66 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
 
         self.assertEqual(response.data["marked_count"], 0)
         self.assertEqual(Attendance.objects.filter(lesson=self.lesson).count(), 3)
+
+    def test_teacher_marking_trial_present_moves_lead_to_attended(self):
+        lead, child = self._create_trial_enrollment()
+        client = _authenticated_client(self.teacher)
+
+        response = client.post(
+            "/api/v1/attendance/mark/",
+            {"lesson": str(self.lesson.id), "child": str(child.id), "status": "present"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, Lead.Status.TRIAL_ATTENDED)
+        change = LeadStatusChange.objects.filter(
+            lead=lead, to_status=Lead.Status.TRIAL_ATTENDED
+        ).get()
+        self.assertEqual(change.from_status, Lead.Status.TRIAL_SCHEDULED)
+        self.assertEqual(change.changed_by, self.teacher)
+        self.assertIn(self.group.name, change.comment)
+        self.assertFalse(response.data["no_subscription_flag"])
+        self.assertEqual(response.data["consume_outcome"], "trial_no_charge")
+
+        # Повторный клик не должен плодить переходы в истории.
+        repeated = client.post(
+            "/api/v1/attendance/mark/",
+            {"lesson": str(self.lesson.id), "child": str(child.id), "status": "present"},
+        )
+        self.assertEqual(repeated.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            LeadStatusChange.objects.filter(
+                lead=lead, to_status=Lead.Status.TRIAL_ATTENDED
+            ).count(),
+            1,
+        )
+
+    def test_trial_absence_does_not_move_lead_to_attended(self):
+        lead, child = self._create_trial_enrollment()
+        client = _authenticated_client(self.teacher)
+
+        response = client.post(
+            "/api/v1/attendance/mark/",
+            {"lesson": str(self.lesson.id), "child": str(child.id), "status": "absent"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, Lead.Status.TRIAL_SCHEDULED)
+
+    def test_bulk_present_moves_trial_lead_to_attended(self):
+        lead, _child = self._create_trial_enrollment()
+        client = _authenticated_client(self.teacher)
+
+        response = client.post(
+            "/api/v1/attendance/mark-all-present/", {"lesson": str(self.lesson.id)}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["marked_count"], 4)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, Lead.Status.TRIAL_ATTENDED)
 
     def test_reset_all_clears_roster_and_returns_consumption(self):
         client = _authenticated_client(self.owner)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Check, X, RotateCcw, AlertTriangle, MapPin, Clock, ChevronLeft, ChevronRight,
   WifiOff, History, CalendarDays, Undo2,
@@ -38,9 +38,9 @@ const CHILD_GENDER_LABEL = {
 // TRU-53: дети, записанные «поверх» состава группы (отработка/пробное) —
 // пометка типа рядом с именем, чтобы было видно, что это не обычный
 // участник группы.
-const ENROLLMENT_KIND_LABEL = {
-  makeup: 'Отработка',
-  trial: 'Пробное',
+const ENROLLMENT_KIND_UI = {
+  makeup: { label: 'Отработка', color: '#2563EB', background: '#EFF6FF', border: '#BFDBFE' },
+  trial: { label: 'Пробное', color: '#7C3AED', background: '#F3E8FF', border: '#DDD6FE' },
 }
 
 function lessonLabel(lesson) {
@@ -490,12 +490,24 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark, onRese
     </>
   )
 
-  const enrollmentBadge = ENROLLMENT_KIND_LABEL[row.enrollment_kind] && (
-    <span style={{
-      fontSize: 10, fontWeight: 700, color: ACCENT, background: `${ACCENT}14`,
-      borderRadius: 6, padding: '2px 6px', marginLeft: 6, whiteSpace: 'nowrap',
-    }}>
-      {t(ENROLLMENT_KIND_LABEL[row.enrollment_kind])}
+  const enrollmentKind = ENROLLMENT_KIND_UI[row.enrollment_kind]
+  const enrollmentBadge = enrollmentKind && (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 6 }}>
+      <span style={{
+        fontSize: 10, fontWeight: 750, color: enrollmentKind.color,
+        background: enrollmentKind.background, border: `1px solid ${enrollmentKind.border}`,
+        borderRadius: 999, padding: '2px 7px', whiteSpace: 'nowrap',
+      }}>
+        {t(enrollmentKind.label)}
+      </span>
+      {row.enrollment_kind === 'trial' && row.source_lead_id && (
+        <Link
+          to={`/leads/${row.source_lead_id}`}
+          style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', textDecoration: 'none', whiteSpace: 'nowrap' }}
+        >
+          {t('Открыть заявку')}
+        </Link>
+      )}
     </span>
   )
 

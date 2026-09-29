@@ -3,6 +3,7 @@ import api from '../api/axios'
 import { Button, Checkbox, Field, Input, Modal, Textarea, apiErrorMessage, useToast } from '../ui'
 import { WEEKDAYS, initialHours } from './workingHours'
 import { t } from '../i18n'
+import { entityNameInputProps, phoneDigits, phoneInputProps } from '../utils/formValidation'
 
 export default function BranchModal({ branch, onClose, onSaved }) {
   const isEdit = Boolean(branch)
@@ -10,7 +11,7 @@ export default function BranchModal({ branch, onClose, onSaved }) {
   const [form, setForm] = useState({
     name: branch?.name || '',
     address: branch?.address || '',
-    phone: branch?.phone || '',
+    phone: phoneDigits(branch?.phone),
   })
   const [hours, setHours] = useState(() => initialHours(branch?.working_hours))
   const [errors, setErrors] = useState({})
@@ -56,13 +57,13 @@ export default function BranchModal({ branch, onClose, onSaved }) {
     >
       <form id="branch-form" onSubmit={submit} className="flex flex-col gap-3.5">
         <Field label={t('Название')} required error={errors.name}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder={t('Центральный филиал')} required autoFocus />}
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder={t('Центральный филиал')} required autoFocus {...entityNameInputProps} />}
         </Field>
         <Field label={t('Адрес')} error={errors.address}>
-          {({ id }) => <Textarea id={id} rows={2} value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />}
+          {({ id }) => <Textarea id={id} rows={2} value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} maxLength={500} />}
         </Field>
         <Field label={t('Телефон')} error={errors.phone}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} type="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />}
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: phoneDigits(e.target.value) }))} placeholder="77000000000" {...phoneInputProps} />}
         </Field>
         <div>
           <p className="font-btn mb-2.5 text-sm font-bold text-ink">{t('Часы работы')}</p>
@@ -76,9 +77,9 @@ export default function BranchModal({ branch, onClose, onSaved }) {
                     <Checkbox className="w-[90px] shrink-0 text-xs" label={t('Выходной')} checked={day.closed} onChange={e => setDay(code, { closed: e.target.checked })} />
                     {!day.closed && (
                       <div className="flex items-center gap-1.5">
-                        <Input type="time" aria-label={t('{day}, открытие', { day: t(full) })} className="h-8 w-[100px] px-2 text-xs" value={day.open} onChange={e => setDay(code, { open: e.target.value })} />
+                        <Input type="time" aria-label={t('{day}, открытие', { day: t(full) })} className="h-8 w-[100px] px-2 text-xs" value={day.open} onChange={e => setDay(code, { open: e.target.value })} required />
                         <span className="text-ink-subtle">—</span>
-                        <Input type="time" aria-label={t('{day}, закрытие', { day: t(full) })} className="h-8 w-[100px] px-2 text-xs" value={day.close} onChange={e => setDay(code, { close: e.target.value })} />
+                        <Input type="time" aria-label={t('{day}, закрытие', { day: t(full) })} className="h-8 w-[100px] px-2 text-xs" value={day.close} onChange={e => setDay(code, { close: e.target.value })} required />
                       </div>
                     )}
                   </div>

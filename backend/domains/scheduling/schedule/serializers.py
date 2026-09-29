@@ -32,6 +32,10 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
     teacher_name = serializers.SerializerMethodField()
     capacity = serializers.SerializerMethodField()
     enrolled_count = serializers.SerializerMethodField()
+    trial_count = serializers.SerializerMethodField()
+    makeup_count = serializers.SerializerMethodField()
+    total_participants_count = serializers.SerializerMethodField()
+    additional_participants = serializers.SerializerMethodField()
 
     # TRU-47: индивидуальное занятие (group=None) — дети привязаны напрямую.
     is_individual = serializers.BooleanField(read_only=True)
@@ -68,6 +72,10 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
             "note",
             "capacity",
             "enrolled_count",
+            "trial_count",
+            "makeup_count",
+            "total_participants_count",
+            "additional_participants",
             "has_conflict",
             "conflicting_lesson_ids",
             "created_at",
@@ -121,6 +129,50 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
         if hasattr(obj.group, "enrolled_count"):
             return obj.group.enrolled_count
         return obj.group.memberships.filter(left_at__isnull=True).count()
+
+    def _active_enrollments(self, obj):
+        if hasattr(obj, "active_enrollments"):
+            return obj.active_enrollments
+        if not hasattr(obj, "_serialized_active_enrollments"):
+            obj._serialized_active_enrollments = list(
+                obj.enrollments.filter(cancelled_at__isnull=True).select_related(
+                    "child", "source_lead"
+                )
+            )
+        return obj._serialized_active_enrollments
+
+    def get_trial_count(self, obj):
+        return sum(
+            enrollment.kind == LessonEnrollment.Kind.TRIAL
+            for enrollment in self._active_enrollments(obj)
+        )
+
+    def get_makeup_count(self, obj):
+        return sum(
+            enrollment.kind == LessonEnrollment.Kind.MAKEUP
+            for enrollment in self._active_enrollments(obj)
+        )
+
+    def get_total_participants_count(self, obj):
+        if obj.group_id:
+            base_count = self.get_enrolled_count(obj)
+        else:
+            base_count = len(obj.individual_children.all())
+        return base_count + len(self._active_enrollments(obj))
+
+    def get_additional_participants(self, obj):
+        return [
+            {
+                "enrollment_id": str(enrollment.id),
+                "child_id": str(enrollment.child_id),
+                "child_name": enrollment.child.full_name,
+                "kind": enrollment.kind,
+                "source_lead_id": (
+                    str(enrollment.source_lead_id) if enrollment.source_lead_id else None
+                ),
+            }
+            for enrollment in self._active_enrollments(obj)
+        ]
 
     def get_starts_at_local(self, obj):
         org = self.context["request"].organization
