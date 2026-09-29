@@ -70,6 +70,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     full_name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20, unique=True)
     role = models.CharField(max_length=20, choices=Role.choices, blank=True)
+    # Ссылка, как photo_url у ребёнка: файл — в default_storage (core/images.py).
+    photo_url = models.URLField(max_length=500, blank=True)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

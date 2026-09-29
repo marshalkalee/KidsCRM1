@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Building2, Check, Eye, EyeOff, Info, Lock, LogOut, MapPin, Shield, User } from 'lucide-react'
+import { Building2, Camera, Check, Eye, EyeOff, Info, Loader2, Lock, LogOut, MapPin, Shield, Trash2, User } from 'lucide-react'
 import api from '../api/axios'
 import { useSession } from '../session/SessionContext'
 import { Button, Field, Input, apiErrorMessage, cn, initials, useConfirm, useToast } from '../ui'
@@ -23,9 +23,7 @@ export default function Profile() {
     <div className="flex flex-col overflow-hidden rounded-xl border border-line bg-surface md:min-h-[620px] md:flex-row">
       <nav className="flex shrink-0 flex-col border-b border-line md:w-[280px] md:border-r md:border-b-0">
         <div className="flex flex-col items-center gap-3 border-b border-brand-100 bg-brand-50/60 px-5 pt-7 pb-6 text-center">
-          <span className="bg-brand-gradient flex size-[84px] items-center justify-center rounded-full text-[28px] font-bold text-white shadow-[0_0_0_4px_#fff,0_8px_20px_rgb(228_88_110/0.28)]">
-            {initials(user?.full_name)}
-          </span>
+          <ProfilePhoto />
           <div className="flex flex-col items-center gap-1.5">
             <p className="text-[17px] font-semibold text-ink">{user?.full_name}</p>
             <span className="rounded-full border border-brand-200 bg-surface px-2.5 py-0.5 text-xs font-semibold text-brand-700">{roleLabel}</span>
@@ -68,6 +66,74 @@ export default function Profile() {
           {tab === 'security' && <Security onChangePassword={() => open('password')} />}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Своё фото: кнопка-камера на аватаре, файл уходит сразу при выборе. */
+function ProfilePhoto() {
+  const { user, updateUser } = useSession()
+  const toast = useToast()
+  const inputRef = useRef(null)
+  const [busy, setBusy] = useState(false)
+  const photo = user?.photo_url
+
+  async function send(request) {
+    setBusy(true)
+    try {
+      const { data } = await request()
+      updateUser(data)
+    } catch (err) {
+      toast.error(err.response?.data?.file?.[0] || apiErrorMessage(err))
+    } finally {
+      setBusy(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  const upload = file => {
+    if (!file) return
+    const body = new FormData()
+    body.append('file', file)
+    send(() => api.post('users/auth/me/photo/', body))
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-3.5">
+      <div className="relative">
+        <span className="bg-brand-gradient flex size-[84px] items-center justify-center overflow-hidden rounded-full text-[28px] font-bold text-white shadow-[0_0_0_4px_#fff,0_8px_20px_rgb(228_88_110/0.28)]">
+          {photo ? <img src={photo} alt="" className="size-full object-cover" /> : initials(user?.full_name)}
+          {busy && (
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-ink/40">
+              <Loader2 className="size-6 animate-spin text-white" />
+            </span>
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+          className="absolute -right-1 -bottom-1 flex size-8 items-center justify-center rounded-full border-2 border-white bg-surface text-brand-600 shadow-md transition hover:bg-brand-50 disabled:opacity-60"
+          aria-label={photo ? t('Заменить фото') : t('Загрузить фото')}
+          title={photo ? t('Заменить фото') : t('Загрузить фото')}
+        >
+          <Camera className="size-4" />
+        </button>
+      </div>
+      {photo ? (
+        <button
+          type="button"
+          onClick={() => send(() => api.delete('users/auth/me/photo/'))}
+          disabled={busy}
+          className="inline-flex items-center gap-1 rounded px-1 text-xs font-semibold text-ink-subtle transition-colors hover:text-danger-600 disabled:opacity-60"
+        >
+          <Trash2 className="size-3.5" />
+          {t('Удалить фото')}
+        </button>
+      ) : (
+        <p className="text-[11px] text-ink-subtle">{t('JPG, PNG до 5 МБ')}</p>
+      )}
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => upload(e.target.files[0])} />
     </div>
   )
 }

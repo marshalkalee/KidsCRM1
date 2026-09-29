@@ -219,8 +219,8 @@ function UserMenu({ collapsed = false, onNavigate }) {
             isActive ? 'bg-brand-50' : 'hover:bg-surface-muted',
           )}
         >
-          <span className="bg-brand-gradient flex size-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white">
-            {initials(user?.full_name)}
+          <span className="bg-brand-gradient flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-[13px] font-bold text-white">
+            {user?.photo_url ? <img src={user.photo_url} alt="" className="size-full object-cover" /> : initials(user?.full_name)}
           </span>
           {!collapsed && (
             <span className="min-w-0 flex-1">
