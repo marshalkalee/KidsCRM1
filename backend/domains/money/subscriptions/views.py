@@ -7,6 +7,7 @@ from rest_framework.response import Response
 
 from domains.people.clients.models import Child
 from domains.platform.core.permissions import IsNotTeacher, IsOwnerOrManager
+from domains.platform.core.utils import today_for_org
 from domains.platform.tenants.models import Branch, Direction
 
 from .freezes import freeze_subscription, unfreeze_subscription
@@ -15,9 +16,11 @@ from .reconciliation import manual_recompute
 from .renewals import sell_renewal
 from .sales import sell_subscription
 from .serializers import (
+    FreezeRequestSerializer,
     SubscriptionFreezeSerializer,
     SubscriptionLedgerEntrySerializer,
     SubscriptionSerializer,
+    UnfreezeRequestSerializer,
 )
 from .subscription_types import get_selectable_subscription_types
 
@@ -29,11 +32,15 @@ class SubscriptionViewSet(
     permission_classes = [IsNotTeacher]
 
     def get_queryset(self):
-        qs = Subscription.objects.for_tenant(self.request.user.organization).select_related(
-            "organization",
-            "subscription_type_version",
-            "direction",
-            "branch",
+        qs = (
+            Subscription.objects.for_tenant(self.request.user.organization)
+            .select_related(
+                "organization",
+                "subscription_type_version",
+                "direction",
+                "branch",
+            )
+            .prefetch_related("freezes")
         )
         child_id = self.request.query_params.get("child_id")
         if child_id:
@@ -90,25 +97,40 @@ class SubscriptionViewSet(
         subscription = self.get_object()
         return Response(SubscriptionFreezeSerializer(subscription.freezes.all(), many=True).data)
 
+    def _fresh(self, subscription):
+        # После заморозки у абонемента новый срок, статус и история заморозок.
+        return SubscriptionSerializer(self.get_queryset().get(pk=subscription.pk)).data
+
     @action(detail=True, methods=["post"])
     def freeze(self, request, pk=None):
         subscription = self.get_object()
-        freeze_subscription(
-            subscription,
-            actor=request.user,
-            starts_on=request.data["starts_on"],
-            ends_on=request.data["ends_on"],
-            reason=request.data.get("reason", ""),
-        )
-        return Response(SubscriptionSerializer(subscription).data)
+        data = FreezeRequestSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        if subscription.status != Subscription.Status.ACTIVE:
+            return Response(
+                {"detail": "Заморозить можно только действующий абонемент."}, status=400
+            )
+        try:
+            freeze_subscription(subscription, actor=request.user, **data.validated_data)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(self._fresh(subscription))
 
     @action(detail=True, methods=["post"])
     def unfreeze(self, request, pk=None):
         subscription = self.get_object()
-        unfreeze_subscription(
-            subscription, actor=request.user, actual_end_date=request.data.get("actual_end_date")
+        data = UnfreezeRequestSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        if subscription.status != Subscription.Status.FROZEN:
+            return Response({"detail": "Абонемент не заморожен."}, status=400)
+        actual_end_date = data.validated_data.get("actual_end_date") or today_for_org(
+            subscription.organization
         )
-        return Response(SubscriptionSerializer(subscription).data)
+        try:
+            unfreeze_subscription(subscription, actor=request.user, actual_end_date=actual_end_date)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(self._fresh(subscription))
 
     @action(detail=True, methods=["post"])
     def renew(self, request, pk=None):

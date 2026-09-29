@@ -1024,5 +1024,12 @@
  "Исчерпан": "Used up",
  "Остаток исправлен: было {before}, стало {after}": "Balance fixed: was {before}, now {after}",
  "Остаток сходится с журналом: {after}": "Balance matches the log: {after}",
- "Пересчитать остаток": "Recalculate balance"
+ "Пересчитать остаток": "Recalculate balance",
+ "История заморозок": "Freeze history",
+ "Разморозить сегодня?": "Unfreeze today?",
+ "Заморозка была до {date}. Неиспользованные {n} дн. вернутся: абонемент закончится на {n} дн. раньше.": "The freeze was until {date}. The unused {n} d. are returned: the subscription will end {n} d. earlier.",
+ "Абонемент снова станет действующим.": "The subscription will be active again.",
+ "Разморозить": "Unfreeze",
+ "Например, болезнь": "For example, illness",
+ "Заморозка на {n} дн.: абонемент продлится до {date}.": "Freeze for {n} d.: the subscription will last until {date}."
 }

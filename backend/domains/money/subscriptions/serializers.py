@@ -4,6 +4,17 @@ from .models import Subscription, SubscriptionFreeze, SubscriptionLedgerEntry
 from .statuses import DISPLAY_LABELS, get_display_status
 
 
+class SubscriptionFreezeSerializer(serializers.ModelSerializer):
+    days = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SubscriptionFreeze
+        fields = ["id", "starts_on", "ends_on", "reason", "days"]
+
+    def get_days(self, obj):
+        return (obj.ends_on - obj.starts_on).days if obj.ends_on else None
+
+
 class SubscriptionSerializer(serializers.ModelSerializer):
     subscription_type_name = serializers.CharField(
         source="subscription_type_version.name", read_only=True
@@ -15,6 +26,8 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     # фильтра списка детей и экрана «Продления».
     display_status = serializers.SerializerMethodField()
     display_status_label = serializers.SerializerMethodField()
+    # История заморозок — в карточке ребёнка (TRU-63), без отдельного запроса.
+    freezes = SubscriptionFreezeSerializer(many=True, read_only=True)
 
     class Meta:
         model = Subscription
@@ -36,6 +49,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "discount_reason",
             "price",
             "renewed_from",
+            "freezes",
         ]
 
     def get_display_status(self, obj):
@@ -53,7 +67,19 @@ class SubscriptionLedgerEntrySerializer(serializers.ModelSerializer):
         fields = ["id", "kind", "kind_display", "delta", "comment", "created_at"]
 
 
-class SubscriptionFreezeSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SubscriptionFreeze
-        fields = ["id", "starts_on", "ends_on", "reason"]
+class FreezeRequestSerializer(serializers.Serializer):
+    starts_on = serializers.DateField()
+    ends_on = serializers.DateField()
+    reason = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if attrs["ends_on"] <= attrs["starts_on"]:
+            raise serializers.ValidationError(
+                {"ends_on": ["Дата окончания должна быть позже даты начала."]}
+            )
+        return attrs
+
+
+class UnfreezeRequestSerializer(serializers.Serializer):
+    # Пусто — разморозить сегодня (досрочно): дни, что остались, вернутся.
+    actual_end_date = serializers.DateField(required=False, allow_null=True)

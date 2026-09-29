@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ListChecks, PlusCircle, RefreshCw, Snowflake } from 'lucide-react'
 import { fetchBranches, fetchDirections } from '../../api/lessons'
+import { addDays, toISODate } from '../../utils/calendarDate'
 import {
   fetchChildSubscriptions, fetchLedger, fetchNextLesson, fetchSubscriptionTypes,
   freezeSubscription, recomputeSubscription, sellSubscription, unfreezeSubscription,
 } from '../../api/subscriptions'
 import {
   Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton,
-  apiErrorMessage, formatDate, formatDateTime, money, useToast,
+  apiErrorMessage, formatDate, formatDateTime, money, useConfirm, useToast,
 } from '../../ui'
 import { t } from '../../i18n'
 
@@ -29,12 +30,36 @@ const DISCOUNT_REASONS = [
   { value: 'other', label: 'Другое' },
 ]
 
+// Дата по часам устройства, не UTC: вечером toISOString() дал бы вчера.
 function todayIso() {
-  return new Date().toISOString().slice(0, 10)
+  return toISODate(new Date())
+}
+
+function daysBetween(fromIso, toIso) {
+  return Math.round((new Date(toIso) - new Date(fromIso)) / 86400000)
+}
+
+/** История заморозок (TRU-63): период, дни, причина. */
+function FreezeHistory({ freezes, compact = false }) {
+  if (!freezes?.length) return null
+  return (
+    <div className={compact ? 'mt-1 space-y-0.5' : 'mt-2 space-y-1.5 rounded-md bg-surface-muted px-3 py-2.5'}>
+      {!compact && <p className="text-xs font-semibold text-ink-muted">{t('История заморозок')}</p>}
+      {freezes.map(f => (
+        <p key={f.id} className="flex flex-wrap items-center gap-x-1.5 text-[13px] text-ink-muted">
+          <Snowflake className="size-3.5 shrink-0 text-info-600" />
+          <span className="text-ink">{formatDate(f.starts_on)} — {formatDate(f.ends_on)}</span>
+          {f.days != null && <span>· {t('{n} дн.', { n: f.days })}</span>}
+          {f.reason && <span>· {f.reason}</span>}
+        </p>
+      ))}
+    </div>
+  )
 }
 
 export default function SubscriptionsTab({ child, onCountChange }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const [subscriptions, setSubscriptions] = useState(null)
   const [error, setError] = useState(false)
   const [ledgerFor, setLedgerFor] = useState(null)
@@ -54,6 +79,16 @@ export default function SubscriptionsTab({ child, onCountChange }) {
   useEffect(() => { load() }, [load])
 
   async function unfreeze(sub) {
+    const running = sub.freezes?.find(f => f.ends_on >= todayIso())
+    const unused = running ? Math.max(daysBetween(todayIso(), running.ends_on), 0) : 0
+    const ok = await confirm({
+      title: t('Разморозить сегодня?'),
+      message: unused > 0
+        ? t('Заморозка была до {date}. Неиспользованные {n} дн. вернутся: абонемент закончится на {n} дн. раньше.', { date: formatDate(running.ends_on), n: unused })
+        : t('Абонемент снова станет действующим.'),
+      confirmText: t('Разморозить'),
+    })
+    if (!ok) return
     try {
       await unfreezeSubscription(sub.id)
       toast.success(t('Абонемент разморожен'))
@@ -79,6 +114,7 @@ export default function SubscriptionsTab({ child, onCountChange }) {
           <p className="text-[13px] text-ink-muted">
             {t('Осталось занятий:')} {current.sessions_remaining_cache ?? t('безлимит')} · {t('до {date}', { date: formatDate(current.ends_on) })}
           </p>
+          <FreezeHistory freezes={current.freezes} />
           <div className="flex flex-wrap gap-2 pt-1">
             <Button variant="secondary" size="sm" icon={ListChecks} onClick={() => setLedgerFor(current)}>
               {t('Журнал списаний')}
@@ -111,6 +147,7 @@ export default function SubscriptionsTab({ child, onCountChange }) {
                 <p className="text-[13px] text-ink-muted">
                   {formatDate(s.starts_on)} — {formatDate(s.ends_on)} · {money(s.price)}
                 </p>
+                {s.id !== current?.id && <FreezeHistory freezes={s.freezes} compact />}
               </div>
               <Badge tone={STATUS_TONE[s.display_status]}>{t(s.display_status_label)}</Badge>
             </Card>
@@ -199,8 +236,10 @@ function LedgerModal({ subscription, onClose, onRecomputed }) {
 
 function FreezeModal({ subscription, onClose, onDone }) {
   const toast = useToast()
-  const [startsOn, setStartsOn] = useState('')
-  const [endsOn, setEndsOn] = useState('')
+  const [startsOn, setStartsOn] = useState(todayIso())
+  const [endsOn, setEndsOn] = useState(toISODate(addDays(new Date(), 14)))
+  const days = startsOn && endsOn ? daysBetween(startsOn, endsOn) : 0
+  const newEnd = days > 0 ? toISODate(addDays(new Date(subscription.ends_on), days)) : null
   const [reason, setReason] = useState('')
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -245,8 +284,13 @@ function FreezeModal({ subscription, onClose, onDone }) {
           {({ id }) => <Input id={id} type="date" value={endsOn} onChange={e => setEndsOn(e.target.value)} required />}
         </Field>
         <Field label={t('Причина')} error={errors.reason}>
-          {({ id }) => <Input id={id} value={reason} onChange={e => setReason(e.target.value)} />}
+          {({ id }) => <Input id={id} value={reason} onChange={e => setReason(e.target.value)} placeholder={t('Например, болезнь')} />}
         </Field>
+        {newEnd && (
+          <p className="rounded-md bg-info-50 px-3 py-2 text-[13px] text-info-600">
+            {t('Заморозка на {n} дн.: абонемент продлится до {date}.', { n: days, date: formatDate(newEnd) })}
+          </p>
+        )}
       </form>
     </Modal>
   )
