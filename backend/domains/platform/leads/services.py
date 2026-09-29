@@ -107,6 +107,51 @@ def change_status(lead, *, to_status, actor, rejection_reason=None, comment="") 
     return lead
 
 
+@transaction.atomic
+def mark_trial_attended(*, organization, lesson, child, actor) -> bool:
+    """Перевести связанную заявку после фактического посещения пробного.
+
+    Повторная отметка безопасна: заявка блокируется и история создаётся
+    только при первом переходе из «Записан» в «Пришёл». Если менеджер уже
+    вручную увёл заявку дальше по воронке, посещаемость этот выбор не
+    перезаписывает.
+    """
+    # Локальный импорт не создаёт цикл services -> schedule -> leads:
+    # модуль записи на пробное сам использует change_status из этого файла.
+    from domains.scheduling.schedule.models import LessonEnrollment
+
+    lead_id = (
+        LessonEnrollment.objects.for_tenant(organization)
+        .filter(
+            lesson=lesson,
+            child=child,
+            kind=LessonEnrollment.Kind.TRIAL,
+            source_lead__isnull=False,
+            cancelled_at__isnull=True,
+        )
+        .values_list("source_lead_id", flat=True)
+        .first()
+    )
+    if lead_id is None:
+        return False
+
+    lead = Lead.objects.select_for_update().get(pk=lead_id, organization=organization)
+    if lead.status != Lead.Status.TRIAL_SCHEDULED:
+        return False
+
+    local_start = timezone.localtime(lesson.starts_at)
+    lesson_name = lesson.group.name if lesson.group_id else "Индивидуальное занятие"
+    change_status(
+        lead,
+        to_status=Lead.Status.TRIAL_ATTENDED,
+        actor=actor,
+        comment=(
+            "Посещение пробного занятия отмечено: " f"{lesson_name}, {local_start:%d.%m.%Y %H:%M}."
+        ),
+    )
+    return True
+
+
 def visible_leads(user):
     """
     Заявки, которые видит сотрудник. Владелец — все. Управляющий и

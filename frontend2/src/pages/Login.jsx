@@ -6,6 +6,7 @@ import AuthLayout from '../components/AuthLayout'
 import { useSession } from '../session/SessionContext'
 import { Button, Field, Input } from '../ui'
 import { t } from '../i18n'
+import { phoneDigits, phoneInputProps } from '../utils/formValidation'
 
 export default function Login() {
   const { status, reload } = useSession()
@@ -47,13 +48,13 @@ export default function Login() {
           {({ id }) => (
             <Input
               id={id}
-              type="tel"
               autoComplete="tel"
               value={phone}
-              onChange={e => setPhone(e.target.value.replace(/[^\d+\s\-()]/g, ''))}
-              placeholder="+7 701 234 56 78"
+              onChange={e => setPhone(phoneDigits(e.target.value))}
+              placeholder="77012345678"
               required
               autoFocus
+              {...phoneInputProps}
             />
           )}
         </Field>
@@ -67,6 +68,7 @@ export default function Login() {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className="pr-10"
+                maxLength={128}
                 required
               />
               <button

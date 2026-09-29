@@ -78,7 +78,7 @@ class UserAPITests(APITestCase):
             "/api/v1/users/",
             {
                 "phone": "+77010000020",
-                "full_name": "Teacher 1",
+                "full_name": "Teacher One",
                 "password": "pass12345",
                 "role": User.Role.TEACHER,
                 "branches": [str(self.branch_a.id)],
@@ -99,7 +99,7 @@ class UserAPITests(APITestCase):
             "/api/v1/users/",
             {
                 "phone": "+77010000021",
-                "full_name": "Teacher 2",
+                "full_name": "Teacher Two",
                 "password": "pass12345",
                 "branches": [str(self.branch_b.id)],
             },
@@ -154,6 +154,27 @@ class AuthTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("access", response.data)
         self.assertIn("refresh", response.data)
+
+    def test_login_normalizes_formatted_phone(self):
+        response = self.client.post(
+            "/api/v1/users/auth/login/",
+            {"phone": "+7 (700) 123-45-67", "password": "StrongPass123!"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+
+    def test_register_rejects_invalid_person_name(self):
+        response = self.client.post(
+            "/api/v1/users/auth/register/",
+            {
+                "org_name": "Новая школа",
+                "full_name": "А1",
+                "phone": "77009999998",
+                "password": "StrongPass123!",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("full_name", response.data)
 
     def test_login_accepts_legacy_pbkdf2_password_and_upgrades_hash(self):
         self.owner.password = make_password("StrongPass123!", hasher="pbkdf2_sha256")

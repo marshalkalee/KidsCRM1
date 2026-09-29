@@ -62,7 +62,7 @@ export default function RejectModal({ lead, subject, kind, onCancel, onConfirm }
           )}
         </Field>
         <Field label={t('Комментарий')}>
-          {({ id }) => <Textarea id={id} value={comment} onChange={e => setComment(e.target.value)} placeholder={t('Необязательно: подробности для коллег')} />}
+          {({ id }) => <Textarea id={id} value={comment} onChange={e => setComment(e.target.value)} placeholder={t('Необязательно: подробности для коллег')} maxLength={2000} />}
         </Field>
         <SuggestReason text={comment} kind={reasonKind} onPicked={id => { setReason(id); setError(null) }} />
       </form>

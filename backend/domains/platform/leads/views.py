@@ -27,6 +27,8 @@ from .serializers import (
     LeadSourceSerializer,
     LeadStatusChangeSerializer,
     LeadStatusSerializer,
+    TrialBookingSerializer,
+    TrialLessonSerializer,
 )
 from .services import (
     LeadTransitionError,
@@ -37,6 +39,7 @@ from .services import (
     find_phone_matches,
     visible_leads,
 )
+from .trial_booking import TrialBookingError, book_trial, trial_lesson_candidates
 
 
 class CanManageLeads(IsStaffOfOrganization):
@@ -318,6 +321,36 @@ class LeadViewSet(TenantModelViewSet):
         except LeadTransitionError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(LeadSerializer(lead, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["get"], url_path="trial-lessons")
+    def trial_lessons(self, request, pk=None, version=None):
+        lead = self.get_object()
+        try:
+            lessons = trial_lesson_candidates(lead)
+        except TrialBookingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            TrialLessonSerializer(lessons, many=True, context=self.get_serializer_context()).data
+        )
+
+    @action(detail=True, methods=["post"], url_path="book-trial")
+    def book_trial_action(self, request, pk=None, version=None):
+        lead = self.get_object()
+        serializer = TrialBookingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lead, _enrollment = book_trial(
+                lead, serializer.validated_data["lesson"], actor=request.user
+            )
+        except TrialBookingError as exc:
+            response_status = (
+                status.HTTP_409_CONFLICT if exc.code == "capacity" else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc)}, status=response_status)
+        return Response(
+            LeadSerializer(lead, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=["get"])
     def history(self, request, pk=None, version=None):

@@ -165,6 +165,7 @@ function QuickLogForm({ childOptions, contactOptions, fixedContact, onCreated })
           value={note}
           onChange={e => setNote(e.target.value)}
           placeholder={t('О чём договорились')}
+          maxLength={2000}
           onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(e) }}
         />
         <NoteHelper text={note} onParsed={parsed => { setChannel(parsed.channel); setNote(parsed.note) }} />

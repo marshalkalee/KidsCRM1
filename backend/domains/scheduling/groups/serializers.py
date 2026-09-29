@@ -3,6 +3,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from domains.people.clients.models import Child
+from domains.platform.core.text_validation import normalize_entity_name
 
 from . import queries
 from .models import Group, GroupMembership
@@ -72,6 +73,24 @@ class GroupSerializer(serializers.ModelSerializer):
                 {"age_min": _("Возраст «от» не может быть больше «до».")}
             )
         return attrs
+
+    def validate_name(self, value):
+        return normalize_entity_name(value)
+
+    def validate_capacity(self, value):
+        if not 1 <= value <= 100:
+            raise serializers.ValidationError("Вместимость должна быть от 1 до 100.")
+        return value
+
+    def validate_age_min(self, value):
+        if value is not None and value > 99:
+            raise serializers.ValidationError("Возраст должен быть от 0 до 99 лет.")
+        return value
+
+    def validate_age_max(self, value):
+        if value is not None and value > 99:
+            raise serializers.ValidationError("Возраст должен быть от 0 до 99 лет.")
+        return value
 
     def get_teachers_detail(self, group):
         return [{"id": str(t.id), "full_name": t.full_name} for t in group.teachers.all()]

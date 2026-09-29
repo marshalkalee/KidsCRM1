@@ -29,6 +29,7 @@ export function ageLabel(age) {
 
 // Статусы ребёнка — как Child.Status на бэке.
 export const CHILD_STATUSES = {
+  trial: { get label() { return t('Пробный') }, tone: 'brand' },
   active: { get label() { return t('Активен') }, tone: 'success' },
   paused: { get label() { return t('Приостановлен') }, tone: 'warning' },
   left: { get label() { return t('Ушёл') }, tone: 'neutral' },

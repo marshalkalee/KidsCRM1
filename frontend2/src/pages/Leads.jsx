@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { AlarmClock, ArrowRightLeft, Columns3, Inbox, Plus, Search, Table2 } from 'lucide-react'
 import api from '../api/axios'
 import { LEAD_CREATED_EVENT, openQuickLead } from '../components/leads/QuickLead'
 import LeadTable from '../components/leads/LeadTable'
 import RejectModal from '../components/leads/RejectModal'
 import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/format'
+import { getLeadsViewPreference, setLeadsViewPreference } from '../components/leads/viewPreference'
 import { useSession } from '../session/SessionContext'
 import {
   Avatar, Button, DateInput, Dropdown, EmptyState, ErrorState, FilterBar, FilterPanel, FilterSelect, PageHeader, SearchInput,
@@ -25,6 +26,7 @@ const LIMIT = 20
 export default function Leads() {
   const toast = useToast()
   const { branches } = useSession()
+  const location = useLocation()
   const [params, setParams] = useSearchParams()
   const [board, setBoard] = useState(null)
   const [error, setError] = useState(false)
@@ -34,8 +36,13 @@ export default function Leads() {
   const [rejecting, setRejecting] = useState(null)
   const [mobileStatus, setMobileStatus] = useState('new')
   const [tableCount, setTableCount] = useState(null)
-  // Вид — в адресе, как и фильтры: переключение не сбрасывает фильтры (TRU-95).
-  const view = params.get('view') === 'table' ? 'table' : 'board'
+  // URL сохраняет конкретный возврат с фильтрами, localStorage — ручной
+  // выбор пользователя при обычном переходе на /leads без параметров.
+  const requestedView = params.get('view')
+  const view = ['board', 'table'].includes(requestedView)
+    ? requestedView
+    : getLeadsViewPreference()
+  const returnTo = `${location.pathname}${location.search}`
   // Новые заявки и продления — две воронки, не смешиваются (TRU-98).
   const kind = params.get('kind') === 'renewal' ? 'renewal' : 'new'
 
@@ -55,6 +62,17 @@ export default function Leads() {
       return next
     }, { replace: true })
   }, [setParams])
+
+  const changeView = useCallback(next => {
+    const normalized = next === 'table' ? 'table' : 'board'
+    setLeadsViewPreference(normalized)
+    update({ view: normalized, page: '' })
+  }, [update])
+
+  useEffect(() => {
+    // Явный view в ссылке тоже становится последним выбранным видом.
+    if (['board', 'table'].includes(requestedView)) setLeadsViewPreference(view)
+  }, [requestedView, view])
 
   useEffect(() => {
     if (view !== 'board') return undefined
@@ -136,7 +154,7 @@ export default function Leads() {
         description={count == null ? t('Загрузка…') : `${count} ${plural(count, ['заявка', 'заявки', 'заявок'])}`}
         actions={
           <>
-            <ViewToggle view={view} onChange={next => update({ view: next === 'table' ? 'table' : '', page: '' })} />
+            <ViewToggle view={view} onChange={changeView} />
             {kind === 'new' && <Button variant="primary" icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>}
           </>
         }
@@ -169,6 +187,7 @@ export default function Leads() {
           onCount={setTableCount}
           onReset={resetFilters}
           hasFilters={Boolean(activeFilters || params.get('q'))}
+          returnTo={returnTo}
         />
       ) : error ? (
         <ErrorState onRetry={() => setReloadKey(k => k + 1)} />
@@ -188,8 +207,8 @@ export default function Leads() {
         </div>
       ) : (
         <>
-          <MobileColumn board={board} status={mobileStatus} onStatusChange={setMobileStatus} onMove={requestMove} onLoadMore={loadMore} />
-          <Board board={board} onMove={requestMove} onLoadMore={loadMore} />
+          <MobileColumn board={board} status={mobileStatus} onStatusChange={setMobileStatus} onMove={requestMove} onLoadMore={loadMore} returnTo={returnTo} />
+          <Board board={board} onMove={requestMove} onLoadMore={loadMore} returnTo={returnTo} />
           <p className="mt-3 text-xs text-ink-subtle">
             {t('«Купил абонемент» и «Отказ» — за последние {n} дней. Задайте период в фильтрах, чтобы увидеть старые.', { n: board.closed_days })}
           </p>
@@ -251,7 +270,7 @@ function replaceCard(board, lead) {
 }
 
 /** Десктоп: все колонки; перетаскивание подсвечивает только допустимые. */
-function Board({ board, onMove, onLoadMore }) {
+function Board({ board, onMove, onLoadMore, returnTo }) {
   const [dragging, setDragging] = useState(null)
   const [over, setOver] = useState(null)
   const allowed = dragging ? board.transitions[dragging.status] || [] : []
@@ -292,6 +311,7 @@ function Board({ board, onMove, onLoadMore }) {
                     onDragEnd={() => { setDragging(null); setOver(null) }}
                     onMove={onMove}
                     transitions={board.transitions}
+                    returnTo={returnTo}
                   />
                 ))}
                 {column.has_more && <Button size="sm" variant="ghost" onClick={() => onLoadMore(column.status)}>{t('Показать ещё')}</Button>}
@@ -350,7 +370,7 @@ function OutcomeBar({ allowed, over, setOver, onDrop }) {
 }
 
 /** Телефон: одна колонка и переключатель статуса — без горизонтального скролла. */
-function MobileColumn({ board, status, onStatusChange, onMove, onLoadMore }) {
+function MobileColumn({ board, status, onStatusChange, onMove, onLoadMore, returnTo }) {
   const column = board.columns.find(c => c.status === status)
   const options = board.columns.map(c => ({ value: c.status, label: `${LEAD_STATUS[c.status].label} · ${c.count}` }))
   return (
@@ -358,7 +378,7 @@ function MobileColumn({ board, status, onStatusChange, onMove, onLoadMore }) {
       <Dropdown value={status} onChange={onStatusChange} options={options} ariaLabel={t('Колонка воронки')} className="mb-3" />
       <div className="flex flex-col gap-2">
         {column.results.length === 0 && <p className="rounded-xl border border-dashed border-line bg-surface px-4 py-6 text-center text-sm text-ink-muted">{t('В этой колонке пусто')}</p>}
-        {column.results.map(lead => <LeadCard key={lead.id} lead={lead} onMove={onMove} transitions={board.transitions} />)}
+        {column.results.map(lead => <LeadCard key={lead.id} lead={lead} onMove={onMove} transitions={board.transitions} returnTo={returnTo} />)}
         {column.has_more && <Button size="sm" onClick={() => onLoadMore(column.status)}>{t('Показать ещё')}</Button>}
       </div>
     </div>
@@ -375,7 +395,7 @@ function ColumnHeader({ column, meta }) {
   )
 }
 
-function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDragEnd, onMove, transitions }) {
+function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDragEnd, onMove, transitions, returnTo }) {
   const navigate = useNavigate()
   const targets = transitions[lead.status] || []
   const details = [lead.child_age != null && ageLabel(lead.child_age), lead.direction_name].filter(Boolean).join(' · ')
@@ -384,8 +404,8 @@ function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDr
       draggable={draggable}
       onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', lead.id); onDragStart?.() }}
       onDragEnd={onDragEnd}
-      onClick={() => navigate(`/leads/${lead.id}`)}
-      onKeyDown={e => { if (e.key === 'Enter') navigate(`/leads/${lead.id}`) }}
+      onClick={() => navigate(`/leads/${lead.id}`, { state: { leadsReturnTo: returnTo } })}
+      onKeyDown={e => { if (e.key === 'Enter') navigate(`/leads/${lead.id}`, { state: { leadsReturnTo: returnTo } }) }}
       tabIndex={0}
       className={cn(
         'cursor-pointer rounded-lg border bg-surface p-3 shadow-xs transition hover:border-brand-300 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand-50',

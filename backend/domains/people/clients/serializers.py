@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.role_permissions import can_view_child_sensitive_fields, can_view_phone
+from domains.platform.core.text_validation import normalize_person_name
 from domains.platform.tenants.models import Direction
 
 from .models import Child, ChildContact, CommunicationLog, ContactPhone, ParentContact
@@ -18,6 +19,7 @@ class ChildSerializer(serializers.ModelSerializer):
             "organization",
             "full_name",
             "birth_date",
+            "birth_date_is_estimated",
             "age",
             "gender",
             "directions",
@@ -29,7 +31,13 @@ class ChildSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "organization", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "organization",
+            "birth_date_is_estimated",
+            "created_at",
+            "updated_at",
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -47,6 +55,19 @@ class ChildSerializer(serializers.ModelSerializer):
         if value > timezone.now().date():
             raise serializers.ValidationError("Дата рождения не может быть в будущем.")
         return value
+
+    def validate_full_name(self, value):
+        return normalize_person_name(value)
+
+    def validate_medical_notes(self, value):
+        if len(value) > 2000:
+            raise serializers.ValidationError("Введите не более 2000 символов.")
+        return value.strip()
+
+    def validate_leave_reason(self, value):
+        if len(value) > 500:
+            raise serializers.ValidationError("Введите не более 500 символов.")
+        return value.strip()
 
     def validate(self, attrs):
         status = attrs.get("status", getattr(self.instance, "status", None))
@@ -66,6 +87,12 @@ class ChildSerializer(serializers.ModelSerializer):
                         {"status": (f"Недопустимый переход статуса: {previous} → {new}.")}
                     )
         return attrs
+
+    def update(self, instance, validated_data):
+        # Ручное сохранение даты в карточке подтверждает её точность.
+        if "birth_date" in validated_data:
+            validated_data["birth_date_is_estimated"] = False
+        return super().update(instance, validated_data)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -121,6 +148,9 @@ class ParentContactSerializer(serializers.ModelSerializer):
             return normalize_phone_number(value)
         except InvalidPhoneNumberError as exc:
             raise serializers.ValidationError(str(exc)) from exc
+
+    def validate_full_name(self, value):
+        return normalize_person_name(value)
 
     def validate_phones(self, value):
         if not value:
@@ -273,9 +303,12 @@ class CommunicationLogSerializer(serializers.ModelSerializer):
             self.fields["parent_contact"].queryset = ParentContact.objects.for_tenant(org)
 
     def validate_note(self, value):
-        if not value.strip():
+        value = value.strip()
+        if not value:
             raise serializers.ValidationError("Напишите, о чём был разговор.")
-        return value.strip()
+        if len(value) > 2000:
+            raise serializers.ValidationError("Введите не более 2000 символов.")
+        return value
 
     def validate(self, attrs):
         # Как в CommunicationLogForm: контакт — только из привязанных к

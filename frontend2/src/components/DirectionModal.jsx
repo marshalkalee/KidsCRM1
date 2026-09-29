@@ -2,6 +2,7 @@ import { useState } from 'react'
 import api from '../api/axios'
 import { Button, CheckList, Field, Input, Modal, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
+import { entityNameInputProps } from '../utils/formValidation'
 
 /** Направление: цвет в расписании, возраст, в каких филиалах доступно. */
 export default function DirectionModal({ direction, branches, onClose, onSaved }) {
@@ -61,7 +62,7 @@ export default function DirectionModal({ direction, branches, onClose, onSaved }
       <form id="direction-form" onSubmit={submit} className="flex flex-col gap-3.5">
         <div className="flex gap-3.5">
           <Field label={t('Название направления')} required error={errors.name} className="flex-1">
-            {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => set('name', e.target.value)} placeholder={t('Балет')} required autoFocus />}
+            {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name} onChange={e => set('name', e.target.value)} placeholder={t('Балет')} required autoFocus {...entityNameInputProps} />}
           </Field>
           <Field label={t('Цвет')} error={errors.color} className="w-[90px]">
             {({ id }) => <Input id={id} type="color" className="cursor-pointer p-1" value={form.color} onChange={e => set('color', e.target.value)} />}

@@ -171,7 +171,7 @@ function DictionaryItemModal({ dict, item, onClose, onSaved }) {
       <form id="dictionary-form" onSubmit={submit}>
         <Field label={t('Название')} required error={error}>
           {({ id, invalid }) => (
-            <Input id={id} invalid={invalid} value={name} onChange={e => setName(e.target.value)} placeholder={dict.placeholder} maxLength={100} required autoFocus />
+            <Input id={id} invalid={invalid} value={name} onChange={e => setName(e.target.value)} placeholder={dict.placeholder} minLength={2} maxLength={100} required autoFocus />
           )}
         </Field>
       </form>
