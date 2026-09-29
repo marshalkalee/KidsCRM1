@@ -52,7 +52,6 @@ class DebtorChildIdsTests(TestCase):
                 organization=child.organization, name="Центральный"
             )[0],
             starts_on=date.today(),
-            ends_on=date.today().replace(day=28),
             paid_amount=paid_amount,
             payment_method="cash",
         )
@@ -114,7 +113,6 @@ class DebtorChildIdsTests(TestCase):
                 organization=other_child.organization, name="Центральный"
             )[0],
             starts_on=date.today(),
-            ends_on=date.today().replace(day=28),
             paid_amount=0,
             payment_method="cash",
         )

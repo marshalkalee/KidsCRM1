@@ -4,6 +4,7 @@ import {
   AlertTriangle, ArrowRight, CheckCircle2, Download, History, RotateCcw, Upload, XCircle,
 } from 'lucide-react'
 import api from '../api/axios'
+import ImportClean from '../components/ai/ImportClean'
 import {
   Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Select, Spinner, apiErrorMessage, cn,
   formatDateTime, plural, useConfirm, useToast,
@@ -136,6 +137,7 @@ function FileStep({ onAnalyzed, openJob }) {
         </button>
         <input ref={fileRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={e => e.target.files[0] && analyze(e.target.files[0])} />
         {error && <p className="mt-3 rounded-md bg-danger-50 px-3 py-2 text-sm text-danger-600">{error}</p>}
+        <ImportClean onUse={analyze} />
         <div className="mt-5 rounded-lg bg-surface-muted px-4 py-3 text-[13px] leading-relaxed text-ink-muted">
           <p className="font-semibold text-ink">{t('Что должно быть в файле')}</p>
           <ul className="mt-1 list-disc pl-5">

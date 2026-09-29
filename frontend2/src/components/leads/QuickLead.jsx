@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import api from '../../api/axios'
 import { useSession } from '../../session/SessionContext'
-import { Button, Field, Input, Modal, Select, apiErrorMessage, cn, useToast } from '../../ui'
+import { Button, Field, Input, Modal, Select, Textarea, apiErrorMessage, cn, useToast } from '../../ui'
+import { AIBadge, PasteMessage, useAI } from '../ai/ai'
 import { t } from '../../i18n'
 import { personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../../utils/formValidation'
 
@@ -66,6 +67,9 @@ function QuickLeadModal({ onClose }) {
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [more, setMore] = useState(false)
+  // Суть запроса от ИИ — сохраняется первым комментарием заявки.
+  const [summary, setSummary] = useState('')
+  const ai = useAI()
   const phoneRef = useRef(null)
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
 
@@ -110,10 +114,12 @@ function QuickLeadModal({ onClose }) {
     }
     try {
       const res = await api.post('leads/', payload)
+      if (summary.trim()) await api.post(`leads/${res.data.id}/comments/`, { text: summary.trim() }).catch(() => {})
       toast.success(t('Заявка сохранена'))
       window.dispatchEvent(new CustomEvent(LEAD_CREATED_EVENT))
       if (again) {
         setForm(f => ({ ...EMPTY, source: f.source }))
+        setSummary('')
         setMatches(null)
         phoneRef.current?.focus()
       } else {
@@ -148,6 +154,24 @@ function QuickLeadModal({ onClose }) {
       }
     >
       <form id="quick-lead-form" onSubmit={e => { e.preventDefault(); save(false) }} className="space-y-4">
+        {ai.enabled && (
+          <PasteMessage
+            onParsed={fields => {
+              // Заполняем только то, что ИИ нашёл, — уже введённое руками не затираем пустым.
+              setForm(f => ({
+                ...f,
+                phone: fields.phone || f.phone,
+                parent_name: fields.parent_name || f.parent_name,
+                child_name: fields.child_name || f.child_name,
+                child_age: fields.child_age ?? f.child_age,
+                direction: fields.direction || f.direction,
+                source: fields.source || f.source,
+              }))
+              if (fields.summary) setSummary(fields.summary)
+              if (fields.child_name || fields.child_age || fields.direction) setMore(true)
+            }}
+          />
+        )}
         <Field label={t('Телефон')} required error={fieldError('phone')}>
           {({ id, invalid }) => (
             <Input
@@ -187,6 +211,12 @@ function QuickLeadModal({ onClose }) {
               )}
             </div>
           </div>
+        )}
+
+        {summary && (
+          <Field label={<span className="inline-flex items-center gap-2">{t('Комментарий')} <AIBadge /></span>}>
+            {({ id }) => <Textarea id={id} rows={2} value={summary} onChange={e => setSummary(e.target.value)} />}
+          </Field>
         )}
 
         {more ? (

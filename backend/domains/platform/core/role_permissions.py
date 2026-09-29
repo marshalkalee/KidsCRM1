@@ -150,6 +150,11 @@ def can_manage_children(user) -> bool:
     return user.role in CHILD_MANAGE_ROLES
 
 
+def can_accept_payments(user) -> bool:
+    """Принять и отменить оплату — как в API оплат (IsOwnerOrManagerOrAdmin)."""
+    return user.role in CHILD_MANAGE_ROLES
+
+
 def can_manage_leads(user) -> bool:
     return user.role in LEAD_MANAGE_ROLES
 
@@ -172,6 +177,7 @@ def get_user_permissions(user) -> dict:
         "can_manage_groups": can_manage_groups(user),
         "can_view_client_money": can_view_client_money(user),
         "can_manage_children": can_manage_children(user),
+        "can_accept_payments": can_accept_payments(user),
         "can_manage_leads": can_manage_leads(user),
         "can_manage_lead_dictionaries": can_manage_lead_dictionaries(user),
     }
