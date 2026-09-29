@@ -12,14 +12,18 @@ import uuid
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, render
 
+from domains.money.subscriptions.debt import debt_by_child
 from domains.money.subscriptions.models import Subscription
 from domains.people.clients.models import Child
 from domains.platform.core.decorators import role_required
 from domains.platform.core.role_permissions import CHILD_MANAGE_ROLES, CLIENT_MONEY_VIEW_ROLES
 
-from .debt import debt_for_child
 from .models import Payment
 from .services import record_payment
+
+
+def _child_debt(child):
+    return debt_by_child(child.organization, [child.pk]).get(child.pk, 0)
 
 
 @role_required(*CLIENT_MONEY_VIEW_ROLES)
@@ -34,7 +38,7 @@ def child_payments_tab(request, child_id):
     context = {
         "child": child,
         "subscription": subscription,
-        "debt": debt_for_child(child) if subscription else 0,
+        "debt": _child_debt(child) if subscription else 0,
         "methods": Payment.Method.choices,
         "idempotency_key": uuid.uuid4(),
     }
@@ -74,6 +78,6 @@ def record_payment_view(request, child_id):
     return JsonResponse(
         {
             "paid_amount": str(payment.amount),
-            "remaining_debt": str(debt_for_child(child)),
+            "remaining_debt": str(_child_debt(child)),
         }
     )
