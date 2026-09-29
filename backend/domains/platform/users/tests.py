@@ -263,6 +263,71 @@ class AuthTests(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    def test_change_password_wrong_old(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.post(
+            "/api/v1/users/auth/change-password/",
+            {"old_password": "Nope", "new_password": "NewStrongPass456!"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("old_password", response.data)
+
+    def test_change_password_rejects_password_like_name(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.post(
+            "/api/v1/users/auth/change-password/",
+            {"old_password": "StrongPass123!", "new_password": "77001234567"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("new_password", response.data)
+
+    def test_profile_updates_own_name(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.patch(
+            "/api/v1/users/auth/me/", {"full_name": "  Сауле   Бекмуханова "}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["full_name"], "Сауле Бекмуханова")
+        self.assertIn("permissions", response.data)
+        self.owner.refresh_from_db()
+        self.assertEqual(self.owner.full_name, "Сауле Бекмуханова")
+
+    def test_profile_cannot_change_phone_or_role(self):
+        teacher = User.objects.create_user(
+            phone="77005550000",
+            password="StrongPass123!",
+            full_name="Педагог",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.client.force_authenticate(teacher)
+        response = self.client.patch(
+            "/api/v1/users/auth/me/",
+            {"full_name": "Жанна Абенова", "phone": "77009999999", "role": "owner"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        teacher.refresh_from_db()
+        self.assertEqual(teacher.phone, "77005550000")
+        self.assertEqual(teacher.role, User.Role.TEACHER)
+        self.assertEqual(teacher.full_name, "Жанна Абенова")
+
+    def test_profile_rejects_bad_name(self):
+        self.client.force_authenticate(self.owner)
+        for bad in ["", "А", "Admin123"]:
+            response = self.client.patch(
+                "/api/v1/users/auth/me/", {"full_name": bad}, format="json"
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, bad)
+        self.owner.refresh_from_db()
+        self.assertEqual(self.owner.full_name, "Владелец")
+
+    def test_profile_requires_login(self):
+        response = self.client.patch(
+            "/api/v1/users/auth/me/", {"full_name": "Кто-то"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
     def test_password_not_stored_in_plain_text(self):
         self.assertNotEqual(self.owner.password, "StrongPass123!")
         self.assertTrue(self.owner.password.startswith("argon2"))

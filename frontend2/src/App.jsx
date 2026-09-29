@@ -24,6 +24,7 @@ import OrganizationSettings from './pages/OrganizationSettings'
 import LeadDictionaries from './pages/LeadDictionaries'
 import Leads from './pages/Leads'
 import Notifications from './pages/Notifications'
+import Profile from './pages/Profile'
 import LeadDetail from './pages/LeadDetail'
 
 function App() {
@@ -45,6 +46,7 @@ function App() {
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
                 <Route path="notifications" element={<Notifications />} />
+                <Route path="profile" element={<Profile />} />
                 <Route path="children" element={<Children />} />
                 <Route path="children/import" element={<RequirePermission permission="can_manage_children"><ChildImport /></RequirePermission>} />
                 <Route path="children/:id" element={<ChildDetail />} />

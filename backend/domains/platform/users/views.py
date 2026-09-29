@@ -14,6 +14,7 @@ from domains.platform.users.serializers import (
     CustomTokenObtainSerializer,
     InviteStaffSerializer,
     OrganizationRegisterSerializer,
+    ProfileSerializer,
 )
 
 from .models import User
@@ -136,17 +137,24 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = request.user
-        return Response(
-            {
-                "id": str(user.id),
-                "full_name": user.full_name,
-                "phone": user.phone,
-                "role": user.role,
-                "organization_id": str(user.organization_id) if user.organization_id else None,
-                # Название — в готовом тексте WhatsApp из карточки заявки (TRU-96).
-                "organization_name": user.organization.name if user.organization_id else None,
-                "branches": [str(b.id) for b in user.branches.all()],
-                "permissions": get_user_permissions(user),
-            }
-        )
+        return Response(self.payload(request.user))
+
+    def patch(self, request):
+        serializer = ProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(self.payload(request.user))
+
+    @staticmethod
+    def payload(user):
+        return {
+            "id": str(user.id),
+            "full_name": user.full_name,
+            "phone": user.phone,
+            "role": user.role,
+            "organization_id": str(user.organization_id) if user.organization_id else None,
+            # Название — в готовом тексте WhatsApp из карточки заявки (TRU-96).
+            "organization_name": user.organization.name if user.organization_id else None,
+            "branches": [str(b.id) for b in user.branches.all()],
+            "permissions": get_user_permissions(user),
+        }
