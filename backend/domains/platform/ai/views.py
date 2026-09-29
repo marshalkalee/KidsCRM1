@@ -9,7 +9,7 @@ from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOf
 from domains.platform.leads.services import visible_leads
 from domains.platform.leads.views import CanManageLeads
 
-from . import services
+from . import assist, services
 
 
 def _uuid_list(value):
@@ -126,4 +126,87 @@ def import_clean(request, version=None):
             "problems": result["problems"],
             "file": base64.b64encode(result["xlsx"]).decode(),
         }
+    )
+
+
+def _ai(call):
+    """Ошибка ИИ — 400 с текстом для пользователя."""
+    try:
+        return Response(call())
+    except services.AIError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+@throttle_classes([AIThrottle])
+def reminders(request, version=None):
+    """Напоминания о долге или продлении пачкой: {children: [id], kind, language}."""
+    import uuid
+
+    ids = []
+    for value in request.data.get("children") or []:
+        try:
+            ids.append(uuid.UUID(str(value)))
+        except ValueError:
+            continue
+    return _ai(
+        lambda: {
+            "items": assist.reminders(
+                request.user,
+                ids,
+                kind=request.data.get("kind", ""),
+                language=request.data.get("language", "ru"),
+            )
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsStaffOfOrganization])
+@throttle_classes([AIThrottle])
+def communication_note(request, version=None):
+    return _ai(lambda: assist.communication_note(request.data.get("text", "")))
+
+
+@api_view(["POST"])
+@permission_classes([IsStaffOfOrganization])
+@throttle_classes([AIThrottle])
+def child_brief(request, child_id, version=None):
+    from domains.people.clients.models import Child
+
+    child = Child.objects.for_tenant(request.user.organization).filter(pk=child_id).first()
+    if child is None:
+        return Response({"detail": "Ребёнок не найден."}, status=status.HTTP_404_NOT_FOUND)
+    return _ai(lambda: assist.child_brief(child, request.user))
+
+
+@api_view(["POST"])
+@permission_classes([CanManageLeads])
+@throttle_classes([AIThrottle])
+def lead_groups(request, lead_id, version=None):
+    lead = (
+        visible_leads(request.user).select_related("direction", "branch").filter(pk=lead_id).first()
+    )
+    if lead is None:
+        return Response({"detail": "Заявка не найдена."}, status=status.HTTP_404_NOT_FOUND)
+    return _ai(lambda: assist.lead_groups(lead))
+
+
+@api_view(["POST"])
+@permission_classes([IsStaffOfOrganization])
+@throttle_classes([AIThrottle])
+def daily_plan(request, version=None):
+    return _ai(lambda: assist.daily_plan(request))
+
+
+@api_view(["POST"])
+@permission_classes([CanManageLeads])
+@throttle_classes([AIThrottle])
+def rejection_reason(request, version=None):
+    kind = "renewal" if request.data.get("kind") == "renewal" else "new"
+    return _ai(
+        lambda: assist.rejection_reason(
+            request.user.organization, text=request.data.get("text", ""), kind=kind
+        )
     )

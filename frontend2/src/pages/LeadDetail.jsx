@@ -6,6 +6,7 @@ import {
 import api from '../api/axios'
 import LeadModal from '../components/leads/LeadModal'
 import { AIMessageModal, useAI } from '../components/ai/ai'
+import { LeadGroups } from '../components/ai/assist'
 import RejectModal from '../components/leads/RejectModal'
 import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/format'
 import { useSession } from '../session/SessionContext'
@@ -183,6 +184,8 @@ export default function LeadDetail() {
               </div>
             </dl>
           </Card>
+
+          {!lead.converted_child && lead.kind !== 'renewal' && <LeadGroups leadId={lead.id} />}
 
           {lead.converted_child && (
             <Card>

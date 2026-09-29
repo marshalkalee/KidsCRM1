@@ -4,6 +4,7 @@ import { MessageCircle, MessagesSquare, Phone, StickyNote } from 'lucide-react'
 import api from '../../api/axios'
 import { Button, Card, EmptyState, ErrorState, Select, Skeleton, Textarea, apiErrorMessage, cn, formatDateTime, useToast } from '../../ui'
 import { t } from '../../i18n'
+import { NoteHelper } from '../ai/assist'
 
 // Как CommunicationLog.Channel на бэке.
 const CHANNELS = [
@@ -166,6 +167,7 @@ function QuickLogForm({ childOptions, contactOptions, fixedContact, onCreated })
           placeholder={t('О чём договорились')}
           onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(e) }}
         />
+        <NoteHelper text={note} onParsed={parsed => { setChannel(parsed.channel); setNote(parsed.note) }} />
         {error && <p className="text-sm text-danger-600">{error}</p>}
         <Button variant="primary" type="submit" loading={saving} disabled={!note.trim()}>{t('Добавить')}</Button>
       </form>
