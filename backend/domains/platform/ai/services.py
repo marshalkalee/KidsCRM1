@@ -20,6 +20,7 @@ openai; без ключа выбранного провайдера всё вы�
 
 import json
 import logging
+import re
 
 import anthropic
 from django.conf import settings
@@ -620,15 +621,15 @@ IMPORT_SYSTEM = """Ты приводишь таблицу детского це�
 Для каждой строки исходной таблицы с ребёнком верни строку шаблона (row — номер исходной строки). Если в одной строке двое детей — верни две строки с тем же row. Строки без ребёнка (итоги, пустые, заголовки разделов) пропусти.
 Поля:
 - child_name — ФИО ребёнка как в таблице, без лишних пометок.
-- birth_date — ДД.ММ.ГГГГ. Если только год или возраст — пусто (не выдумывай число и месяц).
+- birth_date — ДД.ММ.ГГГГ. Любую полную дату приводи к этому виду («5.5.2017», «14/07/2017», «2017-10-02» → «05.05.2017», «14.07.2017», «02.10.2017»). Если только год или возраст — пусто (не выдумывай число и месяц).
 - gender — «Ж» или «М». Если в таблице нет, определи по имени и фамилии, только если уверен; иначе пусто.
-- parent_name — ФИО родителя (контактного лица).
-- phone — телефон(ы) родителя; несколько — через запятую. Цифры как в таблице.
+- parent_name — имя (ФИО) одного контактного взрослого, как написано. Слова «мама», «папа» — это роль, а не имя: если имени нет, parent_name пусто, а в problem — «нет имени родителя».
+- phone — телефон(ы) только этого человека, несколько — через запятую, цифры как в таблице. Телефоны других людей (папа, бабушка) и рабочие городские в phone не пиши — перечисли их в problem («второй контакт: папа 8701…»).
 - role — мама, папа, бабушка, опекун или другое; пусто, если неизвестно.
 - medical_notes — аллергии и особенности здоровья, если есть.
-- reported_balance — остаток занятий числом, если есть колонка с остатком.
-- direction, group — как в таблице, если есть.
-- problem — коротко по-русски, что пришлось угадать (например «пол определён по имени», «остаток один на двоих детей»). Пусто, если ничего не угадывал.
+- reported_balance — сколько занятий осталось, числом, только если это явно остаток занятий. Долги, суммы и оплаты («долг 12500», «25000», «оплачено») — не остаток: оставь пусто, а долг упомяни в problem.
+- direction — направление (балет, гимнастика, растяжка…); group — название группы, если оно есть («Балет мл.», «Гимн. 4-7»). Не путай: из «Гимн. 4-7» направление — «Гимнастика», группа — «Гимн. 4-7».
+- problem — коротко по-русски, что проверить вручную: чего не хватает, что угадано, что не влезло в шаблон («нет даты рождения», «второй контакт: папа 8701…», «долг 12 500 — внести вручную»). Пусто, если всё однозначно.
 Ничего не придумывай: чего нет в таблице — пустая строка."""
 
 IMPORT_FIELDS = [
@@ -674,6 +675,61 @@ def _cell(value):
     return value.strftime("%d.%m.%Y") if hasattr(value, "strftime") else str(value).strip()
 
 
+PHONE_RE = re.compile(r"(?:\+?7|8)[\s()\-]*\d(?:[\s()\-]*\d){9}")
+
+
+def _phones(text) -> set[str]:
+    """Номера в тексте — последние 10 цифр, чтобы «8 707…» и «+7 707…» совпали."""
+    return {re.sub(r"\D", "", m)[-10:] for m in PHONE_RE.findall(str(text or ""))}
+
+
+def _flag_lost_phones(rows, raw_rows):
+    """Модель иногда молча теряет второй номер из ячейки. Сверяем с исходной
+    строкой: номер, которого нет ни в телефоне, ни в пометке, — в пометку."""
+    by_row = {}
+    for row in rows:
+        by_row.setdefault(row.get("row"), []).append(row)
+    for number, values in raw_rows:
+        out = by_row.get(number)
+        if not out:
+            continue
+        source = set().union(*(_phones(_cell(v)) for v in values))
+        kept = set().union(*(_phones(f"{r.get('phone')} {r.get('problem')}") for r in out))
+        lost = sorted(source - kept)
+        if lost:
+            extra = "в строке есть ещё телефон: " + ", ".join(f"8{n}" for n in lost)
+            out[0]["problem"] = "; ".join(p for p in (out[0].get("problem"), extra) if p)
+
+
+ROLE_WORDS = {"мама", "мать", "папа", "отец", "бабушка", "дедушка", "опекун", "тетя", "няня"}
+
+
+def _tidy_import_rows(rows):
+    """То, что модель путает стабильно, правим кодом: «мама» вместо имени —
+    это роль; один ребёнок с двумя родителями — одна строка, второй контакт
+    уходит в пометку (в шаблоне один родитель на строку)."""
+    tidy, seen = [], {}
+    for row in rows:
+        name = _norm(row.get("parent_name"))
+        if name in ROLE_WORDS:
+            row["role"] = row.get("role") or name
+            row["parent_name"] = ""
+        key = (row.get("row"), _norm(row.get("child_name")))
+        first = seen.get(key)
+        if first is None:
+            seen[key] = row
+            tidy.append(row)
+            continue
+        contact = " ".join(
+            part
+            for part in (row.get("role"), row.get("parent_name"), row.get("phone"))
+            if (part or "").strip()
+        )
+        extra = f"второй контакт: {contact}" if contact else ""
+        first["problem"] = "; ".join(p for p in (first.get("problem"), extra) if (p or "").strip())
+    return tidy
+
+
 def _import_problems(row) -> str:
     """Что проверить в строке — обязательные поля шаблона проверяем сами, не
     полагаясь на то, что модель заметит; её пометку добавляем после."""
@@ -686,9 +742,10 @@ def _import_problems(row) -> str:
         problems.append("нет телефона")
     if not (row.get("parent_name") or "").strip():
         problems.append("нет ФИО родителя")
-    note = (row.get("problem") or "").strip()
-    if note and note.lower() not in "; ".join(problems):
-        problems.append(note)
+    for note in (row.get("problem") or "").split(";"):
+        note = note.strip()
+        if note and note.lower() not in [p.lower() for p in problems]:
+            problems.append(note)
     return "; ".join(problems)
 
 
@@ -730,7 +787,10 @@ def clean_import_file(uploaded) -> dict:
     chunks = [raw_rows[i : i + IMPORT_CHUNK] for i in range(0, len(raw_rows), IMPORT_CHUNK)]
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(ask, chunks))
-    rows = sorted((row for chunk in results for row in chunk), key=lambda r: r.get("row") or 0)
+    rows = _tidy_import_rows(
+        sorted((row for chunk in results for row in chunk), key=lambda r: r.get("row") or 0)
+    )
+    _flag_lost_phones(rows, raw_rows)
     for row in rows:
         row["problem"] = _import_problems(row)
 

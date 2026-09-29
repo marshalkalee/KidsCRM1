@@ -261,6 +261,41 @@ class ImportCleanTests(AIFixtures):
             sent[0]["cells"], ["Иванова Алия 12.03.2019", "мама Айгерим 8 707 111 22 33"]
         )
 
+    def test_role_is_not_a_name_and_two_parents_make_one_row(self):
+        base = {field: "" for field in services.IMPORT_FIELDS}
+        rows = services._tidy_import_rows(
+            [
+                {
+                    **base,
+                    "row": 3,
+                    "child_name": "Беков Тимур",
+                    "parent_name": "мама",
+                    "phone": "8777",
+                    "problem": "нет даты рождения",
+                },
+                {
+                    **base,
+                    "row": 3,
+                    "child_name": "Беков Тимур",
+                    "parent_name": "Папа",
+                    "phone": "8701",
+                },
+            ]
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["parent_name"], rows[0]["role"]), ("", "мама"))
+        self.assertEqual(
+            services._import_problems(rows[0]),
+            "нет даты рождения; не указан пол; нет ФИО родителя; второй контакт: папа 8701",
+        )
+
+    def test_lost_phone_goes_to_problem(self):
+        rows = [{"row": 2, "phone": "8 777 222 33 44", "problem": ""}]
+        services._flag_lost_phones(
+            rows, [(2, ["Беков Тимур", "87772223344 мама, +7 (701) 333-44-55 папа"])]
+        )
+        self.assertEqual(rows[0]["problem"], "в строке есть ещё телефон: 87013334455")
+
     def test_too_many_rows(self):
         text = "Ученик\n" + "".join(f"Ребёнок {i}\n" for i in range(services.IMPORT_MAX_ROWS + 1))
         self.assertEqual(self.upload(text).status_code, 400)
