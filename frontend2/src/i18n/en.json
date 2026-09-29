@@ -1021,5 +1021,8 @@
  "Заканчивается": "Ending soon",
  "Истёк": "Expired",
  "Заморожен": "Frozen",
- "Исчерпан": "Used up"
+ "Исчерпан": "Used up",
+ "Остаток исправлен: было {before}, стало {after}": "Balance fixed: was {before}, now {after}",
+ "Остаток сходится с журналом: {after}": "Balance matches the log: {after}",
+ "Пересчитать остаток": "Recalculate balance"
 }

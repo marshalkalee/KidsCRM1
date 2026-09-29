@@ -6,11 +6,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from domains.people.clients.models import Child
-from domains.platform.core.permissions import IsNotTeacher
+from domains.platform.core.permissions import IsNotTeacher, IsOwnerOrManager
 from domains.platform.tenants.models import Branch, Direction
 
 from .freezes import freeze_subscription, unfreeze_subscription
-from .models import Subscription
+from .models import BalanceDiscrepancy, Subscription
+from .reconciliation import manual_recompute
 from .renewals import sell_renewal
 from .sales import sell_subscription
 from .serializers import (
@@ -44,6 +45,45 @@ class SubscriptionViewSet(
         subscription = self.get_object()
         entries = subscription.ledger_entries.order_by("-created_at")
         return Response(SubscriptionLedgerEntrySerializer(entries, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def recompute(self, request, pk=None):
+        """Пересчитать остаток из журнала списаний (TRU-61) — при споре с родителем."""
+        subscription = self.get_object()
+        before = subscription.sessions_remaining_cache
+        after = manual_recompute(subscription)
+        return Response(
+            {
+                "before": before,
+                "after": after,
+                "fixed": before != after,
+                "subscription": SubscriptionSerializer(subscription).data,
+            }
+        )
+
+    @action(detail=False, methods=["get"], permission_classes=[IsOwnerOrManager])
+    def discrepancies(self, request):
+        """Отчёт о расхождениях остатка (TRU-61): последние 200 находок."""
+        rows = (
+            BalanceDiscrepancy.objects.for_tenant(request.user.organization)
+            .select_related("subscription__child", "subscription__subscription_type_version")
+            .order_by("-found_at")[:200]
+        )
+        return Response(
+            [
+                {
+                    "id": str(row.id),
+                    "found_at": row.found_at.isoformat(),
+                    "subscription_id": str(row.subscription_id),
+                    "child_id": str(row.subscription.child_id),
+                    "child_name": row.subscription.child.full_name,
+                    "subscription_name": row.subscription.subscription_type_version.name,
+                    "cached_value": row.cached_value,
+                    "recomputed_value": row.recomputed_value,
+                }
+                for row in rows
+            ]
+        )
 
     @action(detail=True, methods=["get"])
     def freezes(self, request, pk=None):

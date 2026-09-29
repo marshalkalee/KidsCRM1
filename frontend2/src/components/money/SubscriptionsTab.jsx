@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ListChecks, PlusCircle, Snowflake } from 'lucide-react'
+import { ListChecks, PlusCircle, RefreshCw, Snowflake } from 'lucide-react'
 import { fetchBranches, fetchDirections } from '../../api/lessons'
 import {
   fetchChildSubscriptions, fetchLedger, fetchNextLesson, fetchSubscriptionTypes,
-  freezeSubscription, sellSubscription, unfreezeSubscription,
+  freezeSubscription, recomputeSubscription, sellSubscription, unfreezeSubscription,
 } from '../../api/subscriptions'
 import {
   Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton,
@@ -118,7 +118,7 @@ export default function SubscriptionsTab({ child, onCountChange }) {
         </div>
       )}
 
-      {ledgerFor && <LedgerModal subscription={ledgerFor} onClose={() => setLedgerFor(null)} />}
+      {ledgerFor && <LedgerModal subscription={ledgerFor} onClose={() => setLedgerFor(null)} onRecomputed={load} />}
       {freezeFor && (
         <FreezeModal
           subscription={freezeFor}
@@ -133,16 +133,47 @@ export default function SubscriptionsTab({ child, onCountChange }) {
   )
 }
 
-function LedgerModal({ subscription, onClose }) {
+function LedgerModal({ subscription, onClose, onRecomputed }) {
+  const toast = useToast()
   const [entries, setEntries] = useState(null)
   const [error, setError] = useState(false)
+  const [recomputing, setRecomputing] = useState(false)
+
+  // Спор с родителем: остаток заново из журнала, без ожидания ночной сверки (TRU-61).
+  async function recompute() {
+    setRecomputing(true)
+    try {
+      const result = await recomputeSubscription(subscription.id)
+      if (result.fixed) {
+        toast.success(t('Остаток исправлен: было {before}, стало {after}', { before: result.before ?? '—', after: result.after ?? '—' }))
+      } else {
+        toast.success(t('Остаток сходится с журналом: {after}', { after: result.after ?? t('безлимит') }))
+      }
+      onRecomputed?.()
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setRecomputing(false)
+    }
+  }
 
   useEffect(() => {
     fetchLedger(subscription.id).then(setEntries).catch(() => setError(true))
   }, [subscription.id])
 
   return (
-    <Modal open onClose={onClose} title={t('Из чего сложился остаток')} description={subscription.subscription_type_name}>
+    <Modal
+      open
+      onClose={onClose}
+      title={t('Из чего сложился остаток')}
+      description={subscription.subscription_type_name}
+      footer={
+        <>
+          <Button icon={RefreshCw} loading={recomputing} onClick={recompute}>{t('Пересчитать остаток')}</Button>
+          <Button variant="primary" onClick={onClose}>{t('Готово')}</Button>
+        </>
+      }
+    >
       {error && <ErrorState />}
       {!error && !entries && <Skeleton className="h-24" />}
       {!error && entries && entries.length === 0 && <EmptyState title={t('Записей пока нет')} />}

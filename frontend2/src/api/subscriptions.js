@@ -8,6 +8,10 @@ export function fetchLedger(subscriptionId) {
   return api.get(`subscriptions/${subscriptionId}/ledger/`).then(r => r.data)
 }
 
+export function recomputeSubscription(subscriptionId) {
+  return api.post(`subscriptions/${subscriptionId}/recompute/`).then(r => r.data)
+}
+
 export function fetchFreezes(subscriptionId) {
   return api.get(`subscriptions/${subscriptionId}/freezes/`).then(r => r.data)
 }
