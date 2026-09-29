@@ -26,6 +26,7 @@ import Leads from './pages/Leads'
 import Notifications from './pages/Notifications'
 import LeadDetail from './pages/LeadDetail'
 import Debts from './pages/Debts'
+import Renewals from './pages/Renewals'
 
 function App() {
   // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
@@ -54,6 +55,7 @@ function App() {
                 <Route path="schedule" element={<div className="kc-schedule"><Schedule /></div>} />
                 <Route path="attendance" element={<AttendanceScreen />} />
                 <Route path="debts" element={<RequirePermission permission="can_view_client_money"><Debts /></RequirePermission>} />
+                <Route path="renewals" element={<RequirePermission permission="can_view_client_money"><Renewals /></RequirePermission>} />
                 <Route path="groups" element={<Groups />} />
                 <Route path="groups/:id" element={<GroupDetail />} />
                 <Route path="branches" element={<RequirePermission permission="can_manage_branches"><Branches /></RequirePermission>} />

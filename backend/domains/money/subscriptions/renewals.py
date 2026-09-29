@@ -10,6 +10,9 @@
 «Сегодня» — дата центра (today_for_org), не сервера: сервер живёт в UTC,
 и вечером по Алматы у него ещё вчера.
 
+Уже продлённый абонемент (есть новый с renewed_from на него) в рабочие
+списки не попадает: продлевать его больше не нужно.
+
 Условие одно, в двух формах: Q для списков (_ending_soon_condition) и
 проверка одного абонемента (is_ending_soon) — для карточки. Менять вместе.
 """
@@ -68,7 +71,7 @@ def expiring_child_ids(organization, today=None):
     today = today or today_for_org(organization)
     return (
         Subscription.objects.for_tenant(organization)
-        .filter(status=Subscription.Status.ACTIVE)
+        .filter(status=Subscription.Status.ACTIVE, renewals__isnull=True)
         .filter(_ending_soon_condition(organization, today))
         .values("child_id")
     )
@@ -80,7 +83,7 @@ def expiring_subscriptions(organization, *, branch=None, direction=None, group=N
     today = today or today_for_org(organization)
     qs = (
         Subscription.objects.for_tenant(organization)
-        .filter(status=Subscription.Status.ACTIVE)
+        .filter(status=Subscription.Status.ACTIVE, renewals__isnull=True)
         .filter(_ending_soon_condition(organization, today))
         .select_related("child", "subscription_type_version", "direction", "branch")
     )

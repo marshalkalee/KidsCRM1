@@ -11,6 +11,7 @@ API рабочих списков денег для frontend2: «Задолже�
 from datetime import timedelta
 
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
@@ -19,11 +20,15 @@ from domains.platform.core.active_branch import get_active_branch
 from domains.platform.core.permissions import IsNotTeacher
 from domains.platform.core.role_permissions import can_view_phone
 from domains.platform.core.utils import today_for_org
+from domains.platform.leads.models import Lead, LeadKind
 from domains.platform.tenants.models import Branch, Direction
 from domains.platform.tenants.org_settings import DEBT_OVERDUE_DAYS_THRESHOLD, get_org_setting
+from domains.scheduling.groups.models import Group, GroupMembership
 
 from .debt import debtor_subscriptions
 from .debt_report import build_debtors_workbook
+from .models import RenewalContact, Subscription
+from .renewals import expiring_subscriptions, mark_contacted
 
 DEFAULT_PAGE_SIZE = 25
 MAX_PAGE_SIZE = 200
@@ -189,3 +194,142 @@ def debtors_export_api(request):
     name = f"debts-{today_for_org(organization):%Y-%m-%d}.xlsx"
     response["Content-Disposition"] = f'attachment; filename="{name}"'
     return response
+
+
+# --- Продления (TRU-69) ----------------------------------------------------------
+
+CONTACT_COOLDOWN_DAYS = 7  # «не звонить одному и тому же дважды за неделю» (ТЗ п. 4.4)
+
+
+def _renewals_queryset(request):
+    organization = request.user.organization
+    params = request.query_params
+    group = None
+    if params.get("group"):
+        group = Group.objects.for_tenant(organization).filter(pk=params.get("group")).first()
+    qs = expiring_subscriptions(
+        organization, branch=_branch(request), direction=_direction(request), group=group
+    )
+    query = (params.get("q") or "").strip()
+    if query:
+        qs = qs.filter(child__full_name__icontains=query)
+    if params.get("not_contacted") == "1":
+        since = today_for_org(organization) - timedelta(days=CONTACT_COOLDOWN_DAYS)
+        qs = qs.exclude(renewal_contacts__contacted_at__date__gt=since)
+    return qs
+
+
+def _last_contacts(subscription_ids):
+    last = {}
+    contacts = (
+        RenewalContact.objects.filter(subscription_id__in=subscription_ids)
+        .select_related("contacted_by")
+        .order_by("subscription_id", "-contacted_at")
+    )
+    for contact in contacts:
+        last.setdefault(contact.subscription_id, contact)
+    return last
+
+
+def _groups(organization, pairs):
+    """{(child_id, direction_id): «Группа»} — текущая группа ребёнка по направлению."""
+    names = {}
+    memberships = (
+        GroupMembership.objects.for_tenant(organization)
+        .filter(child_id__in={c for c, _ in pairs}, left_at__isnull=True)
+        .select_related("group")
+        .order_by("joined_at")
+    )
+    for membership in memberships:
+        names.setdefault(
+            (membership.child_id, membership.group.direction_id), membership.group.name
+        )
+    return names
+
+
+def _open_renewal_leads(organization, child_ids):
+    leads = (
+        Lead.objects.for_tenant(organization)
+        .filter(kind=LeadKind.RENEWAL, child_id__in=child_ids)
+        .exclude(status__in=[Lead.Status.PURCHASED, Lead.Status.REJECTED])
+        .values_list("child_id", "id")
+    )
+    return {child_id: str(lead_id) for child_id, lead_id in leads}
+
+
+def _contact_info(contact, today):
+    if contact is None:
+        return {"last_contacted_at": None, "last_contacted_by": "", "last_contact_note": ""}
+    return {
+        "last_contacted_at": contact.contacted_at.isoformat(),
+        "last_contacted_by": contact.contacted_by.full_name,
+        "last_contact_note": contact.note,
+        "contacted_recently": (today - contact.contacted_at.date()).days < CONTACT_COOLDOWN_DAYS,
+    }
+
+
+def renewal_rows(organization, subscriptions, *, show_phones):
+    subscriptions = list(subscriptions)
+    today = today_for_org(organization)
+    child_ids = {s.child_id for s in subscriptions}
+    payers = _payers(organization, child_ids)
+    groups = _groups(organization, {(s.child_id, s.direction_id) for s in subscriptions})
+    contacts = _last_contacts([s.id for s in subscriptions])
+    leads = _open_renewal_leads(organization, child_ids)
+    rows = []
+    for sub in subscriptions:
+        days_left = (sub.ends_on - today).days
+        remaining = sub.sessions_remaining_cache
+        tail = f", осталось занятий: {remaining}" if remaining is not None else ""
+        rows.append(
+            {
+                "subscription_id": str(sub.id),
+                "subscription_type_id": str(sub.subscription_type_version.subscription_type_id),
+                "child_id": str(sub.child_id),
+                "child_name": sub.child.full_name,
+                **_contact(payers.get(sub.child_id), show_phones),
+                "subscription_name": sub.subscription_type_version.name,
+                "direction_name": sub.direction.name,
+                "branch_id": str(sub.branch_id) if sub.branch_id else None,
+                "branch_name": sub.branch.name if sub.branch else "",
+                "group_name": groups.get((sub.child_id, sub.direction_id), ""),
+                "sessions_remaining": remaining,
+                "ends_on": sub.ends_on.isoformat(),
+                "days_left": days_left,
+                "contacted_recently": False,
+                **_contact_info(contacts.get(sub.id), today),
+                "renewal_lead_id": leads.get(sub.child_id),
+                "message_text": (
+                    f"Здравствуйте! Абонемент «{sub.subscription_type_version.name}» "
+                    f"({sub.child.full_name}) заканчивается {sub.ends_on:%d.%m.%Y}{tail}. "
+                    f"Продлеваем?"
+                ),
+            }
+        )
+    return rows
+
+
+@api_view(["GET"])
+@permission_classes([IsNotTeacher])
+def renewals_api(request):
+    """Абонементы «заканчивается» — сначала те, что кончаются раньше."""
+    qs = _renewals_queryset(request).order_by("ends_on", "sessions_remaining_cache", "pk")
+    rows = renewal_rows(
+        request.user.organization,
+        _page(qs, request.query_params),
+        show_phones=can_view_phone(request.user),
+    )
+    return Response({"results": rows, "count": qs.count()})
+
+
+@api_view(["POST"])
+@permission_classes([IsNotTeacher])
+def renewal_contacted_api(request, subscription_id):
+    """Отметка «связались» с датой — чтобы не звонить дважды за неделю."""
+    organization = request.user.organization
+    subscription = get_object_or_404(
+        Subscription.objects.for_tenant(organization), pk=subscription_id
+    )
+    note = str(request.data.get("note", ""))[:255]
+    contact = mark_contacted(subscription, actor=request.user, note=note)
+    return Response(_contact_info(contact, today_for_org(organization)), status=201)

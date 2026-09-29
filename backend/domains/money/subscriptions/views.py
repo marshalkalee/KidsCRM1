@@ -18,6 +18,8 @@ from .renewals import sell_renewal
 from .sales import sell_subscription
 from .serializers import (
     FreezeRequestSerializer,
+    SaleRequestSerializer,
+    SellRequestSerializer,
     SubscriptionFreezeSerializer,
     SubscriptionLedgerEntrySerializer,
     SubscriptionSerializer,
@@ -134,14 +136,32 @@ class SubscriptionViewSet(
             return Response({"detail": str(exc)}, status=400)
         return Response(self._fresh(subscription))
 
+    @staticmethod
+    def _sale_terms(data):
+        return {
+            "starts_on": data["starts_on"],
+            "discount_amount": data["discount_amount"],
+            "discount_reason": data["discount_reason"],
+            "paid_amount": data["paid_amount"],
+            "payment_method": data["payment_method"],
+        }
+
     @action(detail=True, methods=["post"])
     def renew(self, request, pk=None):
+        """Продление (TRU-69): тот же ребёнок, направление и филиал, новый абонемент."""
         old = self.get_object()
-        subscription_type = get_selectable_subscription_types(
-            old.organization, branch=old.branch
-        ).get(
-            pk=request.data["subscription_type_id"],
+        data = SaleRequestSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        subscription_type = (
+            get_selectable_subscription_types(old.organization, branch=old.branch)
+            .filter(pk=data.validated_data["subscription_type_id"])
+            .first()
         )
+        if subscription_type is None:
+            return Response(
+                {"subscription_type_id": ["Этот абонемент не продаётся в филиале ребёнка."]},
+                status=400,
+            )
         try:
             new_sub, _payment = sell_renewal(
                 old,
@@ -150,11 +170,7 @@ class SubscriptionViewSet(
                 subscription_type_version=subscription_type.versions.latest(),
                 direction=old.direction,
                 branch=old.branch,
-                starts_on=request.data["starts_on"],
-                discount_amount=request.data.get("discount_amount", 0),
-                discount_reason=request.data.get("discount_reason", ""),
-                paid_amount=request.data["paid_amount"],
-                payment_method=request.data["payment_method"],
+                **self._sale_terms(data.validated_data),
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
@@ -163,12 +179,30 @@ class SubscriptionViewSet(
     @action(detail=False, methods=["post"])
     def sell(self, request):
         organization = request.user.organization
-        child = Child.objects.for_tenant(organization).get(pk=request.data["child_id"])
-        subscription_type = get_selectable_subscription_types(organization).get(
-            pk=request.data["subscription_type_id"]
+        data = SellRequestSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        values = data.validated_data
+        child = Child.objects.for_tenant(organization).filter(pk=values["child_id"]).first()
+        branch = Branch.objects.for_tenant(organization).filter(pk=values["branch_id"]).first()
+        direction = (
+            Direction.objects.for_tenant(organization).filter(pk=values["direction_id"]).first()
         )
-        branch = Branch.objects.for_tenant(organization).get(pk=request.data["branch_id"])
-        direction = Direction.objects.for_tenant(organization).get(pk=request.data["direction_id"])
+        subscription_type = (
+            get_selectable_subscription_types(organization, branch=branch)
+            .filter(pk=values["subscription_type_id"])
+            .first()
+        )
+        errors = {}
+        if child is None:
+            errors["child_id"] = ["Ребёнок не найден."]
+        if branch is None:
+            errors["branch_id"] = ["Филиал не найден."]
+        if direction is None:
+            errors["direction_id"] = ["Направление не найдено."]
+        if subscription_type is None:
+            errors["subscription_type_id"] = ["Этот абонемент не продаётся в выбранном филиале."]
+        if errors:
+            return Response(errors, status=400)
         try:
             new_sub, _payment = sell_subscription(
                 actor=request.user,
@@ -176,15 +210,35 @@ class SubscriptionViewSet(
                 subscription_type_version=subscription_type.versions.latest(),
                 direction=direction,
                 branch=branch,
-                starts_on=request.data["starts_on"],
-                discount_amount=request.data.get("discount_amount", 0),
-                discount_reason=request.data.get("discount_reason", ""),
-                paid_amount=request.data["paid_amount"],
-                payment_method=request.data["payment_method"],
+                **self._sale_terms(values),
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response(SubscriptionSerializer(new_sub).data, status=201)
+
+    @action(detail=False, methods=["get"])
+    def types(self, request):
+        """Типы абонементов, которые можно продать (?branch= — в этом филиале)."""
+        organization = request.user.organization
+        branch_id = request.query_params.get("branch")
+        branch = (
+            Branch.objects.for_tenant(organization).filter(pk=branch_id).first()
+            if branch_id
+            else None
+        )
+        return Response(
+            [
+                {
+                    "id": str(item.id),
+                    "name": item.name,
+                    "price": str(item.price),
+                    "is_unlimited": item.is_unlimited,
+                    "quota_sessions": item.quota_sessions,
+                    "duration_days": item.duration_days,
+                }
+                for item in get_selectable_subscription_types(organization, branch=branch)
+            ]
+        )
 
     @action(detail=False, methods=["get"])
     def next_lesson(self, request):

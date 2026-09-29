@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from domains.money.payments.models import Payment
+
 from .debt import subscription_debt
 from .models import Subscription, SubscriptionFreeze, SubscriptionLedgerEntry
 from .statuses import DISPLAY_LABELS, get_display_status
@@ -90,3 +92,28 @@ class FreezeRequestSerializer(serializers.Serializer):
 class UnfreezeRequestSerializer(serializers.Serializer):
     # Пусто — разморозить сегодня (досрочно): дни, что остались, вернутся.
     actual_end_date = serializers.DateField(required=False, allow_null=True)
+
+
+class SaleRequestSerializer(serializers.Serializer):
+    """Продажа и продление (TRU-69): даты и суммы — типами, ошибки — по полям."""
+
+    subscription_type_id = serializers.UUIDField()
+    starts_on = serializers.DateField()
+    discount_amount = serializers.DecimalField(
+        max_digits=12, decimal_places=0, min_value=0, required=False, default=0
+    )
+    discount_reason = serializers.ChoiceField(
+        choices=Subscription.DiscountReason.choices, required=False, allow_blank=True, default=""
+    )
+    paid_amount = serializers.DecimalField(
+        max_digits=12, decimal_places=0, min_value=0, required=False, default=0
+    )
+    payment_method = serializers.ChoiceField(
+        choices=Payment.Method.choices, required=False, default=Payment.Method.KASPI_TRANSFER
+    )
+
+
+class SellRequestSerializer(SaleRequestSerializer):
+    child_id = serializers.UUIDField()
+    branch_id = serializers.UUIDField()
+    direction_id = serializers.UUIDField()

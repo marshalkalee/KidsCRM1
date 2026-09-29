@@ -155,30 +155,7 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
             )}
           </Field>
 
-          <div className="flex flex-col gap-[5px]">
-            <p className="font-btn text-[10px] font-bold uppercase tracking-[0.07em] text-ink-subtle">{t('Способ')}</p>
-            <div role="radiogroup" aria-label={t('Способ')} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {METHODS.map(m => {
-                const active = form.method === m.value
-                return (
-                  <button
-                    key={m.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => setForm({ ...form, method: m.value })}
-                    className={cn(
-                      'flex h-11 items-center justify-center gap-1.5 rounded-md border-[1.5px] text-[13px] font-semibold transition',
-                      active ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line-strong text-ink-muted hover:border-brand-200',
-                    )}
-                  >
-                    <m.icon className="size-4" />
-                    {m.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+          <MethodPicker value={form.method} onChange={method => setForm({ ...form, method })} />
 
           <Field label={t('Комментарий')} error={errors.comment}>
             {({ id }) => <Input id={id} value={form.comment} onChange={e => setForm({ ...form, comment: e.target.value })} placeholder={t('Необязательно')} />}
@@ -186,5 +163,35 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
         </form>
       )}
     </Modal>
+  )
+}
+
+/** Способ оплаты кнопками, Kaspi первым — и в оплате, и в продаже продления. */
+export function MethodPicker({ value, onChange, label = t('Способ') }) {
+  return (
+    <div className="flex flex-col gap-[5px]">
+      <p className="font-btn text-[10px] font-bold uppercase tracking-[0.07em] text-ink-subtle">{label}</p>
+      <div role="radiogroup" aria-label={label} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {METHODS.map(m => {
+          const active = value === m.value
+          return (
+            <button
+              key={m.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(m.value)}
+              className={cn(
+                'flex h-11 items-center justify-center gap-1.5 rounded-md border-[1.5px] text-[13px] font-semibold transition',
+                active ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line-strong text-ink-muted hover:border-brand-200',
+              )}
+            >
+              <m.icon className="size-4" />
+              {m.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }
