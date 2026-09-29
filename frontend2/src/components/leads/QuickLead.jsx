@@ -5,6 +5,7 @@ import api from '../../api/axios'
 import { useSession } from '../../session/SessionContext'
 import { Button, Field, Input, Modal, Select, apiErrorMessage, cn, useToast } from '../../ui'
 import { t } from '../../i18n'
+import { personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../../utils/formValidation'
 
 const OPEN_EVENT = 'kc:new-lead'
 export const LEAD_CREATED_EVENT = 'kc:lead-created'
@@ -153,22 +154,21 @@ function QuickLeadModal({ onClose }) {
               id={id}
               ref={phoneRef}
               invalid={invalid}
-              type="tel"
-              inputMode="tel"
               autoComplete="off"
-              placeholder="+7 700 000 00 00"
+              placeholder="77000000000"
               value={form.phone}
-              onChange={e => set('phone', e.target.value)}
+              onChange={e => set('phone', phoneDigits(e.target.value))}
               className="h-11 text-base"
               autoFocus
               required
+              {...phoneInputProps}
             />
           )}
         </Field>
         {shownMatches && (shownMatches.leads.length > 0 || shownMatches.parents.length > 0) && <PhoneMatches matches={shownMatches} onNavigate={onClose} />}
         <Field label={t('Имя родителя')} required error={fieldError('parent_name')}>
           {({ id, invalid }) => (
-            <Input id={id} invalid={invalid} value={form.parent_name} onChange={e => set('parent_name', e.target.value)} placeholder={t('Как обращаться')} className="h-11 text-base" required />
+            <Input id={id} invalid={invalid} value={form.parent_name} onChange={e => set('parent_name', personNameInput(e.target.value))} placeholder={t('Как обращаться')} className="h-11 text-base" required {...personNameInputProps} />
           )}
         </Field>
 
@@ -193,7 +193,7 @@ function QuickLeadModal({ onClose }) {
           <div className="space-y-4 border-t border-line pt-4">
             <div className="grid grid-cols-[1fr_96px] gap-3">
               <Field label={t('Имя ребёнка')} error={fieldError('child_name')}>
-                {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.child_name} onChange={e => set('child_name', e.target.value)} />}
+                {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.child_name} onChange={e => set('child_name', personNameInput(e.target.value))} {...personNameInputProps} />}
               </Field>
               <Field label={t('Возраст')} error={fieldError('child_age')}>
                 {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" inputMode="numeric" min={1} max={25} value={form.child_age} onChange={e => set('child_age', e.target.value)} />}

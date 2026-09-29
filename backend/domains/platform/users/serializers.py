@@ -8,6 +8,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.core.text_validation import normalize_entity_name, normalize_person_name
 from domains.platform.tenants.models import Branch, Organization
 
 User = get_user_model()
@@ -68,6 +69,15 @@ class UserSerializer(serializers.ModelSerializer):
                 check_role_change(request.user, role)
         return attrs
 
+    def validate_full_name(self, value):
+        return normalize_person_name(value)
+
+    def validate_phone(self, value):
+        try:
+            return normalize_phone_number(value)
+        except InvalidPhoneNumberError as exc:
+            raise serializers.ValidationError("Не похоже на номер телефона.") from exc
+
     def create(self, validated_data):
         password = validated_data.pop("password", None)
         user = super().create(validated_data)
@@ -95,6 +105,13 @@ class CustomTokenObtainSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         try:
+            raw_phone = attrs[self.username_field].strip()
+            normalized_phone = normalize_phone_number(raw_phone)
+            candidates = (normalized_phone, normalized_phone.removeprefix("+"), raw_phone)
+            attrs[self.username_field] = next(
+                (phone for phone in candidates if User.objects.filter(phone=phone).exists()),
+                normalized_phone,
+            )
             data = super().validate(attrs)
         except Exception as e:
             raise serializers.ValidationError({"detail": "Неверный телефон или пароль."}) from e
@@ -121,6 +138,12 @@ class OrganizationRegisterSerializer(serializers.Serializer):
         if Organization.objects.filter(slug=value).exists():
             raise serializers.ValidationError("Организация с таким slug уже существует.")
         return value
+
+    def validate_org_name(self, value):
+        return normalize_entity_name(value)
+
+    def validate_full_name(self, value):
+        return normalize_person_name(value)
 
     def validate_phone(self, value):
         # Нормализованный номер — тот же формат, что у остальных телефонов
@@ -166,6 +189,15 @@ class InviteStaffSerializer(serializers.Serializer):
     def validate_password(self, value):
         validate_password(value)
         return value
+
+    def validate_full_name(self, value):
+        return normalize_person_name(value)
+
+    def validate_phone(self, value):
+        try:
+            return normalize_phone_number(value)
+        except InvalidPhoneNumberError as exc:
+            raise serializers.ValidationError("Не похоже на номер телефона.") from exc
 
     def validate(self, attrs):
         check_role_change(self.context["request"].user, attrs.get("role"))

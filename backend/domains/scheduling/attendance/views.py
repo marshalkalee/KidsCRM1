@@ -9,6 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsStaffOfOrganization
+from domains.platform.leads.services import mark_trial_attended
 from domains.scheduling.schedule.enrollment_service import (
     available_makeups_for_child,
     makeup_candidate_lessons,
@@ -120,15 +121,23 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
         if request.user.role == "teacher" and lesson.teacher_id != request.user.id:
             raise PermissionDenied("Доступно только для своих занятий.")
 
-        attendance, _created = Attendance.objects.get_or_create(
-            lesson=lesson,
-            child=child,
-            defaults={
-                "organization": self.request.organization,
-                "status": Attendance.Status.ABSENT,
-            },
-        )
-        attendance.mark(status_value, actor=request.user, absence_reason=absence_reason)
+        with transaction.atomic():
+            attendance, _created = Attendance.objects.get_or_create(
+                lesson=lesson,
+                child=child,
+                defaults={
+                    "organization": self.request.organization,
+                    "status": Attendance.Status.ABSENT,
+                },
+            )
+            attendance.mark(status_value, actor=request.user, absence_reason=absence_reason)
+            if status_value == Attendance.Status.PRESENT:
+                mark_trial_attended(
+                    organization=request.organization,
+                    lesson=lesson,
+                    child=child,
+                    actor=request.user,
+                )
         return Response(AttendanceSerializer(attendance, context={"request": request}).data)
 
     @action(detail=False, methods=["post"])
@@ -192,16 +201,22 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
         # TRU-53: записанные «поверх» группы (отработка/пробное) видны в
         # ростере с пометкой типа — тот же список участников (уже
         # включает их, см. Lesson.participants), плюс их kind отдельно.
-        enrollment_kinds = dict(
-            LessonEnrollment.objects.for_tenant(request.organization)
+        enrollments = {
+            enrollment.child_id: enrollment
+            for enrollment in LessonEnrollment.objects.for_tenant(request.organization)
             .filter(lesson=lesson, cancelled_at__isnull=True, child__in=participants)
-            .values_list("child_id", "kind")
-        )
+            .select_related("source_lead")
+        }
         entries = [
             {
                 "child": child,
                 "attendance": attendances.get(child.id),
-                "enrollment_kind": enrollment_kinds.get(child.id),
+                "enrollment_kind": (
+                    enrollments[child.id].kind if child.id in enrollments else None
+                ),
+                "source_lead_id": (
+                    enrollments[child.id].source_lead_id if child.id in enrollments else None
+                ),
             }
             for child in participants
         ]
@@ -230,24 +245,31 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
             raise ValidationError({"lesson": "Обязателен."})
         lesson = _get_lesson_scoped(request, lesson_id)
 
-        participants = list(lesson.participants())
-        already_marked = set(
-            Attendance.objects.for_tenant(request.organization)
-            .filter(lesson=lesson, child__in=participants)
-            .values_list("child_id", flat=True)
-        )
-        marked = []
-        for child in participants:
-            if child.id in already_marked:
-                continue
-            attendance = Attendance.objects.create(
-                organization=request.organization,
-                lesson=lesson,
-                child=child,
-                status=Attendance.Status.ABSENT,
+        with transaction.atomic():
+            participants = list(lesson.participants())
+            already_marked = set(
+                Attendance.objects.for_tenant(request.organization)
+                .filter(lesson=lesson, child__in=participants)
+                .values_list("child_id", flat=True)
             )
-            attendance.mark(Attendance.Status.PRESENT, actor=request.user)
-            marked.append(attendance)
+            marked = []
+            for child in participants:
+                if child.id in already_marked:
+                    continue
+                attendance = Attendance.objects.create(
+                    organization=request.organization,
+                    lesson=lesson,
+                    child=child,
+                    status=Attendance.Status.ABSENT,
+                )
+                attendance.mark(Attendance.Status.PRESENT, actor=request.user)
+                mark_trial_attended(
+                    organization=request.organization,
+                    lesson=lesson,
+                    child=child,
+                    actor=request.user,
+                )
+                marked.append(attendance)
 
         return Response(
             {

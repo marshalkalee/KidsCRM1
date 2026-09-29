@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, MapPin, User as UserIcon,
   Plus, CalendarDays, Rows3, AlertTriangle, Ban, Phone, MessageCircle, PhoneCall,
@@ -27,6 +27,11 @@ const STATUS_LABEL = {
   completed: 'Проведено',
   cancelled: 'Отменено',
   rescheduled: 'Перенесено',
+}
+
+const ENROLLMENT_KIND_UI = {
+  trial: { label: 'Пробное', color: '#7C3AED', background: '#F3E8FF', border: '#DDD6FE' },
+  makeup: { label: 'Отработка', color: '#2563EB', background: '#EFF6FF', border: '#BFDBFE' },
 }
 
 // TRU-48: справочник причин отмены — тот же список, что Lesson.CancelReasonCategory на бэке.
@@ -205,14 +210,15 @@ function computeHourRange(lessons) {
 export default function Schedule() {
   const [searchParams, setSearchParams] = useSearchParams()
   const stored = useMemo(loadStoredFilters, [])
+  const focusedLessonId = searchParams.get('lesson')
 
   const [view, setView] = useState(() => searchParams.get('view') || stored.view || 'week')
   const [date, setDate] = useState(() => searchParams.get('date') || toISODate(new Date()))
   const [filters, setFilters] = useState(() => ({
-    branch: searchParams.get('branch') || stored.branch || '',
-    room: searchParams.get('room') || stored.room || '',
-    teacher: searchParams.get('teacher') || stored.teacher || '',
-    direction: searchParams.get('direction') || stored.direction || '',
+    branch: searchParams.get('branch') || (!focusedLessonId && stored.branch) || '',
+    room: searchParams.get('room') || (!focusedLessonId && stored.room) || '',
+    teacher: searchParams.get('teacher') || (!focusedLessonId && stored.teacher) || '',
+    direction: searchParams.get('direction') || (!focusedLessonId && stored.direction) || '',
   }))
 
   const [me, setMe] = useState(null)
@@ -230,6 +236,7 @@ export default function Schedule() {
   const [conflictsCount, setConflictsCount] = useState(0)
   const [showConflicts, setShowConflicts] = useState(false)
   const [showBulkCancel, setShowBulkCancel] = useState(false)
+  const requestedLessonRef = useRef(focusedLessonId)
   const isMobile = useIsMobile()
   const navigate = useNavigate()
   const isTeacher = me?.role === 'teacher'
@@ -264,6 +271,14 @@ export default function Schedule() {
   }, [view, date, weekStart, filters])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const lessonId = requestedLessonRef.current
+    if (!lessonId || loading) return
+    const lesson = lessons.find(item => item.id === lessonId)
+    if (lesson) setSelectedLesson(lesson)
+    requestedLessonRef.current = null
+  }, [lessons, loading])
 
   const loadConflicts = useCallback(() => {
     fetchConflicts(filters).then(list => setConflictsCount(list.length)).catch(console.error)
@@ -336,7 +351,16 @@ export default function Schedule() {
   function goPrev() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? -7 : -1))) }
   function goNext() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? 7 : 1))) }
 
-  function handleActionDone() { setSelectedLesson(null); setCreateSlot(null); load(); loadConflicts() }
+  function closeSelectedLesson() {
+    setSelectedLesson(null)
+    if (searchParams.has('lesson')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('lesson')
+      setSearchParams(next, { replace: true })
+    }
+  }
+
+  function handleActionDone() { closeSelectedLesson(); setCreateSlot(null); load(); loadConflicts() }
 
   const headerLabel = view === 'week' ? formatWeekRange(weekStart) : formatDayLabel(new Date(date))
 
@@ -415,10 +439,10 @@ export default function Schedule() {
         <LessonDetailsModal
           lesson={selectedLesson}
           lessons={lessons}
-          onClose={() => setSelectedLesson(null)}
+          onClose={closeSelectedLesson}
           onDone={handleActionDone}
-          onAttendance={id => navigate(`/attendance?lesson=${id}`)}
-          onWhoToCall={id => { setSelectedLesson(null); setWhoToCallLessonId(id) }}
+          onAttendance={id => navigate(`/attendance?lesson=${id}&date=${localDatePart(selectedLesson.starts_at_local)}`)}
+          onWhoToCall={id => { closeSelectedLesson(); setWhoToCallLessonId(id) }}
           onSelectReplacement={l => setSelectedLesson(l)}
           onCreateHere={l => {
             setSelectedLesson(null)
@@ -690,6 +714,7 @@ function LessonChip({ lesson, style, onClick }) {
   // рамка + иконка человека вместо цвета направления (у него его просто
   // нет — direction приходит через группу).
   const isIndividual = lesson.is_individual && !dimmed && !hasConflict
+  const totalCount = lesson.total_participants_count ?? lesson.enrolled_count
 
   return (
     <div
@@ -719,8 +744,13 @@ function LessonChip({ lesson, style, onClick }) {
           </div>
           <div style={{ fontSize: 10, color: dimmed ? '#9CA3AF' : '#6B7280', whiteSpace: 'nowrap' }}>
             {localTimePart(lesson.starts_at_local)}–{localTimePart(lesson.ends_at_local)}
-            {lesson.capacity != null && ` · ${lesson.enrolled_count}/${lesson.capacity}`}
+            {lesson.capacity != null && ` · ${totalCount}/${lesson.capacity}`}
           </div>
+          {!dimmed && lesson.trial_count > 0 && (
+            <div style={{ fontSize: 9, fontWeight: 700, color: '#7C3AED', whiteSpace: 'nowrap' }}>
+              {t('Пробное: {count}', { count: lesson.trial_count })}
+            </div>
+          )}
           {dimmed && (
             <div style={{ fontSize: 9, fontWeight: 700, color: isCancelled ? '#DC2626' : '#D97706', marginTop: 2 }}>
               {isCancelled ? t('ОТМЕНЕНО') : t('ПЕРЕНЕСЕНО')}
@@ -1098,6 +1128,7 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
         const dimmed = lesson.status === 'cancelled' || lesson.status === 'rescheduled'
         const hasConflict = lesson.has_conflict && !dimmed
         const isIndividual = lesson.is_individual && !dimmed && !hasConflict
+        const totalCount = lesson.total_participants_count ?? lesson.enrolled_count
         return (
           <div
             key={lesson.id}
@@ -1122,8 +1153,13 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
               </div>
               <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
                 {showRoom && `${lesson.room_name || '—'} · `}{lesson.teacher_name || '—'}
-                {lesson.capacity != null && ` · ${lesson.enrolled_count}/${lesson.capacity}`}
+                {lesson.capacity != null && ` · ${totalCount}/${lesson.capacity}`}
               </div>
+              {!dimmed && lesson.trial_count > 0 && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', marginTop: 3 }}>
+                  {t('Пробное: {count}', { count: lesson.trial_count })}
+                </div>
+              )}
               {dimmed && (
                 <div style={{ fontSize: 10, fontWeight: 700, color: lesson.status === 'cancelled' ? '#DC2626' : '#D97706', marginTop: 4 }}>
                   {t(STATUS_LABEL[lesson.status])}
@@ -1210,7 +1246,7 @@ function BulkCancelModal({ filters, onClose, onDone }) {
             </div>
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>{t('Комментарий')}{reasonCategory === 'other' ? ' *' : ''}</label>
-              <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' }} placeholder={reasonCategory === 'other' ? t('Обязательно для причины «Другое»') : t('Необязательно')} />
+              <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} maxLength={2000} style={{ ...inputStyle, resize: 'vertical' }} placeholder={reasonCategory === 'other' ? t('Обязательно для причины «Другое»') : t('Необязательно')} />
             </div>
             {(filters.branch || filters.room || filters.teacher || filters.direction) && (
               <p style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 14 }}>
@@ -1551,11 +1587,41 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
               <InfoRow icon={<MapPin size={14} />} text={`${localTimePart(lesson.starts_at_local)}–${localTimePart(lesson.ends_at_local)} · ${lesson.room_name || t('зал не указан')}`} />
               <InfoRow icon={<UserIcon size={14} />} text={lesson.teacher_name || t('преподаватель не назначен')} />
-              {lesson.capacity != null && (
-                <InfoRow icon={<Users size={14} />} text={t('{count} из {capacity} записано', { count: lesson.enrolled_count, capacity: lesson.capacity })} />
+              {lesson.trial_count > 0 && (
+                <InfoRow
+                  icon={<Users size={14} />}
+                  text={t('Пробное: {count}', { count: lesson.trial_count })}
+                />
               )}
               {lesson.is_individual && (
                 <InfoRow icon={<Users size={14} />} text={lesson.individual_children_names?.length ? lesson.individual_children_names.join(', ') : t('дети не указаны')} />
+              )}
+              {lesson.additional_participants?.length > 0 && (
+                <div style={{ border: '1px solid #E9E7EF', borderRadius: 10, padding: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#8B8798', marginBottom: 7, textTransform: 'uppercase' }}>
+                    {t('Дополнительные участники')}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {lesson.additional_participants.map(participant => {
+                      const kind = ENROLLMENT_KIND_UI[participant.kind]
+                      return (
+                        <div key={participant.enrollment_id} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 7 }}>
+                          <span style={{ flex: 1, minWidth: 120, fontSize: 12.5, fontWeight: 650, color: '#1A1A2E' }}>{participant.child_name}</span>
+                          {kind && (
+                            <span style={{ color: kind.color, background: kind.background, border: `1px solid ${kind.border}`, borderRadius: 999, padding: '2px 8px', fontSize: 10, fontWeight: 750 }}>
+                              {t(kind.label)}
+                            </span>
+                          )}
+                          {participant.kind === 'trial' && participant.source_lead_id && (
+                            <Link to={`/leads/${participant.source_lead_id}`} style={{ color: '#7C3AED', fontSize: 11, fontWeight: 700, textDecoration: 'none' }}>
+                              {t('Открыть заявку')}
+                            </Link>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               )}
               {lesson.status === 'cancelled' && lesson.cancel_reason_category_display && (
                 <div style={{ fontSize: 12, color: '#DC2626', background: '#FEF2F2', borderRadius: 8, padding: '8px 10px' }}>
@@ -1827,11 +1893,11 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
             </div>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>{t('Время')}</label>
-              <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle} />
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle} required />
             </div>
             <div style={{ width: 90 }}>
               <label style={labelStyle}>{t('Мин.')}</label>
-              <input type="number" min={15} step={15} value={durationMin} onChange={e => setDurationMin(Number(e.target.value))} style={inputStyle} />
+              <input type="number" min={15} max={480} step={15} value={durationMin} onChange={e => setDurationMin(Number(e.target.value))} style={inputStyle} required />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>

@@ -1,4 +1,5 @@
 import datetime
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -12,6 +13,7 @@ from domains.money.subscriptions.subscription_types import create_type
 from domains.money.subscriptions.subscriptions import add_ledger_entry
 from domains.people.clients.models import Child
 from domains.platform.core.audit import AuditLog
+from domains.platform.leads.models import Lead
 from domains.platform.tenants.models import Branch, Direction, Organization
 from domains.scheduling.attendance.models import Attendance
 from domains.scheduling.groups.models import Group, GroupMembership
@@ -294,11 +296,15 @@ class EnrollmentAttendanceChargingTest(EnrollmentFixtureMixin, TestCase):
             status=Attendance.Status.ABSENT,
         )
 
-        attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
+        with patch(
+            "domains.platform.tasks.services.create_admin_task_for_missing_subscription"
+        ) as create_admin_task:
+            attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
 
         self.assertFalse(attendance.consumed_from_subscription)
         self.assertEqual(attendance.consume_outcome, "trial_no_charge")
         self.assertFalse(attendance.no_subscription_flag)
+        create_admin_task.assert_not_called()
 
     def test_regular_member_still_charged_normally(self):
         sub = self._create_subscription(self.member)
@@ -400,9 +406,18 @@ class LessonEnrollmentApiTest(EnrollmentFixtureMixin, APITestCase):
 
     def test_roster_shows_enrollment_kind(self):
         client = _authenticated_client(self.owner)
-        client.post(
-            "/api/v1/schedule/enrollments/",
-            {"lesson": str(self.lesson.id), "child": str(self.outsider.id), "kind": "trial"},
+        lead = Lead.objects.create(
+            organization=self.org,
+            parent_name="Родитель",
+            phone="+77021112233",
+            child_name=self.outsider.full_name,
+        )
+        LessonService.enroll(
+            self.lesson.id,
+            self.outsider.id,
+            LessonEnrollment.Kind.TRIAL,
+            actor=self.owner,
+            source_lead_id=lead.id,
         )
 
         response = client.get("/api/v1/attendance/roster/", {"lesson": str(self.lesson.id)})
@@ -411,5 +426,54 @@ class LessonEnrollmentApiTest(EnrollmentFixtureMixin, APITestCase):
         member_id = str(self.member.id)
         row = next(r for r in response.data["results"] if r["child"] == outsider_id)
         self.assertEqual(row["enrollment_kind"], "trial")
+        self.assertEqual(row["source_lead_id"], str(lead.id))
         member_row = next(r for r in response.data["results"] if r["child"] == member_id)
         self.assertIsNone(member_row["enrollment_kind"])
+        self.assertIsNone(member_row["source_lead_id"])
+
+    def test_calendar_exposes_regular_trial_and_makeup_counts(self):
+        self.group.capacity = 3
+        self.group.save(update_fields=["capacity"])
+        lead = Lead.objects.create(
+            organization=self.org,
+            parent_name="Родитель",
+            phone="+77021112234",
+            child_name=self.outsider.full_name,
+        )
+        LessonService.enroll(
+            self.lesson.id,
+            self.outsider.id,
+            LessonEnrollment.Kind.TRIAL,
+            actor=self.owner,
+            source_lead_id=lead.id,
+        )
+        makeup_child = Child.objects.create(
+            organization=self.org,
+            full_name="Ребёнок на отработке",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 8),
+            gender=Child.Gender.FEMALE,
+        )
+        LessonService.enroll(
+            self.lesson.id,
+            makeup_child.id,
+            LessonEnrollment.Kind.MAKEUP,
+            actor=self.owner,
+        )
+
+        lesson_date = self.lesson.starts_at.astimezone(
+            timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        ).date()
+        response = _authenticated_client(self.owner).get(
+            "/api/v1/schedule/",
+            {"date_from": lesson_date.isoformat(), "date_to": lesson_date.isoformat()},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = next(item for item in response.data if item["id"] == str(self.lesson.id))
+        self.assertEqual(row["enrolled_count"], 1)
+        self.assertEqual(row["trial_count"], 1)
+        self.assertEqual(row["makeup_count"], 1)
+        self.assertEqual(row["total_participants_count"], 3)
+        trial = next(item for item in row["additional_participants"] if item["kind"] == "trial")
+        self.assertEqual(trial["child_name"], self.outsider.full_name)
+        self.assertEqual(trial["source_lead_id"], str(lead.id))

@@ -14,7 +14,7 @@ const PAGE_SIZE = 50
  * сортировка, страницы, массовые действия и выгрузка в Excel. На телефоне
  * DataTable сам превращает строки в карточки.
  */
-export default function LeadTable({ query, params, update, reloadKey, staff, onCount, onReset, hasFilters }) {
+export default function LeadTable({ query, params, update, reloadKey, staff, onCount, onReset, hasFilters, returnTo }) {
   const navigate = useNavigate()
   const toast = useToast()
   const [data, setData] = useState({ key: null, results: [], count: 0, error: false })
@@ -155,7 +155,7 @@ export default function LeadTable({ query, params, update, reloadKey, staff, onC
         onSortChange={next => update({ ordering: next.dir === 'desc' ? `-${next.key}` : next.key, page: '' })}
         pagination={{ page, pageSize: PAGE_SIZE, total: data.count }}
         onPageChange={next => { update({ page: next > 1 ? String(next) : '' }); window.scrollTo({ top: 0 }) }}
-        onRowClick={row => navigate(`/leads/${row.id}`)}
+        onRowClick={row => navigate(`/leads/${row.id}`, { state: { leadsReturnTo: returnTo } })}
         empty={hasFilters ? (
           <EmptyState icon={Search} title={t('Ничего не нашли')} description={t('Попробуйте изменить поиск или сбросить фильтры.')} action={<Button size="sm" onClick={onReset}>{t('Сбросить фильтры')}</Button>} />
         ) : (

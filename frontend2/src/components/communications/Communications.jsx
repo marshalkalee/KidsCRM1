@@ -164,6 +164,7 @@ function QuickLogForm({ childOptions, contactOptions, fixedContact, onCreated })
           value={note}
           onChange={e => setNote(e.target.value)}
           placeholder={t('О чём договорились')}
+          maxLength={2000}
           onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(e) }}
         />
         {error && <p className="text-sm text-danger-600">{error}</p>}

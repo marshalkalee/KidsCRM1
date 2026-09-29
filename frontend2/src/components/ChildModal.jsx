@@ -3,6 +3,7 @@ import { Camera, Loader2, Upload } from 'lucide-react'
 import api from '../api/axios'
 import { Button, Checkbox, DateInput, Field, Input, Modal, Select, Textarea, apiErrorMessage, cn, useToast } from '../ui'
 import { t } from '../i18n'
+import { personNameInput, personNameInputProps } from '../utils/formValidation'
 
 const EMPTY = {
   full_name: '',
@@ -82,7 +83,7 @@ export default function ChildModal({ child, onClose, onSaved }) {
         <PhotoPicker value={form.photo_url} onChange={url => set('photo_url', url)} error={errors.photo_url} />
         <Field label={t('ФИО')} required error={errors.full_name}>
           {({ id, invalid }) => (
-            <Input id={id} invalid={invalid} value={form.full_name} onChange={e => set('full_name', e.target.value)} placeholder={t('Введите ФИО')} required autoFocus />
+            <Input id={id} invalid={invalid} value={form.full_name} onChange={e => set('full_name', personNameInput(e.target.value))} placeholder={t('Введите ФИО')} required autoFocus {...personNameInputProps} />
           )}
         </Field>
         <Field label={t('Дата рождения')} required error={errors.birth_date}>
@@ -117,7 +118,7 @@ export default function ChildModal({ child, onClose, onSaved }) {
         {form.status === 'left' ? (
           <Field label={t('Причина ухода')} required error={errors.leave_reason} className="sm:col-span-2">
             {({ id, invalid }) => (
-              <Input id={id} invalid={invalid} value={form.leave_reason} onChange={e => set('leave_reason', e.target.value)} required />
+              <Input id={id} invalid={invalid} value={form.leave_reason} onChange={e => set('leave_reason', e.target.value)} minLength={2} maxLength={500} required />
             )}
           </Field>
         ) : null}
@@ -147,7 +148,7 @@ export default function ChildModal({ child, onClose, onSaved }) {
         )}
 
         <Field label={t('Медицинские заметки')} error={errors.medical_notes} className="sm:col-span-2">
-          {({ id }) => <Textarea id={id} value={form.medical_notes} onChange={e => set('medical_notes', e.target.value)} placeholder={t('Аллергии, особенности...')} />}
+          {({ id }) => <Textarea id={id} value={form.medical_notes} onChange={e => set('medical_notes', e.target.value)} placeholder={t('Аллергии, особенности...')} maxLength={2000} />}
         </Field>
         <Checkbox
           className="sm:col-span-2"

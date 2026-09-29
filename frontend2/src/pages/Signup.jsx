@@ -6,6 +6,7 @@ import AuthLayout from '../components/AuthLayout'
 import { useSession } from '../session/SessionContext'
 import { Button, Field, Input } from '../ui'
 import { t } from '../i18n'
+import { entityNameInputProps, personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../utils/formValidation'
 
 /**
  * Регистрация центра (TRU-86): организация + владелец одним запросом
@@ -52,22 +53,22 @@ export default function Signup() {
 
       <form onSubmit={submit} className="mt-8 space-y-4">
         <Field label={t('Название центра')} error={errors.org_name}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.org_name} onChange={e => set('org_name', e.target.value)} placeholder={t('Например, Студия «Грация»')} required autoFocus />}
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.org_name} onChange={e => set('org_name', e.target.value)} placeholder={t('Например, Студия «Грация»')} required autoFocus {...entityNameInputProps} />}
         </Field>
         <Field label={t('Ваше имя')} error={errors.full_name}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} autoComplete="name" value={form.full_name} onChange={e => set('full_name', e.target.value)} required />}
+          {({ id, invalid }) => <Input id={id} invalid={invalid} autoComplete="name" value={form.full_name} onChange={e => set('full_name', personNameInput(e.target.value))} required {...personNameInputProps} />}
         </Field>
         <Field label={t('Телефон')} hint={t('По нему вы будете входить')} error={errors.phone}>
           {({ id, invalid }) => (
             <Input
               id={id}
               invalid={invalid}
-              type="tel"
               autoComplete="tel"
               value={form.phone}
-              onChange={e => set('phone', e.target.value.replace(/[^\d+\s\-()]/g, ''))}
-              placeholder="+7 701 234 56 78"
+              onChange={e => set('phone', phoneDigits(e.target.value))}
+              placeholder="77012345678"
               required
+              {...phoneInputProps}
             />
           )}
         </Field>
@@ -82,6 +83,8 @@ export default function Signup() {
                 value={form.password}
                 onChange={e => set('password', e.target.value)}
                 className="pr-10"
+                minLength={8}
+                maxLength={128}
                 required
               />
               <button

@@ -3,6 +3,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.core.text_validation import normalize_entity_name, normalize_person_name
 from domains.platform.tenants.models import Branch, Direction
 from domains.platform.users.models import User
 
@@ -165,8 +166,14 @@ class LeadSerializer(serializers.ModelSerializer):
         except InvalidPhoneNumberError as exc:
             raise serializers.ValidationError("Не похоже на номер телефона.") from exc
 
+    def validate_parent_name(self, value):
+        return normalize_person_name(value)
+
+    def validate_child_name(self, value):
+        return normalize_person_name(value) if value else value
+
     def validate_child_age(self, value):
-        if value is not None and value > 25:
+        if value is not None and not 1 <= value <= 25:
             raise serializers.ValidationError("Проверьте возраст ребёнка.")
         return value
 
@@ -176,7 +183,7 @@ class LeadStatusSerializer(serializers.Serializer):
     rejection_reason = serializers.PrimaryKeyRelatedField(
         queryset=LeadRejectionReason.objects.none(), required=False, allow_null=True
     )
-    comment = serializers.CharField(required=False, allow_blank=True, default="")
+    comment = serializers.CharField(required=False, allow_blank=True, default="", max_length=2000)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -259,6 +266,14 @@ class LeadCommentSerializer(serializers.ModelSerializer):
         fields = ["id", "text", "author", "author_name", "created_at"]
         read_only_fields = ["author", "created_at"]
 
+    def validate_text(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Введите комментарий.")
+        if len(value) > 2000:
+            raise serializers.ValidationError("Введите не более 2000 символов.")
+        return value
+
 
 class LeadDictionarySerializer(serializers.ModelSerializer):  # noqa: D101
     """Источник или причина отказа. usage_count — сколько раз выбрано:
@@ -270,9 +285,7 @@ class LeadDictionarySerializer(serializers.ModelSerializer):  # noqa: D101
         fields = ["id", "name", "is_active", "usage_count"]
 
     def validate_name(self, value):
-        name = " ".join(value.split())
-        if not name:
-            raise serializers.ValidationError("Введите название.")
+        name = normalize_entity_name(value, max_length=100)
         organization = self.context["request"].user.organization
         duplicates = self.Meta.model.objects.for_tenant(organization).filter(name__iexact=name)
         if self.instance is not None:
@@ -297,9 +310,7 @@ class LeadRejectionReasonSerializer(LeadDictionarySerializer):
         return attrs
 
     def validate_name(self, value):
-        name = " ".join(value.split())
-        if not name:
-            raise serializers.ValidationError("Введите название.")
+        name = normalize_entity_name(value, max_length=100)
         kind = self.initial_data.get("kind") or (self.instance.kind if self.instance else "new")
         organization = self.context["request"].user.organization
         duplicates = LeadRejectionReason.objects.for_tenant(organization).filter(
