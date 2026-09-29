@@ -46,6 +46,8 @@ class EnrollOutcome(enum.Enum):
     SOURCE_ALREADY_USED = "source_already_used"
     SOURCE_EXPIRED = "source_expired"
     SOURCE_DIRECTION_MISMATCH = "source_direction_mismatch"
+    SOURCE_LEAD_INVALID = "source_lead_invalid"
+    SOURCE_LEAD_ALREADY_BOOKED = "source_lead_already_booked"
 
 
 @dataclass
@@ -72,9 +74,20 @@ class LessonService:
     @staticmethod
     @transaction.atomic
     def enroll(
-        lesson_id, child_id, kind, *, actor, confirm_capacity=False, source_attendance_id=None
+        lesson_id,
+        child_id,
+        kind,
+        *,
+        actor,
+        confirm_capacity=False,
+        source_attendance_id=None,
+        source_lead_id=None,
     ) -> EnrollResult:
-        lesson = Lesson.objects.select_related("group").get(id=lesson_id)
+        # Блокировка не даёт двум администраторам одновременно увидеть
+        # последнее свободное место и обоим записать поверх вместимости.
+        lesson = (
+            Lesson.objects.select_for_update(of=("self",)).select_related("group").get(id=lesson_id)
+        )
 
         if lesson.status in _INACTIVE_LESSON_STATUSES:
             return EnrollResult(EnrollOutcome.LESSON_CANCELLED)
@@ -109,6 +122,23 @@ class LessonService:
             ):
                 return EnrollResult(EnrollOutcome.SOURCE_DIRECTION_MISMATCH)
 
+        source_lead = None
+        if source_lead_id is not None:
+            from domains.platform.leads.models import Lead
+
+            source_lead = Lead.objects.filter(id=source_lead_id).first()
+            if (
+                source_lead is None
+                or source_lead.organization_id != lesson.organization_id
+                or kind != LessonEnrollment.Kind.TRIAL
+                or source_attendance_id is not None
+            ):
+                return EnrollResult(EnrollOutcome.SOURCE_LEAD_INVALID)
+            if LessonEnrollment.objects.filter(
+                source_lead=source_lead, cancelled_at__isnull=True
+            ).exists():
+                return EnrollResult(EnrollOutcome.SOURCE_LEAD_ALREADY_BOOKED)
+
         capacity = lesson.group.capacity if lesson.group_id else None
         current_count = lesson.participants().count()
         if capacity is not None and current_count + 1 > capacity and not confirm_capacity:
@@ -125,6 +155,7 @@ class LessonService:
             kind=kind,
             enrolled_by=actor,
             source_attendance=source_attendance,
+            source_lead=source_lead,
         )
         AuditLog.record(
             actor=actor,
@@ -135,6 +166,7 @@ class LessonService:
                 "child_id": str(child_id),
                 "kind": kind,
                 "source_attendance_id": str(source_attendance_id) if source_attendance_id else None,
+                "source_lead_id": str(source_lead_id) if source_lead_id else None,
             },
         )
         return EnrollResult(EnrollOutcome.ENROLLED, enrollment_id=enrollment.id)

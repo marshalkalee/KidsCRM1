@@ -3,6 +3,7 @@ import { Plus, X } from 'lucide-react'
 import api from '../api/axios'
 import { Button, Field, Input, Modal, Select, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
+import { personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../utils/formValidation'
 
 const PHONE_TYPES = { get mobile() { return t('Мобильный') }, get work() { return t('Рабочий') }, get home() { return t('Домашний') } }
 
@@ -15,9 +16,9 @@ export default function ParentModal({ parent, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState({
     full_name: parent?.full_name || '',
-    whatsapp: parent?.whatsapp || '',
+    whatsapp: phoneDigits(parent?.whatsapp),
     email: parent?.email || '',
-    phones: parent?.phones?.length ? parent.phones.map(({ number, phone_type }) => ({ number, phone_type })) : [{ number: '', phone_type: 'mobile' }],
+    phones: parent?.phones?.length ? parent.phones.map(({ number, phone_type }) => ({ number: phoneDigits(number), phone_type })) : [{ number: '', phone_type: 'mobile' }],
   })
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
@@ -63,7 +64,7 @@ export default function ParentModal({ parent, onClose, onSaved }) {
     >
       <form id="parent-form" onSubmit={submit} className="flex flex-col gap-4">
         <Field label={t('ФИО')} required error={errors.full_name}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.full_name} onChange={e => set('full_name', e.target.value)} required autoFocus />}
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.full_name} onChange={e => set('full_name', personNameInput(e.target.value))} required autoFocus {...personNameInputProps} />}
         </Field>
 
         <Field label={t('Телефоны')} required error={phonesError}>
@@ -74,11 +75,11 @@ export default function ParentModal({ parent, onClose, onSaved }) {
                   <Input
                     aria-label={t('Телефон {n}', { n: index + 1 })}
                     invalid={Boolean(phoneError(index))}
-                    type="tel"
-                    inputMode="tel"
-                    placeholder="+7 700 000 00 00"
+                    placeholder="77000000000"
                     value={phone.number}
-                    onChange={e => setPhone(index, 'number', e.target.value)}
+                    onChange={e => setPhone(index, 'number', phoneDigits(e.target.value))}
+                    required={index === 0}
+                    {...phoneInputProps}
                   />
                   <Select aria-label={t('Тип')} className="w-36" value={phone.phone_type} onChange={e => setPhone(index, 'phone_type', e.target.value)}>
                     {Object.entries(PHONE_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -100,7 +101,7 @@ export default function ParentModal({ parent, onClose, onSaved }) {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="WhatsApp" hint={t('Если отличается от телефона')} error={errors.whatsapp}>
-            {({ id, invalid }) => <Input id={id} invalid={invalid} type="tel" inputMode="tel" value={form.whatsapp} onChange={e => set('whatsapp', e.target.value)} />}
+            {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.whatsapp} onChange={e => set('whatsapp', phoneDigits(e.target.value))} placeholder="77000000000" {...phoneInputProps} />}
           </Field>
           <Field label="Email" error={errors.email}>
             {({ id, invalid }) => <Input id={id} invalid={invalid} type="email" value={form.email} onChange={e => set('email', e.target.value)} />}

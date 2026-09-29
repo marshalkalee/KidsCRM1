@@ -3,6 +3,7 @@ import api from '../../api/axios'
 import { Button, Field, Modal, Select, Textarea } from '../../ui'
 import { t } from '../../i18n'
 import { leadTitle } from './format'
+import { SuggestReason } from '../ai/assist'
 
 /**
  * Перевод заявки в «Отказ» (TRU-94): причина из справочника обязательна,
@@ -61,8 +62,9 @@ export default function RejectModal({ lead, subject, kind, onCancel, onConfirm }
           )}
         </Field>
         <Field label={t('Комментарий')}>
-          {({ id }) => <Textarea id={id} value={comment} onChange={e => setComment(e.target.value)} placeholder={t('Необязательно: подробности для коллег')} />}
+          {({ id }) => <Textarea id={id} value={comment} onChange={e => setComment(e.target.value)} placeholder={t('Необязательно: подробности для коллег')} maxLength={2000} />}
         </Field>
+        <SuggestReason text={comment} kind={reasonKind} onPicked={id => { setReason(id); setError(null) }} />
       </form>
     </Modal>
   )

@@ -524,6 +524,25 @@ class LessonConflictTest(APITestCase):
         other.refresh_from_db()
         self.assertEqual(other.status, Lesson.Status.RESCHEDULED)
 
+    def test_reschedule_does_not_conflict_with_its_own_original_slot(self):
+        client = _authenticated_client(self.owner)
+
+        response = client.post(
+            f"/api/v1/schedule/{self.existing.id}/reschedule/",
+            {
+                "group": str(self.group.id),
+                "room": str(self.room.id),
+                "teacher": str(self.teacher.id),
+                "starts_at": (self.day + datetime.timedelta(minutes=30)).isoformat(),
+                "ends_at": (self.day + datetime.timedelta(minutes=90)).isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.existing.refresh_from_db()
+        self.assertEqual(self.existing.status, Lesson.Status.RESCHEDULED)
+
     def test_update_moving_lesson_into_conflict_is_blocked_without_confirm(self):
         other = Lesson.objects.create(
             organization=self.org,

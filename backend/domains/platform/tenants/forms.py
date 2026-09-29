@@ -6,6 +6,8 @@ import zoneinfo
 
 from django import forms
 
+from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.core.text_validation import normalize_entity_name
 from domains.platform.tenants.models import Branch, Direction, Room
 from domains.platform.tenants.org_settings import (
     DEBT_OVERDUE_DAYS_THRESHOLD,
@@ -87,6 +89,9 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             raise forms.ValidationError("Неизвестный часовой пояс.")
         return tz_name
 
+    def clean_name(self):
+        return normalize_entity_name(self.cleaned_data["name"])
+
     @classmethod
     def for_organization(cls, organization):
         """Форма с текущими значениями организации (пороги — с фолбэком на
@@ -167,6 +172,24 @@ class BranchForm(KcFormMixin, forms.ModelForm):
                 widget=forms.TimeInput(attrs={"class": "kc-form-input"}),
             )
 
+    def clean_name(self):
+        return normalize_entity_name(self.cleaned_data["name"])
+
+    def clean_phone(self):
+        value = self.cleaned_data.get("phone")
+        if not value:
+            return value
+        try:
+            return normalize_phone_number(value)
+        except InvalidPhoneNumberError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+
+    def clean_address(self):
+        value = self.cleaned_data.get("address", "").strip()
+        if len(value) > 500:
+            raise forms.ValidationError("Введите не более 500 символов.")
+        return value
+
     def clean(self):
         cleaned = super().clean()
         working_hours = {}
@@ -200,6 +223,15 @@ class RoomForm(KcFormMixin, forms.ModelForm):
             "name": "Название зала",
             "capacity": "Вместимость",
         }
+
+    def clean_name(self):
+        return normalize_entity_name(self.cleaned_data["name"], max_length=100)
+
+    def clean_capacity(self):
+        value = self.cleaned_data.get("capacity")
+        if value is not None and not 1 <= value <= 1000:
+            raise forms.ValidationError("Вместимость должна быть от 1 до 1000.")
+        return value
 
 
 class BranchMultipleChoiceField(forms.ModelMultipleChoiceField):
@@ -241,6 +273,21 @@ class DirectionForm(KcFormMixin, forms.ModelForm):
         # сохранённый инстанс (там он уже есть через self.instance).
         org = organization or self.instance.organization
         self.fields["branches"].queryset = Branch.objects.for_tenant(org).filter(is_active=True)
+
+    def clean_name(self):
+        return normalize_entity_name(self.cleaned_data["name"])
+
+    def clean_age_min(self):
+        value = self.cleaned_data.get("age_min")
+        if value is not None and value > 99:
+            raise forms.ValidationError("Возраст должен быть от 0 до 99 лет.")
+        return value
+
+    def clean_age_max(self):
+        value = self.cleaned_data.get("age_max")
+        if value is not None and value > 99:
+            raise forms.ValidationError("Возраст должен быть от 0 до 99 лет.")
+        return value
 
     def clean(self):
         cleaned = super().clean()

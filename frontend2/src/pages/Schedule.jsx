@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, MapPin, User as UserIcon,
   Plus, CalendarDays, Rows3, AlertTriangle, Ban, Phone, MessageCircle, PhoneCall,
@@ -13,6 +13,7 @@ import {
   fetchConflicts, searchChildren, createLesson, cancelLesson, bulkCancelLessons, rescheduleLesson,
   fetchWhoToCall, markCalled, unmarkCalled,
 } from '../api/lessons'
+import { t } from '../i18n'
 
 const ACCENT = '#C97B6E'
 const DEFAULT_COLOR = '#7C6FF7'
@@ -26,6 +27,11 @@ const STATUS_LABEL = {
   completed: 'Проведено',
   cancelled: 'Отменено',
   rescheduled: 'Перенесено',
+}
+
+const ENROLLMENT_KIND_UI = {
+  trial: { label: 'Пробное', color: '#7C3AED', background: '#F3E8FF', border: '#DDD6FE' },
+  makeup: { label: 'Отработка', color: '#2563EB', background: '#EFF6FF', border: '#BFDBFE' },
 }
 
 // TRU-48: справочник причин отмены — тот же список, что Lesson.CancelReasonCategory на бэке.
@@ -187,7 +193,7 @@ function lessonTitle(lesson) {
   if (lesson.is_individual && lesson.individual_children_names?.length) {
     return lesson.individual_children_names.join(', ')
   }
-  return 'Индив. занятие'
+  return t('Индив. занятие')
 }
 
 function computeHourRange(lessons) {
@@ -204,14 +210,15 @@ function computeHourRange(lessons) {
 export default function Schedule() {
   const [searchParams, setSearchParams] = useSearchParams()
   const stored = useMemo(loadStoredFilters, [])
+  const focusedLessonId = searchParams.get('lesson')
 
   const [view, setView] = useState(() => searchParams.get('view') || stored.view || 'week')
   const [date, setDate] = useState(() => searchParams.get('date') || toISODate(new Date()))
   const [filters, setFilters] = useState(() => ({
-    branch: searchParams.get('branch') || stored.branch || '',
-    room: searchParams.get('room') || stored.room || '',
-    teacher: searchParams.get('teacher') || stored.teacher || '',
-    direction: searchParams.get('direction') || stored.direction || '',
+    branch: searchParams.get('branch') || (!focusedLessonId && stored.branch) || '',
+    room: searchParams.get('room') || (!focusedLessonId && stored.room) || '',
+    teacher: searchParams.get('teacher') || (!focusedLessonId && stored.teacher) || '',
+    direction: searchParams.get('direction') || (!focusedLessonId && stored.direction) || '',
   }))
 
   const [me, setMe] = useState(null)
@@ -229,6 +236,7 @@ export default function Schedule() {
   const [conflictsCount, setConflictsCount] = useState(0)
   const [showConflicts, setShowConflicts] = useState(false)
   const [showBulkCancel, setShowBulkCancel] = useState(false)
+  const requestedLessonRef = useRef(focusedLessonId)
   const isMobile = useIsMobile()
   const navigate = useNavigate()
   const isTeacher = me?.role === 'teacher'
@@ -263,6 +271,14 @@ export default function Schedule() {
   }, [view, date, weekStart, filters])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const lessonId = requestedLessonRef.current
+    if (!lessonId || loading) return
+    const lesson = lessons.find(item => item.id === lessonId)
+    if (lesson) setSelectedLesson(lesson)
+    requestedLessonRef.current = null
+  }, [lessons, loading])
 
   const loadConflicts = useCallback(() => {
     fetchConflicts(filters).then(list => setConflictsCount(list.length)).catch(console.error)
@@ -318,7 +334,7 @@ export default function Schedule() {
   const dayColumns = useMemo(() => {
     const cols = filteredRooms.map(r => ({ id: r.id, name: r.name }))
     const none = byRoom.__none__
-    if (none && (none.active.length + none.history.length) > 0) cols.push({ id: '__none__', name: 'Без зала' })
+    if (none && (none.active.length + none.history.length) > 0) cols.push({ id: '__none__', name: t('Без зала') })
     return cols
   }, [filteredRooms, byRoom])
 
@@ -335,7 +351,16 @@ export default function Schedule() {
   function goPrev() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? -7 : -1))) }
   function goNext() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? 7 : 1))) }
 
-  function handleActionDone() { setSelectedLesson(null); setCreateSlot(null); load(); loadConflicts() }
+  function closeSelectedLesson() {
+    setSelectedLesson(null)
+    if (searchParams.has('lesson')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('lesson')
+      setSearchParams(next, { replace: true })
+    }
+  }
+
+  function handleActionDone() { closeSelectedLesson(); setCreateSlot(null); load(); loadConflicts() }
 
   const headerLabel = view === 'week' ? formatWeekRange(weekStart) : formatDayLabel(new Date(date))
 
@@ -414,10 +439,10 @@ export default function Schedule() {
         <LessonDetailsModal
           lesson={selectedLesson}
           lessons={lessons}
-          onClose={() => setSelectedLesson(null)}
+          onClose={closeSelectedLesson}
           onDone={handleActionDone}
-          onAttendance={id => navigate(`/attendance?lesson=${id}`)}
-          onWhoToCall={id => { setSelectedLesson(null); setWhoToCallLessonId(id) }}
+          onAttendance={id => navigate(`/attendance?lesson=${id}&date=${localDatePart(selectedLesson.starts_at_local)}`)}
+          onWhoToCall={id => { closeSelectedLesson(); setWhoToCallLessonId(id) }}
           onSelectReplacement={l => setSelectedLesson(l)}
           onCreateHere={l => {
             setSelectedLesson(null)
@@ -479,8 +504,8 @@ function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, lo
       border: '1px solid #F0F0F5',
     }}>
       <div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>Расписание</h1>
-        <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{label}{loading ? ' · загрузка…' : ''}</p>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>{t('Расписание')}</h1>
+        <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{label}{loading ? ` · ${t('Загрузка…')}` : ''}</p>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {conflictsCount > 0 && (
@@ -492,29 +517,29 @@ function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, lo
               fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope',
             }}
           >
-            <AlertTriangle size={14} /> Конфликты ({conflictsCount})
+            <AlertTriangle size={14} /> {t('Конфликты')} ({conflictsCount})
           </button>
         )}
         {showBulkCancelBtn && (
           <button
             onClick={onBulkCancel}
-            title="Массовая отмена занятий за период"
+            title={t('Массовая отмена занятий за период')}
             style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 36,
               border: '1px solid #F0F0F5', borderRadius: 10, background: '#fff', color: '#9CA3AF',
               fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'Manrope',
             }}
           >
-            <Ban size={13} /> Отменить за период
+            <Ban size={13} /> {t('Отменить за период')}
           </button>
         )}
         <div style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2 }}>
-          <ViewToggleBtn active={view === 'week'} onClick={() => onViewChange('week')} icon={<Rows3 size={14} />} label="Неделя" />
-          <ViewToggleBtn active={view === 'day'} onClick={() => onViewChange('day')} icon={<CalendarDays size={14} />} label="День" />
+          <ViewToggleBtn active={view === 'week'} onClick={() => onViewChange('week')} icon={<Rows3 size={14} />} label={t('Неделя')} />
+          <ViewToggleBtn active={view === 'day'} onClick={() => onViewChange('day')} icon={<CalendarDays size={14} />} label={t('День')} />
         </div>
-        <button onClick={onPrev} style={navBtnStyle} aria-label="Назад"><ChevronLeft size={16} /></button>
-        <button onClick={onToday} style={{ ...navBtnStyle, width: 'auto', padding: '0 16px', fontWeight: 600, fontSize: 13, color: ACCENT }}>Сегодня</button>
-        <button onClick={onNext} style={navBtnStyle} aria-label="Вперёд"><ChevronRight size={16} /></button>
+        <button onClick={onPrev} style={navBtnStyle} aria-label={t('Назад')}><ChevronLeft size={16} /></button>
+        <button onClick={onToday} style={{ ...navBtnStyle, width: 'auto', padding: '0 16px', fontWeight: 600, fontSize: 13, color: ACCENT }}>{t('Сегодня')}</button>
+        <button onClick={onNext} style={navBtnStyle} aria-label={t('Вперёд')}><ChevronRight size={16} /></button>
       </div>
     </div>
   )
@@ -641,27 +666,27 @@ function FiltersBar({ filters, onChange, onReset, branches, rooms, teachers, dir
       <Dropdown
         value={filters.branch}
         onChange={v => onChange({ branch: v, room: '' })}
-        options={[['', 'Все филиалы'], ...branches.map(b => [String(b.id), b.name])]}
+        options={[['', t('Все филиалы')], ...branches.map(b => [String(b.id), b.name])]}
       />
       <Dropdown
         value={filters.room}
         onChange={v => onChange({ room: v })}
-        options={[['', 'Все залы'], ...rooms.map(r => [String(r.id), r.name])]}
+        options={[['', t('Все залы')], ...rooms.map(r => [String(r.id), r.name])]}
       />
       <Dropdown
         value={filters.direction}
         onChange={v => onChange({ direction: v })}
-        options={[['', 'Все направления'], ...directions.map(d => [String(d.id), d.name])]}
+        options={[['', t('Все направления')], ...directions.map(d => [String(d.id), d.name])]}
       />
       {isTeacher ? (
         <span style={{ fontSize: 12, color: ACCENT, fontWeight: 600, background: '#FDF0EE', padding: '8px 12px', borderRadius: 8 }}>
-          Показано ваше расписание
+          {t('Показано ваше расписание')}
         </span>
       ) : (
         <Dropdown
           value={filters.teacher}
           onChange={v => onChange({ teacher: v })}
-          options={[['', 'Все преподаватели'], ...teachers.map(t => [String(t.id), t.full_name])]}
+          options={[['', t('Все преподаватели')], ...teachers.map(teacher => [String(teacher.id), teacher.full_name])]}
           width={180}
         />
       )}
@@ -670,7 +695,7 @@ function FiltersBar({ filters, onChange, onReset, branches, rooms, teachers, dir
           onClick={onReset}
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 12px', border: 'none', background: 'none', color: '#9CA3AF', fontSize: 12, fontFamily: 'Manrope', cursor: 'pointer' }}
         >
-          <X size={12} /> Сбросить
+          <X size={12} /> {t('Сбросить')}
         </button>
       )}
     </div>
@@ -689,6 +714,7 @@ function LessonChip({ lesson, style, onClick }) {
   // рамка + иконка человека вместо цвета направления (у него его просто
   // нет — direction приходит через группу).
   const isIndividual = lesson.is_individual && !dimmed && !hasConflict
+  const totalCount = lesson.total_participants_count ?? lesson.enrolled_count
 
   return (
     <div
@@ -703,7 +729,7 @@ function LessonChip({ lesson, style, onClick }) {
       }}
       onMouseEnter={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)'}
       onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
-      title={hasConflict ? 'Пересекается по залу или преподавателю с другим занятием' : undefined}
+      title={hasConflict ? t('Пересекается по залу или преподавателю с другим занятием') : undefined}
     >
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             {hasConflict && <AlertTriangle size={10} style={{ color: '#B45309', flexShrink: 0 }} />}
@@ -718,15 +744,20 @@ function LessonChip({ lesson, style, onClick }) {
           </div>
           <div style={{ fontSize: 10, color: dimmed ? '#9CA3AF' : '#6B7280', whiteSpace: 'nowrap' }}>
             {localTimePart(lesson.starts_at_local)}–{localTimePart(lesson.ends_at_local)}
-            {lesson.capacity != null && ` · ${lesson.enrolled_count}/${lesson.capacity}`}
+            {lesson.capacity != null && ` · ${totalCount}/${lesson.capacity}`}
           </div>
+          {!dimmed && lesson.trial_count > 0 && (
+            <div style={{ fontSize: 9, fontWeight: 700, color: '#7C3AED', whiteSpace: 'nowrap' }}>
+              {t('Пробное: {count}', { count: lesson.trial_count })}
+            </div>
+          )}
           {dimmed && (
             <div style={{ fontSize: 9, fontWeight: 700, color: isCancelled ? '#DC2626' : '#D97706', marginTop: 2 }}>
-              {isCancelled ? 'ОТМЕНЕНО' : 'ПЕРЕНЕСЕНО'}
+              {isCancelled ? t('ОТМЕНЕНО') : t('ПЕРЕНЕСЕНО')}
             </div>
           )}
           {hasConflict && (
-            <div style={{ fontSize: 9, fontWeight: 700, color: '#B45309', marginTop: 2 }}>КОНФЛИКТ</div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: '#B45309', marginTop: 2 }}>{t('КОНФЛИКТ')}</div>
           )}
     </div>
   )
@@ -810,7 +841,7 @@ function HistoryMarker({ items, onSelect, style }) {
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
                 <div style={{ fontWeight: 700, color: isCancelled ? '#F87171' : '#FBBF24', marginBottom: 2 }}>
-                  {isCancelled ? 'ОТМЕНЕНО' : 'ПЕРЕНЕСЕНО'}
+                  {isCancelled ? t('ОТМЕНЕНО') : t('ПЕРЕНЕСЕНО')}
                 </div>
                 <div style={{ fontWeight: 600 }}>{lessonTitle(lesson)}</div>
                 <div style={{ color: '#9CA3AF', marginTop: 2 }}>
@@ -841,29 +872,30 @@ function TimeGrid({ columns, columnHeader, itemsByColumn, hours, loading, emptyT
 
   return (
     <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #F0F0F5', overflow: 'hidden' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: templateColumns, borderBottom: '1px solid #F0F0F5' }}>
-        <div />
-        {columns.map(col => (
-          <div key={col.id} style={{ padding: '10px 8px', textAlign: 'center', borderLeft: '1px solid #F0F0F5', background: col.highlighted ? '#FDF0EE' : 'transparent' }}>
-            {columnHeader(col)}
-          </div>
-        ))}
-      </div>
-
-      {columns.length === 0 ? (
-        <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
-          Нет залов, подходящих под фильтр.
+      <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: templateColumns, borderBottom: '1px solid #F0F0F5', position: 'sticky', top: 0, zIndex: 30, background: '#fff' }}>
+          <div />
+          {columns.map(col => (
+            <div key={col.id} style={{ padding: '10px 8px', textAlign: 'center', borderLeft: '1px solid #F0F0F5', background: col.highlighted ? '#FDF0EE' : '#fff' }}>
+              {columnHeader(col)}
+            </div>
+          ))}
         </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: templateColumns, position: 'relative', maxHeight: '70vh', overflowY: 'auto' }}>
-          <div style={{ position: 'relative', height: totalHeight }}>
-            {hours.map(h => (
-              <div key={h} style={{ position: 'absolute', top: dynTop(h * 60), left: 0, right: 0, textAlign: 'right', paddingRight: 8, paddingTop: 4, boxSizing: 'border-box', fontSize: 11, color: '#9CA3AF' }}>
-                {String(h).padStart(2, '0')}:00
-              </div>
-            ))}
+
+        {columns.length === 0 ? (
+          <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
+            {t('Нет залов, подходящих под фильтр.')}
           </div>
-          {columns.map(col => {
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: templateColumns, position: 'relative' }}>
+            <div style={{ position: 'relative', height: totalHeight }}>
+              {hours.map(h => (
+                <div key={h} style={{ position: 'absolute', top: dynTop(h * 60), left: 0, right: 0, textAlign: 'right', paddingRight: 8, paddingTop: 4, boxSizing: 'border-box', fontSize: 11, color: '#9CA3AF' }}>
+                  {String(h).padStart(2, '0')}:00
+                </div>
+              ))}
+            </div>
+            {columns.map(col => {
             const { active, history } = itemsByColumn[col.id] || { active: [], history: [] }
             // Столбцы (дни/залы) — ФИКСИРОВАННОЙ ширины, никогда не сжимаются
             // и не скроллятся. Занятия группируются в кластеры по факту
@@ -956,9 +988,10 @@ function TimeGrid({ columns, columnHeader, itemsByColumn, hours, loading, emptyT
                 })}
               </div>
             )
-          })}
-        </div>
-      )}
+            })}
+          </div>
+        )}
+      </div>
 
       {isEmpty && columns.length > 0 && (
         <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{emptyText}</div>
@@ -975,7 +1008,7 @@ function WeekGrid({ weekDays, byDay, hours, loading, onSelectLesson, onSelectSlo
       columnHeader={col => (
         <>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase' }}>
-            {WEEKDAY_LABELS[col.day.getDay() === 0 ? 6 : col.day.getDay() - 1]}
+            {t(WEEKDAY_LABELS[col.day.getDay() === 0 ? 6 : col.day.getDay() - 1])}
           </div>
           <div style={{ fontSize: 15, fontWeight: 700, color: col.highlighted ? ACCENT : '#1A1A2E' }}>{col.day.getDate()}</div>
         </>
@@ -983,7 +1016,7 @@ function WeekGrid({ weekDays, byDay, hours, loading, onSelectLesson, onSelectSlo
       itemsByColumn={byDay}
       hours={hours}
       loading={loading}
-      emptyText="На этой неделе занятий нет. Кликните по пустому слоту, чтобы создать."
+      emptyText={t('На этой неделе занятий нет. Кликните по пустому слоту, чтобы создать.')}
       onSelectLesson={onSelectLesson}
       onSelectSlot={onSelectSlot ? (slot => onSelectSlot({ date: slot.col.id, time: slot.time })) : undefined}
     />
@@ -1000,7 +1033,7 @@ function DayGrid({ date, columns, byRoom, hours, loading, onSelectLesson, onSele
       itemsByColumn={byRoom}
       hours={hours}
       loading={loading}
-      emptyText="На этот день занятий нет. Кликните по пустому слоту, чтобы создать."
+      emptyText={t('На этот день занятий нет. Кликните по пустому слоту, чтобы создать.')}
       onSelectLesson={onSelectLesson}
       onSelectSlot={onSelectSlot ? (slot => onSelectSlot({
         date,
@@ -1039,7 +1072,7 @@ function MobileWeekDayView({ weekDays, mobileDay, setMobileDay, byDay, loading, 
               }}
             >
               <div style={{ fontSize: 10, fontWeight: 600, color: active ? ACCENT : '#9CA3AF', textTransform: 'uppercase' }}>
-                {WEEKDAY_LABELS[i]}
+                {t(WEEKDAY_LABELS[i])}
               </div>
               <div style={{ fontSize: 14, fontWeight: 700, color: active ? ACCENT : '#1A1A2E' }}>{d.getDate()}</div>
             </button>
@@ -1049,7 +1082,7 @@ function MobileWeekDayView({ weekDays, mobileDay, setMobileDay, byDay, loading, 
 
       <div style={{ padding: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', marginBottom: 10 }}>{formatDayLabel(day)}</div>
-        <LessonList lessons={dayLessons} loading={loading} emptyText="Занятий нет" onSelectLesson={onSelectLesson} showRoom />
+        <LessonList lessons={dayLessons} loading={loading} emptyText={t('Занятий нет')} onSelectLesson={onSelectLesson} showRoom />
       </div>
     </div>
   )
@@ -1062,9 +1095,9 @@ function MobileDayRoomsView({ date, columns, byRoom, loading, onSelectLesson }) 
     <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #F0F0F5', padding: 12 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E', marginBottom: 10 }}>{formatDayLabel(new Date(date))}</div>
       {loading ? (
-        <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка…</div>
+        <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{t('Загрузка…')}</div>
       ) : nonEmptyColumns.length === 0 ? (
-        <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>На этот день занятий нет</div>
+        <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{t('На этот день занятий нет')}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {nonEmptyColumns.map(col => (
@@ -1085,7 +1118,7 @@ function MobileDayRoomsView({ date, columns, byRoom, loading, onSelectLesson }) 
 }
 
 function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
-  if (loading) return <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка…</div>
+  if (loading) return <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{t('Загрузка…')}</div>
   if (lessons.length === 0) return emptyText ? <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{emptyText}</div> : null
 
   return (
@@ -1095,6 +1128,7 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
         const dimmed = lesson.status === 'cancelled' || lesson.status === 'rescheduled'
         const hasConflict = lesson.has_conflict && !dimmed
         const isIndividual = lesson.is_individual && !dimmed && !hasConflict
+        const totalCount = lesson.total_participants_count ?? lesson.enrolled_count
         return (
           <div
             key={lesson.id}
@@ -1119,15 +1153,20 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
               </div>
               <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
                 {showRoom && `${lesson.room_name || '—'} · `}{lesson.teacher_name || '—'}
-                {lesson.capacity != null && ` · ${lesson.enrolled_count}/${lesson.capacity}`}
+                {lesson.capacity != null && ` · ${totalCount}/${lesson.capacity}`}
               </div>
+              {!dimmed && lesson.trial_count > 0 && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', marginTop: 3 }}>
+                  {t('Пробное: {count}', { count: lesson.trial_count })}
+                </div>
+              )}
               {dimmed && (
                 <div style={{ fontSize: 10, fontWeight: 700, color: lesson.status === 'cancelled' ? '#DC2626' : '#D97706', marginTop: 4 }}>
-                  {STATUS_LABEL[lesson.status]}
+                  {t(STATUS_LABEL[lesson.status])}
                 </div>
               )}
               {hasConflict && (
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#B45309', marginTop: 4 }}>КОНФЛИКТ ПО ЗАЛУ/ПРЕПОДАВАТЕЛЮ</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#B45309', marginTop: 4 }}>{t('КОНФЛИКТ ПО ЗАЛУ/ПРЕПОДАВАТЕЛЮ')}</div>
               )}
             </div>
           </div>
@@ -1149,14 +1188,14 @@ function BulkCancelModal({ filters, onClose, onDone }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!reasonCategory) { setError('Выберите причину отмены'); return }
-    if (reasonCategory === 'other' && !comment.trim()) { setError('Для причины «Другое» нужен комментарий'); return }
+    if (!reasonCategory) { setError(t('Выберите причину отмены')); return }
+    if (reasonCategory === 'other' && !comment.trim()) { setError(t('Для причины «Другое» нужен комментарий')); return }
     setSaving(true); setError('')
     try {
       const res = await bulkCancelLessons({ dateFrom, dateTo, reasonCategory, comment, filters })
       setResult(res)
     } catch (e2) {
-      setError(e2.response?.data?.reason_category?.[0] || e2.response?.data?.comment?.[0] || e2.response?.data?.detail || 'Не удалось отменить занятия')
+      setError(e2.response?.data?.reason_category?.[0] || e2.response?.data?.comment?.[0] || e2.response?.data?.detail || t('Не удалось отменить занятия'))
     } finally { setSaving(false) }
   }
 
@@ -1165,7 +1204,7 @@ function BulkCancelModal({ filters, onClose, onDone }) {
       <div style={modalBox} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
           <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Ban size={16} style={{ color: '#DC2626' }} /> Массовая отмена
+            <Ban size={16} style={{ color: '#DC2626' }} /> {t('Массовая отмена')}
           </h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
         </div>
@@ -1173,53 +1212,52 @@ function BulkCancelModal({ filters, onClose, onDone }) {
         {result ? (
           <div>
             <div style={{ background: '#F0FDF4', border: '1.5px solid #BBF7D0', borderRadius: 10, padding: '14px 16px', marginBottom: 16, fontSize: 13, color: '#166534', fontFamily: 'Manrope' }}>
-              Отменено занятий: <strong>{result.cancelled_count}</strong>
+              {t('Отменено занятий: {count}', { count: result.cancelled_count })}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button style={primaryBtn} onClick={onDone}>Готово</button>
+              <button style={primaryBtn} onClick={onDone}>{t('Готово')}</button>
             </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
             <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 14px', lineHeight: 1.6 }}>
-              Отменит все запланированные занятия за период — например, на каникулы или праздники.
-              Уже отменённые, проведённые или перенесённые занятия не тронет.
+              {t('Отменит все запланированные занятия за период — например, на каникулы или праздники. Уже отменённые, проведённые или перенесённые занятия не тронет.')}
             </p>
             <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
               <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Дата с *</label>
+                <label style={labelStyle}>{t('Дата с')} *</label>
                 <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} required style={inputStyle} />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Дата по *</label>
+                <label style={labelStyle}>{t('Дата по')} *</label>
                 <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} required style={inputStyle} />
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Причина отмены *</label>
+              <label style={labelStyle}>{t('Причина отмены')} *</label>
               <Dropdown
                 variant="field"
                 width="100%"
                 value={reasonCategory}
                 onChange={setReasonCategory}
-                placeholder="Выберите причину"
-                options={[['', 'Выберите причину'], ...CANCEL_REASON_OPTIONS]}
+                placeholder={t('Выберите причину')}
+                options={[['', t('Выберите причину')], ...CANCEL_REASON_OPTIONS.map(([value, label]) => [value, t(label)])]}
               />
             </div>
             <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Комментарий{reasonCategory === 'other' ? ' *' : ''}</label>
-              <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' }} placeholder={reasonCategory === 'other' ? 'Обязательно для причины «Другое»' : 'Необязательно'} />
+              <label style={labelStyle}>{t('Комментарий')}{reasonCategory === 'other' ? ' *' : ''}</label>
+              <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} maxLength={2000} style={{ ...inputStyle, resize: 'vertical' }} placeholder={reasonCategory === 'other' ? t('Обязательно для причины «Другое»') : t('Необязательно')} />
             </div>
             {(filters.branch || filters.room || filters.teacher || filters.direction) && (
               <p style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 14 }}>
-                Учитываются текущие фильтры календаря (филиал/зал/преподаватель/направление).
+                {t('Учитываются текущие фильтры календаря (филиал/зал/преподаватель/направление).')}
               </p>
             )}
             {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 12 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" style={secondaryBtn} onClick={onClose}>Отмена</button>
+              <button type="button" style={secondaryBtn} onClick={onClose}>{t('Отмена')}</button>
               <button type="submit" disabled={saving} style={{ padding: '10px 18px', border: 'none', borderRadius: 8, background: '#DC2626', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', opacity: saving ? 0.7 : 1 }}>
-                {saving ? 'Отмена…' : 'Отменить занятия'}
+                {saving ? t('Отмена…') : t('Отменить занятия')}
               </button>
             </div>
           </form>
@@ -1239,7 +1277,7 @@ function WhoToCallModal({ lessonId, onClose }) {
     setLoading(true); setError('')
     fetchWhoToCall(lessonId)
       .then(setData)
-      .catch(e => setError(e.response?.data?.detail || 'Не удалось загрузить список'))
+      .catch(e => setError(e.response?.data?.detail || t('Не удалось загрузить список')))
       .finally(() => setLoading(false))
   }, [lessonId])
 
@@ -1264,7 +1302,7 @@ function WhoToCallModal({ lessonId, onClose }) {
       else await unmarkCalled(lessonId, contact.parent_contact_id)
     } catch (e) {
       setContactCalled(contact.parent_contact_id, contact.called) // откат
-      setError(e.response?.data?.detail || 'Не удалось сохранить отметку')
+      setError(e.response?.data?.detail || t('Не удалось сохранить отметку'))
     } finally { setPending(null) }
   }
 
@@ -1282,13 +1320,13 @@ function WhoToCallModal({ lessonId, onClose }) {
       <div style={{ ...modalBox, maxWidth: 560, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <PhoneCall size={16} style={{ color: ACCENT }} /> Кого обзвонить
+            <PhoneCall size={16} style={{ color: ACCENT }} /> {t('Кого обзвонить')}
           </h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
         </div>
 
         {loading ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка…</div>
+          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{t('Загрузка…')}</div>
         ) : error ? (
           <p style={{ color: '#DC2626', fontSize: 13 }}>{error}</p>
         ) : (
@@ -1297,7 +1335,7 @@ function WhoToCallModal({ lessonId, onClose }) {
               {data.message}
             </div>
             {data.contacts.length === 0 ? (
-              <p style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', padding: 24 }}>Контактов не найдено.</p>
+              <p style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', padding: 24 }}>{t('Контактов не найдено.')}</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {data.contacts.map(contact => (
@@ -1330,7 +1368,7 @@ function WhoToCallModal({ lessonId, onClose }) {
                           transition: 'background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, opacity 0.15s ease',
                         }}
                       >
-                        {contact.called ? <><Check size={12} /> Обзвонен</> : 'Отметить обзвон'}
+                        {contact.called ? <><Check size={12} /> {t('Обзвонен')}</> : t('Отметить обзвон')}
                       </button>
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1378,18 +1416,18 @@ function ConflictsModal({ filters, onClose, onSelectLesson }) {
       <div style={{ ...modalBox, maxWidth: 560, maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AlertTriangle size={16} style={{ color: '#B45309' }} /> Текущие конфликты
+            <AlertTriangle size={16} style={{ color: '#B45309' }} /> {t('Текущие конфликты')}
           </h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
         </div>
         <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 16px' }}>
-          Занятия, которые пересекаются по залу или преподавателю — от сегодня и дальше.
+          {t('Занятия, которые пересекаются по залу или преподавателю — от сегодня и дальше.')}
         </p>
 
         {loading ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка…</div>
+          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{t('Загрузка…')}</div>
         ) : conflicts.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Конфликтов нет</div>
+          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>{t('Конфликтов нет')}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {conflicts.map(lesson => (
@@ -1407,7 +1445,7 @@ function ConflictsModal({ filters, onClose, onSelectLesson }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>{lessonTitle(lesson)}</div>
                   <div style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
-                    {lesson.room_name || 'без зала'} · {lesson.teacher_name || 'без преподавателя'}
+                    {lesson.room_name || t('без зала')} · {lesson.teacher_name || t('без преподавателя')}
                   </div>
                 </div>
               </div>
@@ -1427,7 +1465,7 @@ function ConflictWarning({ conflicts, onConfirm, onBack, saving }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <AlertTriangle size={15} style={{ color: '#B45309', flexShrink: 0 }} />
         <span style={{ fontSize: 13, fontWeight: 700, color: '#92400E', fontFamily: 'Manrope' }}>
-          Пересекается с {conflicts.length === 1 ? 'занятием' : 'занятиями'} по залу или преподавателю
+          {t('Пересекается с {lessons} по залу или преподавателю', { lessons: conflicts.length === 1 ? t('занятием') : t('занятиями') })}
         </span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
@@ -1439,14 +1477,14 @@ function ConflictWarning({ conflicts, onConfirm, onBack, saving }) {
         ))}
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button type="button" onClick={onBack} style={secondaryBtn}>Изменить</button>
+        <button type="button" onClick={onBack} style={secondaryBtn}>{t('Изменить')}</button>
         <button
           type="button"
           onClick={onConfirm}
           disabled={saving}
           style={{ padding: '10px 18px', border: 'none', borderRadius: 8, background: '#D97706', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', opacity: saving ? 0.7 : 1 }}
         >
-          {saving ? 'Сохранение…' : 'Всё равно сохранить'}
+          {saving ? t('Сохранение…') : t('Всё равно сохранить')}
         </button>
       </div>
     </div>
@@ -1489,13 +1527,13 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
   )) || null
 
   async function handleCancel() {
-    if (!reasonCategory) { setError('Выберите причину отмены'); return }
-    if (reasonCategory === 'other' && !comment.trim()) { setError('Для причины «Другое» нужен комментарий'); return }
+    if (!reasonCategory) { setError(t('Выберите причину отмены')); return }
+    if (reasonCategory === 'other' && !comment.trim()) { setError(t('Для причины «Другое» нужен комментарий')); return }
     setSaving(true); setError('')
     try {
       await cancelLesson(lesson.id, { reasonCategory, comment })
       onDone()
-    } catch (e) { setError(e.response?.data?.reason_category?.[0] || e.response?.data?.comment?.[0] || e.response?.data?.detail || 'Не удалось отменить занятие') }
+    } catch (e) { setError(e.response?.data?.reason_category?.[0] || e.response?.data?.comment?.[0] || e.response?.data?.detail || t('Не удалось отменить занятие')) }
     finally { setSaving(false) }
   }
 
@@ -1521,7 +1559,7 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
       if (e.response?.status === 409) {
         setConflicts(e.response.data.conflicts)
       } else {
-        setError(e.response?.data?.detail || 'Не удалось перенести занятие')
+        setError(e.response?.data?.detail || t('Не удалось перенести занятие'))
       }
     } finally { setSaving(false) }
   }
@@ -1538,7 +1576,7 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
               {lessonTitle(lesson)}
             </h2>
             <p style={{ fontSize: 12, color: '#9CA3AF', margin: '4px 0 0' }}>
-              {lesson.is_individual ? 'Индивидуальное занятие' : 'Групповое занятие'} · {STATUS_LABEL[lesson.status]}
+              {lesson.is_individual ? t('Индивидуальное занятие') : t('Групповое занятие')} · {t(STATUS_LABEL[lesson.status])}
             </p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
@@ -1547,17 +1585,47 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
         {mode === 'view' && (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-              <InfoRow icon={<MapPin size={14} />} text={`${localTimePart(lesson.starts_at_local)}–${localTimePart(lesson.ends_at_local)} · ${lesson.room_name || 'зал не указан'}`} />
-              <InfoRow icon={<UserIcon size={14} />} text={lesson.teacher_name || 'преподаватель не назначен'} />
-              {lesson.capacity != null && (
-                <InfoRow icon={<Users size={14} />} text={`${lesson.enrolled_count} из ${lesson.capacity} записано`} />
+              <InfoRow icon={<MapPin size={14} />} text={`${localTimePart(lesson.starts_at_local)}–${localTimePart(lesson.ends_at_local)} · ${lesson.room_name || t('зал не указан')}`} />
+              <InfoRow icon={<UserIcon size={14} />} text={lesson.teacher_name || t('преподаватель не назначен')} />
+              {lesson.trial_count > 0 && (
+                <InfoRow
+                  icon={<Users size={14} />}
+                  text={t('Пробное: {count}', { count: lesson.trial_count })}
+                />
               )}
               {lesson.is_individual && (
-                <InfoRow icon={<Users size={14} />} text={lesson.individual_children_names?.length ? lesson.individual_children_names.join(', ') : 'дети не указаны'} />
+                <InfoRow icon={<Users size={14} />} text={lesson.individual_children_names?.length ? lesson.individual_children_names.join(', ') : t('дети не указаны')} />
+              )}
+              {lesson.additional_participants?.length > 0 && (
+                <div style={{ border: '1px solid #E9E7EF', borderRadius: 10, padding: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#8B8798', marginBottom: 7, textTransform: 'uppercase' }}>
+                    {t('Дополнительные участники')}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {lesson.additional_participants.map(participant => {
+                      const kind = ENROLLMENT_KIND_UI[participant.kind]
+                      return (
+                        <div key={participant.enrollment_id} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 7 }}>
+                          <span style={{ flex: 1, minWidth: 120, fontSize: 12.5, fontWeight: 650, color: '#1A1A2E' }}>{participant.child_name}</span>
+                          {kind && (
+                            <span style={{ color: kind.color, background: kind.background, border: `1px solid ${kind.border}`, borderRadius: 999, padding: '2px 8px', fontSize: 10, fontWeight: 750 }}>
+                              {t(kind.label)}
+                            </span>
+                          )}
+                          {participant.kind === 'trial' && participant.source_lead_id && (
+                            <Link to={`/leads/${participant.source_lead_id}`} style={{ color: '#7C3AED', fontSize: 11, fontWeight: 700, textDecoration: 'none' }}>
+                              {t('Открыть заявку')}
+                            </Link>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               )}
               {lesson.status === 'cancelled' && lesson.cancel_reason_category_display && (
                 <div style={{ fontSize: 12, color: '#DC2626', background: '#FEF2F2', borderRadius: 8, padding: '8px 10px' }}>
-                  Причина отмены: {lesson.cancel_reason_category_display}
+                  {t('Причина отмены:')} {t(lesson.cancel_reason_category_display)}
                   {lesson.cancel_reason && ` — ${lesson.cancel_reason}`}
                 </div>
               )}
@@ -1565,12 +1633,12 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {!canMarkAttendance && !canAct && (
                 <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', margin: '4px 0' }}>
-                  {lesson.status === 'rescheduled' ? 'Занятие перенесено.' : 'Занятие отменено.'}
+                  {lesson.status === 'rescheduled' ? t('Занятие перенесено.') : t('Занятие отменено.')}
                 </p>
               )}
               {lesson.status === 'rescheduled' && (
                 <button style={{ ...secondaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => onWhoToCall(lesson.id)}>
-                  <PhoneCall size={13} /> Кого обзвонить
+                  <PhoneCall size={13} /> {t('Кого обзвонить')}
                 </button>
               )}
               {(lesson.status === 'cancelled' || lesson.status === 'rescheduled') && (
@@ -1579,21 +1647,21 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
                     style={{ ...secondaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer' }}
                     onClick={() => onSelectReplacement(replacementExists)}
                   >
-                    <Check size={13} style={{ color: '#16A34A' }} /> На этом месте уже есть занятие — открыть
+                    <Check size={13} style={{ color: '#16A34A' }} /> {t('На этом месте уже есть занятие — открыть')}
                   </button>
                 ) : (
                   <button style={{ ...secondaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => onCreateHere(lesson)}>
-                    <Plus size={13} /> Создать занятие на этом месте
+                    <Plus size={13} /> {t('Создать занятие на этом месте')}
                   </button>
                 )
               )}
               {canMarkAttendance && (
-                <button style={primaryBtn} onClick={() => onAttendance(lesson.id)}>Отметить посещаемость</button>
+                <button style={primaryBtn} onClick={() => onAttendance(lesson.id)}>{t('Отметить посещаемость')}</button>
               )}
               {canAct && (
                 <>
-                  <button style={secondaryBtn} onClick={() => setMode('reschedule')}>Перенести</button>
-                  <button style={dangerBtn} onClick={() => setMode('cancel')}>Отменить занятие</button>
+                  <button style={secondaryBtn} onClick={() => setMode('reschedule')}>{t('Перенести')}</button>
+                  <button style={dangerBtn} onClick={() => setMode('cancel')}>{t('Отменить занятие')}</button>
                 </>
               )}
             </div>
@@ -1602,24 +1670,24 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
 
         {mode === 'cancel' && (
           <div>
-            <label style={labelStyle}>Причина отмены *</label>
+            <label style={labelStyle}>{t('Причина отмены')} *</label>
             <div style={{ marginBottom: 14 }}>
               <Dropdown
                 variant="field"
                 width="100%"
                 value={reasonCategory}
                 onChange={setReasonCategory}
-                placeholder="Выберите причину"
-                options={[['', 'Выберите причину'], ...CANCEL_REASON_OPTIONS]}
+                placeholder={t('Выберите причину')}
+                options={[['', t('Выберите причину')], ...CANCEL_REASON_OPTIONS.map(([value, label]) => [value, t(label)])]}
               />
             </div>
-            <label style={labelStyle}>Комментарий{reasonCategory === 'other' ? ' *' : ''}</label>
-            <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} style={{ ...inputStyle, marginBottom: 14, resize: 'vertical' }} placeholder={reasonCategory === 'other' ? 'Обязательно для причины «Другое»' : 'Необязательно'} />
+            <label style={labelStyle}>{t('Комментарий')}{reasonCategory === 'other' ? ' *' : ''}</label>
+            <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} style={{ ...inputStyle, marginBottom: 14, resize: 'vertical' }} placeholder={reasonCategory === 'other' ? t('Обязательно для причины «Другое»') : t('Необязательно')} />
             {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 10 }}>{error}</p>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button style={secondaryBtn} onClick={() => setMode('view')}>Назад</button>
+              <button style={secondaryBtn} onClick={() => setMode('view')}>{t('Назад')}</button>
               <button style={{ ...dangerBtn, background: '#DC2626', color: '#fff', borderColor: '#DC2626' }} disabled={saving} onClick={handleCancel}>
-                {saving ? 'Отмена…' : 'Подтвердить отмену'}
+                {saving ? t('Отмена…') : t('Подтвердить отмену')}
               </button>
             </div>
           </div>
@@ -1629,11 +1697,11 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
           <div>
             <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
               <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Дата</label>
+                <label style={labelStyle}>{t('Дата')}</label>
                 <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={inputStyle} />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Время</label>
+                <label style={labelStyle}>{t('Время')}</label>
                 <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} style={inputStyle} />
               </div>
             </div>
@@ -1648,9 +1716,9 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
             {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 10 }}>{error}</p>}
             {!conflicts && (
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button style={secondaryBtn} onClick={() => setMode('view')}>Назад</button>
+                <button style={secondaryBtn} onClick={() => setMode('view')}>{t('Назад')}</button>
                 <button style={primaryBtn} disabled={saving} onClick={handleReschedule}>
-                  {saving ? 'Перенос…' : 'Перенести'}
+                  {saving ? t('Перенос…') : t('Перенести')}
                 </button>
               </div>
             )}
@@ -1719,7 +1787,7 @@ function ChildrenMultiSelect({ value, onChange }) {
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="Начните вводить имя..."
+          placeholder={t('Начните вводить имя...')}
           style={inputStyle}
         />
         {results.length > 0 && (
@@ -1730,7 +1798,7 @@ function ChildrenMultiSelect({ value, onChange }) {
                 onMouseEnter={e => e.currentTarget.style.background = '#FAFAFA'}
                 onMouseLeave={e => e.currentTarget.style.background = '#fff'}
               >
-                {c.full_name}{c.age != null && <span style={{ color: '#9CA3AF' }}> · {c.age} лет</span>}
+                {c.full_name}{c.age != null && <span style={{ color: '#9CA3AF' }}> · {c.age} {t('лет')}</span>}
               </div>
             ))}
           </div>
@@ -1775,15 +1843,15 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
       if (e2.response?.status === 409) {
         setConflicts(e2.response.data.conflicts)
       } else {
-        setError(e2.response?.data?.detail || 'Не удалось создать занятие')
+        setError(e2.response?.data?.detail || t('Не удалось создать занятие'))
       }
     } finally { setSaving(false) }
   }
 
   function handleSubmit(e) {
     e.preventDefault()
-    if (lessonType === 'group' && !groupId) { setError('Выберите группу'); return }
-    if (lessonType === 'individual' && children.length === 0) { setError('Выберите хотя бы одного ребёнка'); return }
+    if (lessonType === 'group' && !groupId) { setError(t('Выберите группу')); return }
+    if (lessonType === 'individual' && children.length === 0) { setError(t('Выберите хотя бы одного ребёнка')); return }
     submit(buildPayload())
   }
 
@@ -1791,50 +1859,50 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
     <div style={modalOverlay} onClick={onClose}>
       <div style={modalBox} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>Новое занятие</h2>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>{t('Новое занятие')}</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2, marginBottom: 14 }}>
-            <ViewToggleBtn active={lessonType === 'group'} onClick={() => setLessonType('group')} icon={<Users size={14} />} label="Групповое" />
-            <ViewToggleBtn active={lessonType === 'individual'} onClick={() => setLessonType('individual')} icon={<UserIcon size={14} />} label="Индивидуальное" />
+            <ViewToggleBtn active={lessonType === 'group'} onClick={() => setLessonType('group')} icon={<Users size={14} />} label={t('Групповое')} />
+            <ViewToggleBtn active={lessonType === 'individual'} onClick={() => setLessonType('individual')} icon={<UserIcon size={14} />} label={t('Индивидуальное')} />
           </div>
 
           {lessonType === 'group' ? (
             <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>Группа *</label>
+              <label style={labelStyle}>{t('Группа')} *</label>
               <Dropdown
                 variant="field"
                 width="100%"
                 value={groupId}
                 onChange={setGroupId}
-                placeholder="Выберите группу"
-                options={[['', 'Выберите группу'], ...groups.map(g => [String(g.id), g.name])]}
+                placeholder={t('Выберите группу')}
+                options={[['', t('Выберите группу')], ...groups.map(g => [String(g.id), g.name])]}
               />
             </div>
           ) : (
             <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>Ребёнок (или несколько) *</label>
+              <label style={labelStyle}>{t('Ребёнок (или несколько)')} *</label>
               <ChildrenMultiSelect value={children} onChange={setChildren} />
             </div>
           )}
           <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
             <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Дата</label>
+              <label style={labelStyle}>{t('Дата')}</label>
               <input type="date" value={slot.date} disabled style={{ ...inputStyle, background: '#FAFAFA', color: '#9CA3AF' }} />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Время</label>
-              <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle} />
+              <label style={labelStyle}>{t('Время')}</label>
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle} required />
             </div>
             <div style={{ width: 90 }}>
-              <label style={labelStyle}>Мин.</label>
-              <input type="number" min={15} step={15} value={durationMin} onChange={e => setDurationMin(Number(e.target.value))} style={inputStyle} />
+              <label style={labelStyle}>{t('Мин.')}</label>
+              <input type="number" min={15} max={480} step={15} value={durationMin} onChange={e => setDurationMin(Number(e.target.value))} style={inputStyle} required />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
             <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Зал</label>
+              <label style={labelStyle}>{t('Зал')}</label>
               <Dropdown
                 variant="field"
                 width="100%"
@@ -1844,7 +1912,7 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
               />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Преподаватель</label>
+              <label style={labelStyle}>{t('Преподаватель')}</label>
               <Dropdown
                 variant="field"
                 width="100%"
@@ -1865,9 +1933,9 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
           {error && <p style={{ color: '#DC2626', fontSize: 12, marginBottom: 12 }}>{error}</p>}
           {!conflicts && (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" style={secondaryBtn} onClick={onClose}>Отмена</button>
+              <button type="button" style={secondaryBtn} onClick={onClose}>{t('Отмена')}</button>
               <button type="submit" style={primaryBtn} disabled={saving}>
-                {saving ? 'Создание…' : (<><Plus size={14} />Создать</>)}
+                {saving ? t('Создание…') : (<><Plus size={14} />{t('Создать')}</>)}
               </button>
             </div>
           )}

@@ -24,6 +24,10 @@ class NormalizePhoneNumberTests(SimpleTestCase):
         with self.assertRaises(InvalidPhoneNumberError):
             normalize_phone_number("12345")
 
+    def test_letters_are_not_silently_removed(self):
+        with self.assertRaises(InvalidPhoneNumberError):
+            normalize_phone_number("abc77011234567")
+
     def test_wrong_country_code_raises(self):
         with self.assertRaises(InvalidPhoneNumberError):
             normalize_phone_number("+1 202 555 0173")

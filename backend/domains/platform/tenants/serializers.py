@@ -1,5 +1,8 @@
 from rest_framework import serializers
 
+from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.core.text_validation import normalize_entity_name
+
 from .models import Branch, Direction, Organization, Room
 from .working_hours import default_working_hours, normalize_working_hours
 
@@ -34,6 +37,9 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def validate_name(self, value):
+        return normalize_entity_name(value)
 
 
 class BranchSerializer(serializers.ModelSerializer):
@@ -70,6 +76,22 @@ class BranchSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(errors)
         return working_hours
 
+    def validate_name(self, value):
+        return normalize_entity_name(value)
+
+    def validate_phone(self, value):
+        if not value:
+            return value
+        try:
+            return normalize_phone_number(value)
+        except InvalidPhoneNumberError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
+    def validate_address(self, value):
+        if len(value) > 500:
+            raise serializers.ValidationError("Введите не более 500 символов.")
+        return value.strip()
+
     def create(self, validated_data):
         # Как у веб-формы: без явного расписания — пн–пт 09:00–20:00.
         validated_data.setdefault("working_hours", default_working_hours())
@@ -89,6 +111,14 @@ class RoomSerializer(serializers.ModelSerializer):
             # branch должен быть выбираем только среди филиалов той же
             # организации — иначе можно было бы создать зал в чужом филиале.
             self.fields["branch"].queryset = Branch.objects.for_tenant(request.user.organization)
+
+    def validate_name(self, value):
+        return normalize_entity_name(value, max_length=100)
+
+    def validate_capacity(self, value):
+        if value is not None and not 1 <= value <= 1000:
+            raise serializers.ValidationError("Вместимость должна быть от 1 до 1000.")
+        return value
 
 
 class DirectionSerializer(serializers.ModelSerializer):
@@ -121,6 +151,19 @@ class DirectionSerializer(serializers.ModelSerializer):
             self.fields["branches"].child_relation.queryset = Branch.objects.for_tenant(
                 request.user.organization
             ).filter(is_active=True)
+
+    def validate_name(self, value):
+        return normalize_entity_name(value)
+
+    def validate_age_min(self, value):
+        if value is not None and value > 99:
+            raise serializers.ValidationError("Возраст должен быть от 0 до 99 лет.")
+        return value
+
+    def validate_age_max(self, value):
+        if value is not None and value > 99:
+            raise serializers.ValidationError("Возраст должен быть от 0 до 99 лет.")
+        return value
 
     def validate(self, attrs):
         age_min = attrs.get("age_min")

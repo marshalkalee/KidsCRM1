@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import api from '../api/axios'
 import { Button, Card, CardHeader, ErrorState, Field, Input, Select, Skeleton, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
+import { entityNameInputProps } from '../utils/formValidation'
 
 // Пороги автостатусов (backend: tenants/org_settings.py) — по ним экраны
 // продлений, задолженностей и групп решают, кого подсветить.
@@ -63,7 +64,7 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
             <CardHeader title={t('Основное')} />
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={t('Название')} required error={errors.name}>
-                {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name || ''} onChange={e => set('name', e.target.value)} required />}
+                {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name || ''} onChange={e => set('name', e.target.value)} required {...entityNameInputProps} />}
               </Field>
               <Field label={t('Часовой пояс')} hint={t('От него зависят время занятий и «сегодня» в отчётах')} error={errors.timezone}>
                 {({ id, invalid }) => (

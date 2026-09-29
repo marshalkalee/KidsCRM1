@@ -7,6 +7,7 @@ import {
   Badge, Button, Card, CardHeader, DataTable, DateInput, EmptyState, ErrorState, Field, Modal,
   Skeleton, apiErrorMessage, formatDateTime, useConfirm, useToast,
 } from '../../ui'
+import { plural, t } from '../../i18n'
 
 const PAGE_SIZE = 50
 
@@ -92,7 +93,7 @@ export default function AttendanceTab({ child, onCountChange }) {
   function applyPeriod(event) {
     event.preventDefault()
     if (draftPeriod.dateFrom && draftPeriod.dateTo && draftPeriod.dateFrom > draftPeriod.dateTo) {
-      setPeriodError('Конец периода не может быть раньше начала.')
+      setPeriodError(t('Конец периода не может быть раньше начала.'))
       return
     }
     setPeriodError('')
@@ -137,15 +138,18 @@ export default function AttendanceTab({ child, onCountChange }) {
         source_attendance: row.attendance_id,
         confirm_capacity: confirmCapacity,
       })
-      toast.success('Записан(а) на отработку')
+      toast.success(t('Записан(а) на отработку'))
       setPickingFor(null)
       loadMakeups()
     } catch (error) {
       if (error.response?.status === 409) {
         const ok = await confirm({
-          title: 'Мест нет',
-          message: `Вместимость группы уже заполнена (${error.response.data.current_count}/${error.response.data.capacity}). Записать всё равно?`,
-          confirmText: 'Записать',
+          title: t('Мест нет'),
+          message: t('Вместимость группы уже заполнена ({current}/{capacity}). Записать всё равно?', {
+            current: error.response.data.current_count,
+            capacity: error.response.data.capacity,
+          }),
+          confirmText: t('Записать'),
         })
         if (ok) return enroll(row, candidateLessonId, true)
         return
@@ -157,14 +161,14 @@ export default function AttendanceTab({ child, onCountChange }) {
   const columns = [
     {
       key: 'date',
-      header: 'Дата и время',
+      header: t('Дата и время'),
       primary: true,
       render: row => (
         <div>
           <span className="font-semibold">{formatDateTime(row.starts_at_local)}</span>
           {row.is_retroactive_edit && (
             <span className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-info-600">
-              <History className="size-3" /> Изменено задним числом
+              <History className="size-3" /> {t('Изменено задним числом')}
             </span>
           )}
         </div>
@@ -172,7 +176,7 @@ export default function AttendanceTab({ child, onCountChange }) {
     },
     {
       key: 'lesson',
-      header: 'Занятие',
+      header: t('Занятие'),
       render: row => (
         <div>
           <span className="font-medium">{row.lesson_name}</span>
@@ -182,39 +186,39 @@ export default function AttendanceTab({ child, onCountChange }) {
     },
     {
       key: 'group',
-      header: 'Группа',
+      header: t('Группа'),
       render: row => (
         <div>
-          <span>{row.group_name || 'Индивидуальное'}</span>
+          <span>{row.group_name || t('Индивидуальное')}</span>
           {row.branch_name && <p className="text-xs text-ink-subtle">{row.branch_name}</p>}
         </div>
       ),
     },
     {
       key: 'status',
-      header: 'Статус',
+      header: t('Статус'),
       mobileAside: true,
       render: row => {
         const meta = STATUS_META[row.status] || { label: row.status_display, tone: 'neutral' }
-        return <Badge tone={meta.tone}>{meta.label}</Badge>
+        return <Badge tone={meta.tone}>{t(meta.label)}</Badge>
       },
     },
     {
       key: 'reason',
-      header: 'Причина пропуска',
-      render: row => row.absence_reason_display || '—',
-      mobileRender: row => row.absence_reason_display || null,
+      header: t('Причина пропуска'),
+      render: row => t(row.absence_reason_display) || '—',
+      mobileRender: row => t(row.absence_reason_display) || null,
     },
     {
       key: 'consumption',
-      header: 'Абонемент',
+      header: t('Абонемент'),
       render: row => (
-        <div title={row.consumption_display}>
+        <div title={t(row.consumption_display)}>
           <Badge tone={row.consumed_from_subscription ? 'success' : 'neutral'}>
-            {row.consumed_from_subscription ? 'Списано' : 'Не списано'}
+            {row.consumed_from_subscription ? t('Списано') : t('Не списано')}
           </Badge>
           {!row.consumed_from_subscription && row.consume_outcome && (
-            <p className="mt-1 max-w-48 text-xs text-ink-subtle">{row.consumption_display}</p>
+            <p className="mt-1 max-w-48 text-xs text-ink-subtle">{t(row.consumption_display)}</p>
           )}
         </div>
       ),
@@ -225,11 +229,11 @@ export default function AttendanceTab({ child, onCountChange }) {
     <div className="space-y-5">
       <Card>
         <CardHeader
-          title="История посещений"
-          description="Отметки и фактические списания совпадают с журналом занятий."
+          title={t('История посещений')}
+          description={t('Отметки и фактические списания совпадают с журналом занятий.')}
         />
         <form onSubmit={applyPeriod} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <Field label="С даты" error={periodError} className="sm:w-48">
+          <Field label={t('С даты')} error={periodError} className="sm:w-48">
             {({ id, invalid }) => (
               <DateInput
                 id={id}
@@ -240,7 +244,7 @@ export default function AttendanceTab({ child, onCountChange }) {
               />
             )}
           </Field>
-          <Field label="По дату" className="sm:w-48">
+          <Field label={t('По дату')} className="sm:w-48">
             {({ id }) => (
               <DateInput
                 id={id}
@@ -252,8 +256,8 @@ export default function AttendanceTab({ child, onCountChange }) {
             )}
           </Field>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" variant="primary" loading={historyLoading}>Показать</Button>
-            <Button type="button" variant="ghost" onClick={showAllHistory}>За всё время</Button>
+            <Button type="submit" variant="primary" loading={historyLoading}>{t('Показать')}</Button>
+            <Button type="button" variant="ghost" onClick={showAllHistory}>{t('За всё время')}</Button>
           </div>
         </form>
       </Card>
@@ -272,8 +276,8 @@ export default function AttendanceTab({ child, onCountChange }) {
             empty={(
               <EmptyState
                 icon={CalendarClock}
-                title="За этот период отметок нет"
-                description="Выберите другой период или проверьте журнал занятий."
+                title={t('За этот период отметок нет')}
+                description={t('Выберите другой период или проверьте журнал занятий.')}
               />
             )}
           />
@@ -283,8 +287,8 @@ export default function AttendanceTab({ child, onCountChange }) {
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-[15px] font-bold text-ink">Доступные отработки</h2>
-            <p className="mt-0.5 text-[13px] text-ink-muted">Пропуски, которые ещё можно отработать.</p>
+            <h2 className="text-[15px] font-bold text-ink">{t('Доступные отработки')}</h2>
+            <p className="mt-0.5 text-[13px] text-ink-muted">{t('Пропуски, которые ещё можно отработать.')}</p>
           </div>
           {makeups && <Badge tone={makeups.length ? 'warning' : 'neutral'}>{makeups.length}</Badge>}
         </div>
@@ -294,8 +298,8 @@ export default function AttendanceTab({ child, onCountChange }) {
           <Card>
             <EmptyState
               icon={CalendarClock}
-              title="Нет пропусков, доступных для отработки"
-              description="Здесь появятся занятия, которые ребёнок пропустил и ещё может отработать."
+              title={t('Нет пропусков, доступных для отработки')}
+              description={t('Здесь появятся занятия, которые ребёнок пропустил и ещё может отработать.')}
             />
           </Card>
         )}
@@ -304,21 +308,21 @@ export default function AttendanceTab({ child, onCountChange }) {
             {makeups.map(row => (
               <Card key={row.attendance_id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className="font-semibold text-ink">{row.group_name || 'Индивидуальное занятие'}</p>
+                  <p className="font-semibold text-ink">{row.group_name || t('Индивидуальное занятие')}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-muted">
                     <span className="inline-flex items-center gap-1"><Clock className="size-3.5" />{formatDateTime(row.starts_at_local)}</span>
                     {row.room_name && <span className="inline-flex items-center gap-1"><MapPin className="size-3.5" />{row.room_name}</span>}
                   </div>
                   {row.absence_reason_display && (
-                    <p className="mt-1 text-[13px] text-ink-muted">Причина: {row.absence_reason_display}</p>
+                    <p className="mt-1 text-[13px] text-ink-muted">{t('Причина:')} {t(row.absence_reason_display)}</p>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:justify-end">
                   <Badge tone={row.days_left <= 3 ? 'warning' : 'neutral'}>
-                    до {formatShortDate(row.expires_on)} · {row.days_left} {pluralDays(row.days_left)}
+                    {t('до')} {formatShortDate(row.expires_on)} · {row.days_left} {pluralDays(row.days_left)}
                   </Badge>
                   <Button variant="primary" size="sm" icon={CalendarPlus} onClick={() => setPickingFor(row)}>
-                    Отработать
+                    {t('Отработать')}
                   </Button>
                 </div>
               </Card>
@@ -340,9 +344,9 @@ export default function AttendanceTab({ child, onCountChange }) {
 
 function Summary({ summary, loading }) {
   const items = [
-    { key: 'present', label: 'Посещено', icon: CheckCircle2, className: 'text-success-600 bg-success-50' },
-    { key: 'absent', label: 'Пропущено', icon: XCircle, className: 'text-danger-600 bg-danger-50' },
-    { key: 'makeup', label: 'Отработано', icon: RotateCcw, className: 'text-brand-700 bg-brand-50' },
+    { key: 'present', label: t('Посещено'), icon: CheckCircle2, className: 'text-success-600 bg-success-50' },
+    { key: 'absent', label: t('Пропущено'), icon: XCircle, className: 'text-danger-600 bg-danger-50' },
+    { key: 'makeup', label: t('Отработано'), icon: RotateCcw, className: 'text-brand-700 bg-brand-50' },
   ]
   return (
     <div className={`grid grid-cols-1 gap-3 sm:grid-cols-3 ${loading ? 'opacity-60' : ''}`}>
@@ -381,11 +385,7 @@ function formatShortDate(iso) {
 }
 
 function pluralDays(n) {
-  const mod10 = n % 10
-  const mod100 = n % 100
-  if (mod10 === 1 && mod100 !== 11) return 'день'
-  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return 'дня'
-  return 'дней'
+  return plural(n, ['день', 'дня', 'дней'])
 }
 
 function MakeupCandidatesModal({ row, onClose, onPick }) {
@@ -402,13 +402,13 @@ function MakeupCandidatesModal({ row, onClose, onPick }) {
     <Modal
       open
       onClose={onClose}
-      title="Выберите занятие для отработки"
-      description={`${row.group_name || 'Индивидуальное занятие'} · то же направление`}
+      title={t('Выберите занятие для отработки')}
+      description={`${row.group_name || t('Индивидуальное занятие')} · ${t('то же направление')}`}
     >
       {error && <ErrorState />}
       {!error && !candidates && <Skeleton className="h-24" />}
       {!error && candidates && candidates.length === 0 && (
-        <EmptyState icon={CalendarClock} title="Подходящих занятий не нашлось" description="В этом направлении нет будущих занятий." />
+        <EmptyState icon={CalendarClock} title={t('Подходящих занятий не нашлось')} description={t('В этом направлении нет будущих занятий.')} />
       )}
       {!error && candidates && candidates.length > 0 && (
         <div className="space-y-2">

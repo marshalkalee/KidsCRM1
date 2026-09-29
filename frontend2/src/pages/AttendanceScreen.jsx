@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ArrowLeft, Check, X, RotateCcw, AlertTriangle, MapPin, Clock, ChevronRight,
-  WifiOff, History, CalendarDays, Undo2,
+  ArrowLeft, Check, X, RotateCcw, AlertTriangle, MapPin, Clock, ChevronLeft, ChevronRight,
+  WifiOff, History, CalendarDays, Undo2, Camera,
 } from 'lucide-react'
-import { localDatePart, localTimePart } from '../utils/calendarDate'
-import { fetchTodayLessons } from '../api/lessons'
+import { addDays, localDatePart, localTimePart, toISODate } from '../utils/calendarDate'
+import AttendancePhoto from '../components/ai/AttendancePhoto'
+import { useAI } from '../components/ai/ai'
+import { fetchLessons } from '../api/lessons'
 import {
   fetchLesson, fetchAttendanceRoster, markAttendance, markAllPresent, resetAllAttendance, resetAttendance,
 } from '../api/attendance'
 import {
-  ageLabel, Avatar, Badge, Button, Card, CHILD_STATUSES, EmptyState, formatDate, PageHeader,
+  ageLabel, Avatar, Badge, Button, Card, CHILD_STATUSES, DateInput, EmptyState, formatDate, PageHeader,
 } from '../ui'
+import { t } from '../i18n'
 
 const ACCENT = '#C97B6E'
 const MOBILE_BREAKPOINT = 640 // TRU-51: отдельный сценарий для телефона, не адаптив десктопа
@@ -37,16 +40,16 @@ const CHILD_GENDER_LABEL = {
 // TRU-53: дети, записанные «поверх» состава группы (отработка/пробное) —
 // пометка типа рядом с именем, чтобы было видно, что это не обычный
 // участник группы.
-const ENROLLMENT_KIND_LABEL = {
-  makeup: 'Отработка',
-  trial: 'Пробное',
+const ENROLLMENT_KIND_UI = {
+  makeup: { label: 'Отработка', color: '#2563EB', background: '#EFF6FF', border: '#BFDBFE' },
+  trial: { label: 'Пробное', color: '#7C3AED', background: '#F3E8FF', border: '#DDD6FE' },
 }
 
 function lessonLabel(lesson) {
   if (!lesson) return ''
   if (lesson.group_name) return lesson.group_name
   if (lesson.individual_children_names?.length) return lesson.individual_children_names.join(', ')
-  return 'Индив. занятие'
+  return t('Индив. занятие')
 }
 
 function useIsMobile() {
@@ -78,54 +81,116 @@ function useOnlineStatus() {
   return online
 }
 
-// Вход в посещаемость: без ?lesson — список занятий на сегодня (свои для
-// преподавателя, все для админа/владельца — фильтрует бэк), с ?lesson —
-// сам экран отметки. Из сайдбара — занятие открывается за два нажатия:
-// «Посещаемость» → карточка занятия в списке; если занятие на сегодня
-// ровно одно (типичный случай — преподаватель зашёл перед своим уроком),
-// список сразу же ведёт дальше сам, без выбора — это и даёт буквально два
-// нажатия «от входа в систему» (критерий приёмки TRU-51).
+function validDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false
+  const [year, month, day] = value.split('-').map(Number)
+  const parsed = new Date(year, month - 1, day)
+  return toISODate(parsed) === value
+}
+
+function dateFromIso(value) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function AttendanceDateInput({ value, onChange }) {
+  const [draft, setDraft] = useState(value)
+
+  function handleChange(nextValue) {
+    setDraft(nextValue)
+    if (validDate(nextValue)) onChange(nextValue)
+  }
+
+  return (
+    <div className="w-[150px]">
+      <label className="sr-only" htmlFor="attendance-date">{t('Выбрать дату')}</label>
+      <DateInput id="attendance-date" value={draft} onChange={handleChange} />
+    </div>
+  )
+}
+
+// Вход в посещаемость: без ?lesson — список занятий за выбранную дату
+// (свои для преподавателя, все для админа/владельца — фильтрует бэк),
+// с ?lesson — экран отметки. Дата остаётся в URL, чтобы при возврате из
+// занятия администратор попадал обратно на тот же день.
 export default function AttendanceScreen() {
   const [searchParams] = useSearchParams()
   const lessonId = searchParams.get('lesson')
-  return lessonId ? <AttendanceLessonScreen lessonId={lessonId} /> : <TodayLessonsList />
+  const requestedDate = searchParams.get('date')
+  const selectedDate = validDate(requestedDate) ? requestedDate : toISODate(new Date())
+  return lessonId
+    ? <AttendanceLessonScreen lessonId={lessonId} listDate={selectedDate} />
+    : <DailyLessonsList selectedDate={selectedDate} />
 }
 
-function TodayLessonsList() {
+function DailyLessonsList({ selectedDate }) {
   const navigate = useNavigate()
+  const [, setSearchParams] = useSearchParams()
   const [lessons, setLessons] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const today = toISODate(new Date())
+
+  function selectDate(value) {
+    if (validDate(value)) setSearchParams({ date: value })
+  }
+
+  function shiftDate(days) {
+    selectDate(toISODate(addDays(dateFromIso(selectedDate), days)))
+  }
 
   useEffect(() => {
+    let cancelled = false
     setLoading(true)
-    fetchTodayLessons()
-      .then(data => {
-        if (data.length === 1) {
-          navigate(`/attendance?lesson=${data[0].id}`, { replace: true })
-          return
-        }
-        setLessons(data)
-      })
-      .catch(() => setError('Не удалось загрузить занятия на сегодня.'))
-      .finally(() => setLoading(false))
-  }, [navigate])
+    setError('')
+    setLessons([])
+    fetchLessons(selectedDate, selectedDate)
+      .then(data => { if (!cancelled) setLessons(data) })
+      .catch(() => { if (!cancelled) setError(t('Не удалось загрузить занятия за выбранную дату.')) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedDate])
 
   return (
     <div style={{ fontFamily: 'Manrope', width: '100%' }}>
-      <PageHeader title="Посещаемость" description="Занятия на сегодня" />
+      <PageHeader
+        title={t('Посещаемость')}
+        description={t('Занятия за {date}', { date: formatDate(selectedDate) })}
+        actions={(
+          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
+            <Button
+              icon={ChevronLeft}
+              onClick={() => shiftDate(-1)}
+              aria-label={t('Предыдущий день')}
+              title={t('Предыдущий день')}
+            >
+              {t('Назад')}
+            </Button>
+            <AttendanceDateInput key={selectedDate} value={selectedDate} onChange={selectDate} />
+            <Button
+              icon={ChevronRight}
+              onClick={() => shiftDate(1)}
+              aria-label={t('Следующий день')}
+              title={t('Следующий день')}
+            >
+              {t('Вперёд')}
+            </Button>
+            {selectedDate !== today && <Button onClick={() => selectDate(today)}>{t('Сегодня')}</Button>}
+          </div>
+        )}
+      />
 
-      {loading && <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF' }}>Загрузка…</div>}
+      {loading && <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF' }}>{t('Загрузка…')}</div>}
       {error && <div style={{ padding: 24, textAlign: 'center', color: '#DC2626' }}>{error}</div>}
       {!loading && !error && lessons.length === 0 && (
-        <Card><EmptyState icon={CalendarDays} title="Сегодня занятий нет" description="Новые занятия появятся здесь автоматически." /></Card>
+        <Card><EmptyState icon={CalendarDays} title={t('На выбранную дату занятий нет')} description={t('Выберите другую дату или проверьте расписание.')} /></Card>
       )}
 
       <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2">
         {lessons.map(lesson => (
           <button
             key={lesson.id}
-            onClick={() => navigate(`/attendance?lesson=${lesson.id}`)}
+            onClick={() => navigate(`/attendance?lesson=${lesson.id}&date=${selectedDate}`)}
             style={{
               position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
               minHeight: 168, width: '100%', textAlign: 'left', background: '#fff',
@@ -173,7 +238,7 @@ function TodayLessonsList() {
 // снизу экрана, «отметить всех» прибита к низу (работа одной рукой).
 // Всё остальное (мгновенная реакция, автосохранение, признак «не
 // сохранилось», ≤3 клика на ребёнка) общее для обеих версий.
-function AttendanceLessonScreen({ lessonId }) {
+function AttendanceLessonScreen({ lessonId, listDate }) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const online = useOnlineStatus()
@@ -185,10 +250,12 @@ function AttendanceLessonScreen({ lessonId }) {
   const [reasonPickerFor, setReasonPickerFor] = useState(null)
   const [savingIds, setSavingIds] = useState({})
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [photoOpen, setPhotoOpen] = useState(false) // ИИ: отметка по фото журнала (эксперимент)
+  const ai = useAI()
 
   const load = useCallback(() => {
     if (!lessonId) {
-      setError('Не указано занятие.')
+      setError(t('Не указано занятие.'))
       setLoading(false)
       return
     }
@@ -202,8 +269,8 @@ function AttendanceLessonScreen({ lessonId }) {
       .catch(err => {
         setError(
           err.response?.status === 403
-            ? 'Доступно только для своих занятий.'
-            : 'Не удалось загрузить занятие.'
+            ? t('Доступно только для своих занятий.')
+            : t('Не удалось загрузить занятие.')
         )
       })
       .finally(() => setLoading(false))
@@ -269,7 +336,7 @@ function AttendanceLessonScreen({ lessonId }) {
       await markAllPresent(lessonId)
       load()
     } catch {
-      setError('Не удалось отметить всех — попробуйте ещё раз.')
+      setError(t('Не удалось отметить всех — попробуйте ещё раз.'))
     } finally {
       setBulkSaving(false)
     }
@@ -281,7 +348,7 @@ function AttendanceLessonScreen({ lessonId }) {
       await resetAllAttendance(lessonId)
       load()
     } catch {
-      setError('Не удалось сбросить отметки — попробуйте ещё раз.')
+      setError(t('Не удалось сбросить отметки — попробуйте ещё раз.'))
     } finally {
       setBulkSaving(false)
     }
@@ -293,7 +360,7 @@ function AttendanceLessonScreen({ lessonId }) {
   if (loading) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: '#9CA3AF', fontFamily: 'Manrope' }}>
-        Загрузка…
+        {t('Загрузка…')}
       </div>
     )
   }
@@ -302,8 +369,8 @@ function AttendanceLessonScreen({ lessonId }) {
     return (
       <div style={{ padding: 40, textAlign: 'center', fontFamily: 'Manrope' }}>
         <p style={{ color: '#DC2626', marginBottom: 16 }}>{error}</p>
-        <button style={backBtn} onClick={() => navigate('/attendance')}>
-          <ArrowLeft size={14} /> К списку занятий
+        <button style={backBtn} onClick={() => navigate(`/attendance?date=${listDate}`)}>
+          <ArrowLeft size={14} /> {t('К списку занятий')}
         </button>
       </div>
     )
@@ -312,20 +379,21 @@ function AttendanceLessonScreen({ lessonId }) {
   return (
     <div style={{ fontFamily: 'Manrope', width: '100%' }}>
       <PageHeader
-        back={{ to: '/attendance', label: 'К списку занятий' }}
+        back={{ to: `/attendance?date=${listDate}`, label: t('К списку занятий') }}
         title={lessonLabel(lesson)}
         description={[
           `${localDatePart(lesson.starts_at_local)} · ${localTimePart(lesson.starts_at_local)}–${localTimePart(lesson.ends_at_local)}`,
           lesson.room_name,
-          `${markedCount}/${rows.length} отмечено`,
+          t('{marked}/{total} отмечено', { marked: markedCount, total: rows.length }),
         ].filter(Boolean).join(' · ')}
         actions={(
           <>
+            {ai.enabled && <Button icon={Camera} onClick={() => setPhotoOpen(true)}>По фото</Button>}
             <Button icon={Undo2} loading={bulkSaving} disabled={markedCount === 0} onClick={handleResetAll}>
-              Сбросить
+              {t('Сбросить')}
             </Button>
             <Button variant="primary" icon={Check} loading={bulkSaving} disabled={markedCount === rows.length} onClick={handleMarkAllPresent}>
-              Отметить всех пришедшими
+              {t('Отметить всех пришедшими')}
             </Button>
           </>
         )}
@@ -336,7 +404,7 @@ function AttendanceLessonScreen({ lessonId }) {
           display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', marginBottom: 14,
           borderRadius: 10, background: '#FEF3C7', color: '#92400E', fontSize: 12.5, fontWeight: 600,
         }}>
-          <WifiOff size={15} /> Нет связи — отметки не сохранятся, пока она не появится
+          <WifiOff size={15} /> {t('Нет связи — отметки не сохранятся, пока она не появится')}
         </div>
       )}
 
@@ -353,6 +421,10 @@ function AttendanceLessonScreen({ lessonId }) {
           />
         ))}
       </div>
+
+      {photoOpen && (
+        <AttendancePhoto lessonId={lessonId} onClose={() => setPhotoOpen(false)} onSaved={() => { setPhotoOpen(false); load() }} />
+      )}
 
       {isMobile && reasonPickerRow && (
         <AbsenceReasonSheet
@@ -382,10 +454,10 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark, onRese
 
   const statusButtons = (
     <div style={{ display: 'flex', gap: mobile ? 8 : 6, flexShrink: 0, width: mobile ? '100%' : 'auto' }}>
-      <StatusButton mobile={mobile} active={isPresent} color="#16A34A" icon={Check} label="Пришёл" saving={saving} onClick={() => onMark('present')} />
-      <StatusButton mobile={mobile} active={isAbsent} color="#DC2626" icon={X} label="Не был" saving={saving} onClick={handleAbsentClick} />
-      <StatusButton mobile={mobile} active={isMakeup} color={ACCENT} icon={RotateCcw} label="Отработка" saving={saving} onClick={() => onMark('makeup')} />
-      {row.status && <StatusButton mobile={mobile} active={false} color="#6B7280" icon={Undo2} label="Сбросить" saving={saving} onClick={onReset} />}
+      <StatusButton mobile={mobile} active={isPresent} color="#16A34A" icon={Check} label={t('Пришёл')} saving={saving} onClick={() => onMark('present')} />
+      <StatusButton mobile={mobile} active={isAbsent} color="#DC2626" icon={X} label={t('Не был')} saving={saving} onClick={handleAbsentClick} />
+      <StatusButton mobile={mobile} active={isMakeup} color={ACCENT} icon={RotateCcw} label={t('Отработка')} saving={saving} onClick={() => onMark('makeup')} />
+      {row.status && <StatusButton mobile={mobile} active={false} color="#6B7280" icon={Undo2} label={t('Сбросить')} saving={saving} onClick={onReset} />}
     </div>
   )
 
@@ -393,46 +465,58 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark, onRese
     <>
       {row._error && (
         <div style={{ fontSize: 11, color: '#DC2626', marginTop: 2 }}>
-          Не сохранилось — нажмите ещё раз
+          {t('Не сохранилось — нажмите ещё раз')}
         </div>
       )}
       {!row._error && row.status === 'present' && row.consumed_from_subscription && (
         <div style={{ fontSize: 11, color: '#16A34A', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
-          <Check size={11} /> Списано с абонемента
+          <Check size={11} /> {t('Списано с абонемента')}
         </div>
       )}
       {!row._error && row.status === 'present' && !row.consumed_from_subscription && row.no_subscription_flag && (
         <div style={{ fontSize: 11.5, fontWeight: 700, color: '#D97706', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
-          <AlertTriangle size={12} /> Нет абонемента
+          <AlertTriangle size={12} /> {t('Нет абонемента')}
         </div>
       )}
       {!row._error && row.status === 'present' && !row.consumed_from_subscription && !row.no_subscription_flag && CONSUME_OUTCOME_LABEL[row.consume_outcome] && (
         <div style={{ fontSize: 11.5, color: '#D97706', marginTop: 2 }}>
-          {CONSUME_OUTCOME_LABEL[row.consume_outcome]}
+          {t(CONSUME_OUTCOME_LABEL[row.consume_outcome])}
         </div>
       )}
       {isAbsent && row.absence_reason && (
         <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
-          {ABSENCE_REASONS.find(([v]) => v === row.absence_reason)?.[1]}
+          {t(ABSENCE_REASONS.find(([v]) => v === row.absence_reason)?.[1])}
         </div>
       )}
       {row.is_retroactive_edit && (
         <div
           style={{ fontSize: 11, color: '#7C6FF7', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}
-          title="Отметку поменяли после того, как занятие уже прошло"
+          title={t('Отметку поменяли после того, как занятие уже прошло')}
         >
-          <History size={11} /> Изменено задним числом
+          <History size={11} /> {t('Изменено задним числом')}
         </div>
       )}
     </>
   )
 
-  const enrollmentBadge = ENROLLMENT_KIND_LABEL[row.enrollment_kind] && (
-    <span style={{
-      fontSize: 10, fontWeight: 700, color: ACCENT, background: `${ACCENT}14`,
-      borderRadius: 6, padding: '2px 6px', marginLeft: 6, whiteSpace: 'nowrap',
-    }}>
-      {ENROLLMENT_KIND_LABEL[row.enrollment_kind]}
+  const enrollmentKind = ENROLLMENT_KIND_UI[row.enrollment_kind]
+  const enrollmentBadge = enrollmentKind && (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 6 }}>
+      <span style={{
+        fontSize: 10, fontWeight: 750, color: enrollmentKind.color,
+        background: enrollmentKind.background, border: `1px solid ${enrollmentKind.border}`,
+        borderRadius: 999, padding: '2px 7px', whiteSpace: 'nowrap',
+      }}>
+        {t(enrollmentKind.label)}
+      </span>
+      {row.enrollment_kind === 'trial' && row.source_lead_id && (
+        <Link
+          to={`/leads/${row.source_lead_id}`}
+          style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', textDecoration: 'none', whiteSpace: 'nowrap' }}
+        >
+          {t('Открыть заявку')}
+        </Link>
+      )}
     </span>
   )
 
@@ -445,14 +529,14 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark, onRese
             {row.child_name}{enrollmentBadge}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px 8px', marginTop: 3, fontSize: 11.5, color: '#8B8798' }}>
-            <span title={`Дата рождения: ${formatDate(row.child_birth_date)}`}>
+            <span title={t('Дата рождения: {date}', { date: formatDate(row.child_birth_date) })}>
               {ageLabel(row.child_age)} · {formatDate(row.child_birth_date)}
             </span>
-            {CHILD_GENDER_LABEL[row.child_gender] && <span>{CHILD_GENDER_LABEL[row.child_gender]}</span>}
+            {CHILD_GENDER_LABEL[row.child_gender] && <span>{t(CHILD_GENDER_LABEL[row.child_gender])}</span>}
           </div>
           {statusNote}
         </div>
-        <Badge tone={childStatus.tone}>{childStatus.label}</Badge>
+        <Badge tone={childStatus.tone}>{t(childStatus.label)}</Badge>
       </div>
       <div style={{ marginTop: 12 }}>{statusButtons}</div>
 
@@ -460,10 +544,10 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark, onRese
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #F0F0F5', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {ABSENCE_REASONS.map(([value, label]) => (
             <button key={value} style={reasonChip} onClick={() => { setReasonPickerOpenDesktop(false); onMark('absent', value) }}>
-              {label}
+              {t(label)}
             </button>
           ))}
-          <button style={{ ...reasonChip, color: '#9CA3AF' }} onClick={() => setReasonPickerOpenDesktop(false)}>Отмена</button>
+          <button style={{ ...reasonChip, color: '#9CA3AF' }} onClick={() => setReasonPickerOpenDesktop(false)}>{t('Отмена')}</button>
         </div>
       )}
     </div>
@@ -486,14 +570,14 @@ function AbsenceReasonSheet({ childName, onSelect, onClose }) {
         }}
       >
         <div style={{ width: 36, height: 4, borderRadius: 2, background: '#E5E7EB', margin: '0 auto 16px' }} />
-        <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 2 }}>Причина пропуска</div>
+        <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 2 }}>{t('Причина пропуска')}</div>
         <div style={{ fontSize: 16, fontWeight: 700, color: '#1A1A2E', marginBottom: 16 }}>{childName}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {ABSENCE_REASONS.map(([value, label]) => (
-            <button key={value} style={sheetOption} onClick={() => onSelect(value)}>{label}</button>
+            <button key={value} style={sheetOption} onClick={() => onSelect(value)}>{t(label)}</button>
           ))}
           <button style={{ ...sheetOption, color: '#9CA3AF', border: 'none', background: 'transparent' }} onClick={onClose}>
-            Отмена
+            {t('Отмена')}
           </button>
         </div>
       </div>

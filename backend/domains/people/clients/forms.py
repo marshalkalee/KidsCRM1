@@ -8,6 +8,7 @@ from django import forms
 from django.utils import timezone
 
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.core.text_validation import normalize_person_name
 from domains.platform.tenants.forms import KcFormMixin
 from domains.platform.tenants.models import Direction
 
@@ -141,6 +142,21 @@ class ChildForm(KcFormMixin, forms.ModelForm):
             is_active=True
         )
 
+    def clean_full_name(self):
+        return normalize_person_name(self.cleaned_data["full_name"])
+
+    def clean_medical_notes(self):
+        value = self.cleaned_data.get("medical_notes", "").strip()
+        if len(value) > 2000:
+            raise forms.ValidationError("Введите не более 2000 символов.")
+        return value
+
+    def clean_leave_reason(self):
+        value = self.cleaned_data.get("leave_reason", "").strip()
+        if len(value) > 500:
+            raise forms.ValidationError("Введите не более 500 символов.")
+        return value
+
     def clean(self):
         cleaned = super().clean()
         birth_date = cleaned.get("birth_date")
@@ -251,6 +267,9 @@ class ParentContactForm(KcFormMixin, forms.ModelForm):
             return normalize_phone_number(value)
         except InvalidPhoneNumberError as exc:
             raise forms.ValidationError(str(exc)) from exc
+
+    def clean_full_name(self):
+        return normalize_person_name(self.cleaned_data["full_name"])
 
 
 class ContactPhoneForm(KcFormMixin, forms.ModelForm):

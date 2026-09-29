@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowRight, CalendarPlus, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Trash2, UserRound,
+  ArrowRight, CalendarPlus, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Sparkles, Trash2, UserRound,
 } from 'lucide-react'
 import api from '../api/axios'
 import LeadModal from '../components/leads/LeadModal'
+import { AIMessageModal, useAI } from '../components/ai/ai'
+import { LeadGroups } from '../components/ai/assist'
 import RejectModal from '../components/leads/RejectModal'
+import TrialBookingModal from '../components/leads/TrialBookingModal'
 import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/format'
+import { getLeadsViewPreference } from '../components/leads/viewPreference'
 import { useSession } from '../session/SessionContext'
 import {
   Avatar, Badge, Button, Card, Dropdown, EmptyState, ErrorState, PageHeader, Skeleton, Textarea, ageLabel, apiErrorMessage, cn,
@@ -31,6 +35,7 @@ function whatsappUrl(lead, organizationName) {
 export default function LeadDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const toast = useToast()
   const confirm = useConfirm()
   const { user } = useSession()
@@ -40,7 +45,10 @@ export default function LeadDetail() {
   const [comments, setComments] = useState([])
   const [editing, setEditing] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  const [bookingTrial, setBookingTrial] = useState(false)
   const [staff, setStaff] = useState([])
+  const [writing, setWriting] = useState(false)
+  const ai = useAI()
 
   const loadExtras = useCallback(() => {
     api.get(`leads/${id}/history/`).then(res => setHistory(res.data)).catch(() => {})
@@ -59,7 +67,11 @@ export default function LeadDetail() {
     api.get('users/').then(res => setStaff((res.data.results || res.data).filter(u => ['owner', 'manager', 'admin'].includes(u.role) && u.is_active !== false))).catch(() => {})
   }, [])
 
-  const back = { to: '/leads', label: t('Заявки') }
+  const storedReturnTo = location.state?.leadsReturnTo
+  const leadsReturnTo = typeof storedReturnTo === 'string' && storedReturnTo.startsWith('/leads')
+    ? storedReturnTo
+    : `/leads?view=${getLeadsViewPreference()}`
+  const back = { to: leadsReturnTo, label: t('Заявки') }
   if (state === 'loading') {
     return (
       <div>
@@ -69,7 +81,7 @@ export default function LeadDetail() {
     )
   }
   if (state === 'missing') {
-    return <Card><EmptyState icon={SearchX} title={t('Заявка не найдена')} description={t('Возможно, её удалили или ссылка неверная.')} action={<Button to="/leads">{t('К заявкам')}</Button>} /></Card>
+    return <Card><EmptyState icon={SearchX} title={t('Заявка не найдена')} description={t('Возможно, её удалили или ссылка неверная.')} action={<Button to={leadsReturnTo}>{t('К заявкам')}</Button>} /></Card>
   }
   if (state === 'error') return <Card><ErrorState onRetry={load} /></Card>
 
@@ -100,7 +112,7 @@ export default function LeadDetail() {
     try {
       await api.delete(`leads/${lead.id}/`)
       toast.success(t('Заявка удалена'))
-      navigate('/leads', { replace: true })
+      navigate(leadsReturnTo, { replace: true })
     } catch (err) {
       toast.error(apiErrorMessage(err))
     }
@@ -143,6 +155,15 @@ export default function LeadDetail() {
                 <MessageCircle className="size-4" /> WhatsApp
               </a>
             </div>
+            {ai.enabled && (
+              <button
+                type="button"
+                onClick={() => setWriting(true)}
+                className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[#ddd6fe] bg-[#faf5ff] text-sm font-semibold text-[#7c3aed] hover:bg-[#f3e8ff]"
+              >
+                <Sparkles className="size-4" /> {t('Написать с ИИ')}
+              </button>
+            )}
           </Card>
 
           <Card>
@@ -172,6 +193,8 @@ export default function LeadDetail() {
             </dl>
           </Card>
 
+          {!lead.converted_child && lead.kind !== 'renewal' && <LeadGroups leadId={lead.id} />}
+
           {lead.converted_child && (
             <Card>
               <p className="text-[15px] font-bold text-ink">{t('Стал клиентом')}</p>
@@ -185,13 +208,34 @@ export default function LeadDetail() {
         </aside>
 
         <div className="min-w-0 space-y-6">
-          <StatusCard lead={lead} onChange={to => (to === 'rejected' ? setRejecting(true) : changeStatus(to))} />
+          {lead.trial_booking && <TrialBookingCard booking={lead.trial_booking} />}
+          <StatusCard
+            lead={lead}
+            onBookTrial={() => setBookingTrial(true)}
+            onChange={to => (to === 'rejected' ? setRejecting(true) : changeStatus(to))}
+          />
           <CommentsCard leadId={lead.id} comments={comments} onAdded={comment => setComments(list => [...list, comment])} />
           <HistoryCard history={history} />
         </div>
       </div>
 
+      {writing && <AIMessageModal lead={lead} onClose={() => setWriting(false)} />}
       {editing && <LeadModal lead={lead} onClose={() => setEditing(false)} onSaved={saved => { setLead(saved); setEditing(false) }} />}
+      {bookingTrial && (
+        <TrialBookingModal
+          lead={lead}
+          onClose={() => setBookingTrial(false)}
+          onEdit={() => {
+            setBookingTrial(false)
+            setEditing(true)
+          }}
+          onBooked={saved => {
+            setLead(saved)
+            setBookingTrial(false)
+            loadExtras()
+          }}
+        />
+      )}
       {rejecting && (
         <RejectModal
           lead={lead}
@@ -212,8 +256,41 @@ function Row({ label, children }) {
   )
 }
 
-function StatusCard({ lead, onChange }) {
-  const targets = LEAD_STATUSES.filter(s => lead.allowed_transitions.includes(s.value))
+function TrialBookingCard({ booking }) {
+  return (
+    <Card className="border-brand-200 bg-[linear-gradient(135deg,#fff7f5,#ffffff)]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <CalendarPlus className="size-5 text-brand-600" />
+            <p className="font-bold text-ink">{t('Пробное занятие назначено')}</p>
+            <Badge tone="warning">{t('Пробное')}</Badge>
+          </div>
+          <p className="mt-2 text-[15px] font-semibold text-ink">{booking.group_name}</p>
+          <p className="mt-1 text-sm text-ink-muted">
+            {formatDateTime(booking.starts_at_local)}–{booking.ends_at_local.slice(11, 16)} · {booking.branch_name}
+            {booking.room_name ? ` · ${booking.room_name}` : ''}
+          </p>
+          {booking.teacher_name && <p className="mt-1 text-xs text-ink-subtle">{booking.teacher_name}</p>}
+        </div>
+        <Button
+          to={`/schedule?date=${booking.starts_at_local.slice(0, 10)}&view=day&lesson=${booking.lesson_id}`}
+          icon={CalendarPlus}
+        >
+          {t('Открыть в календаре')}
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
+function StatusCard({ lead, onChange, onBookTrial }) {
+  const targets = LEAD_STATUSES.filter(
+    s => s.value !== 'trial_scheduled' && lead.allowed_transitions.includes(s.value),
+  )
+  const canBookTrial = lead.kind !== 'renewal'
+    && !lead.trial_booking
+    && lead.allowed_transitions.includes('trial_scheduled')
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -235,9 +312,17 @@ function StatusCard({ lead, onChange }) {
         <p className="mt-2 text-sm text-ink-muted">{t('Заявка закрыта покупкой — дальше это клиент.')}</p>
       )}
       <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3">
-        {/* Точки подключения других доменов: запись на пробное — Дарья
-            (TRU-100), задачи — Bekzat. Пока модулей нет, кнопки неактивны. */}
-        {lead.kind !== 'renewal' && <Button size="sm" variant="ghost" icon={CalendarPlus} disabled title={t('Появится вместе с записью на пробное из календаря')}>{t('Записать на пробное')}</Button>}
+        {lead.kind !== 'renewal' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={CalendarPlus}
+            disabled={!canBookTrial}
+            onClick={onBookTrial}
+          >
+            {lead.trial_booking ? t('Пробное назначено') : t('Записать на пробное')}
+          </Button>
+        )}
         <Button size="sm" variant="ghost" icon={ListTodo} disabled title={t('Появится вместе с модулем задач')}>{t('Создать задачу')}</Button>
       </div>
     </Card>
@@ -283,7 +368,7 @@ function CommentsCard({ leadId, comments, onAdded }) {
         </ul>
       )}
       <form onSubmit={submit} className="mt-3 flex items-end gap-2">
-        <Textarea rows={2} value={text} onChange={e => setText(e.target.value)} placeholder={t('Новый комментарий')} aria-label={t('Новый комментарий')} className="flex-1" />
+        <Textarea rows={2} value={text} onChange={e => setText(e.target.value)} placeholder={t('Новый комментарий')} aria-label={t('Новый комментарий')} className="flex-1" maxLength={2000} />
         <Button type="submit" variant="primary" size="icon" loading={saving} disabled={!text.trim()} aria-label={t('Добавить комментарий')}><Send className="size-4" /></Button>
       </form>
     </Card>

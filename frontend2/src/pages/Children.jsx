@@ -9,14 +9,15 @@ import {
   PageHeader, SearchInput, ageLabel, formatDate, money, plural, useFilterDraft,
 } from '../ui'
 import { t } from '../i18n'
+import { RemindersButton } from '../components/ai/assist'
 
 // Всё состояние списка — в адресной строке: ссылку с фильтрами можно
 // переслать коллеге, «назад» из карточки возвращает туда же. Последние
 // фильтры ещё и запоминаются — чтобы, открыв «Дети» из меню, не выставлять
 // их заново.
-const FILTER_KEYS = ['q', 'branch', 'status', 'direction', 'group', 'has_debt', 'expiring']
+const FILTER_KEYS = ['q', 'branch', 'status', 'direction', 'group', 'has_debt', 'expiring', 'debt_overdue', 'no_subscription']
 const PANEL_KEYS = FILTER_KEYS.filter(key => key !== 'q')
-const MONEY_KEYS = ['has_debt', 'expiring']
+const MONEY_KEYS = ['has_debt', 'expiring', 'debt_overdue', 'no_subscription']
 const STORAGE_KEY = 'kc:children-list'
 const PAGE_SIZE = 25
 
@@ -181,6 +182,12 @@ export default function Children() {
         description={loading && !data.count ? t('Загрузка…') : `${countLabel}${hasAnyFilter ? ` ${t('по фильтрам')}` : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
         actions={canManage && (
           <>
+            {showMoney && (params.get('has_debt') || params.get('debt_overdue') || params.get('expiring')) && (
+              <RemindersButton
+                childIds={data.results.map(row => row.id)}
+                kind={params.get('has_debt') || params.get('debt_overdue') ? 'debt' : 'renewal'}
+              />
+            )}
             <Button icon={Upload} onClick={() => navigate('/children/import')}>{t('Импорт из Excel')}</Button>
             <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Добавить ребёнка')}</Button>
           </>
@@ -257,6 +264,8 @@ function ChildFilters({ params, update, branches, directions, groups, showMoney,
         <>
           <FilterCheck label={t('Есть задолженность')} checked={draft.has_debt === '1'} onChange={v => set('has_debt', v ? '1' : '')} />
           <FilterCheck label={t('Абонемент скоро заканчивается')} checked={draft.expiring === '1'} onChange={v => set('expiring', v ? '1' : '')} />
+          <FilterCheck label={t('Долг просрочен')} checked={draft.debt_overdue === '1'} onChange={v => set('debt_overdue', v ? '1' : '')} />
+          <FilterCheck label={t('Без абонемента')} checked={draft.no_subscription === '1'} onChange={v => set('no_subscription', v ? '1' : '')} />
         </>
       )}
     >

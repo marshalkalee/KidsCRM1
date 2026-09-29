@@ -24,6 +24,7 @@ class Child(TenantModel):
         FEMALE = "female", "Женский"
 
     class Status(models.TextChoices):
+        TRIAL = "trial", "Пробный"
         ACTIVE = "active", "Активен"
         PAUSED = "paused", "Приостановлен"
         LEFT = "left", "Ушёл"
@@ -34,6 +35,7 @@ class Child(TenantModel):
     # (пауза может закончиться уходом), а LEFT -> PAUSED не имеет смысла —
     # сначала возврат в ACTIVE, потом обычная пауза при необходимости.
     ALLOWED_STATUS_TRANSITIONS = {
+        Status.TRIAL: {Status.ACTIVE, Status.LEFT},
         Status.ACTIVE: {Status.PAUSED, Status.LEFT},
         Status.PAUSED: {Status.ACTIVE, Status.LEFT},
         Status.LEFT: {Status.ACTIVE},
@@ -41,7 +43,11 @@ class Child(TenantModel):
 
     full_name = models.CharField(max_length=255)
     birth_date = models.DateField()
-    gender = models.CharField(max_length=10, choices=Gender.choices)
+    # У заявки на пробное известен возраст, но не всегда точная дата
+    # рождения. Пока родитель её не уточнил, дата рассчитана из возраста.
+    birth_date_is_estimated = models.BooleanField(default=False)
+    # Пол не обязателен для записи на пробное и уточняется позднее.
+    gender = models.CharField(max_length=10, choices=Gender.choices, blank=True)
     directions = models.ManyToManyField("tenants.Direction", related_name="children", blank=True)
     medical_notes = models.TextField(blank=True)
     # URL, а не ImageField: загрузка/хранение файлов — отдельная инфраструктура

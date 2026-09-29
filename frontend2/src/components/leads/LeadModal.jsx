@@ -3,6 +3,7 @@ import api from '../../api/axios'
 import { useSession } from '../../session/SessionContext'
 import { Button, Field, Input, Modal, Select, apiErrorMessage, useToast } from '../../ui'
 import { t } from '../../i18n'
+import { personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../../utils/formValidation'
 
 /** Редактирование заявки из карточки (TRU-96): контакт, ребёнок, направление, источник, филиал. */
 export default function LeadModal({ lead, onClose, onSaved }) {
@@ -10,7 +11,7 @@ export default function LeadModal({ lead, onClose, onSaved }) {
   const { branches } = useSession()
   const [form, setForm] = useState({
     parent_name: lead.parent_name,
-    phone: lead.phone,
+    phone: phoneDigits(lead.phone),
     child_name: lead.child_name,
     child_age: lead.child_age ?? '',
     direction: lead.direction || '',
@@ -71,13 +72,13 @@ export default function LeadModal({ lead, onClose, onSaved }) {
     >
       <form id="lead-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
         <Field label={t('Имя родителя')} required error={error('parent_name')}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.parent_name} onChange={e => set('parent_name', e.target.value)} required />}
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.parent_name} onChange={e => set('parent_name', personNameInput(e.target.value))} required {...personNameInputProps} />}
         </Field>
         <Field label={t('Телефон')} required error={error('phone')}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} type="tel" inputMode="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required />}
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.phone} onChange={e => set('phone', phoneDigits(e.target.value))} placeholder="77000000000" required {...phoneInputProps} />}
         </Field>
         <Field label={t('Имя ребёнка')} error={error('child_name')}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.child_name} onChange={e => set('child_name', e.target.value)} />}
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.child_name} onChange={e => set('child_name', personNameInput(e.target.value))} {...personNameInputProps} />}
         </Field>
         <Field label={t('Возраст')} error={error('child_age')}>
           {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" inputMode="numeric" min={1} max={25} value={form.child_age} onChange={e => set('child_age', e.target.value)} />}

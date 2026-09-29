@@ -103,7 +103,16 @@ class LessonViewSet(TenantModelViewSet):
             Lesson.objects.for_tenant(self.request.organization)
             .select_related("room", "teacher", "schedule_slot")
             .prefetch_related(
-                Prefetch("group", queryset=groups_qs), "rescheduled_to", "individual_children"
+                Prefetch("group", queryset=groups_qs),
+                Prefetch(
+                    "enrollments",
+                    queryset=LessonEnrollment.objects.filter(
+                        cancelled_at__isnull=True
+                    ).select_related("child", "source_lead"),
+                    to_attr="active_enrollments",
+                ),
+                "rescheduled_to",
+                "individual_children",
             )
         )
 
@@ -319,6 +328,7 @@ class LessonViewSet(TenantModelViewSet):
             ends_at=data["ends_at"],
             room=data.get("room"),
             teacher=data.get("teacher"),
+            exclude_id=lesson.id,
         )
         if conflicts.exists() and not _is_confirmed(request):
             return self._conflict_response(conflicts)
@@ -465,6 +475,14 @@ _ENROLL_ERROR_STATUS = {
     EnrollOutcome.SOURCE_DIRECTION_MISMATCH: (
         status.HTTP_400_BAD_REQUEST,
         "Отработать можно только в том же направлении, где пропустили.",
+    ),
+    EnrollOutcome.SOURCE_LEAD_INVALID: (
+        status.HTTP_400_BAD_REQUEST,
+        "Заявка не подходит для пробного занятия.",
+    ),
+    EnrollOutcome.SOURCE_LEAD_ALREADY_BOOKED: (
+        status.HTTP_400_BAD_REQUEST,
+        "По заявке уже назначено пробное занятие.",
     ),
 }
 

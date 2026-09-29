@@ -7,9 +7,10 @@
 
 from decimal import Decimal
 
-from domains.money.subscriptions.debt import debt_by_child, debtor_child_ids
+from domains.money.subscriptions.debt import debt_by_child, debtor_child_ids, debtor_subscriptions
 from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.renewals import expiring_child_ids
+from domains.platform.tenants.org_settings import DEBT_OVERDUE_DAYS_THRESHOLD, get_org_setting
 from domains.scheduling.groups.models import GroupMembership
 
 from .models import Child
@@ -25,7 +26,30 @@ CHILD_SORT_FIELDS = {
 
 # Фильтры, раскрывающие деньги (пусть и без суммы) — только для ролей
 # с can_view_client_money.
-MONEY_FILTERS = ("has_debt", "expiring")
+MONEY_FILTERS = ("has_debt", "expiring", "no_subscription", "debt_overdue")
+
+
+def overdue_debt_threshold(organization) -> int:
+    return get_org_setting(organization, DEBT_OVERDUE_DAYS_THRESHOLD)
+
+
+def children_without_subscription(organization):
+    """
+    Занимается в группе, а действующего (активного или замороженного)
+    абонемента нет — «дети без абонемента» центра уведомлений (TRU-72) и
+    фильтр списка детей: оба берут эту функцию, чтобы число совпадало.
+    """
+    covered = Subscription.objects.for_tenant(organization).filter(
+        status__in=[Subscription.Status.ACTIVE, Subscription.Status.FROZEN]
+    )
+    in_groups = GroupMembership.objects.for_tenant(organization).filter(
+        left_at__isnull=True, group__deleted_at__isnull=True
+    )
+    return (
+        Child.objects.for_tenant(organization)
+        .filter(status=Child.Status.ACTIVE, id__in=in_groups.values("child_id"))
+        .exclude(id__in=covered.values("child_id"))
+    )
 
 
 def branch_names(child, group_branches=None):
@@ -125,6 +149,15 @@ def filter_children(qs, organization, params):
 
     if params.get("expiring") == "1":
         qs = qs.filter(id__in=expiring_child_ids(organization))
+
+    if params.get("no_subscription") == "1":
+        qs = qs.filter(id__in=children_without_subscription(organization).values("id"))
+
+    if params.get("debt_overdue") == "1":
+        overdue = debtor_subscriptions(
+            organization, min_age_days=overdue_debt_threshold(organization)
+        ).values("child_id")
+        qs = qs.filter(id__in=overdue)
 
     return qs.distinct() if needs_distinct else qs
 

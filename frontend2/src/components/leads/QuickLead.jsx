@@ -3,8 +3,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import api from '../../api/axios'
 import { useSession } from '../../session/SessionContext'
-import { Button, Field, Input, Modal, Select, apiErrorMessage, cn, useToast } from '../../ui'
+import { Button, Field, Input, Modal, Select, Textarea, apiErrorMessage, cn, useToast } from '../../ui'
+import { AIBadge, PasteMessage, useAI } from '../ai/ai'
 import { t } from '../../i18n'
+import { personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../../utils/formValidation'
 
 const OPEN_EVENT = 'kc:new-lead'
 export const LEAD_CREATED_EVENT = 'kc:lead-created'
@@ -65,6 +67,9 @@ function QuickLeadModal({ onClose }) {
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [more, setMore] = useState(false)
+  // Суть запроса от ИИ — сохраняется первым комментарием заявки.
+  const [summary, setSummary] = useState('')
+  const ai = useAI()
   const phoneRef = useRef(null)
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
 
@@ -109,10 +114,12 @@ function QuickLeadModal({ onClose }) {
     }
     try {
       const res = await api.post('leads/', payload)
+      if (summary.trim()) await api.post(`leads/${res.data.id}/comments/`, { text: summary.trim() }).catch(() => {})
       toast.success(t('Заявка сохранена'))
       window.dispatchEvent(new CustomEvent(LEAD_CREATED_EVENT))
       if (again) {
         setForm(f => ({ ...EMPTY, source: f.source }))
+        setSummary('')
         setMatches(null)
         phoneRef.current?.focus()
       } else {
@@ -147,28 +154,45 @@ function QuickLeadModal({ onClose }) {
       }
     >
       <form id="quick-lead-form" onSubmit={e => { e.preventDefault(); save(false) }} className="space-y-4">
+        {ai.enabled && (
+          <PasteMessage
+            onParsed={fields => {
+              // Заполняем только то, что ИИ нашёл, — уже введённое руками не затираем пустым.
+              setForm(f => ({
+                ...f,
+                phone: fields.phone || f.phone,
+                parent_name: fields.parent_name || f.parent_name,
+                child_name: fields.child_name || f.child_name,
+                child_age: fields.child_age ?? f.child_age,
+                direction: fields.direction || f.direction,
+                source: fields.source || f.source,
+              }))
+              if (fields.summary) setSummary(fields.summary)
+              if (fields.child_name || fields.child_age || fields.direction) setMore(true)
+            }}
+          />
+        )}
         <Field label={t('Телефон')} required error={fieldError('phone')}>
           {({ id, invalid }) => (
             <Input
               id={id}
               ref={phoneRef}
               invalid={invalid}
-              type="tel"
-              inputMode="tel"
               autoComplete="off"
-              placeholder="+7 700 000 00 00"
+              placeholder="77000000000"
               value={form.phone}
-              onChange={e => set('phone', e.target.value)}
+              onChange={e => set('phone', phoneDigits(e.target.value))}
               className="h-11 text-base"
               autoFocus
               required
+              {...phoneInputProps}
             />
           )}
         </Field>
         {shownMatches && (shownMatches.leads.length > 0 || shownMatches.parents.length > 0) && <PhoneMatches matches={shownMatches} onNavigate={onClose} />}
         <Field label={t('Имя родителя')} required error={fieldError('parent_name')}>
           {({ id, invalid }) => (
-            <Input id={id} invalid={invalid} value={form.parent_name} onChange={e => set('parent_name', e.target.value)} placeholder={t('Как обращаться')} className="h-11 text-base" required />
+            <Input id={id} invalid={invalid} value={form.parent_name} onChange={e => set('parent_name', personNameInput(e.target.value))} placeholder={t('Как обращаться')} className="h-11 text-base" required {...personNameInputProps} />
           )}
         </Field>
 
@@ -189,11 +213,17 @@ function QuickLeadModal({ onClose }) {
           </div>
         )}
 
+        {summary && (
+          <Field label={<span className="inline-flex items-center gap-2">{t('Комментарий')} <AIBadge /></span>}>
+            {({ id }) => <Textarea id={id} rows={2} value={summary} onChange={e => setSummary(e.target.value)} />}
+          </Field>
+        )}
+
         {more ? (
           <div className="space-y-4 border-t border-line pt-4">
             <div className="grid grid-cols-[1fr_96px] gap-3">
               <Field label={t('Имя ребёнка')} error={fieldError('child_name')}>
-                {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.child_name} onChange={e => set('child_name', e.target.value)} />}
+                {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.child_name} onChange={e => set('child_name', personNameInput(e.target.value))} {...personNameInputProps} />}
               </Field>
               <Field label={t('Возраст')} error={fieldError('child_age')}>
                 {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" inputMode="numeric" min={1} max={25} value={form.child_age} onChange={e => set('child_age', e.target.value)} />}
