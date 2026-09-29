@@ -9,6 +9,7 @@ import {
   PageHeader, SearchInput, ageLabel, formatDate, money, plural, useFilterDraft,
 } from '../ui'
 import { t } from '../i18n'
+import { RemindersButton } from '../components/ai/assist'
 
 // Всё состояние списка — в адресной строке: ссылку с фильтрами можно
 // переслать коллеге, «назад» из карточки возвращает туда же. Последние
@@ -181,6 +182,12 @@ export default function Children() {
         description={loading && !data.count ? t('Загрузка…') : `${countLabel}${hasAnyFilter ? ` ${t('по фильтрам')}` : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
         actions={canManage && (
           <>
+            {showMoney && (params.get('has_debt') || params.get('debt_overdue') || params.get('expiring')) && (
+              <RemindersButton
+                childIds={data.results.map(row => row.id)}
+                kind={params.get('has_debt') || params.get('debt_overdue') ? 'debt' : 'renewal'}
+              />
+            )}
             <Button icon={Upload} onClick={() => navigate('/children/import')}>{t('Импорт из Excel')}</Button>
             <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Добавить ребёнка')}</Button>
           </>

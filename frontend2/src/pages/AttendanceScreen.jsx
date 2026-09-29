@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Check, X, RotateCcw, AlertTriangle, MapPin, Clock, ChevronLeft, ChevronRight,
-  WifiOff, History, CalendarDays, Undo2,
+  WifiOff, History, CalendarDays, Undo2, Camera,
 } from 'lucide-react'
 import { addDays, localDatePart, localTimePart, toISODate } from '../utils/calendarDate'
+import AttendancePhoto from '../components/ai/AttendancePhoto'
+import { useAI } from '../components/ai/ai'
 import { fetchLessons } from '../api/lessons'
 import {
   fetchLesson, fetchAttendanceRoster, markAttendance, markAllPresent, resetAllAttendance, resetAttendance,
@@ -248,6 +250,8 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
   const [reasonPickerFor, setReasonPickerFor] = useState(null)
   const [savingIds, setSavingIds] = useState({})
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [photoOpen, setPhotoOpen] = useState(false) // ИИ: отметка по фото журнала (эксперимент)
+  const ai = useAI()
 
   const load = useCallback(() => {
     if (!lessonId) {
@@ -384,6 +388,7 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
         ].filter(Boolean).join(' · ')}
         actions={(
           <>
+            {ai.enabled && <Button icon={Camera} onClick={() => setPhotoOpen(true)}>По фото</Button>}
             <Button icon={Undo2} loading={bulkSaving} disabled={markedCount === 0} onClick={handleResetAll}>
               {t('Сбросить')}
             </Button>
@@ -416,6 +421,10 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
           />
         ))}
       </div>
+
+      {photoOpen && (
+        <AttendancePhoto lessonId={lessonId} onClose={() => setPhotoOpen(false)} onSaved={() => { setPhotoOpen(false); load() }} />
+      )}
 
       {isMobile && reasonPickerRow && (
         <AbsenceReasonSheet
