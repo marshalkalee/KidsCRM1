@@ -9,6 +9,7 @@ import {
   Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton,
   apiErrorMessage, formatDate, formatDateTime, money, useToast,
 } from '../../ui'
+import { t } from '../../i18n'
 
 const STATUS_TONE = { active: 'success', frozen: 'warning', expired: 'neutral', exhausted: 'danger' }
 
@@ -54,7 +55,7 @@ export default function SubscriptionsTab({ child, onCountChange }) {
   async function unfreeze(sub) {
     try {
       await unfreezeSubscription(sub.id)
-      toast.success('Абонемент разморожен')
+      toast.success(t('Абонемент разморожен'))
       load()
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -75,31 +76,31 @@ export default function SubscriptionsTab({ child, onCountChange }) {
             <Badge tone={STATUS_TONE[current.status]}>{current.status_display}</Badge>
           </div>
           <p className="text-[13px] text-ink-muted">
-            Осталось занятий: {current.sessions_remaining_cache ?? 'безлимит'} · до {formatDate(current.ends_on)}
+            {t('Осталось занятий:')} {current.sessions_remaining_cache ?? t('безлимит')} · {t('до {date}', { date: formatDate(current.ends_on) })}
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <Button variant="secondary" size="sm" icon={ListChecks} onClick={() => setLedgerFor(current)}>
-              Журнал списаний
+              {t('Журнал списаний')}
             </Button>
             {current.status === 'active' && (
               <Button variant="secondary" size="sm" icon={Snowflake} onClick={() => setFreezeFor(current)}>
-                Заморозить
+                {t('Заморозить')}
               </Button>
             )}
             {current.status === 'frozen' && (
-              <Button variant="secondary" size="sm" onClick={() => unfreeze(current)}>Разморозить</Button>
+              <Button variant="secondary" size="sm" onClick={() => unfreeze(current)}>{t('Разморозить')}</Button>
             )}
           </div>
         </Card>
       )}
 
       <Button variant="primary" size="sm" icon={PlusCircle} onClick={() => setSellOpen(true)}>
-        Продать абонемент
+        {t('Продать абонемент')}
       </Button>
 
-      <p className="font-semibold text-ink">История абонементов</p>
+      <p className="font-semibold text-ink">{t('История абонементов')}</p>
       {subscriptions.length === 0 ? (
-        <Card><EmptyState title="Абонементов ещё не было" /></Card>
+        <Card><EmptyState title={t('Абонементов ещё не было')} /></Card>
       ) : (
         <div className="space-y-2">
           {subscriptions.map(s => (
@@ -140,10 +141,10 @@ function LedgerModal({ subscription, onClose }) {
   }, [subscription.id])
 
   return (
-    <Modal open onClose={onClose} title="Из чего сложился остаток" description={subscription.subscription_type_name}>
+    <Modal open onClose={onClose} title={t('Из чего сложился остаток')} description={subscription.subscription_type_name}>
       {error && <ErrorState />}
       {!error && !entries && <Skeleton className="h-24" />}
-      {!error && entries && entries.length === 0 && <EmptyState title="Записей пока нет" />}
+      {!error && entries && entries.length === 0 && <EmptyState title={t('Записей пока нет')} />}
       {!error && entries && entries.length > 0 && (
         <div className="space-y-2">
           {entries.map(entry => (
@@ -169,36 +170,51 @@ function FreezeModal({ subscription, onClose, onDone }) {
   const [startsOn, setStartsOn] = useState('')
   const [endsOn, setEndsOn] = useState('')
   const [reason, setReason] = useState('')
+  const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
 
   async function submit(e) {
     e.preventDefault()
     if (submitting) return
     setSubmitting(true)
+    setErrors({})
     try {
       await freezeSubscription(subscription.id, { starts_on: startsOn, ends_on: endsOn, reason })
-      toast.success('Абонемент заморожен')
+      toast.success(t('Абонемент заморожен'))
       onDone()
     } catch (err) {
-      toast.error(apiErrorMessage(err))
+      const data = err.response?.data
+      if (data && typeof data === 'object' && !data.detail) setErrors(data)
+      else toast.error(apiErrorMessage(err))
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <Modal open onClose={onClose} title="Заморозить абонемент">
-      <form onSubmit={submit} className="space-y-3">
-        <Field label="Дата начала" required>
-          {({ id }) => <Input id={id} type="date" value={startsOn} onChange={e => setStartsOn(e.target.value)} required />}
+    <Modal
+      open
+      onClose={onClose}
+      title={t('Заморозить абонемент')}
+      footer={
+        <>
+          <Button onClick={onClose}>{t('Отмена')}</Button>
+          <Button variant="primary" type="submit" form="freeze-subscription-form" loading={submitting}>
+            {t('Заморозить')}
+          </Button>
+        </>
+      }
+    >
+      <form id="freeze-subscription-form" onSubmit={submit} className="flex flex-col gap-3.5">
+        <Field label={t('Дата начала')} required error={errors.starts_on}>
+          {({ id }) => <Input id={id} autoFocus type="date" value={startsOn} onChange={e => setStartsOn(e.target.value)} required />}
         </Field>
-        <Field label="Дата окончания" required>
+        <Field label={t('Дата окончания')} required error={errors.ends_on}>
           {({ id }) => <Input id={id} type="date" value={endsOn} onChange={e => setEndsOn(e.target.value)} required />}
         </Field>
-        <Field label="Причина">
+        <Field label={t('Причина')} error={errors.reason}>
           {({ id }) => <Input id={id} value={reason} onChange={e => setReason(e.target.value)} />}
         </Field>
-        <Button type="submit" variant="primary" loading={submitting}>Заморозить</Button>
       </form>
     </Modal>
   )
@@ -218,6 +234,7 @@ function SellModal({ child, onClose, onDone }) {
     starts_on: todayIso(),
     discount_amount: '', discount_reason: '', paid_amount: '', payment_method: 'kaspi_transfer',
   })
+  const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -234,7 +251,7 @@ function SellModal({ child, onClose, onDone }) {
         }))
         setLoaded(true)
       })
-      .catch(() => toast.error('Не удалось загрузить справочники'))
+      .catch(() => toast.error(t('Не удалось загрузить справочники')))
   }, [toast])
 
   useEffect(() => {
@@ -245,7 +262,7 @@ function SellModal({ child, onClose, onDone }) {
         setFirstLessonDate(startsAt)
         if (startsAt) setForm(f => ({ ...f, starts_on: startsAt.slice(0, 10) }))
       })
-      .catch(() => toast.error('Не удалось найти занятие'))
+      .catch(() => toast.error(t('Не удалось найти занятие')))
       .finally(() => setFirstLessonLoading(false))
   }, [startMode, form.direction_id, child.id, toast])
 
@@ -258,6 +275,7 @@ function SellModal({ child, onClose, onDone }) {
     e.preventDefault()
     if (submitting) return
     setSubmitting(true)
+    setErrors({})
     try {
       await sellSubscription({
         child_id: child.id,
@@ -270,36 +288,50 @@ function SellModal({ child, onClose, onDone }) {
         paid_amount: form.paid_amount,
         payment_method: form.payment_method,
       })
-      toast.success('Абонемент продан')
+      toast.success(t('Абонемент продан'))
       onDone()
     } catch (err) {
-      toast.error(apiErrorMessage(err))
+      const data = err.response?.data
+      if (data && typeof data === 'object' && !data.detail) setErrors(data)
+      else toast.error(apiErrorMessage(err))
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <Modal open onClose={onClose} title="Продать абонемент">
+    <Modal
+      open
+      onClose={onClose}
+      title={t('Продать абонемент')}
+      footer={
+        <>
+          <Button onClick={onClose}>{t('Отмена')}</Button>
+          <Button variant="primary" type="submit" form="sell-subscription-form" loading={submitting}>
+            {t('Продать')}
+          </Button>
+        </>
+      }
+    >
       {!loaded ? (
         <Skeleton className="h-40" />
       ) : (
-        <form onSubmit={submit} className="space-y-3">
-          <Field label="Тип абонемента" required>
+        <form id="sell-subscription-form" onSubmit={submit} className="flex flex-col gap-3.5">
+          <Field label={t('Тип абонемента')} required error={errors.subscription_type_id}>
             {({ id }) => (
-              <Select id={id} value={form.subscription_type_id} onChange={e => setForm({ ...form, subscription_type_id: e.target.value })}>
-                {types.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <Select id={id} autoFocus value={form.subscription_type_id} onChange={e => setForm({ ...form, subscription_type_id: e.target.value })}>
+                {types.map(tp => <option key={tp.id} value={tp.id}>{tp.name}</option>)}
               </Select>
             )}
           </Field>
-          <Field label="Филиал" required>
+          <Field label={t('Филиал')} required error={errors.branch_id}>
             {({ id }) => (
               <Select id={id} value={form.branch_id} onChange={e => setForm({ ...form, branch_id: e.target.value })}>
                 {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </Select>
             )}
           </Field>
-          <Field label="Направление" required>
+          <Field label={t('Направление')} required error={errors.direction_id}>
             {({ id }) => (
               <Select id={id} value={form.direction_id} onChange={e => setForm({ ...form, direction_id: e.target.value })}>
                 {directions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -308,19 +340,19 @@ function SellModal({ child, onClose, onDone }) {
           </Field>
 
           <div>
-            <p className="text-[13px] font-medium text-ink mb-1">Дата начала</p>
-            <div className="flex flex-col gap-1" role="radiogroup" aria-label="Дата начала">
+            <p className="mb-1 text-[13px] font-medium text-ink">{t('Дата начала')}</p>
+            <div className="flex flex-col gap-1" role="radiogroup" aria-label={t('Дата начала')}>
               <label className="flex items-center gap-2 text-[13px]">
                 <input type="radio" checked={startMode === 'today'} onChange={() => selectMode('today')} />
-                Сегодня
+                {t('Сегодня')}
               </label>
               <label className="flex items-center gap-2 text-[13px]">
                 <input type="radio" checked={startMode === 'specific'} onChange={() => selectMode('specific')} />
-                С конкретной даты
+                {t('С конкретной даты')}
               </label>
               <label className="flex items-center gap-2 text-[13px]">
                 <input type="radio" checked={startMode === 'first_lesson'} onChange={() => selectMode('first_lesson')} />
-                С первого занятия
+                {t('С первого занятия')}
               </label>
             </div>
             {startMode === 'specific' && (
@@ -332,36 +364,36 @@ function SellModal({ child, onClose, onDone }) {
               />
             )}
             {startMode === 'first_lesson' && (
-              <p className="text-[13px] text-ink-muted mt-2">
-                {firstLessonLoading && 'Ищем ближайшее занятие…'}
-                {!firstLessonLoading && firstLessonDate && `Первое занятие: ${formatDate(firstLessonDate)}`}
-                {!firstLessonLoading && !firstLessonDate && 'Занятий по этому направлению не найдено — выберите дату вручную'}
+              <p className="mt-2 text-[13px] text-ink-muted">
+                {firstLessonLoading && t('Ищем ближайшее занятие…')}
+                {!firstLessonLoading && firstLessonDate && t('Первое занятие: {date}', { date: formatDate(firstLessonDate) })}
+                {!firstLessonLoading && !firstLessonDate && t('Занятий по этому направлению не найдено — выберите дату вручную')}
               </p>
             )}
+            {errors.starts_on && <p className="mt-1 text-[13px] text-danger-600">{[].concat(errors.starts_on)[0]}</p>}
           </div>
 
-          <Field label="Скидка">
+          <Field label={t('Скидка')} error={errors.discount_amount}>
             {({ id }) => <Input id={id} type="number" value={form.discount_amount} onChange={e => setForm({ ...form, discount_amount: e.target.value })} />}
           </Field>
-          <Field label="Причина скидки">
+          <Field label={t('Причина скидки')} error={errors.discount_reason}>
             {({ id }) => (
               <Select id={id} value={form.discount_reason} onChange={e => setForm({ ...form, discount_reason: e.target.value })}>
-                <option value="">Без скидки</option>
-                {DISCOUNT_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                <option value="">{t('Без скидки')}</option>
+                {DISCOUNT_REASONS.map(r => <option key={r.value} value={r.value}>{t(r.label)}</option>)}
               </Select>
             )}
           </Field>
-          <Field label="Оплачено сейчас" required>
+          <Field label={t('Оплачено сейчас')} required error={errors.paid_amount}>
             {({ id }) => <Input id={id} type="number" value={form.paid_amount} onChange={e => setForm({ ...form, paid_amount: e.target.value })} required />}
           </Field>
-          <Field label="Способ оплаты">
+          <Field label={t('Способ оплаты')} error={errors.payment_method}>
             {({ id }) => (
               <Select id={id} value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}>
-                {METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                {METHODS.map(m => <option key={m.value} value={m.value}>{t(m.label)}</option>)}
               </Select>
             )}
           </Field>
-          <Button type="submit" variant="primary" loading={submitting}>Продать</Button>
         </form>
       )}
     </Modal>
