@@ -33,3 +33,9 @@ export function fetchNextLesson(childId, directionId) {
     .get('subscriptions/next_lesson/', { params: { child_id: childId, direction_id: directionId } })
     .then(r => r.data.starts_at)
 }
+
+
+export function fetchSubscriptionTypes(branchId) {
+  const params = branchId ? { branch: branchId } : {}
+  return api.get('subscriptions/types/', { params }).then(r => r.data)
+}
