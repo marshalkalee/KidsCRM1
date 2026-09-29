@@ -1,12 +1,35 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ListChecks, Snowflake } from 'lucide-react'
-import { fetchLedger, freezeSubscription, fetchChildSubscriptions, unfreezeSubscription } from '../../api/subscriptions'
+import { ListChecks, PlusCircle, Snowflake } from 'lucide-react'
+import { fetchBranches, fetchDirections } from '../../api/lessons'
 import {
-  Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Skeleton,
+  fetchChildSubscriptions, fetchLedger, fetchNextLesson, fetchSubscriptionTypes,
+  freezeSubscription, sellSubscription, unfreezeSubscription,
+} from '../../api/subscriptions'
+import {
+  Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton,
   apiErrorMessage, formatDate, formatDateTime, money, useToast,
 } from '../../ui'
 
 const STATUS_TONE = { active: 'success', frozen: 'warning', expired: 'neutral', exhausted: 'danger' }
+
+const METHODS = [
+  { value: 'kaspi_transfer', label: 'Kaspi-перевод' },
+  { value: 'cash', label: 'Наличные' },
+  { value: 'card', label: 'Карта' },
+  { value: 'other', label: 'Другое' },
+]
+
+const DISCOUNT_REASONS = [
+  { value: 'large_family', label: 'Многодетная семья' },
+  { value: 'second_child', label: 'Второй ребёнок' },
+  { value: 'promotion', label: 'Акция' },
+  { value: 'staff', label: 'Сотрудник' },
+  { value: 'other', label: 'Другое' },
+]
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
+}
 
 export default function SubscriptionsTab({ child, onCountChange }) {
   const toast = useToast()
@@ -14,6 +37,7 @@ export default function SubscriptionsTab({ child, onCountChange }) {
   const [error, setError] = useState(false)
   const [ledgerFor, setLedgerFor] = useState(null)
   const [freezeFor, setFreezeFor] = useState(null)
+  const [sellOpen, setSellOpen] = useState(false)
 
   const load = useCallback(() => {
     fetchChildSubscriptions(child.id)
@@ -69,6 +93,10 @@ export default function SubscriptionsTab({ child, onCountChange }) {
         </Card>
       )}
 
+      <Button variant="primary" size="sm" icon={PlusCircle} onClick={() => setSellOpen(true)}>
+        Продать абонемент
+      </Button>
+
       <p className="font-semibold text-ink">История абонементов</p>
       {subscriptions.length === 0 ? (
         <Card><EmptyState title="Абонементов ещё не было" /></Card>
@@ -95,6 +123,9 @@ export default function SubscriptionsTab({ child, onCountChange }) {
           onClose={() => setFreezeFor(null)}
           onDone={() => { setFreezeFor(null); load() }}
         />
+      )}
+      {sellOpen && (
+        <SellModal child={child} onClose={() => setSellOpen(false)} onDone={() => { setSellOpen(false); load() }} />
       )}
     </div>
   )
@@ -169,6 +200,170 @@ function FreezeModal({ subscription, onClose, onDone }) {
         </Field>
         <Button type="submit" variant="primary" loading={submitting}>Заморозить</Button>
       </form>
+    </Modal>
+  )
+}
+
+function SellModal({ child, onClose, onDone }) {
+  const toast = useToast()
+  const [loaded, setLoaded] = useState(false)
+  const [branches, setBranches] = useState([])
+  const [directions, setDirections] = useState([])
+  const [types, setTypes] = useState([])
+  const [startMode, setStartMode] = useState('today')
+  const [firstLessonDate, setFirstLessonDate] = useState(null)
+  const [firstLessonLoading, setFirstLessonLoading] = useState(false)
+  const [form, setForm] = useState({
+    branch_id: '', direction_id: '', subscription_type_id: '',
+    starts_on: todayIso(),
+    discount_amount: '', discount_reason: '', paid_amount: '', payment_method: 'kaspi_transfer',
+  })
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    Promise.all([fetchBranches(), fetchDirections(), fetchSubscriptionTypes()])
+      .then(([branchRows, directionRows, typeRows]) => {
+        setBranches(branchRows)
+        setDirections(directionRows)
+        setTypes(typeRows)
+        setForm(f => ({
+          ...f,
+          branch_id: branchRows[0]?.id || '',
+          direction_id: directionRows[0]?.id || '',
+          subscription_type_id: typeRows[0]?.id || '',
+        }))
+        setLoaded(true)
+      })
+      .catch(() => toast.error('Не удалось загрузить справочники'))
+  }, [toast])
+
+  useEffect(() => {
+    if (startMode !== 'first_lesson' || !form.direction_id) return
+    setFirstLessonLoading(true)
+    fetchNextLesson(child.id, form.direction_id)
+      .then(startsAt => {
+        setFirstLessonDate(startsAt)
+        if (startsAt) setForm(f => ({ ...f, starts_on: startsAt.slice(0, 10) }))
+      })
+      .catch(() => toast.error('Не удалось найти занятие'))
+      .finally(() => setFirstLessonLoading(false))
+  }, [startMode, form.direction_id, child.id, toast])
+
+  function selectMode(mode) {
+    setStartMode(mode)
+    if (mode === 'today') setForm(f => ({ ...f, starts_on: todayIso() }))
+  }
+
+  async function submit(e) {
+    e.preventDefault()
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      await sellSubscription({
+        child_id: child.id,
+        branch_id: form.branch_id,
+        direction_id: form.direction_id,
+        subscription_type_id: form.subscription_type_id,
+        starts_on: form.starts_on,
+        discount_amount: form.discount_amount || 0,
+        discount_reason: form.discount_reason,
+        paid_amount: form.paid_amount,
+        payment_method: form.payment_method,
+      })
+      toast.success('Абонемент продан')
+      onDone()
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Продать абонемент">
+      {!loaded ? (
+        <Skeleton className="h-40" />
+      ) : (
+        <form onSubmit={submit} className="space-y-3">
+          <Field label="Тип абонемента" required>
+            {({ id }) => (
+              <Select id={id} value={form.subscription_type_id} onChange={e => setForm({ ...form, subscription_type_id: e.target.value })}>
+                {types.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label="Филиал" required>
+            {({ id }) => (
+              <Select id={id} value={form.branch_id} onChange={e => setForm({ ...form, branch_id: e.target.value })}>
+                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label="Направление" required>
+            {({ id }) => (
+              <Select id={id} value={form.direction_id} onChange={e => setForm({ ...form, direction_id: e.target.value })}>
+                {directions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </Select>
+            )}
+          </Field>
+
+          <div>
+            <p className="text-[13px] font-medium text-ink mb-1">Дата начала</p>
+            <div className="flex flex-col gap-1" role="radiogroup" aria-label="Дата начала">
+              <label className="flex items-center gap-2 text-[13px]">
+                <input type="radio" checked={startMode === 'today'} onChange={() => selectMode('today')} />
+                Сегодня
+              </label>
+              <label className="flex items-center gap-2 text-[13px]">
+                <input type="radio" checked={startMode === 'specific'} onChange={() => selectMode('specific')} />
+                С конкретной даты
+              </label>
+              <label className="flex items-center gap-2 text-[13px]">
+                <input type="radio" checked={startMode === 'first_lesson'} onChange={() => selectMode('first_lesson')} />
+                С первого занятия
+              </label>
+            </div>
+            {startMode === 'specific' && (
+              <Input
+                type="date" className="mt-2"
+                value={form.starts_on}
+                onChange={e => setForm({ ...form, starts_on: e.target.value })}
+                required
+              />
+            )}
+            {startMode === 'first_lesson' && (
+              <p className="text-[13px] text-ink-muted mt-2">
+                {firstLessonLoading && 'Ищем ближайшее занятие…'}
+                {!firstLessonLoading && firstLessonDate && `Первое занятие: ${formatDate(firstLessonDate)}`}
+                {!firstLessonLoading && !firstLessonDate && 'Занятий по этому направлению не найдено — выберите дату вручную'}
+              </p>
+            )}
+          </div>
+
+          <Field label="Скидка">
+            {({ id }) => <Input id={id} type="number" value={form.discount_amount} onChange={e => setForm({ ...form, discount_amount: e.target.value })} />}
+          </Field>
+          <Field label="Причина скидки">
+            {({ id }) => (
+              <Select id={id} value={form.discount_reason} onChange={e => setForm({ ...form, discount_reason: e.target.value })}>
+                <option value="">Без скидки</option>
+                {DISCOUNT_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label="Оплачено сейчас" required>
+            {({ id }) => <Input id={id} type="number" value={form.paid_amount} onChange={e => setForm({ ...form, paid_amount: e.target.value })} required />}
+          </Field>
+          <Field label="Способ оплаты">
+            {({ id }) => (
+              <Select id={id} value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}>
+                {METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Button type="submit" variant="primary" loading={submitting}>Продать</Button>
+        </form>
+      )}
     </Modal>
   )
 }

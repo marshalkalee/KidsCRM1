@@ -48,7 +48,6 @@ class SellSubscriptionTests(TestCase):
             direction=self.ballet,
             branch=self.branch,
             starts_on=date.today(),
-            ends_on=date.today() + timedelta(days=30),
             paid_amount=25000,
             payment_method=Payment.Method.KASPI_TRANSFER,
         )

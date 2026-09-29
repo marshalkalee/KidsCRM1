@@ -241,7 +241,6 @@ class RenewalScreenServiceTests(TestCase):
             direction=self.ballet,
             branch=self.branch,
             starts_on=self.sub.ends_on,
-            ends_on=self.sub.ends_on + timedelta(days=30),
             paid_amount=30000,
             payment_method=Payment.Method.CASH,
         )

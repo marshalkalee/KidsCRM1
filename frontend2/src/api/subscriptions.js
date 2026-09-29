@@ -27,3 +27,9 @@ export function renewSubscription(subscriptionId, payload) {
 export function sellSubscription(payload) {
   return api.post('subscriptions/sell/', payload).then(r => r.data)
 }
+
+export function fetchNextLesson(childId, directionId) {
+  return api
+    .get('subscriptions/next_lesson/', { params: { child_id: childId, direction_id: directionId } })
+    .then(r => r.data.starts_at)
+}

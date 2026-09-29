@@ -85,7 +85,6 @@ class SubscriptionViewSet(
             direction=old.direction,
             branch=old.branch,
             starts_on=request.data["starts_on"],
-            ends_on=request.data["ends_on"],
             discount_amount=request.data.get("discount_amount", 0),
             discount_reason=request.data.get("discount_reason", ""),
             paid_amount=request.data["paid_amount"],
@@ -109,10 +108,29 @@ class SubscriptionViewSet(
             direction=direction,
             branch=branch,
             starts_on=request.data["starts_on"],
-            ends_on=request.data["ends_on"],
             discount_amount=request.data.get("discount_amount", 0),
             discount_reason=request.data.get("discount_reason", ""),
             paid_amount=request.data["paid_amount"],
             payment_method=request.data["payment_method"],
         )
         return Response(SubscriptionSerializer(new_sub).data, status=201)
+    @action(detail=False, methods=["get"])
+    def next_lesson(self, request):
+        from django.utils import timezone
+
+        from domains.scheduling.schedule.models import Lesson
+
+        child_id = request.query_params.get("child_id")
+        direction_id = request.query_params.get("direction_id")
+        lesson = (
+            Lesson.objects.for_tenant(request.user.organization)
+            .filter(
+                group__direction_id=direction_id,
+                group__memberships__child_id=child_id,
+                group__memberships__left_at__isnull=True,
+                starts_at__gte=timezone.now(),
+            )
+            .order_by("starts_at")
+            .first()
+        )
+        return Response({"starts_at": lesson.starts_at.isoformat() if lesson else None})

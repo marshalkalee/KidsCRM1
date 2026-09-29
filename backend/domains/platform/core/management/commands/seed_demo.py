@@ -452,7 +452,6 @@ class Command(BaseCommand):
                 direction=kid.demo_group.direction,
                 branch=kid.demo_group.branch,
                 starts_on=started,
-                ends_on=started + datetime.timedelta(days=version.duration_days),
                 paid_amount=paid.quantize(Decimal(1)),
                 payment_method=self.rng.choice(methods),
             )
