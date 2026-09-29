@@ -1055,5 +1055,22 @@
  "Не отменять": "Keep it",
  "Отменить оплату": "Cancel payment",
  "Например, ошиблись суммой": "For example, wrong amount",
- "Отменить": "Cancel"
+ "Отменить": "Cancel",
+ "Задолженности": "Debts",
+ "Плательщик не указан": "Payer not set",
+ "из {sum}": "of {sum}",
+ "Давность": "Age",
+ "Действия": "Actions",
+ "с долгом": "with debt",
+ "Скачать Excel": "Download Excel",
+ "Долг по выборке": "Debt in selection",
+ "Всего долгов": "Total debt",
+ "Просрочено — дольше {n} дн.": "Overdue — over {n} d.",
+ "{n} шт.": "{n} pcs.",
+ "Долгов нет": "No debts",
+ "Все абонементы оплачены полностью.": "All subscriptions are fully paid.",
+ "Напомнить в WhatsApp": "Remind via WhatsApp",
+ "Принять": "Accept",
+ "Только просроченные (дольше {n} дн.)": "Overdue only (over {n} d.)",
+ "plural:абонемент": ["subscription", "subscriptions"]
 }

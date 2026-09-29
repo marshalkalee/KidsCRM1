@@ -13,13 +13,14 @@ payments/debt.py (TRU-66) считается устаревшим — испол
 использовался ни одним реальным экраном. Не импортировать оттуда.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 from django.db.models import F, Q, Sum
 from django.db.models.functions import Coalesce
 
 from domains.money.payments.models import Payment
+from domains.platform.core.utils import today_for_org
 
 from .models import Subscription
 
@@ -95,7 +96,7 @@ def debtor_subscriptions(organization, *, branch=None, direction=None, min_age_d
     if direction:
         qs = qs.filter(direction=direction)
     if min_age_days is not None:
-        cutoff = date.today() - timedelta(days=min_age_days)
+        cutoff = today_for_org(organization) - timedelta(days=min_age_days)
         qs = qs.filter(starts_on__lte=cutoff)
     return qs
 
@@ -103,4 +104,4 @@ def debtor_subscriptions(organization, *, branch=None, direction=None, min_age_d
 def debt_age_days(subscription: Subscription) -> int:
     """Давность — от даты продажи (starts_on): отдельного поля 'плановая
     дата оплаты' в модели нет. Появится — поправить только здесь."""
-    return (date.today() - subscription.starts_on).days
+    return (today_for_org(subscription.organization) - subscription.starts_on).days
