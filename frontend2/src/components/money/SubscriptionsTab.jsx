@@ -11,7 +11,8 @@ import {
 } from '../../ui'
 import { t } from '../../i18n'
 
-const STATUS_TONE = { active: 'success', frozen: 'warning', expired: 'neutral', exhausted: 'danger' }
+// display_status: статус или «заканчивается» (TRU-62) — тот же расчёт, что у списка детей и продлений.
+const STATUS_TONE = { active: 'success', ending_soon: 'warning', frozen: 'info', expired: 'neutral', exhausted: 'danger' }
 
 const METHODS = [
   { value: 'kaspi_transfer', label: 'Kaspi-перевод' },
@@ -73,7 +74,7 @@ export default function SubscriptionsTab({ child, onCountChange }) {
         <Card className="space-y-2">
           <div className="flex items-center justify-between">
             <p className="font-semibold text-ink">{current.subscription_type_name}</p>
-            <Badge tone={STATUS_TONE[current.status]}>{current.status_display}</Badge>
+            <Badge tone={STATUS_TONE[current.display_status]}>{t(current.display_status_label)}</Badge>
           </div>
           <p className="text-[13px] text-ink-muted">
             {t('Осталось занятий:')} {current.sessions_remaining_cache ?? t('безлимит')} · {t('до {date}', { date: formatDate(current.ends_on) })}
@@ -111,7 +112,7 @@ export default function SubscriptionsTab({ child, onCountChange }) {
                   {formatDate(s.starts_on)} — {formatDate(s.ends_on)} · {money(s.price)}
                 </p>
               </div>
-              <Badge tone={STATUS_TONE[s.status]}>{s.status_display}</Badge>
+              <Badge tone={STATUS_TONE[s.display_status]}>{t(s.display_status_label)}</Badge>
             </Card>
           ))}
         </div>

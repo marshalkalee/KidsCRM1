@@ -29,6 +29,7 @@ class SubscriptionViewSet(
 
     def get_queryset(self):
         qs = Subscription.objects.for_tenant(self.request.user.organization).select_related(
+            "organization",
             "subscription_type_version",
             "direction",
             "branch",

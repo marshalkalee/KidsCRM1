@@ -1017,5 +1017,9 @@
  "Текст для {name}": "Text for {name}",
  "Цель": "Goal",
  "нет плательщика": "no payer",
- "свободно: {count}": "free: {count}"
+ "свободно: {count}": "free: {count}",
+ "Заканчивается": "Ending soon",
+ "Истёк": "Expired",
+ "Заморожен": "Frozen",
+ "Исчерпан": "Used up"
 }

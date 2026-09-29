@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import Subscription, SubscriptionFreeze, SubscriptionLedgerEntry
+from .statuses import DISPLAY_LABELS, get_display_status
 
 
 class SubscriptionSerializer(serializers.ModelSerializer):
@@ -10,6 +11,10 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     direction_name = serializers.CharField(source="direction.name", read_only=True)
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    # «Заканчивается» — не статус в базе, а расчёт (TRU-62); тот же, что у
+    # фильтра списка детей и экрана «Продления».
+    display_status = serializers.SerializerMethodField()
+    display_status_label = serializers.SerializerMethodField()
 
     class Meta:
         model = Subscription
@@ -23,6 +28,8 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "ends_on",
             "status",
             "status_display",
+            "display_status",
+            "display_status_label",
             "sessions_remaining_cache",
             "list_price",
             "discount_amount",
@@ -30,6 +37,12 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "price",
             "renewed_from",
         ]
+
+    def get_display_status(self, obj):
+        return get_display_status(obj)
+
+    def get_display_status_label(self, obj):
+        return DISPLAY_LABELS[get_display_status(obj)]
 
 
 class SubscriptionLedgerEntrySerializer(serializers.ModelSerializer):
