@@ -53,7 +53,15 @@ def create_lead(*, organization, actor, **fields) -> Lead:
 
 
 @transaction.atomic
-def change_status(lead, *, to_status, actor, rejection_reason=None, comment="") -> Lead:
+def change_status(
+    lead,
+    *,
+    to_status,
+    actor,
+    rejection_reason=None,
+    comment="",
+    is_automatic=False,
+) -> Lead:
     # Блокировка строки: два администратора одновременно тянут карточку на
     # доске — второй увидит уже новый статус, а не перезапишет его.
     lead = Lead.objects.select_for_update().get(pk=lead.pk)
@@ -86,6 +94,7 @@ def change_status(lead, *, to_status, actor, rejection_reason=None, comment="") 
         to_status=to_status,
         changed_by=actor,
         changed_at=now,
+        is_automatic=is_automatic,
         rejection_reason=rejection_reason,
         comment=comment,
     )
@@ -141,14 +150,51 @@ def mark_trial_attended(*, organization, lesson, child, actor) -> bool:
 
     local_start = timezone.localtime(lesson.starts_at)
     lesson_name = lesson.group.name if lesson.group_id else "Индивидуальное занятие"
+    actor_note = f" Отметку поставил: {actor.full_name}." if actor else ""
     change_status(
         lead,
         to_status=Lead.Status.TRIAL_ATTENDED,
-        actor=actor,
+        actor=None,
+        is_automatic=True,
         comment=(
-            "Посещение пробного занятия отмечено: " f"{lesson_name}, {local_start:%d.%m.%Y %H:%M}."
+            "Автоматически по отметке посещаемости: "
+            f"{lesson_name}, {local_start:%d.%m.%Y %H:%M}.{actor_note}"
         ),
     )
+    return True
+
+
+@transaction.atomic
+def create_trial_no_show_follow_up(*, organization, lesson, child, attendance) -> bool:
+    """Поставить ответственному задачу после неявки на пробное.
+
+    Задача создаётся только пока заявка действительно находится на этапе
+    «Записан на пробное». Более поздний ручной статус (включая покупку)
+    не меняется и не порождает запоздалый звонок.
+    """
+    from domains.platform.tasks.services import create_trial_no_show_task
+    from domains.scheduling.schedule.models import LessonEnrollment
+
+    lead_id = (
+        LessonEnrollment.objects.for_tenant(organization)
+        .filter(
+            lesson=lesson,
+            child=child,
+            kind=LessonEnrollment.Kind.TRIAL,
+            source_lead__isnull=False,
+            cancelled_at__isnull=True,
+        )
+        .values_list("source_lead_id", flat=True)
+        .first()
+    )
+    if lead_id is None:
+        return False
+
+    lead = Lead.objects.select_for_update().get(pk=lead_id, organization=organization)
+    if lead.status != Lead.Status.TRIAL_SCHEDULED:
+        return False
+
+    create_trial_no_show_task(lead=lead, lesson=lesson, attendance=attendance)
     return True
 
 

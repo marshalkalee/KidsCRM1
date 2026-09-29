@@ -358,6 +358,7 @@ class LeadStatusChangeSerializer(serializers.ModelSerializer):
             "changed_by",
             "changed_by_name",
             "changed_at",
+            "is_automatic",
             "rejection_reason",
             "rejection_reason_name",
             "comment",

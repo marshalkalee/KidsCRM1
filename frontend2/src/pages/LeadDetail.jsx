@@ -465,7 +465,11 @@ function HistoryCard({ history }) {
                 </p>
                 <p className="text-xs text-ink-subtle">
                   {formatDateTime(change.changed_at)}
-                  {change.changed_by_name ? ` · ${change.changed_by_name}` : ` · ${t('система')}`}
+                  {change.is_automatic
+                    ? ` · ${t('Автоматически')}`
+                    : change.changed_by_name
+                      ? ` · ${change.changed_by_name}`
+                      : ` · ${t('система')}`}
                 </p>
                 {change.rejection_reason_name && <p className="mt-0.5 text-xs text-danger-600">{t('Причина')}: {t(change.rejection_reason_name)}{change.comment && ` — ${change.comment}`}</p>}
                 {!change.rejection_reason_name && change.comment && <p className="mt-0.5 text-xs text-ink-muted">{change.comment}</p>}
