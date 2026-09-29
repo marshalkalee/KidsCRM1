@@ -77,19 +77,22 @@ class SubscriptionViewSet(
         ).get(
             pk=request.data["subscription_type_id"],
         )
-        new_sub, _payment = sell_renewal(
-            old,
-            actor=request.user,
-            child=old.child,
-            subscription_type_version=subscription_type.versions.latest(),
-            direction=old.direction,
-            branch=old.branch,
-            starts_on=request.data["starts_on"],
-            discount_amount=request.data.get("discount_amount", 0),
-            discount_reason=request.data.get("discount_reason", ""),
-            paid_amount=request.data["paid_amount"],
-            payment_method=request.data["payment_method"],
-        )
+        try:
+            new_sub, _payment = sell_renewal(
+                old,
+                actor=request.user,
+                child=old.child,
+                subscription_type_version=subscription_type.versions.latest(),
+                direction=old.direction,
+                branch=old.branch,
+                starts_on=request.data["starts_on"],
+                discount_amount=request.data.get("discount_amount", 0),
+                discount_reason=request.data.get("discount_reason", ""),
+                paid_amount=request.data["paid_amount"],
+                payment_method=request.data["payment_method"],
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
         return Response(SubscriptionSerializer(new_sub).data, status=201)
 
     @action(detail=False, methods=["post"])
@@ -101,19 +104,23 @@ class SubscriptionViewSet(
         )
         branch = Branch.objects.for_tenant(organization).get(pk=request.data["branch_id"])
         direction = Direction.objects.for_tenant(organization).get(pk=request.data["direction_id"])
-        new_sub, _payment = sell_subscription(
-            actor=request.user,
-            child=child,
-            subscription_type_version=subscription_type.versions.latest(),
-            direction=direction,
-            branch=branch,
-            starts_on=request.data["starts_on"],
-            discount_amount=request.data.get("discount_amount", 0),
-            discount_reason=request.data.get("discount_reason", ""),
-            paid_amount=request.data["paid_amount"],
-            payment_method=request.data["payment_method"],
-        )
+        try:
+            new_sub, _payment = sell_subscription(
+                actor=request.user,
+                child=child,
+                subscription_type_version=subscription_type.versions.latest(),
+                direction=direction,
+                branch=branch,
+                starts_on=request.data["starts_on"],
+                discount_amount=request.data.get("discount_amount", 0),
+                discount_reason=request.data.get("discount_reason", ""),
+                paid_amount=request.data["paid_amount"],
+                payment_method=request.data["payment_method"],
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
         return Response(SubscriptionSerializer(new_sub).data, status=201)
+
     @action(detail=False, methods=["get"])
     def next_lesson(self, request):
         from django.utils import timezone

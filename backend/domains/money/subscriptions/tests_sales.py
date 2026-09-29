@@ -1,6 +1,7 @@
-from datetime import date, timedelta
+from datetime import date
 
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from domains.money.payments.models import Payment
 from domains.people.clients.models import Child
@@ -78,3 +79,22 @@ class SellSubscriptionTests(TestCase):
         self.assertIsNotNone(log)
         self.assertEqual(log.action, AuditLog.Action.CREATE)
         self.assertIn("discount_reason", log.after)
+
+    def test_discount_without_reason_returns_400_not_500(self):
+        client = APIClient()
+        client.force_authenticate(user=self.admin)
+        response = client.post(
+            "/api/v1/subscriptions/sell/",
+            {
+                "child_id": self.child.id,
+                "subscription_type_id": self.st.id,
+                "branch_id": self.branch.id,
+                "direction_id": self.ballet.id,
+                "starts_on": date.today().isoformat(),
+                "discount_amount": 2000,
+                "discount_reason": "",
+                "paid_amount": 23000,
+                "payment_method": "cash",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
