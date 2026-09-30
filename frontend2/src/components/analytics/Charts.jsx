@@ -167,3 +167,49 @@ export function DonutChart({ items, unit, colors = PALETTE, centerLabel }) {
     </div>
   )
 }
+
+/**
+ * Столбцы по месяцам, сложенные из частей: заявки по источникам. rows —
+ * [{ month, key, label, value }], серий не больше top — остальное в «Другие».
+ */
+export function StackedBars({ rows, top = 5, unit = 'count' }) {
+  const totals = {}
+  rows.forEach(r => { totals[r.key] = (totals[r.key] || 0) + r.value })
+  const leaders = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, top).map(([key]) => key)
+  const names = {}
+  const byMonth = {}
+  rows.forEach(r => {
+    const key = leaders.includes(r.key) ? r.key : '__other'
+    names[key] = key === '__other' ? t('Другие') : breakdownLabel(r)
+    byMonth[r.month] = byMonth[r.month] || { date: r.month }
+    byMonth[r.month][key] = (byMonth[r.month][key] || 0) + r.value
+  })
+  const keys = [...leaders, ...(names.__other ? ['__other'] : [])]
+  const data = Object.values(byMonth).sort((a, b) => a.date.localeCompare(b.date))
+  const tooltipRows = keys.map(key => ({ key, label: names[key], unit }))
+  return (
+    <div className="flex h-full flex-col">
+      <div className="min-h-0 flex-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke="var(--color-line)" />
+            {xAxis('month')}
+            <YAxis tick={AXIS} tickLine={false} axisLine={false} width={40} tickFormatter={v => formatAxis(v, unit)} />
+            <Tooltip cursor={{ fill: 'var(--color-surface-muted)' }} content={<ChartTooltip granularity="month" rows={tooltipRows} />} />
+            {keys.map((key, i) => (
+              <Bar key={key} dataKey={key} stackId="s" fill={key === '__other' ? 'var(--color-ink-subtle)' : PALETTE[i % PALETTE.length]} maxBarSize={48} animationDuration={600} />
+            ))}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
+        {keys.map((key, i) => (
+          <span key={key} className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm" style={{ background: key === '__other' ? 'var(--color-ink-subtle)' : PALETTE[i % PALETTE.length] }} />
+            {names[key]}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}

@@ -147,3 +147,38 @@ export function RankBars({ items, unit, color = PALETTE[0], limit = 8, showShare
     </ol>
   )
 }
+
+/**
+ * Качество источников (TRU-116): светлая полоса — заявки, яркая внутри —
+ * сколько из них купили; справа конверсия. Малая выборка помечена, чтобы
+ * канал не закрыли по трём заявкам.
+ * items: [{ key, label, leads, purchased, conversion, small_sample }]
+ */
+export function QualityBars({ items, limit = 10 }) {
+  const rows = (items || []).slice(0, limit)
+  const max = Math.max(...rows.map(r => r.leads), 1)
+  return (
+    <ol className="space-y-3">
+      {rows.map(row => (
+        <li key={row.key ?? 'none'}>
+          <div className="mb-1 flex items-baseline justify-between gap-3 text-[13px]">
+            <span className="flex min-w-0 items-center gap-2 truncate text-ink">
+              {breakdownLabel(row)}
+              {row.small_sample && (
+                <span className="shrink-0 rounded-full bg-warning-50 px-1.5 text-[10px] font-semibold text-warning-600">{t('мало данных')}</span>
+              )}
+            </span>
+            <span className="shrink-0 text-xs text-ink-subtle">
+              {t('{leads} заявок → {bought} купили', { leads: formatValue(row.leads, 'count'), bought: formatValue(row.purchased, 'count') })}
+              <span className={cn('ml-2 font-bold', row.small_sample ? 'text-ink-subtle' : 'text-ink')}>{formatValue(row.conversion, 'percent')}</span>
+            </span>
+          </div>
+          <div className="relative h-3 overflow-hidden rounded-full bg-surface-muted">
+            <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${(row.leads / max) * 100}%`, background: PALETTE[0], opacity: 0.25 }} />
+            <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${(row.purchased / max) * 100}%`, background: PALETTE[0] }} />
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}

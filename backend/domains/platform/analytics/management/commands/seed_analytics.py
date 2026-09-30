@@ -379,6 +379,12 @@ class Command(BaseCommand):
                 )
                 previous = status
                 moment += timedelta(days=random.randint(1, 6))
+        # Купившим — проданный абонемент, как при продаже из заявки (#104):
+        # по нему считается средний чек источника (TRU-116).
+        sold = list(Subscription.objects.for_tenant(organization).only("id", "price")[:2000])
+        for lead in leads:
+            if lead.status == S.PURCHASED and sold:
+                lead.sold_subscription = random.choice(sold)
         Lead.objects.bulk_create(leads, batch_size=BATCH)
         LeadStatusChange.objects.bulk_create(changes, batch_size=BATCH)
         self.stdout.write(f"  заявок {len(leads)}")
