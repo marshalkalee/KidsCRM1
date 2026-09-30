@@ -106,6 +106,7 @@ export default function LeadDetail() {
     try {
       const res = await api.post(`leads/${lead.id}/status/`, { status: to, ...extra })
       setLead(res.data)
+      if (to === 'trial_attended' && !res.data.converted_child) setConverting(true)
       loadExtras()
       toast.success(t('Статус: {status}', { status: LEAD_STATUS[to].label }))
     } catch (err) {
