@@ -7,6 +7,8 @@
 
 from decimal import Decimal
 
+from django.db.models import Case, CharField, Value, When
+
 from domains.money.payments.models import Payment
 from domains.money.subscriptions.debt import debt_total
 from domains.platform.leads.models import Lead, LeadKind
@@ -21,6 +23,20 @@ from .registry import EventMetric, RatioMetric, SnapshotMetric, count, register,
 FOUR_WEEKS = 28
 
 VISITED = [Attendance.Status.PRESENT, Attendance.Status.MAKEUP]
+
+# Деньги от новых клиентов или от продлений: абонемент, проданный как
+# продление (renewed_from), — продление (TRU-123, структура выручки).
+CLIENT_KIND = Case(
+    When(subscription__renewed_from__isnull=False, then=Value("renewal")),
+    default=Value("new"),
+    output_field=CharField(),
+)
+LESSON_DIMENSIONS = {
+    "branch": "lesson__group__branch_id",
+    "direction": "lesson__group__direction_id",
+    "group": "lesson__group_id",
+    "teacher": "lesson__teacher_id",
+}
 
 
 def confirmed_payments(scope):
@@ -42,6 +58,10 @@ def attendance_marks(scope):
 
 def visits(scope):
     return attendance_marks(scope).filter(status__in=VISITED)
+
+
+def absences(scope):
+    return attendance_marks(scope).filter(status=Attendance.Status.ABSENT)
 
 
 def new_leads(scope):
@@ -85,6 +105,8 @@ register(
             "method": "method",
             "branch": "subscription__branch_id",
             "direction": "subscription__direction_id",
+            "subscription_type": "subscription__subscription_type_version__subscription_type_id",
+            "client": CLIENT_KIND,
         },
     )
 )
@@ -122,10 +144,7 @@ register(
         queryset=visits,
         date_field="lesson__starts_at",
         aggregate=count(),
-        breakdowns={
-            "branch": "lesson__group__branch_id",
-            "direction": "lesson__group__direction_id",
-        },
+        breakdowns=LESSON_DIMENSIONS,
     )
 )
 register(
@@ -138,7 +157,20 @@ register(
         queryset=attendance_marks,
         date_field="lesson__starts_at",
         aggregate=count(),
-        breakdowns={"status": "status", "branch": "lesson__group__branch_id"},
+        breakdowns={"status": "status", **LESSON_DIMENSIONS},
+    )
+)
+register(
+    EventMetric(
+        name="absences",
+        label="Пропусков",
+        unit="count",
+        source="Посещаемость: «не был», по дате занятия",
+        min_history_days=FOUR_WEEKS,
+        queryset=absences,
+        date_field="lesson__starts_at",
+        aggregate=count(),
+        breakdowns={"reason": "absence_reason", **LESSON_DIMENSIONS},
     )
 )
 register(

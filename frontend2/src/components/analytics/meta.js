@@ -1,4 +1,4 @@
-import { Banknote, CalendarCheck, Inbox, Percent, Receipt, UsersRound, Wallet, Baby } from 'lucide-react'
+import { Banknote, CalendarCheck, CalendarX, Inbox, Percent, Receipt, UsersRound, Wallet, Baby } from 'lucide-react'
 import { t } from '../../i18n'
 
 /**
@@ -17,6 +17,7 @@ export const METRIC_META = {
   attendance_rate: { get label() { return t('Доля посещений') }, icon: Percent },
   active_children: { get label() { return t('Ходили на занятия') }, icon: Baby },
   new_leads: { get label() { return t('Новых заявок') }, icon: Inbox },
+  absences: { get label() { return t('Пропусков') }, icon: CalendarX, goodWhenDown: true },
   group_fill: { get label() { return t('Заполняемость групп') }, icon: UsersRound },
 }
 
@@ -47,9 +48,21 @@ const KEY_LABELS = {
   present: () => t('Был'),
   absent: () => t('Не был'),
   makeup: () => t('Отработка'),
+  illness: () => t('Болезнь'),
+  family: () => t('Семейные обстоятельства'),
+  no_reason: () => t('Без причины'),
+  new: () => t('Новые клиенты'),
+  renewal: () => t('Продления'),
 }
 
 export function breakdownLabel(item) {
   if (item.key == null) return t('Не указан')
   return KEY_LABELS[item.key]?.() || item.label || item.key
 }
+
+// Отчёты раздела «Аналитика». Новый отчёт M3 — строка здесь и маршрут в App.jsx.
+export const REPORTS = [
+  { key: '/analytics', get label() { return t('Обзор') } },
+  { key: '/analytics/revenue', get label() { return t('Выручка') } },
+  { key: '/analytics/attendance', get label() { return t('Посещаемость') } },
+]

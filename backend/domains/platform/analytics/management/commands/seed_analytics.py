@@ -84,9 +84,9 @@ class Command(BaseCommand):
             name=f"{organization.name} (архив {stamp})",
             deleted_at=datetime.now(pytz.utc),
         )
-        get_user_model().objects.filter(organization=organization).update(
-            phone=f"arch{stamp}", is_active=False
-        )
+        for index, user in enumerate(get_user_model().objects.filter(organization=organization)):
+            user.phone, user.is_active = f"a{stamp}{index:03d}", False
+            user.save(update_fields=["phone", "is_active"])
 
     def _owner(self, organization):
         User = get_user_model()
@@ -97,6 +97,17 @@ class Command(BaseCommand):
             organization=organization,
             role=User.Role.OWNER,
         )
+        # Преподаватели — для разрезов «по преподавателю» (TRU-120/121).
+        self.teachers = [
+            User.objects.create_user(
+                phone=f"+7700999{1000 + i}",
+                password=None,
+                full_name=f"Преподаватель {i + 1:02d}",
+                organization=organization,
+                role=User.Role.TEACHER,
+            )
+            for i in range(25)
+        ]
         return owner
 
     def _catalog(self, organization):
@@ -173,6 +184,7 @@ class Command(BaseCommand):
         total_marks = 0
         for group in groups:
             weekdays = random.sample(range(6), 2)
+            teacher = random.choice(self.teachers)
             hour = random.choice([10, 15, 16, 17, 18])
             day = self.first_day
             while day <= self.today:
@@ -183,6 +195,8 @@ class Command(BaseCommand):
                         id=uuid.uuid4(),
                         organization=organization,
                         group=group,
+                        # Иногда замена — чтобы у преподавателя были и чужие группы.
+                        teacher=teacher if random.random() > 0.05 else random.choice(self.teachers),
                         starts_at=starts,
                         ends_at=starts + timedelta(hours=1),
                         status=Lesson.Status.CANCELLED if cancelled else Lesson.Status.COMPLETED,
@@ -206,6 +220,14 @@ class Command(BaseCommand):
                                         lesson=lesson,
                                         child_id=child_id,
                                         status=status,
+                                        absence_reason=(
+                                            random.choices(
+                                                ["illness", "family", "no_reason", ""],
+                                                weights=[50, 20, 15, 15],
+                                            )[0]
+                                            if status == Attendance.Status.ABSENT
+                                            else ""
+                                        ),
                                         marked_at=starts,
                                     )
                                 )
@@ -222,16 +244,24 @@ class Command(BaseCommand):
 
     def _subscriptions_and_payments(self, organization, owner, version, groups):
         subscriptions, payments = [], []
+        bigger = create_type(
+            organization, name="12 занятий", price=40000, quota_sessions=12, duration_days=30
+        ).versions.latest()
         for group in groups:
             for child_id, joined, left in self.members[group.id]:
                 start = joined
+                previous = None
+                chosen = version if random.random() < 0.7 else bigger
                 end_of_membership = left or self.today
                 while start <= end_of_membership:
                     subscription = Subscription(
                         id=uuid.uuid4(),
                         organization=organization,
                         child_id=child_id,
-                        subscription_type_version=version,
+                        subscription_type_version=chosen,
+                        # Цепочка «продлил → следующий абонемент» — для разреза
+                        # «новые клиенты / продления» (TRU-123).
+                        renewed_from=previous,
                         direction_id=group.direction_id,
                         branch_id=group.branch_id,
                         starts_on=start,
@@ -241,13 +271,15 @@ class Command(BaseCommand):
                             if start + timedelta(days=30) >= self.today
                             else Subscription.Status.EXPIRED
                         ),
-                        list_price=30000,
-                        price=30000,
+                        list_price=chosen.price,
+                        price=chosen.price,
                     )
+                    previous = subscription
                     subscriptions.append(subscription)
                     # 85% платят полностью, остальные частично или позже.
                     roll = random.random()
-                    amounts = [30000] if roll < 0.85 else [15000] if roll < 0.95 else []
+                    full = int(chosen.price)
+                    amounts = [full] if roll < 0.85 else [full // 2] if roll < 0.95 else []
                     for amount in amounts:
                         paid_day = start + timedelta(days=random.randint(0, 3))
                         payments.append(

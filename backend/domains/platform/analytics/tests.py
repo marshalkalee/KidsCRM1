@@ -306,6 +306,53 @@ class ApiTests(AnalyticsFixtures):
         bad = self.client.get("/api/v1/analytics/breakdown/", {"metric": "revenue", "by": "hour"})
         self.assertEqual(bad.status_code, 400)
 
+    def test_revenue_new_clients_and_renewals(self):
+        first = self.subscription(self.abaya)
+        renewal = self.subscription(self.abaya, child=first.child)
+        Subscription.objects.filter(pk=renewal.pk).update(renewed_from=first)
+        self.pay(renewal, 30000)
+        self.client.force_authenticate(self.owner)
+        items = self.client.get(
+            "/api/v1/analytics/breakdown/", {"metric": "revenue", "by": "client"}
+        ).data["items"]
+        self.assertEqual(
+            {i["key"]: i["value"] for i in items}, {"new": "45000", "renewal": "30000"}
+        )
+
+    def test_absence_reasons_and_teachers(self):
+        teacher = self.user("+77010000005", User.Role.TEACHER)
+        group = Group.objects.create(
+            organization=self.org, branch=self.abaya, direction=self.ballet, name="Г", capacity=5
+        )
+        start = self.tz.localize(datetime.combine(self.today, time(10)))
+        lesson = Lesson.objects.create(
+            organization=self.org,
+            group=group,
+            teacher=teacher,
+            starts_at=start,
+            ends_at=start + timedelta(hours=1),
+        )
+        for reason in ["illness", "illness", ""]:
+            Attendance.objects.create(
+                organization=self.org,
+                lesson=lesson,
+                child=self.child(),
+                status="absent",
+                absence_reason=reason,
+            )
+        self.client.force_authenticate(self.owner)
+        get = lambda metric, by: self.client.get(  # noqa: E731
+            "/api/v1/analytics/breakdown/", {"metric": metric, "by": by}
+        ).data["items"]
+        self.assertEqual(
+            [(i["key"], i["label"], i["value"]) for i in get("absences", "reason")],
+            [("illness", "Болезнь", 2), (None, None, 1)],
+        )
+        self.assertEqual(
+            [(i["label"], i["value"]) for i in get("attendance_marks", "teacher")],
+            [("+77010000005", 3)],
+        )
+
     def test_manager_breakdown_only_own_branch(self):
         manager = self.user("+77010000002", User.Role.MANAGER, [self.abaya])
         self.client.force_authenticate(manager)
