@@ -1445,5 +1445,20 @@
  "Содержательных отказов нет": "No substantive rejections",
  "Что говорили своими словами — свежие сверху": "What people said in their own words — newest first",
  "Показать ещё ({n})": "Show more ({n})",
- "Нет данных": "No data"
+ "Нет данных": "No data",
+ "«отн.» — честно сравнивать между филиалами разного размера. Ребёнок — ходил на занятия в периоде.": "\"rel.\" — fair to compare between branches of different size. A child is one who attended classes in the period.",
+ "В выборке один филиал — сравнивать не с чем. Ниже его показатели.": "Only one branch selected — nothing to compare. Its figures are below.",
+ "Всего": "Total",
+ "Выручка на ребёнка": "Revenue per child",
+ "Где точка работает хорошо, где проседает": "Where a branch performs well and where it lags",
+ "Динамика по филиалам": "Trend by branch",
+ "Для сети из нескольких филиалов: таблица филиалов по всем метрикам и их динамика.": "For multi-branch networks: all branches across all metrics and their trends.",
+ "Долг на ребёнка": "Debt per child",
+ "Конверсия заявок": "Lead conversion",
+ "Метрика": "Metric",
+ "Одна метрика — линия на каждый филиал": "One metric — a line per branch",
+ "отн.": "rel.",
+ "Сравнение филиалов — в тарифе Network": "Branch comparison is in the Network plan",
+ "Филиалов нет.": "No branches.",
+ "Что сравнить": "What to compare"
 }
