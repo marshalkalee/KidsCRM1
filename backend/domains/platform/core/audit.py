@@ -23,6 +23,8 @@ class AuditLog(UUIDPrimaryKeyModel):
         MARK_ATTENDANCE = "mark_attendance", "Отметка посещаемости"
         ENROLL = "enroll", "Запись на занятие поверх группы"
         UNENROLL = "unenroll", "Отмена записи поверх группы"
+        IMPORT = "import", "Импорт"
+        IMPORT_ROLLBACK = "import_rollback", "Откат импорта"
 
     organization = models.ForeignKey(
         "tenants.Organization",
