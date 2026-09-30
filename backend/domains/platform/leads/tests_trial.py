@@ -182,6 +182,72 @@ class TrialBookingApiTests(TestCase):
             1,
         )
 
+    def test_reschedule_keeps_status_moves_same_child_and_writes_history(self):
+        target = self.make_lesson(self.group, days=3)
+        booked = self.client.post(
+            f"/api/v1/leads/{self.lead.id}/book-trial/",
+            {"lesson": str(self.lesson.id)},
+            format="json",
+        )
+        original = LessonEnrollment.objects.get(source_lead=self.lead, cancelled_at__isnull=True)
+
+        candidates = self.client.get(f"/api/v1/leads/{self.lead.id}/trial-lessons/?mode=reschedule")
+        response = self.client.post(
+            f"/api/v1/leads/{self.lead.id}/reschedule-trial/",
+            {"lesson": str(target.id)},
+            format="json",
+        )
+
+        self.assertEqual(booked.status_code, 201, booked.data)
+        self.assertEqual(candidates.status_code, 200, candidates.data)
+        self.assertNotIn(str(self.lesson.id), [row["id"] for row in candidates.data])
+        self.assertIn(str(target.id), [row["id"] for row in candidates.data])
+        self.assertEqual(response.status_code, 200, response.data)
+        self.lead.refresh_from_db()
+        original.refresh_from_db()
+        self.assertEqual(self.lead.status, Lead.Status.TRIAL_SCHEDULED)
+        self.assertIsNotNone(original.cancelled_at)
+        self.assertIn("Перенос", original.cancel_reason)
+        current = LessonEnrollment.objects.get(source_lead=self.lead, cancelled_at__isnull=True)
+        self.assertEqual(current.lesson, target)
+        self.assertEqual(current.child_id, original.child_id)
+        self.assertFalse(self.lesson.participants().filter(pk=current.child_id).exists())
+        self.assertTrue(target.participants().filter(pk=current.child_id).exists())
+        event = self.lead.status_changes.latest("changed_at")
+        self.assertEqual(event.event_type, LeadStatusChange.EventType.TRIAL_RESCHEDULED)
+        self.assertEqual(event.from_status, event.to_status)
+        self.assertEqual(response.data["trial_booking"]["lesson_id"], str(target.id))
+
+    def test_cancel_requires_reason_returns_to_contacted_and_frees_capacity(self):
+        self.client.post(
+            f"/api/v1/leads/{self.lead.id}/book-trial/",
+            {"lesson": str(self.lesson.id)},
+            format="json",
+        )
+        enrollment = LessonEnrollment.objects.get(source_lead=self.lead)
+
+        missing_reason = self.client.post(
+            f"/api/v1/leads/{self.lead.id}/cancel-trial/", {}, format="json"
+        )
+        response = self.client.post(
+            f"/api/v1/leads/{self.lead.id}/cancel-trial/",
+            {"reason": "Ребёнок заболел"},
+            format="json",
+        )
+
+        self.assertEqual(missing_reason.status_code, 400)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.lead.refresh_from_db()
+        enrollment.refresh_from_db()
+        self.assertEqual(self.lead.status, Lead.Status.CONTACTED)
+        self.assertIsNotNone(enrollment.cancelled_at)
+        self.assertEqual(enrollment.cancel_reason, "Ребёнок заболел")
+        self.assertFalse(self.lesson.participants().filter(pk=enrollment.child_id).exists())
+        self.assertIsNone(response.data["trial_booking"])
+        history = self.lead.status_changes.latest("changed_at")
+        self.assertEqual(history.to_status, Lead.Status.CONTACTED)
+        self.assertIn("Ребёнок заболел", history.comment)
+
     def test_missing_lead_filters_explain_what_to_fill(self):
         lead = create_lead(
             organization=self.org,

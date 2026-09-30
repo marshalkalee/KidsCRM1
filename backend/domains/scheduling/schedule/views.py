@@ -10,12 +10,13 @@ from rest_framework.response import Response
 from domains.people.clients.models import ChildContact, CommunicationLog, ParentContact
 from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
 from domains.platform.core.viewsets import TenantModelViewSet
+from domains.platform.leads.models import Lead, LeadComment
 from domains.scheduling.groups.models import Group
 
 from .conflicts import compute_conflict_map, find_conflicting_lessons
 from .enrollment_service import EnrollOutcome, LessonService
 from .models import Lesson, LessonEnrollment, RescheduleCallLog
-from .reschedule_contacts import build_reschedule_message, build_who_to_call
+from .reschedule_contacts import build_lesson_change_message, build_who_to_call
 from .serializers import LessonEnrollmentSerializer, LessonEnrollSerializer, LessonSerializer
 
 
@@ -383,9 +384,12 @@ class LessonViewSet(TenantModelViewSet):
         RescheduleCallLog, сохраняется между заходами на экран.
         """
         lesson = self.get_object()
-        if lesson.status != Lesson.Status.RESCHEDULED or not hasattr(lesson, "rescheduled_to"):
+        can_call = lesson.status == Lesson.Status.CANCELLED or (
+            lesson.status == Lesson.Status.RESCHEDULED and hasattr(lesson, "rescheduled_to")
+        )
+        if not can_call:
             return Response(
-                {"detail": "Занятие не перенесено — обзванивать не о чем."},
+                {"detail": "Занятие не отменено и не перенесено — обзванивать не о чем."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         data = build_who_to_call(lesson, self.request.organization)
@@ -401,28 +405,59 @@ class LessonViewSet(TenantModelViewSet):
         плодит вторую запись коммуникации.
         """
         lesson = self.get_object()
-        if lesson.status != Lesson.Status.RESCHEDULED or not hasattr(lesson, "rescheduled_to"):
+        can_call = lesson.status == Lesson.Status.CANCELLED or (
+            lesson.status == Lesson.Status.RESCHEDULED and hasattr(lesson, "rescheduled_to")
+        )
+        if not can_call:
             return Response(
-                {"detail": "Занятие не перенесено — обзванивать не о чем."},
+                {"detail": "Занятие не отменено и не перенесено — обзванивать не о чем."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         contact_id = request.data.get("parent_contact")
-        if not contact_id:
-            return Response({"parent_contact": "Обязателен."}, status=status.HTTP_400_BAD_REQUEST)
-        parent_contact = get_object_or_404(
-            ParentContact.objects.for_tenant(self.request.organization), pk=contact_id
-        )
+        lead_id = request.data.get("source_lead")
+        if bool(contact_id) == bool(lead_id):
+            return Response(
+                {"detail": "Укажите один контакт или одну заявку."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         channel = request.data.get("channel", CommunicationLog.Channel.CALL)
         valid_channels = {value for value, _ in CommunicationLog.Channel.choices}
         if channel not in valid_channels:
             channel = CommunicationLog.Channel.CALL
 
+        tz = timezone.zoneinfo.ZoneInfo(self.request.organization.timezone or "Asia/Almaty")
+        message = build_lesson_change_message(lesson, tz)
+        if lead_id:
+            lead = get_object_or_404(Lead.objects.for_tenant(self.request.organization), pk=lead_id)
+            if not LessonEnrollment.objects.filter(
+                lesson=lesson,
+                kind=LessonEnrollment.Kind.TRIAL,
+                source_lead=lead,
+                cancelled_at__isnull=True,
+            ).exists():
+                return Response(
+                    {"detail": "Эта заявка не записана на пробное в данном занятии."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            _call_log, created = RescheduleCallLog.objects.get_or_create(
+                lesson=lesson, source_lead=lead, defaults={"called_by": request.user}
+            )
+            if created:
+                LeadComment.objects.create(
+                    organization=self.request.organization,
+                    lead=lead,
+                    author=request.user,
+                    text=f"Обзвон об изменении занятия. {message}",
+                )
+            return Response({"called": True})
+
+        parent_contact = get_object_or_404(
+            ParentContact.objects.for_tenant(self.request.organization), pk=contact_id
+        )
         _call_log, created = RescheduleCallLog.objects.get_or_create(
             lesson=lesson, parent_contact=parent_contact, defaults={"called_by": request.user}
         )
         if created:
-            tz = timezone.zoneinfo.ZoneInfo(self.request.organization.timezone or "Asia/Almaty")
-            message = build_reschedule_message(lesson, lesson.rescheduled_to, tz)
             child_ids = {child.id for child in lesson.participants()}
             affected_child_ids = (
                 ChildContact.objects.for_tenant(self.request.organization)
@@ -435,7 +470,7 @@ class LessonViewSet(TenantModelViewSet):
                     child_id=child_id,
                     parent_contact=parent_contact,
                     channel=channel,
-                    note=f"Обзвон о переносе занятия. {message}",
+                    note=f"Обзвон об изменении занятия. {message}",
                     author=request.user,
                 )
         return Response({"called": True})
@@ -446,7 +481,14 @@ class LessonViewSet(TenantModelViewSet):
         CommunicationLog не трогает, тот лог append-only."""
         lesson = self.get_object()
         contact_id = request.data.get("parent_contact")
-        RescheduleCallLog.objects.filter(lesson=lesson, parent_contact_id=contact_id).delete()
+        lead_id = request.data.get("source_lead")
+        if bool(contact_id) == bool(lead_id):
+            return Response(
+                {"detail": "Укажите один контакт или одну заявку."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        filters = {"parent_contact_id": contact_id} if contact_id else {"source_lead_id": lead_id}
+        RescheduleCallLog.objects.filter(lesson=lesson, **filters).delete()
         return Response({"called": False})
 
 

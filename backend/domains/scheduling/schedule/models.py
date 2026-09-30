@@ -267,8 +267,18 @@ class RescheduleCallLog(TenantModel):
     parent_contact = models.ForeignKey(
         "clients.ParentContact",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="reschedule_call_logs",
         verbose_name=_("Контакт"),
+    )
+    source_lead = models.ForeignKey(
+        "leads.Lead",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="lesson_call_logs",
+        verbose_name=_("Заявка на пробное"),
     )
     called_at = models.DateTimeField(auto_now_add=True)
     called_by = models.ForeignKey(
@@ -285,7 +295,20 @@ class RescheduleCallLog(TenantModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["lesson", "parent_contact"],
+                condition=models.Q(parent_contact__isnull=False),
                 name="unique_reschedule_call_per_contact",
+            ),
+            models.UniqueConstraint(
+                fields=["lesson", "source_lead"],
+                condition=models.Q(source_lead__isnull=False),
+                name="unique_lesson_call_per_trial_lead",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(parent_contact__isnull=False, source_lead__isnull=True)
+                    | models.Q(parent_contact__isnull=True, source_lead__isnull=False)
+                ),
+                name="lesson_call_exactly_one_contact",
             ),
         ]
 
@@ -294,7 +317,7 @@ class RescheduleCallLog(TenantModel):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.lesson_id} — {self.parent_contact_id}"
+        return f"{self.lesson_id} — {self.parent_contact_id or self.source_lead_id}"
 
 
 class LessonEnrollment(TenantModel):
@@ -343,6 +366,7 @@ class LessonEnrollment(TenantModel):
         "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancel_reason = models.TextField(blank=True)
 
     class Meta:
         verbose_name = _("Запись поверх группы")

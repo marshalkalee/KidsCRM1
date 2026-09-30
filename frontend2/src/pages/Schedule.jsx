@@ -1306,7 +1306,7 @@ function WhoToCallModal({ lessonId, onClose }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [pending, setPending] = useState(null) // parent_contact_id пока идёт запрос
+  const [pending, setPending] = useState(null)
 
   const load = useCallback(() => {
     setLoading(true); setError('')
@@ -1321,22 +1321,27 @@ function WhoToCallModal({ lessonId, onClose }) {
   // Оптимистично меняем локальное состояние сразу — карточка отвечает без
   // рывка от перерисовки всего списка, запрос идёт в фоне; при ошибке
   // откатываем обратно.
-  function setContactCalled(parentContactId, called) {
+  function contactKey(contact) {
+    return contact.contact_key || `parent:${contact.parent_contact_id}`
+  }
+
+  function setContactCalled(key, called) {
     setData(prev => ({
       ...prev,
-      contacts: prev.contacts.map(c => c.parent_contact_id === parentContactId ? { ...c, called } : c),
+      contacts: prev.contacts.map(c => contactKey(c) === key ? { ...c, called } : c),
     }))
   }
 
   async function toggleCalled(contact) {
     const nextCalled = !contact.called
-    setPending(contact.parent_contact_id)
-    setContactCalled(contact.parent_contact_id, nextCalled)
+    const key = contactKey(contact)
+    setPending(key)
+    setContactCalled(key, nextCalled)
     try {
-      if (nextCalled) await markCalled(lessonId, contact.parent_contact_id, 'call')
-      else await unmarkCalled(lessonId, contact.parent_contact_id)
+      if (nextCalled) await markCalled(lessonId, contact, 'call')
+      else await unmarkCalled(lessonId, contact)
     } catch (e) {
-      setContactCalled(contact.parent_contact_id, contact.called) // откат
+      setContactCalled(key, contact.called) // откат
       setError(e.response?.data?.detail || t('Не удалось сохранить отметку'))
     } finally { setPending(null) }
   }
@@ -1345,8 +1350,9 @@ function WhoToCallModal({ lessonId, onClose }) {
     // Открытие чата — тоже сигнал, что связались; отмечаем как обзвонено,
     // если ещё не отмечено (не блокирует переход по ссылке).
     if (!contact.called) {
-      setContactCalled(contact.parent_contact_id, true)
-      markCalled(lessonId, contact.parent_contact_id, 'whatsapp').catch(() => setContactCalled(contact.parent_contact_id, false))
+      const key = contactKey(contact)
+      setContactCalled(key, true)
+      markCalled(lessonId, contact, 'whatsapp').catch(() => setContactCalled(key, false))
     }
   }
 
@@ -1374,7 +1380,7 @@ function WhoToCallModal({ lessonId, onClose }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {data.contacts.map(contact => (
-                  <div key={contact.parent_contact_id} style={{
+                  <div key={contactKey(contact)} style={{
                     border: `1px solid ${contact.called ? '#BBF7D0' : '#F0F0F5'}`,
                     background: contact.called ? '#F0FDF4' : '#fff',
                     borderRadius: 10, padding: '12px 14px',
@@ -1388,18 +1394,21 @@ function WhoToCallModal({ lessonId, onClose }) {
                         </div>
                         <div style={{ fontSize: 11, color: '#9CA3AF', fontFamily: 'Manrope', marginTop: 2 }}>
                           {contact.children.map(c => c.full_name).join(', ')}
+                          {contact.source_lead_id && (
+                            <> · <Link to={`/leads/${contact.source_lead_id}`} style={{ color: '#7C3AED', fontWeight: 700 }}>{t('Открыть заявку')}</Link></>
+                          )}
                         </div>
                       </div>
                       <button
                         onClick={() => toggleCalled(contact)}
-                        disabled={pending === contact.parent_contact_id}
+                        disabled={pending === contactKey(contact)}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7,
                           border: `1px solid ${contact.called ? '#16A34A' : '#EBEBF0'}`,
                           background: contact.called ? '#16A34A' : '#fff',
                           color: contact.called ? '#fff' : '#6B7280',
                           fontSize: 11, fontWeight: 600, fontFamily: 'Manrope', cursor: 'pointer', whiteSpace: 'nowrap',
-                          opacity: pending === contact.parent_contact_id ? 0.6 : 1,
+                          opacity: pending === contactKey(contact) ? 0.6 : 1,
                           transition: 'background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, opacity 0.15s ease',
                         }}
                       >
@@ -1671,7 +1680,7 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
                   {lesson.status === 'rescheduled' ? t('Занятие перенесено.') : t('Занятие отменено.')}
                 </p>
               )}
-              {lesson.status === 'rescheduled' && (
+              {(lesson.status === 'cancelled' || lesson.status === 'rescheduled') && (
                 <button style={{ ...secondaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => onWhoToCall(lesson.id)}>
                   <PhoneCall size={13} /> {t('Кого обзвонить')}
                 </button>

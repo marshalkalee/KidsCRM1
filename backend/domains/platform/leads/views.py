@@ -32,6 +32,7 @@ from .serializers import (
     LeadSourceSerializer,
     LeadStatusChangeSerializer,
     LeadStatusSerializer,
+    TrialBookingCancelSerializer,
     TrialBookingSerializer,
     TrialLessonSerializer,
 )
@@ -44,7 +45,13 @@ from .services import (
     find_phone_matches,
     visible_leads,
 )
-from .trial_booking import TrialBookingError, book_trial, trial_lesson_candidates
+from .trial_booking import (
+    TrialBookingError,
+    book_trial,
+    cancel_trial_booking,
+    reschedule_trial_booking,
+    trial_lesson_candidates,
+)
 
 
 class CanManageLeads(IsStaffOfOrganization):
@@ -337,7 +344,9 @@ class LeadViewSet(TenantModelViewSet):
     def trial_lessons(self, request, pk=None, version=None):
         lead = self.get_object()
         try:
-            lessons = trial_lesson_candidates(lead)
+            lessons = trial_lesson_candidates(
+                lead, for_reschedule=request.query_params.get("mode") == "reschedule"
+            )
         except TrialBookingError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
@@ -362,6 +371,35 @@ class LeadViewSet(TenantModelViewSet):
             LeadSerializer(lead, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=["post"], url_path="cancel-trial")
+    def cancel_trial_action(self, request, pk=None, version=None):
+        lead = self.get_object()
+        serializer = TrialBookingCancelSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lead, _enrollment = cancel_trial_booking(
+                lead, reason=serializer.validated_data["reason"], actor=request.user
+            )
+        except TrialBookingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(LeadSerializer(lead, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="reschedule-trial")
+    def reschedule_trial_action(self, request, pk=None, version=None):
+        lead = self.get_object()
+        serializer = TrialBookingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lead, _enrollment = reschedule_trial_booking(
+                lead, serializer.validated_data["lesson"], actor=request.user
+            )
+        except TrialBookingError as exc:
+            response_status = (
+                status.HTTP_409_CONFLICT if exc.code == "capacity" else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc)}, status=response_status)
+        return Response(LeadSerializer(lead, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["get", "post"], url_path="conversion")
     def conversion(self, request, pk=None, version=None):

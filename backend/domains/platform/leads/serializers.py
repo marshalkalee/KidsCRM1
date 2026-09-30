@@ -221,6 +221,10 @@ class TrialBookingSerializer(serializers.Serializer):
     lesson = serializers.UUIDField()
 
 
+class TrialBookingCancelSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=500, trim_whitespace=True)
+
+
 class LeadConversionQuerySerializer(serializers.Serializer):
     child_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
     birth_date = serializers.DateField(required=False)
@@ -351,6 +355,7 @@ class LeadStatusChangeSerializer(serializers.ModelSerializer):
         model = LeadStatusChange
         fields = [
             "id",
+            "event_type",
             "from_status",
             "from_status_label",
             "to_status",
