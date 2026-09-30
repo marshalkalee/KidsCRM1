@@ -14,7 +14,9 @@ import {
 } from '../ui'
 import { t } from '../i18n'
 
-const FILTER_KEYS = ['source', 'direction', 'branch', 'assigned_to', 'created_from', 'created_to']
+// status — приходит из аналитики (TRU-115, «сейчас на этапе»): в панели его
+// поля нет, но он считается фильтром и сбрасывается вместе с остальными.
+const FILTER_KEYS = ['source', 'direction', 'branch', 'assigned_to', 'created_from', 'created_to', 'status']
 const LIMIT = 20
 
 /**

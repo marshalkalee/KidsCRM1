@@ -15,6 +15,7 @@ from domains.platform.core.active_branch import get_active_branch
 from domains.platform.core.audit import AuditLog
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_manage_lead_dictionaries, can_manage_leads
+from domains.platform.core.utils import day_bounds_for_org
 from domains.platform.core.viewsets import TenantModelViewSet
 
 from .conversion import LeadConversionError, conversion_preview, convert_lead
@@ -146,10 +147,14 @@ class LeadViewSet(TenantModelViewSet):
                 values = [str(self.request.user.pk) if value == "me" else value for value in values]
             if values:
                 qs = qs.filter(**{f"{field}_id__in": _uuids(values)})
+        # Дни — по времени центра, а не UTC: заявка в 02:00 по Алматы — это
+        # уже сегодня. Так же считает воронка в аналитике (TRU-115), и список
+        # по клику «сейчас на этапе» совпадает с её цифрой.
+        organization = self.request.user.organization
         if created_from := parse_date(params.get("created_from") or ""):
-            qs = qs.filter(created_at__date__gte=created_from)
+            qs = qs.filter(created_at__gte=day_bounds_for_org(organization, created_from)[0])
         if created_to := parse_date(params.get("created_to") or ""):
-            qs = qs.filter(created_at__date__lte=created_to)
+            qs = qs.filter(created_at__lte=day_bounds_for_org(organization, created_to)[1])
         if q := (params.get("q") or "").strip():
             digits = "".join(ch for ch in q if ch.isdigit())
             condition = Q(parent_name__icontains=q) | Q(child_name__icontains=q)

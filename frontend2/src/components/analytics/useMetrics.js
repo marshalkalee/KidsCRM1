@@ -55,7 +55,7 @@ export function useAnalyticsCatalog() {
  *   useBreakdown('revenue', 'method', filters) → { data: { items, unit }, loading, error }
  *   useHeatmap(filters) → { data: { cells } }
  */
-function useAnalyticsGet(path, extra, filters) {
+export function useAnalyticsGet(path, extra, filters) {
   const { activeBranchId } = useSession()
   const [state, setState] = useState({ key: null, data: null, error: null })
   const key = `${path}|${extra}|${filters.query}|${activeBranchId}`
