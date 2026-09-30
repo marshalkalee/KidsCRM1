@@ -28,12 +28,12 @@ from domains.scheduling.groups.queries import underfilled_threshold
 
 from . import metrics  # noqa: F401 — регистрирует базовые метрики
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
-from .funnel import BY as FUNNEL_BY
+from .export import filename, workbook
 from .funnel import FILTERS as FUNNEL_FILTERS
 from .funnel import FunnelError, funnel, funnel_by
-from .funnel_export import funnel_workbook
 from .period import PRESETS, PeriodError, parse_period
 from .registry import REGISTRY, compute
+from .reports import REPORTS, build
 from .scope import ScopeError, allowed_branch_ids, scope_for
 
 # Больше метрик за запрос — это уже выгрузка, а не экран.
@@ -164,25 +164,51 @@ def funnel_by_api(request, version=None):
     return Response({"period": period.as_dict(), "items": items})
 
 
+def _filter_labels(organization, filters):
+    """Подписи фильтров воронки для шапки выгрузки: «Источник: Instagram»."""
+    from domains.platform.leads.models import LeadSource
+    from domains.platform.tenants.models import Direction
+    from domains.platform.users.models import User
+
+    models = {"source": ("Источник", LeadSource), "direction": ("Направление", Direction)}
+    labels = []
+    for name, value in filters.items():
+        if name == "manager":
+            user = User.objects.filter(organization=organization, pk=value).first()
+            labels.append(f"Ответственный: {user.full_name if user else '—'}")
+        else:
+            title, model = models[name]
+            row = model.objects.for_tenant(organization).filter(pk=value).first()
+            labels.append(f"{title}: {row.name if row else '—'}")
+    return labels
+
+
 @api_view(["GET"])
 @permission_classes([CanViewAnalytics])
-def funnel_export_api(request, version=None):
+def export_api(request, version=None):
+    """GET /analytics/export/?report=revenue&period=…&branch=… — Excel
+    отчёта с тем же периодом, филиалами и фильтрами, что на экране (TRU-114)."""
+    name = request.query_params.get("report", "")
+    if name not in REPORTS:
+        return Response({"report": [f"Нет такого отчёта: {name}"]}, status=400)
     period, scope, error = _period_and_scope(request)
     if error:
         return error
-    filters = _funnel_filters(request)
-    content = funnel_workbook(
+    filters = _funnel_filters(request) if name == "funnel" else {}
+    export = build(
+        name,
+        scope,
         period,
-        funnel(scope, period, filters, compare=False),
-        {by: funnel_by(scope, period, by, filters) for by in FUNNEL_BY},
+        {
+            "funnel_filters": filters,
+            "filter_labels": _filter_labels(scope.organization, filters),
+        },
     )
     response = HttpResponse(
-        content,
+        workbook(export, scope, period),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    response["Content-Disposition"] = (
-        f'attachment; filename="funnel-{period.start:%Y%m%d}-{period.end:%Y%m%d}.xlsx"'
-    )
+    response["Content-Disposition"] = f'attachment; filename="{filename(name, period)}"'
     return response
 
 

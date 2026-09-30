@@ -2,7 +2,7 @@ import { Info } from 'lucide-react'
 import { Card, ErrorState, PageHeader } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, ChartCard, DonutChart, MetricTile, PALETTE, RankBars, TrendChart,
+  AnalyticsNav, AnalyticsToolbar, ExportButton, ChartCard, DonutChart, MetricTile, PALETTE, RankBars, TrendChart,
   useAnalyticsCatalog, useAnalyticsFilters, useBreakdown, useMetrics,
 } from '../components/analytics'
 
@@ -43,7 +43,7 @@ export default function AnalyticsRevenue() {
 
   return (
     <>
-      <PageHeader title={t('Аналитика')} description={t('Выручка по оплатам')} />
+      <PageHeader title={t('Аналитика')} description={t('Выручка по оплатам')} actions={<ExportButton report="revenue" filters={filters} />} />
       <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} previous={data?.previous_period} />
 

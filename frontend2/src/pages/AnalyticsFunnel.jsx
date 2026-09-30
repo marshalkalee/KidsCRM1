@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Download } from 'lucide-react'
-import api from '../api/axios'
-import { Button, Card, CardHeader, DataTable, Dropdown, ErrorState, PageHeader, Skeleton, Tabs, apiErrorMessage, cn, useToast } from '../ui'
+import { Card, CardHeader, DataTable, Dropdown, ErrorState, PageHeader, Skeleton, Tabs, cn } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, FunnelChart, breakdownLabel, formatValue,
+  AnalyticsNav, AnalyticsToolbar, ExportButton, FunnelChart, breakdownLabel, formatValue,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
 } from '../components/analytics'
 
@@ -35,10 +33,8 @@ export default function AnalyticsFunnel() {
   const filters = useAnalyticsFilters()
   const catalog = useAnalyticsCatalog()
   const navigate = useNavigate()
-  const toast = useToast()
   const [params, setParams] = useSearchParams()
   const [by, setBy] = useState('source')
-  const [exporting, setExporting] = useState(false)
 
   const extra = new URLSearchParams(FILTERS.filter(k => params.get(k)).map(k => [k, params.get(k)])).toString()
   const { data, error } = useAnalyticsGet('funnel', extra, filters)
@@ -73,23 +69,6 @@ export default function AnalyticsFunnel() {
     navigate(`/leads?${q}`)
   }
 
-  async function exportExcel() {
-    setExporting(true)
-    try {
-      const query = new URLSearchParams(filters.query)
-      new URLSearchParams(extra).forEach((v, k) => query.set(k, v))
-      const res = await api.get(`analytics/funnel/export/?${query}`, { responseType: 'blob' })
-      const url = URL.createObjectURL(res.data)
-      const link = Object.assign(document.createElement('a'), { href: url, download: `funnel-${period?.start}-${period?.end}.xlsx` })
-      link.click()
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      toast.error(apiErrorMessage(err))
-    } finally {
-      setExporting(false)
-    }
-  }
-
   const stages = summary?.stages.map(stage => ({
     ...stage,
     label: STAGE_LABELS[stage.key](),
@@ -105,7 +84,7 @@ export default function AnalyticsFunnel() {
       <PageHeader
         title={t('Аналитика')}
         description={t('Воронка новых заявок · продления считаются отдельно')}
-        actions={<Button icon={Download} loading={exporting} disabled={!summary} onClick={exportExcel}>{t('Скачать Excel')}</Button>}
+        actions={<ExportButton report="funnel" filters={filters} extra={extra} />}
       />
       <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={period} previous={data?.previous_period} />

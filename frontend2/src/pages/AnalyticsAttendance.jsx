@@ -1,7 +1,7 @@
 import { Card, ErrorState, PageHeader } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, ChartCard, ComboChart, DonutChart, HeatmapChart, MetricTile, PALETTE, RankBars,
+  AnalyticsNav, AnalyticsToolbar, ExportButton, ChartCard, ComboChart, DonutChart, HeatmapChart, MetricTile, PALETTE, RankBars,
   useAnalyticsCatalog, useAnalyticsFilters, useBreakdown, useHeatmap, useMetrics,
 } from '../components/analytics'
 
@@ -46,7 +46,7 @@ export default function AnalyticsAttendance() {
 
   return (
     <>
-      <PageHeader title={t('Аналитика')} description={t('Посещаемость и пропуски')} />
+      <PageHeader title={t('Аналитика')} description={t('Посещаемость и пропуски')} actions={<ExportButton report="attendance" filters={filters} />} />
       <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} previous={data?.previous_period} />
 
