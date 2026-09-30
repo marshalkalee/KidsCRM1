@@ -79,7 +79,12 @@ def conversion_preview(lead, *, child_name=None, birth_date=None):
     return {
         "converted": bool(lead.converted_child_id),
         "converted_child_id": str(lead.converted_child_id) if lead.converted_child_id else None,
-        "allowed": lead.kind == Lead.Kind.NEW and lead.status == Lead.Status.TRIAL_ATTENDED,
+        "allowed": lead.kind == Lead.Kind.NEW
+        and (
+            lead.status == Lead.Status.TRIAL_ATTENDED
+            or lead.status == Lead.Status.PURCHASED
+            or lead.can_move_to(Lead.Status.PURCHASED)
+        ),
         "defaults": {
             "child_name": effective_name,
             "birth_date": default_birth_date.isoformat() if default_birth_date else "",
@@ -161,8 +166,12 @@ def convert_lead(lead, *, actor, data):
     lead = Lead.objects.select_for_update().get(pk=lead.pk, organization=lead.organization)
     if lead.converted_child_id:
         return lead, False
-    if lead.kind != Lead.Kind.NEW or lead.status != Lead.Status.TRIAL_ATTENDED:
-        raise LeadConversionError("Конвертация доступна после посещения пробного занятия.")
+    if lead.kind != Lead.Kind.NEW or not (
+        lead.status == Lead.Status.TRIAL_ATTENDED
+        or lead.status == Lead.Status.PURCHASED
+        or lead.can_move_to(Lead.Status.PURCHASED)
+    ):
+        raise LeadConversionError("Из текущего статуса нельзя оформить клиента.")
 
     matches = ChildService.find_duplicates(
         lead.organization,

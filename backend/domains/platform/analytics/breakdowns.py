@@ -11,9 +11,12 @@ from django.db.models import Count
 from django.db.models.functions import ExtractHour, ExtractIsoWeekDay
 
 from domains.money.payments.models import Payment
+from domains.money.subscriptions.models import SubscriptionType
 from domains.platform.leads.models import LeadSource
 from domains.platform.tenants.models import Branch, Direction
+from domains.platform.users.models import User
 from domains.scheduling.attendance.models import Attendance
+from domains.scheduling.groups.models import Group
 
 from .metrics import visits
 from .registry import REGISTRY, cached
@@ -25,6 +28,11 @@ def _names(model):
         return {row.pk: row.name for row in rows}
 
     return resolve
+
+
+def _staff(organization, keys):
+    rows = User.objects.filter(organization=organization, pk__in=[k for k in keys if k])
+    return {row.pk: row.full_name for row in rows}
 
 
 def _choices(choices):
@@ -40,6 +48,11 @@ DIMENSIONS = {
     "source": _names(LeadSource),
     "method": _choices(Payment.Method.choices),
     "status": _choices(Attendance.Status.choices),
+    "reason": _choices(Attendance.AbsenceReason.choices),
+    "group": _names(Group),
+    "teacher": _staff,
+    "subscription_type": _names(SubscriptionType),
+    "client": _choices([("new", "Новые клиенты"), ("renewal", "Продления")]),
 }
 
 
@@ -57,8 +70,9 @@ def breakdown(name, dimension, scope, period):
         labels = DIMENSIONS[dimension](scope.organization, [key for key, _ in rows])
         return [
             {
-                "key": str(key) if key is not None else None,
-                "label": labels.get(key) if key is not None else None,
+                # Пустая причина пропуска — как «не указано», а не отдельный ключ "".
+                "key": str(key) if key not in (None, "") else None,
+                "label": labels.get(key) if key not in (None, "") else None,
                 "value": str(value) if not isinstance(value, int) else value,
             }
             for key, value in rows

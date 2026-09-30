@@ -1,7 +1,11 @@
+from decimal import Decimal
+
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
+from domains.money.payments.models import Payment
+from domains.money.subscriptions.models import Subscription
 from domains.people.clients.models import Child, ChildContact
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.text_validation import normalize_entity_name, normalize_person_name
@@ -39,6 +43,7 @@ class LeadSerializer(serializers.ModelSerializer):
     is_stale = serializers.SerializerMethodField()
     allowed_transitions = serializers.SerializerMethodField()
     trial_booking = serializers.SerializerMethodField()
+    sold_subscription_details = serializers.SerializerMethodField()
 
     kind_label = serializers.CharField(source="get_kind_display", read_only=True)
     renewal_child_name = serializers.CharField(
@@ -77,6 +82,8 @@ class LeadSerializer(serializers.ModelSerializer):
             "rejection_comment",
             "converted_child",
             "converted_child_name",
+            "sold_subscription",
+            "sold_subscription_details",
             "created_at",
             "updated_at",
         ]
@@ -92,6 +99,7 @@ class LeadSerializer(serializers.ModelSerializer):
             "rejection_reason",
             "rejection_comment",
             "converted_child",
+            "sold_subscription",
             "created_at",
             "updated_at",
         ]
@@ -159,6 +167,20 @@ class LeadSerializer(serializers.ModelSerializer):
             "direction_name": lesson.group.direction.name,
             "room_name": lesson.room.name if lesson.room else None,
             "teacher_name": lesson.teacher.full_name if lesson.teacher else None,
+        }
+
+    def get_sold_subscription_details(self, lead):
+        subscription = lead.sold_subscription
+        if subscription is None:
+            return None
+        return {
+            "id": str(subscription.id),
+            "name": subscription.subscription_type_version.name,
+            "starts_on": subscription.starts_on,
+            "ends_on": subscription.ends_on,
+            "status": subscription.status,
+            "price": str(subscription.price),
+            "sessions_remaining": subscription.sessions_remaining_cache,
         }
 
     def validate_phone(self, value):
@@ -252,6 +274,39 @@ class LeadConversionSerializer(serializers.Serializer):
         return attrs
 
 
+class LeadSaleSerializer(serializers.Serializer):
+    subscription_type = serializers.UUIDField()
+    starts_on = serializers.DateField()
+    discount_amount = serializers.DecimalField(
+        max_digits=12, decimal_places=0, min_value=Decimal("0"), default=Decimal("0")
+    )
+    discount_reason = serializers.ChoiceField(
+        choices=Subscription.DiscountReason.choices,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+    discount_comment = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=255
+    )
+    paid_amount = serializers.DecimalField(max_digits=12, decimal_places=0, min_value=Decimal("0"))
+    payment_method = serializers.ChoiceField(choices=Payment.Method.choices)
+    comment = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
+    group = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate_starts_on(self, value):
+        if value < timezone.localdate():
+            raise serializers.ValidationError("Дата начала не может быть в прошлом.")
+        return value
+
+    def validate(self, attrs):
+        if attrs["discount_amount"] and not attrs.get("discount_reason"):
+            raise serializers.ValidationError(
+                {"discount_reason": "Для скидки обязательно укажите причину."}
+            )
+        return attrs
+
+
 class TrialLessonSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     starts_at_local = serializers.SerializerMethodField()
@@ -303,6 +358,7 @@ class LeadStatusChangeSerializer(serializers.ModelSerializer):
             "changed_by",
             "changed_by_name",
             "changed_at",
+            "is_automatic",
             "rejection_reason",
             "rejection_reason_name",
             "comment",

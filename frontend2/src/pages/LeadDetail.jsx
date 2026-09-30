@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowRight, CalendarPlus, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Trash2, UserRound, UserRoundPlus,
-  ArrowRight, CalendarPlus, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Sparkles, Trash2, UserRound,
+  ArrowRight, CalendarPlus, CreditCard, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Sparkles, Trash2, UserRound,
 } from 'lucide-react'
 import api from '../api/axios'
 import LeadConversionModal from '../components/leads/LeadConversionModal'
@@ -10,13 +9,14 @@ import LeadModal from '../components/leads/LeadModal'
 import { AIMessageModal, useAI } from '../components/ai/ai'
 import { LeadGroups } from '../components/ai/assist'
 import RejectModal from '../components/leads/RejectModal'
+import LeadSaleModal from '../components/leads/LeadSaleModal'
 import TrialBookingModal from '../components/leads/TrialBookingModal'
 import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/format'
 import { getLeadsViewPreference } from '../components/leads/viewPreference'
 import { useSession } from '../session/SessionContext'
 import {
   Avatar, Badge, Button, Card, Dropdown, EmptyState, ErrorState, PageHeader, Skeleton, Textarea, ageLabel, apiErrorMessage, cn,
-  formatDateTime, useConfirm, useToast,
+  formatDate, formatDateTime, money, useConfirm, useToast,
 } from '../ui'
 import { t } from '../i18n'
 
@@ -49,9 +49,12 @@ export default function LeadDetail() {
   const [rejecting, setRejecting] = useState(false)
   const [bookingTrial, setBookingTrial] = useState(false)
   const [converting, setConverting] = useState(false)
+  const [saleAfterConversion, setSaleAfterConversion] = useState(false)
+  const [selling, setSelling] = useState(false)
   const [staff, setStaff] = useState([])
   const [writing, setWriting] = useState(false)
   const ai = useAI()
+  const autoSaleHandled = useRef(false)
 
   const loadExtras = useCallback(() => {
     api.get(`leads/${id}/history/`).then(res => setHistory(res.data)).catch(() => {})
@@ -63,11 +66,18 @@ export default function LeadDetail() {
       .then(res => {
         setLead(res.data)
         setState('ready')
-        if (res.data.status === 'trial_attended' && !res.data.converted_child) setConverting(true)
+        if (location.state?.startSale && !autoSaleHandled.current) {
+          autoSaleHandled.current = true
+          if (res.data.converted_child || res.data.child) setSelling(true)
+          else {
+            setSaleAfterConversion(true)
+            setConverting(true)
+          }
+        }
       })
       .catch(err => setState(err.response?.status === 404 ? 'missing' : 'error'))
     loadExtras()
-  }, [id, loadExtras])
+  }, [id, loadExtras, location.state?.startSale])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -124,6 +134,15 @@ export default function LeadDetail() {
     } catch (err) {
       toast.error(apiErrorMessage(err))
     }
+  }
+
+  function startSale() {
+    if (lead.converted_child || lead.child) {
+      setSelling(true)
+      return
+    }
+    setSaleAfterConversion(true)
+    setConverting(true)
   }
 
   const meta = LEAD_STATUS[lead.status]
@@ -217,20 +236,30 @@ export default function LeadDetail() {
 
         <div className="min-w-0 space-y-6">
           {lead.trial_booking && <TrialBookingCard booking={lead.trial_booking} />}
-          {lead.status === 'trial_attended' && !lead.converted_child && (
-            <Card className="border-brand-200 bg-[linear-gradient(135deg,#fff7f5,#ffffff)]">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-bold text-ink">{t('Пробное посещено — оформите клиента')}</p>
-                  <p className="mt-1 text-sm text-ink-muted">{t('Проверьте дубли и дополните обязательные данные ребёнка и родителя.')}</p>
-                </div>
-                <Button variant="primary" icon={UserRoundPlus} onClick={() => setConverting(true)}>{t('Оформить клиента')}</Button>
+          {lead.sold_subscription_details && (
+            <Card className="border-success-600/20 bg-success-50/40">
+              <div className="flex items-center gap-2">
+                <CreditCard className="size-4 text-success-600" />
+                <p className="text-[15px] font-bold text-ink">{t('Проданный абонемент')}</p>
               </div>
+              <p className="mt-2 font-semibold text-ink">{lead.sold_subscription_details.name}</p>
+              <p className="mt-1 text-sm text-ink-muted">
+                {formatDate(lead.sold_subscription_details.starts_on)}–{formatDate(lead.sold_subscription_details.ends_on)} · {money(lead.sold_subscription_details.price)}
+              </p>
+              <Button
+                className="mt-3 w-full"
+                size="sm"
+                to={`/children/${lead.converted_child || lead.child}?tab=subscriptions`}
+                icon={ArrowRight}
+              >
+                {t('Открыть абонементы ребёнка')}
+              </Button>
             </Card>
           )}
           <StatusCard
             lead={lead}
             onBookTrial={() => setBookingTrial(true)}
+            onStartSale={startSale}
             onChange={to => (to === 'rejected' ? setRejecting(true) : changeStatus(to))}
           />
           <CommentsCard leadId={lead.id} comments={comments} onAdded={comment => setComments(list => [...list, comment])} />
@@ -258,10 +287,29 @@ export default function LeadDetail() {
       {converting && (
         <LeadConversionModal
           lead={lead}
-          onClose={() => setConverting(false)}
+          forSale={saleAfterConversion}
+          onClose={() => {
+            setConverting(false)
+            setSaleAfterConversion(false)
+          }}
           onConverted={saved => {
             setLead(saved)
             setConverting(false)
+            if (saleAfterConversion) {
+              setSaleAfterConversion(false)
+              setSelling(true)
+            }
+            loadExtras()
+          }}
+        />
+      )}
+      {selling && (
+        <LeadSaleModal
+          lead={lead}
+          onClose={() => setSelling(false)}
+          onSold={saved => {
+            setLead(saved)
+            setSelling(false)
             loadExtras()
           }}
         />
@@ -314,9 +362,12 @@ function TrialBookingCard({ booking }) {
   )
 }
 
-function StatusCard({ lead, onChange, onBookTrial }) {
+function StatusCard({ lead, onChange, onBookTrial, onStartSale }) {
   const targets = LEAD_STATUSES.filter(
     s => s.value !== 'trial_scheduled' && lead.allowed_transitions.includes(s.value),
+  )
+  const canSell = !lead.sold_subscription && (
+    lead.allowed_transitions.includes('purchased') || lead.status === 'purchased'
   )
   const canBookTrial = lead.kind !== 'renewal'
     && !lead.trial_booking
@@ -324,7 +375,7 @@ function StatusCard({ lead, onChange, onBookTrial }) {
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[15px] font-bold text-ink">{t('Что дальше')}</p>
+        <p className="text-[15px] font-bold text-ink">{t('Решение по заявке')}</p>
         {lead.status === 'rejected' && lead.rejection_reason_name && (
           <span className="text-[13px] text-ink-muted">{t('Причина отказа')}: <span className="font-semibold text-danger-600">{t(lead.rejection_reason_name)}</span>{lead.rejection_comment && ` — ${lead.rejection_comment}`}</span>
         )}
@@ -342,6 +393,11 @@ function StatusCard({ lead, onChange, onBookTrial }) {
         <p className="mt-2 text-sm text-ink-muted">{t('Заявка закрыта покупкой — дальше это клиент.')}</p>
       )}
       <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3">
+        {canSell && (
+          <Button size="sm" variant="primary" icon={CreditCard} onClick={onStartSale}>
+            {t('Оформить абонемент')}
+          </Button>
+        )}
         {lead.kind !== 'renewal' && (
           <Button
             size="sm"
@@ -426,7 +482,11 @@ function HistoryCard({ history }) {
                 </p>
                 <p className="text-xs text-ink-subtle">
                   {formatDateTime(change.changed_at)}
-                  {change.changed_by_name ? ` · ${change.changed_by_name}` : ` · ${t('система')}`}
+                  {change.is_automatic
+                    ? ` · ${t('Автоматически')}`
+                    : change.changed_by_name
+                      ? ` · ${change.changed_by_name}`
+                      : ` · ${t('система')}`}
                 </p>
                 {change.rejection_reason_name && <p className="mt-0.5 text-xs text-danger-600">{t('Причина')}: {t(change.rejection_reason_name)}{change.comment && ` — ${change.comment}`}</p>}
                 {!change.rejection_reason_name && change.comment && <p className="mt-0.5 text-xs text-ink-muted">{change.comment}</p>}

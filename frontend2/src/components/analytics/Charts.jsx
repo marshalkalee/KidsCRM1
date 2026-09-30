@@ -77,9 +77,9 @@ export function TrendChart({ series, previous, unit, granularity, color = PALETT
         <YAxis tick={AXIS} tickLine={false} axisLine={false} width={60} tickFormatter={v => formatAxis(v, unit)} />
         <Tooltip content={<ChartTooltip granularity={granularity} rows={rows} />} />
         {previous && (
-          <Line type="monotone" dataKey="previous" stroke="var(--color-ink-subtle)" strokeWidth={1.5} strokeDasharray="4 4" dot={false} connectNulls />
+          <Line type="monotone" dataKey="previous" stroke="var(--color-ink-subtle)" strokeWidth={1.5} strokeDasharray="4 4" dot={false} connectNulls animationDuration={600} />
         )}
-        <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill={`url(#${gradient})`} connectNulls dot={false} activeDot={{ r: 4 }} />
+        <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill={`url(#${gradient})`} connectNulls dot={false} activeDot={{ r: 4 }} animationDuration={600} />
       </ComposedChart>
     </ResponsiveContainer>
   )
@@ -95,7 +95,7 @@ export function BarsChart({ series, unit, granularity, color = PALETTE[0], label
         {xAxis(granularity)}
         <YAxis tick={AXIS} tickLine={false} axisLine={false} width={60} tickFormatter={v => formatAxis(v, unit)} />
         <Tooltip cursor={{ fill: 'var(--color-surface-muted)' }} content={<ChartTooltip granularity={granularity} rows={rows} />} />
-        <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} maxBarSize={36} />
+        <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} maxBarSize={36} animationDuration={600} />
       </ComposedChart>
     </ResponsiveContainer>
   )
@@ -119,8 +119,8 @@ export function ComboChart({ bars, line, granularity, barLabel, lineLabel, barUn
         <YAxis yAxisId="bars" tick={AXIS} tickLine={false} axisLine={false} width={60} tickFormatter={v => formatAxis(v, barUnit)} />
         <YAxis yAxisId="line" orientation="right" domain={[0, 100]} tick={AXIS} tickLine={false} axisLine={false} width={40} tickFormatter={v => formatAxis(v, lineUnit)} />
         <Tooltip cursor={{ fill: 'var(--color-surface-muted)' }} content={<ChartTooltip granularity={granularity} rows={rows} />} />
-        <Bar yAxisId="bars" dataKey="bars" fill={PALETTE[1]} fillOpacity={0.85} radius={[4, 4, 0, 0]} maxBarSize={32} />
-        <Line yAxisId="line" type="monotone" dataKey="line" stroke={PALETTE[0]} strokeWidth={2.5} dot={false} connectNulls />
+        <Bar yAxisId="bars" dataKey="bars" fill={PALETTE[1]} fillOpacity={0.85} radius={[4, 4, 0, 0]} maxBarSize={32} animationDuration={600} />
+        <Line yAxisId="line" type="monotone" dataKey="line" stroke={PALETTE[0]} strokeWidth={2.5} dot={false} connectNulls animationDuration={600} />
       </ComposedChart>
     </ResponsiveContainer>
   )

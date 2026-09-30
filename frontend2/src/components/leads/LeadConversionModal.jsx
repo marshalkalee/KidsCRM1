@@ -18,7 +18,7 @@ const ROLE_OPTIONS = [
   ['grandmother', 'Бабушка'], ['other', 'Другое'],
 ]
 
-export default function LeadConversionModal({ lead, onClose, onConverted }) {
+export default function LeadConversionModal({ lead, onClose, onConverted, forSale = false }) {
   const toast = useToast()
   const [form, setForm] = useState(EMPTY)
   const [matches, setMatches] = useState([])
@@ -89,7 +89,7 @@ export default function LeadConversionModal({ lead, onClose, onConverted }) {
       open
       onClose={onClose}
       size="xl"
-      title={t('Оформить клиента после пробного')}
+      title={forSale ? t('Оформить клиента') : t('Оформить клиента после пробного')}
       description={t('Уточните обязательные данные и решите, создавать новую карточку или связать заявку с найденной.')}
       footer={state !== 'loading' && state !== 'error' ? (
         <>

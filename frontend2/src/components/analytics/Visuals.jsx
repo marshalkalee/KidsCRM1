@@ -120,10 +120,11 @@ export function HeatmapChart({ cells, unitLabel = t('посещений') }) {
  * Рейтинг — горизонтальные полосы от большего к меньшему с долей от
  * итога: выручка по филиалам, заявки по источникам.
  */
-export function RankBars({ items, unit, color = PALETTE[0], limit = 8 }) {
+export function RankBars({ items, unit, color = PALETTE[0], limit = 8, showShare = true, max: fixedMax }) {
   const rows = (items || []).slice(0, limit).map(item => ({ ...item, value: Number(item.value) }))
   const total = (items || []).reduce((sum, item) => sum + Number(item.value), 0)
-  const max = Math.max(...rows.map(r => r.value), 1)
+  // Для процентов шкала — до 100, а не до лучшего: 60% не должно выглядеть «полной» полосой.
+  const max = fixedMax ?? Math.max(...rows.map(r => r.value), 1)
   return (
     <ol className="space-y-3">
       {rows.map((row, index) => (
@@ -135,7 +136,7 @@ export function RankBars({ items, unit, color = PALETTE[0], limit = 8 }) {
             </span>
             <span className="shrink-0 font-semibold text-ink">
               {formatValue(row.value, unit)}
-              <span className="ml-1.5 text-xs font-normal text-ink-subtle">{total ? Math.round((row.value / total) * 100) : 0}%</span>
+              {showShare && <span className="ml-1.5 text-xs font-normal text-ink-subtle">{total ? Math.round((row.value / total) * 100) : 0}%</span>}
             </span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-surface-muted">

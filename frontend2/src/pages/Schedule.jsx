@@ -232,7 +232,10 @@ export default function Schedule() {
   const [selectedLesson, setSelectedLesson] = useState(null)
   const [whoToCallLessonId, setWhoToCallLessonId] = useState(null)
   const [createSlot, setCreateSlot] = useState(null)
-  const [mobileDay, setMobileDay] = useState(0)
+  const [mobileDay, setMobileDay] = useState(() => {
+    const weekday = new Date(date).getDay()
+    return weekday === 0 ? 6 : weekday - 1
+  })
   const [conflictsCount, setConflictsCount] = useState(0)
   const [showConflicts, setShowConflicts] = useState(false)
   const [showBulkCancel, setShowBulkCancel] = useState(false)
@@ -351,6 +354,18 @@ export default function Schedule() {
   function goPrev() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? -7 : -1))) }
   function goNext() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? 7 : 1))) }
 
+  function openCreateLesson() {
+    const selectedDate = view === 'week' && isMobile ? toISODate(weekDays[mobileDay]) : date
+    setCreateSlot({
+      date: selectedDate,
+      time: '09:00',
+      room: filters.room || '',
+      groupId: '',
+      teacherId: filters.teacher || '',
+      durationMin: 60,
+    })
+  }
+
   function closeSelectedLesson() {
     setSelectedLesson(null)
     if (searchParams.has('lesson')) {
@@ -378,6 +393,8 @@ export default function Schedule() {
         onShowConflicts={() => setShowConflicts(true)}
         showBulkCancelBtn={isOwnerOrManager}
         onBulkCancel={() => setShowBulkCancel(true)}
+        showMobileCreateBtn={isMobile && !isTeacher}
+        onCreateLesson={openCreateLesson}
       />
 
       <FiltersBar
@@ -496,7 +513,7 @@ export default function Schedule() {
   )
 }
 
-function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, loading, conflictsCount, onShowConflicts, showBulkCancelBtn, onBulkCancel }) {
+function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, loading, conflictsCount, onShowConflicts, showBulkCancelBtn, onBulkCancel, showMobileCreateBtn, onCreateLesson }) {
   return (
     <div style={{
       background: '#fff', borderRadius: 16, padding: '16px 24px', marginBottom: 16,
@@ -507,7 +524,7 @@ function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, lo
         <h1 style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>{t('Расписание')}</h1>
         <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{label}{loading ? ` · ${t('Загрузка…')}` : ''}</p>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div className="kc-schedule-header-controls" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {conflictsCount > 0 && (
           <button
             onClick={onShowConflicts}
@@ -533,13 +550,31 @@ function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, lo
             <Ban size={13} /> {t('Отменить за период')}
           </button>
         )}
-        <div style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2 }}>
-          <ViewToggleBtn active={view === 'week'} onClick={() => onViewChange('week')} icon={<Rows3 size={14} />} label={t('Неделя')} />
-          <ViewToggleBtn active={view === 'day'} onClick={() => onViewChange('day')} icon={<CalendarDays size={14} />} label={t('День')} />
+        {showMobileCreateBtn && (
+          <button
+            className="kc-schedule-mobile-create"
+            onClick={onCreateLesson}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+              minHeight: 40, padding: '0 16px', border: 'none', borderRadius: 10,
+              background: 'linear-gradient(135deg, #FF9D8A 0%, #E4586E 100%)', color: '#fff',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Manrope',
+            }}
+          >
+            <Plus size={16} /> {t('Новое занятие')}
+          </button>
+        )}
+        <div className="kc-schedule-main-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="kc-schedule-view-toggle" style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2 }}>
+            <ViewToggleBtn active={view === 'week'} onClick={() => onViewChange('week')} icon={<Rows3 size={14} />} label={t('Неделя')} />
+            <ViewToggleBtn active={view === 'day'} onClick={() => onViewChange('day')} icon={<CalendarDays size={14} />} label={t('День')} />
+          </div>
+          <div className="kc-schedule-date-nav" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={onPrev} style={navBtnStyle} aria-label={t('Назад')}><ChevronLeft size={16} /></button>
+            <button className="kc-schedule-today" onClick={onToday} style={{ ...navBtnStyle, width: 'auto', padding: '0 16px', fontWeight: 600, fontSize: 13, color: ACCENT }}>{t('Сегодня')}</button>
+            <button onClick={onNext} style={navBtnStyle} aria-label={t('Вперёд')}><ChevronRight size={16} /></button>
+          </div>
         </div>
-        <button onClick={onPrev} style={navBtnStyle} aria-label={t('Назад')}><ChevronLeft size={16} /></button>
-        <button onClick={onToday} style={{ ...navBtnStyle, width: 'auto', padding: '0 16px', fontWeight: 600, fontSize: 13, color: ACCENT }}>{t('Сегодня')}</button>
-        <button onClick={onNext} style={navBtnStyle} aria-label={t('Вперёд')}><ChevronRight size={16} /></button>
       </div>
     </div>
   )
@@ -587,7 +622,7 @@ function Dropdown({ value, onChange, options, width = 160, variant = 'filter', p
   const displayText = selected ? selected[1] : (placeholder ?? options[0][1])
 
   return (
-    <div ref={ref} style={{ width, flexShrink: 0, position: 'relative' }}>
+    <div ref={ref} className={variant === 'filter' ? 'kc-schedule-filter' : undefined} style={{ width, flexShrink: 0, position: 'relative' }}>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -1492,7 +1527,7 @@ function ConflictWarning({ conflicts, onConfirm, onBack, saving }) {
 }
 
 const modalOverlay = { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }
-const modalBox = { background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, padding: '24px 24px 20px', fontFamily: 'Manrope' }
+const modalBox = { background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', overscrollBehavior: 'contain', padding: '24px 24px 20px', fontFamily: 'Manrope' }
 const primaryBtn = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 18px', border: 'none', borderRadius: 8, background: `linear-gradient(135deg, #E8998D, ${ACCENT})`, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope' }
 const secondaryBtn = { padding: '10px 18px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', color: '#6B7280' }
 const dangerBtn = { ...secondaryBtn, color: '#DC2626', borderColor: '#FECACA' }
@@ -1857,13 +1892,13 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
 
   return (
     <div style={modalOverlay} onClick={onClose}>
-      <div style={modalBox} onClick={e => e.stopPropagation()}>
+      <div className="kc-schedule-create-modal" style={modalBox} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
           <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>{t('Новое занятие')}</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit}>
-          <div style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2, marginBottom: 14 }}>
+          <div className="kc-schedule-lesson-type" style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2, marginBottom: 14 }}>
             <ViewToggleBtn active={lessonType === 'group'} onClick={() => setLessonType('group')} icon={<Users size={14} />} label={t('Групповое')} />
             <ViewToggleBtn active={lessonType === 'individual'} onClick={() => setLessonType('individual')} icon={<UserIcon size={14} />} label={t('Индивидуальное')} />
           </div>
@@ -1886,12 +1921,12 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
               <ChildrenMultiSelect value={children} onChange={setChildren} />
             </div>
           )}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-            <div style={{ flex: 1 }}>
+          <div className="kc-schedule-form-row" style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label style={labelStyle}>{t('Дата')}</label>
               <input type="date" value={slot.date} disabled style={{ ...inputStyle, background: '#FAFAFA', color: '#9CA3AF' }} />
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label style={labelStyle}>{t('Время')}</label>
               <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle} required />
             </div>
@@ -1900,8 +1935,8 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
               <input type="number" min={15} max={480} step={15} value={durationMin} onChange={e => setDurationMin(Number(e.target.value))} style={inputStyle} required />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-            <div style={{ flex: 1 }}>
+          <div className="kc-schedule-form-row" style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label style={labelStyle}>{t('Зал')}</label>
               <Dropdown
                 variant="field"
@@ -1911,7 +1946,7 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
                 options={[['', '—'], ...rooms.map(r => [String(r.id), r.name])]}
               />
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label style={labelStyle}>{t('Преподаватель')}</label>
               <Dropdown
                 variant="field"
