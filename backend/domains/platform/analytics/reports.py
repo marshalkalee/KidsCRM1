@@ -13,6 +13,8 @@ from .funnel import BY as FUNNEL_BY
 from .funnel import STAGES, funnel, funnel_by
 from .group_occupancy import group_occupancy
 from .registry import REGISTRY, compute
+from .rejections import STAGES as REJECTION_STAGES
+from .rejections import rejection_comments, rejections, rejections_by
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
 
 UNIT_TITLE = {"money": ", ₸", "percent": ", %", "count": "", "decimal": ""}
@@ -446,6 +448,79 @@ def sources_report(scope, period, params):
         ],
     )
     return [quality, monthly]
+
+
+@report("rejections", "Причины отказов")
+def rejections_report(scope, period, params):
+    kind = params.get("kind", "new")
+    filters = params.get("funnel_filters") or {}
+    data = rejections(scope, period, kind, filters)
+    what = "продлений" if kind == "renewal" else "новых заявок"
+    reasons = Section(
+        "Причины",
+        [
+            Column("Причина", width=26),
+            Column("Отказов", "count", 10),
+            Column("Доля, %", "percent", 10),
+            *[Column(label, "count", 14) for _, label, _ in REJECTION_STAGES],
+        ],
+        [
+            [
+                item["label"] or NOT_SET,
+                item["value"],
+                item["share"],
+                *[item["stages"][key] for key, _, _ in REJECTION_STAGES],
+            ]
+            for item in data["reasons"]
+        ],
+        note=(
+            f"Отказы {what}, случившиеся за период. Потеря контакта («не пришёл на пробное») "
+            f"не входит — {data['lost_contact']} таких отдельно."
+        ),
+    )
+    lost = Section(
+        "Потеря контакта",
+        [Column("Причина", width=26), Column("Отказов", "count", 10)],
+        [[item["label"] or NOT_SET, item["value"]] for item in data["lost_contact_reasons"]],
+    )
+    monthly = Section(
+        "По месяцам",
+        [Column("Месяц", "date", 12), Column("Причина", width=26), Column("Отказов", "count", 10)],
+        [[row["month"], row["label"] or NOT_SET, row["value"]] for row in data["by_month"]],
+    )
+    by_source = Section(
+        "По источникам",
+        [
+            Column("Источник", width=24),
+            Column("Отказов", "count", 10),
+            Column("Главная причина", width=24),
+            Column("Её доля, %", "percent", 12),
+        ],
+        [
+            [
+                item["label"] or NOT_SET,
+                item["value"],
+                item["top_reason"] or NOT_SET,
+                item["top_share"],
+            ]
+            for item in rejections_by(scope, period, "source", kind, filters)
+        ],
+    )
+    comments = Section(
+        "Комментарии",
+        [
+            Column("Дата", "date", 12),
+            Column("Заявка", width=24),
+            Column("Причина", width=22),
+            Column("Этап", width=18),
+            Column("Комментарий", width=60),
+        ],
+        [
+            [row["date"][:10], row["lead"], row["reason"] or NOT_SET, row["stage"], row["comment"]]
+            for row in rejection_comments(scope, period, kind, filters)
+        ],
+    )
+    return [reasons, lost, monthly, by_source, comments]
 
 
 def build(name, scope, period, params=None) -> Export:
