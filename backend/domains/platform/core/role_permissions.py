@@ -163,6 +163,19 @@ def can_manage_lead_dictionaries(user) -> bool:
     return user.role in LEAD_DICTIONARY_MANAGE_ROLES
 
 
+# Аналитика владельца (M3, TRU-118): владелец — вся организация,
+# управляющий — свои филиалы (analytics.scope). Администратору дашборд
+# с выручкой не нужен — у него рабочие списки.
+ANALYTICS_VIEW_ROLES = {
+    User.Role.OWNER,
+    User.Role.MANAGER,
+}
+
+
+def can_view_analytics(user) -> bool:
+    return user.role in ANALYTICS_VIEW_ROLES
+
+
 def get_user_permissions(user) -> dict:
     return {
         "can_view_financials": can_view_financials(user),
@@ -180,4 +193,5 @@ def get_user_permissions(user) -> dict:
         "can_accept_payments": can_accept_payments(user),
         "can_manage_leads": can_manage_leads(user),
         "can_manage_lead_dictionaries": can_manage_lead_dictionaries(user),
+        "can_view_analytics": can_view_analytics(user),
     }

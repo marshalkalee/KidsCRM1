@@ -32,6 +32,7 @@ api_v1_patterns = [
     path("leads/", include("domains.platform.leads.urls")),
     path("ai/", include("domains.platform.ai.urls")),
     path("audit/", include("domains.platform.core.audit_urls")),
+    path("analytics/", include("domains.platform.analytics.urls")),
 ]
 
 urlpatterns = [
