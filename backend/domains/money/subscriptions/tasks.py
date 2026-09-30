@@ -1,6 +1,7 @@
 from celery import shared_task
 
 from .reconciliation import reconcile_all_active_subscriptions
+from .renewal_leads import create_renewal_leads_for_all
 from .statuses import update_all_subscription_statuses
 
 
@@ -12,3 +13,8 @@ def reconcile_balances_task() -> int:
 @shared_task
 def update_subscription_statuses_task() -> int:
     return update_all_subscription_statuses()
+
+
+@shared_task
+def create_renewal_leads_task() -> int:
+    return create_renewal_leads_for_all()

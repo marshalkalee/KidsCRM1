@@ -205,3 +205,45 @@ class RenewalsApiTests(APITestCase):
         )
         self.client.force_authenticate(teacher)
         self.assertEqual(self.client.get("/api/v1/subscriptions/renewals/").status_code, 403)
+
+
+class RenewalLeadRuleTests(RenewalsApiTests):
+    """TRU-98: автоправило «абонемент заканчивается → заявка-продление»."""
+
+    def rule(self):
+        from .renewal_leads import create_renewal_leads
+
+        return create_renewal_leads(self.org)
+
+    def renewal_leads(self):
+        return Lead.objects.filter(organization=self.org, kind="renewal")
+
+    def test_creates_lead_once_for_three_runs(self):
+        # «Скоро Конец» — с телефоном родителя; «Мало Занятий» — без контакта, пропускаем.
+        self.assertEqual([self.rule(), self.rule(), self.rule()], [1, 0, 0])
+        lead = self.renewal_leads().get()
+        self.assertEqual(lead.child, self.soon.child)
+        self.assertIsNone(lead.status_changes.get().changed_by)
+        self.assertIn("заканчивается", lead.comments.get().text)
+
+    def test_rejected_renewal_does_not_come_back(self):
+        self.rule()
+        lead = self.renewal_leads().get()
+        reason = LeadRejectionReason.objects.filter(organization=self.org, kind="renewal").first()
+        change_status(
+            lead, to_status=Lead.Status.REJECTED, actor=self.admin, rejection_reason=reason
+        )
+        self.assertEqual(self.rule(), 0)
+        self.assertEqual(self.renewal_leads().count(), 1)
+
+    def test_renewed_subscription_gets_no_lead(self):
+        self.client.post(
+            f"/api/v1/subscriptions/{self.soon.pk}/renew/",
+            {
+                "subscription_type_id": str(self.type.pk),
+                "starts_on": self.soon.ends_on.isoformat(),
+                "paid_amount": "30000",
+                "payment_method": "cash",
+            },
+        )
+        self.assertEqual(self.rule(), 0)
