@@ -31,6 +31,7 @@ from .breakdowns import BreakdownError, breakdown, visits_heatmap
 from .export import filename, workbook
 from .funnel import FILTERS as FUNNEL_FILTERS
 from .funnel import FunnelError, funnel, funnel_by
+from .group_occupancy import group_occupancy
 from .period import PRESETS, PeriodError, parse_period
 from .registry import REGISTRY, compute
 from .rejections import RejectionError, rejection_comments, rejections, rejections_by
@@ -122,6 +123,16 @@ def heatmap_api(request, version=None):
     return Response({"period": period.as_dict(), "cells": visits_heatmap(scope, period)})
 
 
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def group_occupancy_api(request, version=None):
+    """Заполняемость групп, недобор, динамика и разрезы (TRU-119)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(group_occupancy(scope, period, request.query_params))
+
+
 def _funnel_filters(request):
     """?source=<id>&direction=<id>&manager=<id> — кривой id просто не находит."""
     filters = {}
@@ -201,15 +212,18 @@ def export_api(request, version=None):
         filters = {k: v for k, v in filters.items() if k == "direction"}
     if name == "rejections":
         filters = {k: v for k, v in filters.items() if k in ("source", "direction")}
+    report_params = {
+        "funnel_filters": filters,
+        "filter_labels": _filter_labels(scope.organization, filters),
+        "kind": request.query_params.get("kind", "new"),
+    }
+    if name == "group_occupancy":
+        report_params["occupancy_filters"] = request.query_params
     export = build(
         name,
         scope,
         period,
-        {
-            "funnel_filters": filters,
-            "filter_labels": _filter_labels(scope.organization, filters),
-            "kind": request.query_params.get("kind", "new"),
-        },
+        report_params,
     )
     response = HttpResponse(
         workbook(export, scope, period),

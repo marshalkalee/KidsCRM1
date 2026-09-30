@@ -33,6 +33,7 @@ import AnalyticsKit from './pages/AnalyticsKit'
 import AnalyticsRevenue from './pages/AnalyticsRevenue'
 import AnalyticsAttendance from './pages/AnalyticsAttendance'
 import AnalyticsFunnel from './pages/AnalyticsFunnel'
+import AnalyticsGroups from './pages/AnalyticsGroups'
 import AnalyticsSources from './pages/AnalyticsSources'
 import AnalyticsRejections from './pages/AnalyticsRejections'
 
@@ -69,6 +70,7 @@ function App() {
                 <Route path="analytics/revenue" element={<RequirePermission permission="can_view_analytics"><AnalyticsRevenue /></RequirePermission>} />
                 <Route path="analytics/attendance" element={<RequirePermission permission="can_view_analytics"><AnalyticsAttendance /></RequirePermission>} />
                 <Route path="analytics/funnel" element={<RequirePermission permission="can_view_analytics"><AnalyticsFunnel /></RequirePermission>} />
+                <Route path="analytics/groups" element={<RequirePermission permission="can_view_analytics"><AnalyticsGroups /></RequirePermission>} />
                 <Route path="analytics/rejections" element={<RequirePermission permission="can_view_analytics"><AnalyticsRejections /></RequirePermission>} />
                 <Route path="analytics/sources" element={<RequirePermission permission="can_view_analytics"><AnalyticsSources /></RequirePermission>} />
                 <Route path="analytics/kit" element={<RequirePermission permission="can_view_analytics"><AnalyticsKit /></RequirePermission>} />
