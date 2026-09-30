@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from domains.platform.core.images import clean_image, delete_image, save_image
 from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
 from domains.platform.core.role_permissions import get_user_permissions
 from domains.platform.users.serializers import (
@@ -14,6 +15,7 @@ from domains.platform.users.serializers import (
     CustomTokenObtainSerializer,
     InviteStaffSerializer,
     OrganizationRegisterSerializer,
+    ProfileSerializer,
 )
 
 from .models import User
@@ -136,17 +138,54 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = request.user
-        return Response(
-            {
-                "id": str(user.id),
-                "full_name": user.full_name,
-                "phone": user.phone,
-                "role": user.role,
-                "organization_id": str(user.organization_id) if user.organization_id else None,
-                # Название — в готовом тексте WhatsApp из карточки заявки (TRU-96).
-                "organization_name": user.organization.name if user.organization_id else None,
-                "branches": [str(b.id) for b in user.branches.all()],
-                "permissions": get_user_permissions(user),
-            }
-        )
+        return Response(self.payload(request.user))
+
+    def patch(self, request):
+        serializer = ProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(self.payload(request.user))
+
+    @staticmethod
+    def payload(user):
+        return {
+            "id": str(user.id),
+            "full_name": user.full_name,
+            "phone": user.phone,
+            "role": user.role,
+            "photo_url": user.photo_url,
+            "organization_id": str(user.organization_id) if user.organization_id else None,
+            # Название — в готовом тексте WhatsApp из карточки заявки (TRU-96).
+            "organization_name": user.organization.name if user.organization_id else None,
+            "branches": [str(b.id) for b in user.branches.all()],
+            "permissions": get_user_permissions(user),
+        }
+
+
+PHOTO_FOLDER = "users/photos"
+
+
+class MePhotoView(APIView):
+    """Своё фото: multipart file → новая ссылка в профиле; DELETE — убрать.
+    Прежний файл удаляется, чтобы снятое фото не оставалось на сервере."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        uploaded, error = clean_image(request.FILES)
+        if error:
+            return Response({"file": [error]}, status=status.HTTP_400_BAD_REQUEST)
+        self._replace(request.user, save_image(request, uploaded, PHOTO_FOLDER))
+        return Response(MeView.payload(request.user))
+
+    def delete(self, request):
+        self._replace(request.user, "")
+        return Response(MeView.payload(request.user))
+
+    @staticmethod
+    def _replace(user, url):
+        old = user.photo_url
+        user.photo_url = url
+        user.save(update_fields=["photo_url", "updated_at"])
+        if old:
+            delete_image(old, PHOTO_FOLDER)

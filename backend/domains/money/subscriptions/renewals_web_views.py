@@ -138,7 +138,6 @@ def sell_renewal_view(request, subscription_id):
                 direction=old_sub.direction,
                 branch=old_sub.branch,
                 starts_on=form.cleaned_data["starts_on"],
-                ends_on=form.cleaned_data["ends_on"],
                 discount_amount=form.cleaned_data["discount_amount"] or 0,
                 discount_reason=form.cleaned_data["discount_reason"],
                 paid_amount=form.cleaned_data["paid_amount"],
