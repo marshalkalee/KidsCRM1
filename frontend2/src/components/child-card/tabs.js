@@ -1,7 +1,6 @@
 import AttendanceTab from './AttendanceTab'
 import CommunicationsTab from './CommunicationsTab'
 import ContactsTab from './ContactsTab'
-import SubscriptionsTab from './SubscriptionsTab'
 import { t } from '../../i18n'
 import PaymentsTab from '../money/PaymentsTab'
 import SubscriptionsTab from '../money/SubscriptionsTab'
