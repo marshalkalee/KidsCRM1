@@ -6,6 +6,7 @@ urlpatterns = [
     path("metrics/", views.metrics_api, name="analytics-metrics"),
     path("breakdown/", views.breakdown_api, name="analytics-breakdown"),
     path("heatmap/", views.heatmap_api, name="analytics-heatmap"),
+    path("group-occupancy/", views.group_occupancy_api, name="analytics-group-occupancy"),
     path("funnel/", views.funnel_api, name="analytics-funnel"),
     path("funnel/by/", views.funnel_by_api, name="analytics-funnel-by"),
     path("sources/", views.sources_api, name="analytics-sources"),
