@@ -4,7 +4,8 @@ from rest_framework.test import APITestCase
 
 from domains.people.clients.models import Child, ChildContact, ContactPhone, ParentContact
 from domains.platform.core.utils import today_for_org
-from domains.platform.leads.services import create_renewal_lead
+from domains.platform.leads.models import Lead, LeadRejectionReason
+from domains.platform.leads.services import change_status, create_renewal_lead
 from domains.platform.tenants.models import Branch, Direction, Organization
 from domains.platform.users.models import User
 
@@ -119,6 +120,45 @@ class RenewalsApiTests(APITestCase):
         self.assertEqual([r["child_name"] for r in self.list()["results"]], ["Мало Занятий"])
         in_filter = {row["child_id"] for row in expiring_child_ids(self.org)}
         self.assertNotIn(self.soon.child_id, in_filter)
+
+    def test_sale_closes_open_renewal_lead(self):
+        """TRU-98: продление продано — заявка-продление закрыта «Купил», с автором."""
+        lead, _ = create_renewal_lead(self.soon.child, actor=self.admin)
+        response = self.client.post(
+            f"/api/v1/subscriptions/{self.soon.pk}/renew/",
+            {
+                "subscription_type_id": str(self.type.pk),
+                "starts_on": self.soon.ends_on.isoformat(),
+                "paid_amount": "30000",
+                "payment_method": "cash",
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, Lead.Status.PURCHASED)
+        change = lead.status_changes.latest("changed_at")
+        self.assertEqual(change.changed_by, self.admin)
+        self.assertIn("8 занятий", change.comment)
+
+    def test_sale_keeps_rejected_renewal_and_works_without_lead(self):
+        lead, _ = create_renewal_lead(self.soon.child, actor=self.admin)
+        reason = LeadRejectionReason.objects.filter(organization=self.org, kind="renewal").first()
+        change_status(
+            lead, to_status=Lead.Status.REJECTED, actor=self.admin, rejection_reason=reason
+        )
+        for sub in (self.soon, self.few):
+            response = self.client.post(
+                f"/api/v1/subscriptions/{sub.pk}/renew/",
+                {
+                    "subscription_type_id": str(self.type.pk),
+                    "starts_on": self.today.isoformat(),
+                    "paid_amount": "0",
+                },
+            )
+            self.assertEqual(response.status_code, 201, response.data)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, Lead.Status.REJECTED)
+        self.assertFalse(Lead.objects.filter(child=self.few.child).exists())
 
     def test_renew_with_bad_input_is_400(self):
         response = self.client.post(

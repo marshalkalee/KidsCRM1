@@ -24,9 +24,12 @@ import OrganizationSettings from './pages/OrganizationSettings'
 import LeadDictionaries from './pages/LeadDictionaries'
 import Leads from './pages/Leads'
 import Notifications from './pages/Notifications'
+import Profile from './pages/Profile'
 import LeadDetail from './pages/LeadDetail'
 import Debts from './pages/Debts'
 import Renewals from './pages/Renewals'
+import Analytics from './pages/Analytics'
+import AnalyticsKit from './pages/AnalyticsKit'
 
 function App() {
   // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
@@ -47,6 +50,7 @@ function App() {
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
                 <Route path="notifications" element={<Notifications />} />
+                <Route path="profile" element={<Profile />} />
                 <Route path="children" element={<Children />} />
                 <Route path="children/import" element={<RequirePermission permission="can_manage_children"><ChildImport /></RequirePermission>} />
                 <Route path="children/:id" element={<ChildDetail />} />
@@ -56,6 +60,8 @@ function App() {
                 <Route path="attendance" element={<AttendanceScreen />} />
                 <Route path="debts" element={<RequirePermission permission="can_view_client_money"><Debts /></RequirePermission>} />
                 <Route path="renewals" element={<RequirePermission permission="can_view_client_money"><Renewals /></RequirePermission>} />
+                <Route path="analytics" element={<RequirePermission permission="can_view_analytics"><Analytics /></RequirePermission>} />
+                <Route path="analytics/kit" element={<RequirePermission permission="can_view_analytics"><AnalyticsKit /></RequirePermission>} />
                 <Route path="groups" element={<Groups />} />
                 <Route path="groups/:id" element={<GroupDetail />} />
                 <Route path="branches" element={<RequirePermission permission="can_manage_branches"><Branches /></RequirePermission>} />

@@ -5,18 +5,12 @@
 только ссылка (photo_url).
 """
 
-import uuid
-from pathlib import Path
+from domains.platform.core.images import MAX_IMAGE_BYTES, save_image
 
-from django.core.files.storage import default_storage
-
-# Как подсказка в форме: «JPG, PNG до 5 МБ».
-MAX_PHOTO_BYTES = 5 * 1024 * 1024
+MAX_PHOTO_BYTES = MAX_IMAGE_BYTES
 
 
 def save_child_photo(request, uploaded) -> str:
     """Сохраняет проверенное изображение и возвращает абсолютный URL
     (URLField на Child требует схему и хост)."""
-    extension = Path(uploaded.name).suffix.lower()
-    saved_path = default_storage.save(f"children/photos/{uuid.uuid4()}{extension}", uploaded)
-    return request.build_absolute_uri(default_storage.url(saved_path))
+    return save_image(request, uploaded, "children/photos")

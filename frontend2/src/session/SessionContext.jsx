@@ -86,6 +86,7 @@ export function SessionProvider({ children }) {
     activeBranch: branches.find(b => String(b.id) === String(activeBranchId)) || null,
     setActiveBranchId,
     reload: load,
+    updateUser: setUser,
     logout,
   }), [user, status, branches, activeBranchId, setActiveBranchId, load, logout])
 
