@@ -61,6 +61,9 @@ class UserViewSet(viewsets.ModelViewSet):
 @method_decorator(ratelimit(key="ip", rate="5/m", method="POST", block=True), name="post")
 class RegisterView(APIView):
     permission_classes = [AllowAny]
+    # Регистрация без токена: старый токен в браузере (например, отключённого
+    # пользователя) не должен мешать завести новый центр.
+    authentication_classes = []
 
     def post(self, request):
         serializer = OrganizationRegisterSerializer(data=request.data)
