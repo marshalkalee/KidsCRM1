@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Badge, Card, CardHeader, DataTable, Dropdown, ErrorState, PageHeader, Skeleton, Tabs, formatDate } from '../ui'
+import { Badge, Button, Card, CardHeader, DataTable, Dropdown, ErrorState, PageHeader, Skeleton, Tabs, formatDate } from '../ui'
 import { t } from '../i18n'
 import {
   AnalyticsNav, AnalyticsToolbar, DonutChart, ExportButton, PALETTE, StackedBars, breakdownLabel, formatValue,
@@ -93,26 +94,26 @@ export default function AnalyticsRejections() {
           </div>
 
           <div className="mb-4 grid gap-4 lg:grid-cols-5">
-            <Card className="lg:col-span-2">
+            <Card className="min-w-0 lg:col-span-2">
               <CardHeader title={t('Причины')} description={t('Без потери контакта')} />
               {summary.reasons.length ? (
                 <DonutChart items={summary.reasons} unit="count" centerLabel={t('отказов')} />
               ) : <p className="py-8 text-center text-sm text-ink-muted">{t('Содержательных отказов нет')}</p>}
             </Card>
-            <Card className="lg:col-span-3">
+            <Card className="min-w-0 lg:col-span-3">
               <CardHeader title={t('Причина × этап')} description={t('На каком шаге отказались: сразу после звонка — про цену и ожидания, после пробного — про занятие')} />
               <StageMatrix reasons={summary.reasons} stages={summary.stages} />
             </Card>
           </div>
 
           <div className="mb-4 grid gap-4 lg:grid-cols-2">
-            <Card>
+            <Card className="min-w-0">
               <CardHeader title={t('Отказы по месяцам')} description={t('Растёт ли доля «дорого» после повышения цен')} />
               <div style={{ height: 280 }}>
                 {summary.by_month.length ? <StackedBars rows={summary.by_month} /> : null}
               </div>
             </Card>
-            <Card padded={false}>
+            <Card padded={false} className="min-w-0">
               <div className="p-5 pb-0"><CardHeader title={t('По источникам')} description={t('Сколько отказов и главная причина')} /></div>
               <DataTable
                 columns={[
@@ -128,28 +129,47 @@ export default function AnalyticsRejections() {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader title={t('Комментарии к отказам')} description={t('Что говорили своими словами — свежие сверху')} />
-            {data.comments.length ? (
-              <ul className="divide-y divide-line">
-                {data.comments.map(row => (
-                  <li key={`${row.lead_id}-${row.date}`} className="py-3 first:pt-0 last:pb-0">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-subtle">
-                      <span>{formatDate(row.date)}</span>
-                      <Link to={`/leads/${row.lead_id}`} className="font-semibold text-ink hover:text-brand-600">{row.lead}</Link>
-                      <Badge tone={row.lost_contact ? 'warning' : 'neutral'}>{row.reason || t('Не указана')}</Badge>
-                      <span>{row.stage}</span>
-                      {row.author && <span>· {row.author}</span>}
-                    </div>
-                    <p className="mt-1 text-sm text-ink">{row.comment}</p>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="py-6 text-center text-sm text-ink-muted">{t('Комментариев к отказам за период нет')}</p>}
-          </Card>
+          <Comments rows={data.comments} />
         </>
       )}
     </>
+  )
+}
+
+const COMMENTS_PAGE = 10
+
+/** Комментарии к отказам — по 10, «Показать ещё» (с сервера — до 100 свежих). */
+function Comments({ rows }) {
+  const [shown, setShown] = useState(COMMENTS_PAGE)
+  return (
+    <Card>
+      <CardHeader title={t('Комментарии к отказам')} description={t('Что говорили своими словами — свежие сверху')} />
+      {rows.length ? (
+        <>
+          <ul className="divide-y divide-line">
+            {rows.slice(0, shown).map(row => (
+              <li key={`${row.lead_id}-${row.date}`} className="py-3 first:pt-0 last:pb-0">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-subtle">
+                  <span>{formatDate(row.date)}</span>
+                  <Link to={`/leads/${row.lead_id}`} className="font-semibold text-ink hover:text-brand-600">{row.lead}</Link>
+                  <Badge tone={row.lost_contact ? 'warning' : 'neutral'}>{row.reason || t('Не указана')}</Badge>
+                  <span>{row.stage}</span>
+                  {row.author && <span>· {row.author}</span>}
+                </div>
+                <p className="mt-1 text-sm text-ink">{row.comment}</p>
+              </li>
+            ))}
+          </ul>
+          {shown < rows.length && (
+            <div className="mt-4 text-center">
+              <Button size="sm" onClick={() => setShown(n => n + COMMENTS_PAGE * 2)}>
+                {t('Показать ещё ({n})', { n: rows.length - shown })}
+              </Button>
+            </div>
+          )}
+        </>
+      ) : <p className="py-6 text-center text-sm text-ink-muted">{t('Комментариев к отказам за период нет')}</p>}
+    </Card>
   )
 }
 
@@ -168,19 +188,20 @@ function StageMatrix({ reasons, stages }) {
   const max = Math.max(1, ...reasons.flatMap(r => Object.values(r.stages)))
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[420px] border-separate border-spacing-1 text-[13px]">
+      {/* table-fixed: на телефоне колонки делят ширину, а не распирают страницу. */}
+      <table className="w-full table-fixed border-separate border-spacing-1 text-[12px] sm:text-[13px]">
         <thead>
           <tr>
-            <th />
+            <th className="w-[30%]" />
             {stages.map(stage => (
-              <th key={stage.key} className="px-1 pb-1 text-center text-[11px] font-semibold text-ink-subtle">{STAGE_LABELS[stage.key]()}</th>
+              <th key={stage.key} className="px-0.5 pb-1 text-center text-[10px] font-semibold leading-tight text-ink-subtle sm:text-[11px]">{STAGE_LABELS[stage.key]()}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {reasons.map(reason => (
             <tr key={reason.key ?? 'none'}>
-              <td className="max-w-40 truncate pr-2 text-ink">{breakdownLabel(reason)}</td>
+              <td className="truncate pr-1 text-ink">{breakdownLabel(reason)}</td>
               {stages.map(stage => {
                 const value = reason.stages[stage.key]
                 return (

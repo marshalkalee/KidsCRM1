@@ -67,4 +67,5 @@ export const REPORTS = [
   { key: '/analytics/attendance', get label() { return t('Посещаемость') } },
   { key: '/analytics/funnel', get label() { return t('Воронка продаж') } },
   { key: '/analytics/sources', get label() { return t('Источники') } },
+  { key: '/analytics/rejections', get label() { return t('Отказы') } },
 ]
