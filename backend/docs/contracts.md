@@ -31,9 +31,10 @@
 | 2   | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` / `link_parent` | Анель | импорт Excel, конвертация заявки | [`backend/domains/people/clients/services.py`](../domains/people/clients/services.py) |
 | 3   | Расписание → всем: `LessonService.enroll` | Дарья | отработки (M1), пробные (M2) | `backend/apps/schedule/services.py` (путь уточнит Дарья) |
 | 4   | Деньги → всем: `AuditLog.record` | Bekzat | все домены | [`backend/domains/platform/core/audit.py`](../domains/platform/core/audit.py) |
-| 5   | Деньги → всем: `debt_for_child` / `debt_for_parent` / `debt_for_subscription` | Bekzat | Анель (список детей, карточка родителя), экраны «Задолженности», вкладка «Оплаты» | [`backend/domains/money/payments/debt.py`](../domains/money/payments/debt.py) |
+| 5   | Деньги → всем: `debt_by_child` / `debt_for_child` / `debt_for_parent` / `debtor_subscriptions` | Bekzat | Анель (список детей, карточка родителя), экраны «Задолженности», вкладка «Оплаты» | [`backend/domains/money/subscriptions/debt.py`](../domains/money/subscriptions/debt.py) |
 | 6   | Люди → всем: вкладки карточки ребёнка (frontend2) | Анель | Bekzat («Абонементы», «Оплаты»), Дарья («Посещения») | [`frontend2/src/components/child-card/tabs.js`](../../frontend2/src/components/child-card/tabs.js) |
 | 7   | Продажи → всем: `create_lead` / `change_status` | Анель | Дарья (пробные, TRU-100), Bekzat (задачи, продления), приём с сайта | [`backend/domains/platform/leads/services.py`](../domains/platform/leads/services.py) |
+| 8   | Аналитика → все отчёты M3: `register` / `compute`, `/api/v1/analytics/metrics/` | Анель | Дарья, Bekzat (отчёты TRU-114–128, дашборд TRU-129), каркас дашборда TRU-113 | [`backend/domains/platform/analytics/registry.py`](../domains/platform/analytics/registry.py) |
 
 
 
@@ -130,22 +131,20 @@ AuditLog.record(actor, action: str, entity: AuditEntity, before: dict | None, af
 
 debtor_child_ids(organization) -> QuerySet[child_id]
 debt_by_child(organization, child_ids) -> dict[child_id, Decimal]
+debt_for_child(organization, child_id) -> Decimal
+debt_for_parent(organization, parent) -> Decimal
 debtor_subscriptions(organization, branch=None, direction=None, min_age_days=None) -> QuerySet[Subscription]
 
 Единственный источник правды для долга (ТЗ п. 3.1, критерий приёмки
 MVP №4). Долг — по каждому абонементу отдельно (price > paid), без
-взаимозачёта между абонементами одного ребёнка. Код —
-domains/money/subscriptions/debt.py (не payments/debt.py — устарел).
+взаимозачёта между абонементами одного ребёнка. Долг родителя — сумма
+по всем привязанным детям (любая роль в ChildContact, не только
+is_payer) — так же, как уже считает карточка родителя. Код —
+domains/money/subscriptions/debt.py — единственный модуль, второй
+(payments/debt.py) удалён (TRU-73).
 
-Владелец: Bekzat. Потребители: Анель (список детей, карточка родителя).
-
-> **Внимание (TRU-73):** в коде пока два расчёта долга —
-> `domains/money/payments/debt.py` (этот контракт) и
-> `domains/money/subscriptions/debt.py` (`debtor_child_ids`,
-> `debt_by_child` — сейчас ими пользуются список детей, фильтр «есть
-> долг» и карточка родителя). Они расходятся в учёте переплаты, в долге
-> родителя (только где он плательщик или по всем детям) и в статусе
-> оплаты. До закрытия TRU-73 цифры на экранах могут различаться.
+Владелец: Bekzat. Потребители: Анель (список детей, карточка родителя,
+экран «Задолженности», вкладка «Оплаты»).
 
 ## 6. Люди → всем (вкладки карточки ребёнка, frontend2)
 
@@ -232,7 +231,48 @@ lead, created = create_renewal_lead(child, actor=None)               # авто�
 - Продления — отдельная воронка (`kind=renewal`): без пробного, свои причины
   отказа (`rejection-reasons/?kind=renewal`), в списке и на доске —
   `?kind=renewal`. В конверсию новых заявок не попадают.
-- «Продлил» — `change_status(lead, to_status=PURCHASED)` после продажи
-  абонемента.
+- «Продлил» ставится сам: `sell_subscription` (и продление, и продажа из
+  карточки) вызывает `close_renewal_on_sale(child, actor=…)` — открытое
+  продление ребёнка уходит в `PURCHASED` с автором и названием абонемента.
+  Отказ по продлению продажа не трогает.
+
+Владелец: Анель. Потребители: Дарья, Bekzat.
+
+## 8. Аналитика → все отчёты (TRU-118, ADR-0006)
+
+```python
+from domains.platform.analytics.registry import EventMetric, register, count, total
+
+register(EventMetric(
+    name="trial_visits", label="Пробных посещений", unit="count",
+    source="Посещаемость: пробные записи", min_history_days=28,
+    queryset=lambda scope: scope.filter(<queryset>, "lesson__group__branch_id"),
+    date_field="lesson__starts_at", aggregate=count(),
+))
+
+compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, series, …}}
+```
+
+- Отчёт не пишет свой SQL в view и свой выбор периода: регистрирует метрику
+  в `analytics/metrics.py` (или своём модуле, импортированном оттуда) и
+  получает значение, прошлый период, график и «данных пока мало» одинаково.
+- Виды: `EventMetric` (события с датой), `RatioMetric` (отношение двух
+  метрик), `SnapshotMetric` (состояние «на сейчас», история — из почасовых
+  снимков `MetricSnapshot`).
+- Цифра, которая уже считается в операционке, берётся из того же сервиса:
+  долг — `subscriptions.debt`, заполняемость — `groups.queries`, оплаты —
+  правило `paid_sum` (подтверждённые, не отменённые).
+- Филиалы — только через `scope.filter(qs, "<путь до branch_id>")`: права
+  управляющего проверяются в одном месте (`analytics/scope.py`).
+- API: `GET /api/v1/analytics/metrics/?metrics=a,b&period=month|week|today|
+  quarter|year|custom&from=&to=&branch=<id>…&compare=0&series=0`,
+  `GET /api/v1/analytics/catalog/` — список метрик, доступные филиалы,
+  периоды. Доступ — `can_view_analytics` (владелец, управляющий).
+- Фронт (TRU-113): отчёт собирается из `frontend2/src/components/analytics`:
+  `useAnalyticsFilters()` (период и филиалы в адресе, общие для всех
+  отчётов), `useMetrics([...], filters)`, `AnalyticsToolbar`, `MetricTile`,
+  `ChartCard` (загрузка, ошибка, «данных пока мало», пусто) с `TrendChart` /
+  `BarsChart`, `FunnelChart`. Все состояния на примерах — `/analytics/kit`.
+  Подпись и «хорошее направление» новой метрики — в `analytics/meta.js`.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.

@@ -1,0 +1,12 @@
+{% load static %}
+<p>
+  <strong>{{ old_subscription.child.full_name }}</strong> — {{ old_subscription.subscription_type_version.name }}
+</p>
+{% for field in form %}
+  <label class="kc-form-input__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+  {{ field }}
+  {% if field.errors %}<p class="kc-form-error">{{ field.errors }}</p>{% endif %}
+{% endfor %}
+<button type="submit"
+        class="kc-btn kc-btn--primary"
+        data-i18n="renewals.sale_submit">Продать</button>

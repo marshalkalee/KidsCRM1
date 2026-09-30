@@ -10,6 +10,7 @@ import {
   ageLabel, cn, formatDate, money,
 } from '../ui'
 import { t } from '../i18n'
+import { ChildBrief } from '../components/ai/assist'
 
 const GENDERS = { get female() { return t('Девочка') }, get male() { return t('Мальчик') } }
 
@@ -74,6 +75,8 @@ export default function ChildDetail() {
         title={child.full_name}
         actions={permissions.can_edit && <Button icon={Pencil} onClick={() => setEditing(true)}>{t('Редактировать')}</Button>}
       />
+
+      <ChildBrief childId={child.id} />
 
       <Card className="mb-6">
         <div className="flex flex-col gap-5 md:flex-row md:items-start">

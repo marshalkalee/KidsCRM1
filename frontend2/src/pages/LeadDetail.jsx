@@ -2,10 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowRight, CalendarPlus, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Trash2, UserRound, UserRoundPlus,
+  ArrowRight, CalendarPlus, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Sparkles, Trash2, UserRound,
 } from 'lucide-react'
 import api from '../api/axios'
 import LeadConversionModal from '../components/leads/LeadConversionModal'
 import LeadModal from '../components/leads/LeadModal'
+import { AIMessageModal, useAI } from '../components/ai/ai'
+import { LeadGroups } from '../components/ai/assist'
 import RejectModal from '../components/leads/RejectModal'
 import TrialBookingModal from '../components/leads/TrialBookingModal'
 import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/format'
@@ -47,6 +50,8 @@ export default function LeadDetail() {
   const [bookingTrial, setBookingTrial] = useState(false)
   const [converting, setConverting] = useState(false)
   const [staff, setStaff] = useState([])
+  const [writing, setWriting] = useState(false)
+  const ai = useAI()
 
   const loadExtras = useCallback(() => {
     api.get(`leads/${id}/history/`).then(res => setHistory(res.data)).catch(() => {})
@@ -158,6 +163,15 @@ export default function LeadDetail() {
                 <MessageCircle className="size-4" /> WhatsApp
               </a>
             </div>
+            {ai.enabled && (
+              <button
+                type="button"
+                onClick={() => setWriting(true)}
+                className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[#ddd6fe] bg-[#faf5ff] text-sm font-semibold text-[#7c3aed] hover:bg-[#f3e8ff]"
+              >
+                <Sparkles className="size-4" /> {t('Написать с ИИ')}
+              </button>
+            )}
           </Card>
 
           <Card>
@@ -186,6 +200,8 @@ export default function LeadDetail() {
               </div>
             </dl>
           </Card>
+
+          {!lead.converted_child && lead.kind !== 'renewal' && <LeadGroups leadId={lead.id} />}
 
           {lead.converted_child && (
             <Card>
@@ -222,6 +238,7 @@ export default function LeadDetail() {
         </div>
       </div>
 
+      {writing && <AIMessageModal lead={lead} onClose={() => setWriting(false)} />}
       {editing && <LeadModal lead={lead} onClose={() => setEditing(false)} onSaved={saved => { setLead(saved); setEditing(false) }} />}
       {bookingTrial && (
         <TrialBookingModal

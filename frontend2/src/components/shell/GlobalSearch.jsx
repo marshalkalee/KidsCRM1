@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, User, Users } from 'lucide-react'
+import { Loader2, Search, Sparkles, User, Users } from 'lucide-react'
 import api from '../../api/axios'
-import { cn } from '../../ui'
+import { cn, useToast } from '../../ui'
+import { useAI } from '../ai/ai'
 import { t } from '../../i18n'
 
 const MIN_LENGTH = 3 // как на сервере (search.GLOBAL_SEARCH_MIN_LENGTH)
@@ -32,6 +33,9 @@ export function GlobalSearch({ className }) {
   const [found, setFound] = useState({ q: '', results: [] })
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
+  const [asking, setAsking] = useState(false)
+  const ai = useAI()
+  const toast = useToast()
 
   useEffect(() => {
     const onKey = e => {
@@ -49,6 +53,24 @@ export function GlobalSearch({ className }) {
   const loading = !tooShort && found.q !== q
   const results = tooShort || loading ? [] : found.results
   const showPanel = open && !tooShort
+  // Фраза из нескольких слов — предлагаем ИИ: «должники из Орбиты больше недели».
+  const offerAI = ai.enabled && q.includes(' ')
+
+  async function askAI() {
+    setAsking(true)
+    try {
+      const res = await api.post('ai/search/', { query: q })
+      setOpen(false)
+      setQuery('')
+      inputRef.current?.blur()
+      navigate(res.data.path)
+      if (res.data.explanation) toast.success(res.data.explanation)
+    } catch (err) {
+      toast.error(err.response?.data?.detail || t('Не получилось — попробуйте иначе'))
+    } finally {
+      setAsking(false)
+    }
+  }
 
   useEffect(() => {
     if (tooShort) return undefined
@@ -69,6 +91,7 @@ export function GlobalSearch({ className }) {
   }
 
   function onKeyDown(e) {
+    if (e.key === 'Enter' && offerAI && !results.length && !loading) { e.preventDefault(); askAI(); return }
     if (tooShort || !results.length) return
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => (i + 1) % results.length) }
     if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => (i - 1 + results.length) % results.length) }
@@ -99,7 +122,7 @@ export function GlobalSearch({ className }) {
       {showPanel && (
         <div className="absolute left-0 right-0 top-12 z-40 overflow-hidden rounded-lg border border-line bg-surface shadow-pop" role="listbox">
           {loading && <p className="px-4 py-3 text-sm text-ink-muted">{t('Ищем…')}</p>}
-          {!loading && !results.length && <p className="px-4 py-3 text-sm text-ink-muted">{t('Ничего не нашлось')}</p>}
+          {!loading && !results.length && !offerAI && <p className="px-4 py-3 text-sm text-ink-muted">{t('Ничего не нашлось')}</p>}
           {results.map((result, i) => {
             const Icon = result.type === 'child' ? User : Users
             const hint = MATCHED_ON[result.matched_on]
@@ -127,6 +150,23 @@ export function GlobalSearch({ className }) {
               </button>
             )
           })}
+          {offerAI && (
+            <button
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={askAI}
+              disabled={asking}
+              className="flex w-full items-center gap-3 border-t border-line bg-[#faf5ff] px-4 py-2.5 text-left hover:bg-[#f3e8ff]"
+            >
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#ede9fe] text-[#7c3aed]">
+                {asking ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-[#7c3aed]">{t('Найти с ИИ: «{q}»', { q })}</span>
+                <span className="block truncate text-xs text-ink-muted">{t('Откроет нужный список с фильтрами')}</span>
+              </span>
+            </button>
+          )}
         </div>
       )}
     </div>

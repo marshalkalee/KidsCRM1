@@ -89,7 +89,6 @@ class ChildTableApiTests(TestCase):
             direction=self.direction,
             branch=self.branch,
             starts_on=datetime.date.today(),
-            ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=Decimal(paid_amount),
             payment_method="cash",
         )

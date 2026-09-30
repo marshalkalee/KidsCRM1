@@ -59,6 +59,8 @@ DOMAIN_APPS = [
     "domains.platform.notifications",
     "domains.platform.tasks",
     "domains.platform.leads",
+    "domains.platform.ai",
+    "domains.platform.analytics",
     "domains.scheduling.schedule_templates",
 ]
 
@@ -221,9 +223,23 @@ CACHES = {
         "LOCATION": env("REDIS_URL", default="redis://localhost:6379/0"),
         "KEY_PREFIX": "import_progress",
     },
+    # Аналитика (TRU-118, ADR-0006): общий для всех воркеров кэш готовых
+    # метрик — locmem у каждого процесса свой, и дашборд считался бы заново
+    # в каждом воркере.
+    "analytics": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("REDIS_URL", default="redis://localhost:6379/0"),
+        "KEY_PREFIX": "analytics",
+    },
 }
 
 CELERY_BEAT_SCHEDULE = {
+    # Снимки долга и заполняемости для истории (TRU-118, ADR-0006): каждый
+    # час на сегодняшнюю дату центра, последний за день перезаписывает.
+    "snapshot-analytics-metrics": {
+        "task": "domains.platform.analytics.tasks.snapshot_metrics_task",
+        "schedule": crontab(minute=50),
+    },
     "generate-lessons-daily": {
         "task": (
             "domains.scheduling.schedule_templates.tasks"
@@ -240,3 +256,13 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=0, minute=5),  # сразу после полуночи — "утром уже истёк"
     },
 }
+
+# ИИ-помощник (эксперимент): без ключа функции выключены, экраны их не показывают.
+# Ключ — только из окружения, в коде и репозитории его нет.
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+AI_MODEL = env("AI_MODEL", default="claude-opus-5")
+# Провайдер: anthropic (по умолчанию) или openai — для показа с ключом OpenAI.
+AI_PROVIDER = env("AI_PROVIDER", default="anthropic")
+OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
+OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-4o-mini")
+OPENAI_VISION_MODEL = env("OPENAI_VISION_MODEL", default="gpt-4o")

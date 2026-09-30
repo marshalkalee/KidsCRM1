@@ -5,6 +5,7 @@ import api from '../api/axios'
 import { useSession } from '../session/SessionContext'
 import { Button, Card, PageHeader } from '../ui'
 import { t } from '../i18n'
+import { DailyPlan } from '../components/ai/assist'
 
 // Главная — приветствие, прогресс настройки центра (владельцу, пока не
 // завершена) и быстрые переходы. Сводка по деньгам и посещаемости — позже.
@@ -30,6 +31,7 @@ export default function Dashboard() {
     <>
       <PageHeader title={`${greeting()}${firstName ? `, ${firstName}` : ''}`} description={t('С чего начнём?')} />
       {isOwner && <OnboardingCard />}
+      <DailyPlan />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {SHORTCUTS.map(item => (
           <Link key={item.to} to={item.to} className="group">
