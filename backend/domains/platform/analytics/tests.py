@@ -287,6 +287,55 @@ class ApiTests(AnalyticsFixtures):
         self.assertEqual(bad_period.status_code, 400)
         self.assertIn("period", bad_period.data)
 
+    def test_breakdown_by_method_and_branch(self):
+        self.client.force_authenticate(self.owner)
+        by_method = self.client.get(
+            "/api/v1/analytics/breakdown/", {"metric": "revenue", "by": "method"}
+        ).data
+        self.assertEqual(by_method["unit"], "money")
+        self.assertEqual(
+            [(i["key"], i["label"], i["value"]) for i in by_method["items"]],
+            [("cash", "Наличные", "45000")],
+        )
+        by_branch = self.client.get(
+            "/api/v1/analytics/breakdown/", {"metric": "revenue", "by": "branch"}
+        ).data["items"]
+        self.assertEqual(
+            [(i["label"], i["value"]) for i in by_branch], [("Абая", "30000"), ("Саина", "15000")]
+        )
+        bad = self.client.get("/api/v1/analytics/breakdown/", {"metric": "revenue", "by": "hour"})
+        self.assertEqual(bad.status_code, 400)
+
+    def test_manager_breakdown_only_own_branch(self):
+        manager = self.user("+77010000002", User.Role.MANAGER, [self.abaya])
+        self.client.force_authenticate(manager)
+        items = self.client.get(
+            "/api/v1/analytics/breakdown/", {"metric": "revenue", "by": "branch"}
+        ).data["items"]
+        self.assertEqual([i["label"] for i in items], ["Абая"])
+
+    def test_heatmap_uses_center_time(self):
+        group = Group.objects.create(
+            organization=self.org, branch=self.abaya, direction=self.ballet, name="Г", capacity=5
+        )
+        kid = self.child()
+        monday = self.today - timedelta(days=self.today.weekday())
+        start = self.tz.localize(datetime.combine(monday, time(17)))
+        lesson = Lesson.objects.create(
+            organization=self.org, group=group, starts_at=start, ends_at=start + timedelta(hours=1)
+        )
+        Attendance.objects.create(organization=self.org, lesson=lesson, child=kid, status="present")
+        self.client.force_authenticate(self.owner)
+        cells = self.client.get(
+            "/api/v1/analytics/heatmap/",
+            {"period": "custom", "from": monday.isoformat(), "to": self.today.isoformat()},
+        ).data["cells"]
+        self.assertEqual(cells, [{"weekday": 1, "hour": 17, "value": 1}])
+
+    def test_previous_series_for_overlay(self):
+        data = self.get(self.owner).data["metrics"]["revenue"]
+        self.assertEqual(len(data["previous_series"]), len(data["series"]))
+
     def test_works_without_redis(self):
         from . import registry
 

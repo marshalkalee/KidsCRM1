@@ -81,6 +81,11 @@ register(
         queryset=confirmed_payments,
         date_field="paid_at",
         aggregate=total("amount"),
+        breakdowns={
+            "method": "method",
+            "branch": "subscription__branch_id",
+            "direction": "subscription__direction_id",
+        },
     )
 )
 register(
@@ -93,6 +98,7 @@ register(
         queryset=confirmed_payments,
         date_field="paid_at",
         aggregate=count(),
+        breakdowns={"method": "method", "branch": "subscription__branch_id"},
     )
 )
 register(
@@ -116,6 +122,10 @@ register(
         queryset=visits,
         date_field="lesson__starts_at",
         aggregate=count(),
+        breakdowns={
+            "branch": "lesson__group__branch_id",
+            "direction": "lesson__group__direction_id",
+        },
     )
 )
 register(
@@ -128,6 +138,7 @@ register(
         queryset=attendance_marks,
         date_field="lesson__starts_at",
         aggregate=count(),
+        breakdowns={"status": "status", "branch": "lesson__group__branch_id"},
     )
 )
 register(
@@ -164,6 +175,7 @@ register(
         queryset=new_leads,
         date_field="created_at",
         aggregate=count(),
+        breakdowns={"branch": "branch_id", "source": "source_id", "direction": "direction_id"},
     )
 )
 register(

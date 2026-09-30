@@ -28,6 +28,8 @@ import Profile from './pages/Profile'
 import LeadDetail from './pages/LeadDetail'
 import Debts from './pages/Debts'
 import Renewals from './pages/Renewals'
+import Analytics from './pages/Analytics'
+import AnalyticsKit from './pages/AnalyticsKit'
 
 function App() {
   // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
@@ -58,6 +60,8 @@ function App() {
                 <Route path="attendance" element={<AttendanceScreen />} />
                 <Route path="debts" element={<RequirePermission permission="can_view_client_money"><Debts /></RequirePermission>} />
                 <Route path="renewals" element={<RequirePermission permission="can_view_client_money"><Renewals /></RequirePermission>} />
+                <Route path="analytics" element={<RequirePermission permission="can_view_analytics"><Analytics /></RequirePermission>} />
+                <Route path="analytics/kit" element={<RequirePermission permission="can_view_analytics"><AnalyticsKit /></RequirePermission>} />
                 <Route path="groups" element={<Groups />} />
                 <Route path="groups/:id" element={<GroupDetail />} />
                 <Route path="branches" element={<RequirePermission permission="can_manage_branches"><Branches /></RequirePermission>} />

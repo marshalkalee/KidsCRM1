@@ -268,5 +268,11 @@ compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, seri
   quarter|year|custom&from=&to=&branch=<id>…&compare=0&series=0`,
   `GET /api/v1/analytics/catalog/` — список метрик, доступные филиалы,
   периоды. Доступ — `can_view_analytics` (владелец, управляющий).
+- Фронт (TRU-113): отчёт собирается из `frontend2/src/components/analytics`:
+  `useAnalyticsFilters()` (период и филиалы в адресе, общие для всех
+  отчётов), `useMetrics([...], filters)`, `AnalyticsToolbar`, `MetricTile`,
+  `ChartCard` (загрузка, ошибка, «данных пока мало», пусто) с `TrendChart` /
+  `BarsChart`, `FunnelChart`. Все состояния на примерах — `/analytics/kit`.
+  Подпись и «хорошее направление» новой метрики — в `analytics/meta.js`.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.
