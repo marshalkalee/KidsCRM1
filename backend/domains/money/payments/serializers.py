@@ -7,8 +7,8 @@ from .models import Payment
 
 class PaymentSerializer(serializers.ModelSerializer):
     received_by_name = serializers.CharField(source="received_by.full_name", read_only=True)
+    payer_name = serializers.CharField(source="payer.full_name", read_only=True, default=None)
     method_display = serializers.CharField(source="get_method_display", read_only=True)
-    # Двойной клик / повтор при плохой связи: тот же ключ — та же оплата (TRU-67).
     idempotency_key = serializers.UUIDField(write_only=True, required=False)
 
     class Meta:
@@ -30,6 +30,8 @@ class PaymentSerializer(serializers.ModelSerializer):
             "paid_at",
             "cancelled_reason",
             "deleted_at",
+            "payer",
+            "payer_name",
         ]
         read_only_fields = [
             "id",

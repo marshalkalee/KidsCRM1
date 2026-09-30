@@ -4,6 +4,7 @@ import { recordPayment } from '../../api/payments'
 import { fetchChildSubscriptions } from '../../api/subscriptions'
 import { Button, Field, Input, Modal, Select, Skeleton, apiErrorMessage, cn, money, useToast } from '../../ui'
 import { t } from '../../i18n'
+import api from '../../api/axios'
 
 // Kaspi первым — самый частый случай у стойки (ТЗ п. 10.4).
 const METHODS = [
@@ -31,21 +32,34 @@ const hasDebt = s => Number(s.debt) > 0
 export default function AcceptPaymentModal({ child, subscriptionId, onClose, onPaid }) {
   const toast = useToast()
   const [subscriptions, setSubscriptions] = useState(null)
-  const [form, setForm] = useState({ subscription: '', amount: '', method: 'kaspi_transfer', comment: '' })
+  const [form, setForm] = useState({ subscription: '', amount: '', method: 'kaspi_transfer', comment: '', payer: '' })
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [key] = useState(newKey)
   const [result, setResult] = useState(null)
+  const [contacts, setContacts] = useState([])
 
   useEffect(() => {
-    fetchChildSubscriptions(child.id)
-      .then(rows => {
-        // Платят за долг (он бывает и у истёкшего) или за действующий абонемент.
-        const payable = rows.filter(s => hasDebt(s) || s.status === 'active' || s.status === 'frozen')
+    Promise.all([
+      fetchChildSubscriptions(child.id),
+      api.get('child-contacts/', { params: { child: child.id } }),
+    ])
+      .then(([subs, contactsRes]) => {
+        const payable = subs.filter(s => hasDebt(s) || s.status === 'active' || s.status === 'frozen')
         payable.sort((a, b) => Number(hasDebt(b)) - Number(hasDebt(a)))
         setSubscriptions(payable)
         const first = payable.find(s => s.id === subscriptionId) || payable[0]
-        if (first) setForm(f => ({ ...f, subscription: first.id, amount: hasDebt(first) ? String(Math.round(Number(first.debt))) : '' }))
+        const contactRows = contactsRes.data.results || contactsRes.data
+        setContacts(contactRows)
+        const currentPayer = contactRows.find(c => c.is_payer)
+        if (first) {
+          setForm(f => ({
+            ...f,
+            subscription: first.id,
+            amount: hasDebt(first) ? String(Math.round(Number(first.debt))) : '',
+            payer: currentPayer ? currentPayer.parent_contact : '',
+          }))
+        }
       })
       .catch(err => { toast.error(apiErrorMessage(err)); setSubscriptions([]) })
   }, [child.id, subscriptionId, toast])
@@ -135,6 +149,20 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
                 {hasDebt(selected) ? t('Долг: {sum}', { sum: money(selected.debt) }) : t('Долга нет — оплата пойдёт вперёд')}
               </p>
             </div>
+          )}
+
+          {contacts.length > 1 && (
+            <Field label={t('Плательщик')} error={errors.payer}>
+              {({ id }) => (
+                <Select id={id} value={form.payer} onChange={e => setForm(f => ({ ...f, payer: e.target.value }))}>
+                  {contacts.map(c => (
+                    <option key={c.parent_contact} value={c.parent_contact}>
+                      {c.parent_contact_full_name}{c.is_payer ? ` (${t('текущий плательщик')})` : ''}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
           )}
 
           <Field label={t('Сумма, ₸')} required error={errors.amount}>

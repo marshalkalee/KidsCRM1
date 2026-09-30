@@ -38,6 +38,13 @@ class Payment(TenantModel):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     confirmed_at = models.DateTimeField(null=True, blank=True)
     provider_raw_response = models.JSONField(default=dict, blank=True)
+    payer = models.ForeignKey(
+        "clients.ParentContact",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="payments_made",
+    )
     received_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

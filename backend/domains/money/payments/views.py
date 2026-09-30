@@ -40,16 +40,27 @@ class PaymentViewSet(
 
     def create(self, request, *args, **kwargs):
         from domains.money.subscriptions.debt import debt_by_child, subscription_debt
+        from domains.people.clients.models import ChildContact
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+
+        payer = data.get("payer")
+        if payer is None:
+            current_payer_link = ChildContact.objects.filter(
+                child=data["subscription"].child,
+                is_payer=True,
+            ).first()
+            payer = current_payer_link.parent_contact if current_payer_link else None
+
         try:
             payment = record_payment(
                 actor=request.user,
                 subscription=data["subscription"],
                 amount=data["amount"],
                 method=data["method"],
+                payer=payer,
                 comment=data.get("comment", ""),
                 idempotency_key=data.get("idempotency_key"),
             )
