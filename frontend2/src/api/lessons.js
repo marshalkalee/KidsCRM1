@@ -89,14 +89,20 @@ export function fetchWhoToCall(lessonId) {
   return api.get(`schedule/${lessonId}/who-to-call/`).then(res => res.data)
 }
 
-export function markCalled(lessonId, parentContactId, channel = 'call') {
+function callContactPayload(contact) {
+  return contact.parent_contact_id
+    ? { parent_contact: contact.parent_contact_id }
+    : { source_lead: contact.source_lead_id }
+}
+
+export function markCalled(lessonId, contact, channel = 'call') {
   return api
-    .post(`schedule/${lessonId}/mark-called/`, { parent_contact: parentContactId, channel })
+    .post(`schedule/${lessonId}/mark-called/`, { ...callContactPayload(contact), channel })
     .then(res => res.data)
 }
 
-export function unmarkCalled(lessonId, parentContactId) {
+export function unmarkCalled(lessonId, contact) {
   return api
-    .post(`schedule/${lessonId}/unmark-called/`, { parent_contact: parentContactId })
+    .post(`schedule/${lessonId}/unmark-called/`, callContactPayload(contact))
     .then(res => res.data)
 }
