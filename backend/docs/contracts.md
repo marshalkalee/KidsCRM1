@@ -231,8 +231,10 @@ lead, created = create_renewal_lead(child, actor=None)               # авто�
 - Продления — отдельная воронка (`kind=renewal`): без пробного, свои причины
   отказа (`rejection-reasons/?kind=renewal`), в списке и на доске —
   `?kind=renewal`. В конверсию новых заявок не попадают.
-- «Продлил» — `change_status(lead, to_status=PURCHASED)` после продажи
-  абонемента.
+- «Продлил» ставится сам: `sell_subscription` (и продление, и продажа из
+  карточки) вызывает `close_renewal_on_sale(child, actor=…)` — открытое
+  продление ребёнка уходит в `PURCHASED` с автором и названием абонемента.
+  Отказ по продлению продажа не трогает.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.
 
