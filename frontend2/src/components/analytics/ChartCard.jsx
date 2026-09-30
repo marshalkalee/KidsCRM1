@@ -12,17 +12,19 @@ import { daysLabel } from './format'
  * - за период пусто — «нет данных», а не пустые оси.
  *
  * metric — метрика из API (для enough_data / series); children — сам график.
+ * Для разбивки: ready — пришли ли её данные, empty — пусто ли в ней.
  */
-export function ChartCard({ title, description, actions, metric, loading, error, onRetry, height = 260, children }) {
+export function ChartCard({ title, description, actions, metric, loading, error, onRetry, height = 260, ready = true, empty, autoHeight = false, className, children }) {
   let body
   if (error) body = <ErrorState onRetry={onRetry} />
-  else if (!metric) body = <div style={{ height }}><Skeleton className="h-full w-full" /></div>
+  else if (!metric || !ready) body = <div style={{ height }}><Skeleton className="h-full w-full" /></div>
   else if (!metric.enough_data) body = <NotEnoughData metric={metric} height={height} />
-  else if (isEmpty(metric)) body = <EmptyChart height={height} />
-  else if (metric.series && metric.series.filter(p => p.value != null).length < 2) body = <FewPoints height={height} />
-  else body = <div className={loading ? 'opacity-60 transition-opacity' : undefined} style={{ height }}>{children}</div>
+  else if (empty ?? isEmpty(metric)) body = <EmptyChart height={height} />
+  else if (empty === undefined && metric.series && metric.series.filter(p => p.value != null).length < 2) body = <FewPoints height={height} />
+  // autoHeight — для разметки без осей (рейтинг, кольцо, тепловая карта): растёт по содержимому.
+  else body = <div className={loading ? 'opacity-60 transition-opacity' : undefined} style={autoHeight ? { minHeight: height } : { height }}>{children}</div>
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader title={title} description={description} actions={actions} />
       {body}
     </Card>

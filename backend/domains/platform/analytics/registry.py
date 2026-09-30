@@ -134,6 +134,9 @@ class EventMetric(Metric):
     date_field: str = ""
     # Что считаем: Sum("amount"), Count("id"), Count("child_id", distinct=True).
     aggregate: Callable = None
+    # Разбивки: {"измерение": "путь до поля"} — {"method": "method",
+    # "branch": "subscription__branch_id"}. Подписи — breakdowns.DIMENSIONS.
+    breakdowns: dict = None
 
     kind = "event"
 
@@ -165,6 +168,17 @@ class EventMetric(Metric):
             day = bucket.date() if hasattr(bucket, "date") else bucket
             by_bucket[bucket_start(day, step)] = value or 0
         return [(day, by_bucket.get(day, 0)) for day in period.bucket_starts()]
+
+    def breakdown(self, scope, period, dimension):
+        """[(ключ, значение)] за период по одному измерению, по убыванию."""
+        field = (self.breakdowns or {})[dimension]
+        rows = (
+            self._in_period(scope, period)
+            .values(field)
+            .annotate(v=self.aggregate())
+            .values_list(field, "v")
+        )
+        return sorted(((key, v or 0) for key, v in rows), key=lambda row: row[1], reverse=True)
 
     def data_since(self, scope):
         first = self.queryset(scope).order_by().aggregate(first=Min(self.date_field))["first"]
@@ -272,6 +286,12 @@ def _compute(metric: Metric, scope, period: Period, *, compare: bool, series: bo
         return result
     if compare:
         previous = value_of(metric.name, scope, period.previous())
+        if series:
+            # Прошлый период той же длины — пунктиром под текущим, точка к точке.
+            result["previous_series"] = [
+                {"date": day.isoformat(), "value": _number(v)}
+                for day, v in series_of(metric.name, scope, period.previous())
+            ]
         result["previous"] = _number(previous)
         result["change_percent"] = _number(_change_percent(value, previous))
     if series:
@@ -293,6 +313,22 @@ def _compute(metric: Metric, scope, period: Period, *, compare: bool, series: bo
         metric.min_history_days if since is None else max(metric.min_history_days - history_days, 0)
     )
     return result
+
+
+def cached(key, period, scope, func):
+    """Кэш для разбивок и тепловой карты — те же сроки, что у метрик."""
+    value = _cache_get(key)
+    if value is None:
+        with transaction.atomic():
+            if connection.vendor == "postgresql":
+                with connection.cursor() as cursor:
+                    cursor.execute(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}")
+                    cursor.execute(f"SET LOCAL random_page_cost = {RANDOM_PAGE_COST}")
+                    cursor.execute(f"SET LOCAL work_mem = '{WORK_MEM}'")
+            value = func()
+        open_period = period.end >= today_for_org(scope.organization)
+        _cache_set(key, value, OPEN_PERIOD_TTL if open_period else CLOSED_PERIOD_TTL)
+    return value
 
 
 def compute(names, scope, period: Period, *, compare=True, series=True, use_cache=True) -> dict:

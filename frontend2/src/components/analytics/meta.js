@@ -36,3 +36,20 @@ export const PALETTE = [
   'var(--color-brand-300)',
   'var(--color-ink-subtle)',
 ]
+
+// Подписи ключей разбивок, которые приходят кодом: способ оплаты, статус
+// посещения. Филиалы, направления и источники приходят именем из базы.
+const KEY_LABELS = {
+  kaspi_transfer: () => t('Kaspi'),
+  cash: () => t('Наличные'),
+  card: () => t('Карта'),
+  other: () => t('Другое'),
+  present: () => t('Был'),
+  absent: () => t('Не был'),
+  makeup: () => t('Отработка'),
+}
+
+export function breakdownLabel(item) {
+  if (item.key == null) return t('Не указан')
+  return KEY_LABELS[item.key]?.() || item.label || item.key
+}

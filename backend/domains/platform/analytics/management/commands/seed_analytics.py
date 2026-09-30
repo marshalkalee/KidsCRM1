@@ -22,7 +22,7 @@ from domains.money.payments.models import Payment
 from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.subscription_types import create_type
 from domains.people.clients.models import Child
-from domains.platform.leads.models import Lead, LeadKind, LeadStatusChange
+from domains.platform.leads.models import Lead, LeadKind, LeadSource, LeadStatusChange
 from domains.platform.tenants.models import Branch, Direction, Organization
 from domains.scheduling.attendance.models import Attendance
 from domains.scheduling.groups.models import Group, GroupMembership
@@ -271,6 +271,8 @@ class Command(BaseCommand):
 
     def _leads(self, organization, branches, directions, owner):
         leads, changes = [], []
+        # Справочник источников заводится сигналом у новой организации.
+        sources = list(LeadSource.objects.for_tenant(organization)) or [None]
         statuses = [
             Lead.Status.NEW,
             Lead.Status.CONTACTED,
@@ -291,6 +293,7 @@ class Command(BaseCommand):
                 kind=LeadKind.NEW,
                 branch=random.choice(branches),
                 direction=random.choice(directions),
+                source=random.choices(sources, weights=range(len(sources), 0, -1))[0],
                 parent_name=f"Родитель {i}",
                 phone=f"+7701{i:07d}",
                 child_name=f"Ребёнок заявки {i}",

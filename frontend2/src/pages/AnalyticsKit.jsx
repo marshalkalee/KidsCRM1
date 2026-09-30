@@ -1,7 +1,8 @@
 import { Card, CardHeader, DataTable, PageHeader } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsToolbar, BarsChart, ChartCard, Change, FunnelChart, MetricTile, PALETTE, TrendChart,
+  AnalyticsToolbar, BarsChart, ChartCard, Change, ComboChart, DonutChart, FunnelChart, GaugeChart,
+  HeatmapChart, MetricTile, PALETTE, RankBars, TrendChart,
   formatValue, useAnalyticsCatalog, useAnalyticsFilters,
 } from '../components/analytics'
 
@@ -23,6 +24,21 @@ const SAMPLE = {
   empty: { unit: 'count', kind: 'event', value: 0, previous: 0, change_percent: null, enough_data: true, data_since: '2026-01-01', series: DAYS.map(date => ({ date, value: 0 })) },
   none: { unit: 'count', kind: 'event', value: 0, enough_data: false, data_since: null, days_until_enough: 28, series: [] },
 }
+
+const METHODS = [
+  { key: 'kaspi_transfer', value: '1450000' },
+  { key: 'cash', value: '610000' },
+  { key: 'card', value: '332000' },
+]
+const SOURCES = [
+  { key: '1', label: 'Instagram', value: 41 },
+  { key: '2', label: 'Сарафанное радио', value: 23 },
+  { key: '3', label: '2ГИС', value: 12 },
+  { key: null, label: null, value: 4 },
+]
+const HEAT = [1, 2, 3, 4, 5, 6].flatMap(weekday => [10, 15, 16, 17, 18, 19].map(hour => ({
+  weekday, hour, value: weekday === 6 && hour > 16 ? 0 : Math.round(20 + 60 * Math.sin((hour - 9) / 3) * (weekday % 3 ? 1 : 0.6)),
+})))
 
 const BRANCH_ROWS = [
   { name: 'Абая', revenue: 1240000, visits: 402, change: '8.2' },
@@ -56,11 +72,33 @@ export default function AnalyticsKit() {
 
       <Section title={t('Графики')} note="ChartCard · TrendChart · BarsChart">
         <div className="grid gap-4 lg:grid-cols-2">
-          <ChartCard title={t('Линия')} description="TrendChart" metric={SAMPLE.revenue}>
-            <TrendChart series={SAMPLE.revenue.series} unit="money" granularity="day" />
+          <ChartCard title={t('Линия с прошлым периодом')} description="TrendChart previous" metric={SAMPLE.revenue}>
+            <TrendChart series={SAMPLE.revenue.series} previous={wave(70000, 20000)} unit="money" granularity="day" />
           </ChartCard>
           <ChartCard title={t('Столбцы')} description="BarsChart" metric={SAMPLE.visits}>
             <BarsChart series={SAMPLE.visits.series} unit="count" granularity="day" color={PALETTE[1]} />
+          </ChartCard>
+          <ChartCard title={t('Столбцы и линия')} description="ComboChart" metric={SAMPLE.visits}>
+            <ComboChart bars={SAMPLE.visits.series} line={SAMPLE.attendance_rate.series} granularity="day" barLabel={t('Посещений')} lineLabel={t('Доля посещений')} />
+          </ChartCard>
+          <ChartCard
+              autoHeight title={t('Кольцо')} description="DonutChart" metric={SAMPLE.revenue} empty={false}>
+            <DonutChart items={METHODS} unit="money" centerLabel={t('за период')} />
+          </ChartCard>
+          <ChartCard
+              autoHeight title={t('Тепловая карта')} description="HeatmapChart" metric={SAMPLE.visits} empty={false} height={220}>
+            <HeatmapChart cells={HEAT} />
+          </ChartCard>
+          <ChartCard
+              autoHeight title={t('Шкала')} description="GaugeChart" metric={SAMPLE.group_fill} empty={false} height={220}>
+            <div className="flex h-full items-center justify-center gap-6">
+              <GaugeChart value={72} threshold={50} label="72" />
+              <GaugeChart value={38} threshold={50} label="38" />
+            </div>
+          </ChartCard>
+          <ChartCard
+              autoHeight title={t('Рейтинг')} description="RankBars" metric={SAMPLE.new_leads} empty={false}>
+            <RankBars items={SOURCES} unit="count" color={PALETTE[3]} />
           </ChartCard>
           <ChartCard title={t('Загрузка')} description="metric = undefined" />
           <ChartCard title={t('Ошибка')} description="error" error onRetry={() => {}} />

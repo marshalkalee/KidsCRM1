@@ -5,6 +5,11 @@ GET /api/v1/analytics/metrics/?metrics=revenue,visits&period=month
     &from=…&to=… (period=custom) &branch=<id>&branch=<id>
     &compare=0 (без прошлого периода) &series=0 (без графика)
 
+GET /api/v1/analytics/breakdown/?metric=revenue&by=method&period=… — метрика
+    по одному измерению (способ оплаты, филиал, направление, источник, статус).
+
+GET /api/v1/analytics/heatmap/?period=… — посещения по дню недели и часу.
+
 GET /api/v1/analytics/catalog/ — какие метрики есть, какие филиалы доступны
     и какие периоды можно выбрать: для выбора периода и филиала в каркасе
     дашборда (TRU-113).
@@ -16,8 +21,10 @@ from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_view_analytics
+from domains.scheduling.groups.queries import underfilled_threshold
 
 from . import metrics  # noqa: F401 — регистрирует базовые метрики
+from .breakdowns import BreakdownError, breakdown, visits_heatmap
 from .period import PRESETS, PeriodError, parse_period
 from .registry import REGISTRY, compute
 from .scope import ScopeError, allowed_branch_ids, scope_for
@@ -69,6 +76,43 @@ def metrics_api(request, version=None):
     )
 
 
+def _period_and_scope(request):
+    """(period, scope, None) или (None, None, ответ с ошибкой)."""
+    try:
+        return (
+            parse_period(request.query_params, request.user.organization),
+            scope_for(request),
+            None,
+        )
+    except PeriodError as exc:
+        return None, None, Response({"period": [str(exc)]}, status=400)
+    except ScopeError as exc:
+        return None, None, Response({"detail": str(exc)}, status=403)
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def breakdown_api(request, version=None):
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    name = request.query_params.get("metric", "")
+    try:
+        items = breakdown(name, request.query_params.get("by", ""), scope, period)
+    except BreakdownError as exc:
+        return Response({"by": [str(exc)]}, status=400)
+    return Response({"period": period.as_dict(), "unit": REGISTRY[name].unit, "items": items})
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def heatmap_api(request, version=None):
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response({"period": period.as_dict(), "cells": visits_heatmap(scope, period)})
+
+
 @api_view(["GET"])
 @permission_classes([CanViewAnalytics])
 def catalog_api(request, version=None):
@@ -94,5 +138,7 @@ def catalog_api(request, version=None):
             "branches": [{"id": str(b.id), "name": b.name} for b in branches.order_by("name")],
             "can_see_all_branches": allowed is None,
             "periods": list(PRESETS),
+            # Порог «группа недозаполнена» — отметка на шкале заполняемости.
+            "group_underfilled_percent": underfilled_threshold(request.user.organization),
         }
     )

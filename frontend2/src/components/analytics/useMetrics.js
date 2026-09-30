@@ -49,3 +49,35 @@ export function useAnalyticsCatalog() {
   }, [])
   return catalog
 }
+
+/**
+ * Разбивка метрики по измерению и тепловая карта — тот же период и филиалы:
+ *   useBreakdown('revenue', 'method', filters) → { data: { items, unit }, loading, error }
+ *   useHeatmap(filters) → { data: { cells } }
+ */
+function useAnalyticsGet(path, extra, filters) {
+  const { activeBranchId } = useSession()
+  const [state, setState] = useState({ key: null, data: null, error: null })
+  const key = `${path}|${extra}|${filters.query}|${activeBranchId}`
+  useEffect(() => {
+    if (!filters.ready) return undefined
+    const controller = new AbortController()
+    const params = new URLSearchParams(filters.query)
+    new URLSearchParams(extra).forEach((value, name) => params.set(name, value))
+    api.get(`analytics/${path}/?${params}`, { signal: controller.signal })
+      .then(res => setState({ key, data: res.data, error: null }))
+      .catch(err => {
+        if (err.name !== 'CanceledError') setState(prev => ({ ...prev, key, error: err }))
+      })
+    return () => controller.abort()
+  }, [key, path, extra, filters.query, filters.ready])
+  return { data: state.data, loading: filters.ready && state.key !== key, error: state.key === key ? state.error : null }
+}
+
+export function useBreakdown(metric, by, filters) {
+  return useAnalyticsGet('breakdown', `metric=${metric}&by=${by}`, filters)
+}
+
+export function useHeatmap(filters) {
+  return useAnalyticsGet('heatmap', '', filters)
+}
