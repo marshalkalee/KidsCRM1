@@ -35,6 +35,11 @@ ORG_SETTINGS_MANAGE_ROLES = {
     User.Role.OWNER,
 }
 
+SUBSCRIPTION_TYPE_MANAGE_ROLES = {
+    User.Role.OWNER,
+    User.Role.MANAGER,
+}
+
 BRANCH_MANAGE_ROLES = {
     User.Role.OWNER,
     User.Role.MANAGER,
@@ -138,6 +143,10 @@ def can_view_phone(user) -> bool:
     return user.role in PHONE_VIEW_ROLES
 
 
+def can_manage_subscription_types(user) -> bool:
+    return user.role in SUBSCRIPTION_TYPE_MANAGE_ROLES
+
+
 def can_view_child_sensitive_fields(user) -> bool:
     return user.role in CHILD_SENSITIVE_FIELDS_ROLES
 
@@ -179,5 +188,6 @@ def get_user_permissions(user) -> dict:
         "can_manage_children": can_manage_children(user),
         "can_accept_payments": can_accept_payments(user),
         "can_manage_leads": can_manage_leads(user),
+        "can_manage_subscription_types": can_manage_subscription_types(user),
         "can_manage_lead_dictionaries": can_manage_lead_dictionaries(user),
     }

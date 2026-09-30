@@ -30,6 +30,7 @@ export const NAV_SECTIONS = [
     items: [
       { to: '/branches', get label() { return t('Филиалы') }, icon: Building2, permission: 'can_manage_branches' },
       { to: '/directions', get label() { return t('Направления') }, icon: Tag, permission: 'can_manage_directions' },
+      { to: '/subscription-types', get label() { return t('Типы абонементов') }, icon: Tag, permission: 'can_manage_subscription_types' },
       { to: '/settings/sales', get label() { return t('Справочники продаж') }, icon: ListChecks, permission: 'can_manage_lead_dictionaries' },
       { to: '/settings/organization', get label() { return t('Организация') }, icon: Settings, permission: 'can_manage_org_settings' },
     ],

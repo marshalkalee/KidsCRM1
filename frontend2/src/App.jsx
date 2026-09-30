@@ -20,6 +20,7 @@ import GroupDetail from './pages/GroupDetail'
 import Branches from './pages/Branches'
 import BranchRooms from './pages/BranchRooms'
 import Directions from './pages/Directions'
+import SubscriptionTypes from './pages/SubscriptionTypes'
 import OrganizationSettings from './pages/OrganizationSettings'
 import LeadDictionaries from './pages/LeadDictionaries'
 import Leads from './pages/Leads'
@@ -61,6 +62,7 @@ function App() {
                 <Route path="branches" element={<RequirePermission permission="can_manage_branches"><Branches /></RequirePermission>} />
                 <Route path="branches/:id/rooms" element={<BranchRooms />} />
                 <Route path="directions" element={<RequirePermission permission="can_manage_directions"><Directions /></RequirePermission>} />
+                <Route path="subscription-types" element={<RequirePermission permission="can_manage_subscription_types"><SubscriptionTypes /></RequirePermission>} />
                 <Route path="settings/sales" element={<RequirePermission permission="can_manage_lead_dictionaries"><LeadDictionaries /></RequirePermission>} />
                 <Route path="settings/organization" element={<RequirePermission permission="can_manage_org_settings"><OrganizationSettings /></RequirePermission>} />
                 <Route path="*" element={<NotFound />} />
