@@ -1,5 +1,56 @@
 @import "tailwindcss";
 
+@media (max-width: 639px) {
+  .kc-schedule-filter {
+    width: 100% !important;
+  }
+
+  .kc-schedule-header-controls,
+  .kc-schedule-main-controls,
+  .kc-schedule-view-toggle,
+  .kc-schedule-date-nav {
+    width: 100%;
+  }
+
+  .kc-schedule-header-controls {
+    align-items: stretch !important;
+  }
+
+  .kc-schedule-main-controls {
+    flex-direction: column;
+  }
+
+  .kc-schedule-view-toggle > button,
+  .kc-schedule-today {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .kc-schedule-mobile-create {
+    width: 100%;
+  }
+
+  .kc-schedule-create-modal {
+    padding: 20px 16px 16px !important;
+  }
+
+  .kc-schedule-form-row {
+    flex-direction: column;
+  }
+
+  .kc-schedule-form-row > div {
+    width: 100% !important;
+  }
+
+  .kc-schedule-lesson-type > button {
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
+    padding: 7px 6px !important;
+    font-size: 12px !important;
+  }
+}
+
 /*
  * Дизайн-токены frontend2. Tailwind v4 читает их из @theme — отдельного
  * tailwind.config.js нет. В компонентах — только классы на этих токенах

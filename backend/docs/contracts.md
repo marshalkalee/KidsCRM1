@@ -174,8 +174,13 @@ domains/money/subscriptions/debt.py — единственный модуль, �
   вкладку не видно. `component: null` — заглушка «скоро появится».
 - Верстка — из общих компонентов `frontend2/src/ui` (см. `frontend2/README.md`).
 
-Сейчас заглушки: «Абонементы», «Оплаты» (Bekzat, TRU-70), «Посещения»
-(Дарья, TRU-55).
+Вкладки «Абонементы» и «Посещения» подключены через этот реестр.
+«Оплаты» пока остаётся заглушкой денежного домена.
+
+Для «Абонементов»: `GET /api/v1/subscriptions/?child_id=<uuid>` возвращает
+историю абонементов ребёнка со сроком, остатком занятий, стоимостью,
+подтверждённой оплатой и долгом. Преподавателю денежный API недоступен;
+другие организации отсекаются tenant-queryset.
 
 Владелец: Анель. Потребители: Bekzat, Дарья.
 
@@ -212,6 +217,27 @@ change_status(lead, to_status=Lead.Status.REJECTED, actor=user, rejection_reason
 `change_status(..., TRIAL_SCHEDULED)`, при отметке присутствия —
 `TRIAL_ATTENDED`. Если заявка уже дальше по воронке, переход вернёт
 `LeadTransitionError` — его можно молча пропустить.
+
+### Закрытие продажей абонемента (TRU-103)
+
+```python
+from domains.platform.leads.sale import sale_options, sell_from_lead
+
+options = sale_options(lead)
+lead, membership, created = sell_from_lead(lead, actor=user, data=validated_data)
+```
+
+- `sale_options()` возвращает активные типы абонементов и группы,
+  подходящие по направлению, филиалу, возрасту и свободным местам.
+- `sell_from_lead()` одной транзакцией вызывает денежный контракт
+  `sell_subscription`, связывает результат с `Lead.sold_subscription`,
+  при выборе группы создаёт `GroupMembership` и переводит заявку в
+  `purchased` с записью в истории.
+- Если у новой заявки ещё нет `converted_child`, сначала вызывается
+  конвертация TRU-102. Интерфейс продолжает продажу в той же карточке.
+- API: `GET /api/v1/leads/<id>/sale/` — варианты и предзаполненные данные;
+  `POST /api/v1/leads/<id>/sale/` — продажа. Повторный POST идемпотентен и
+  не создаёт второй абонемент.
 
 ### Продления (TRU-98) — для экрана «Продления» (TRU-69) и автоправила (TRU-108)
 

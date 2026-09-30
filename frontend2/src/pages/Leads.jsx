@@ -423,6 +423,9 @@ function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDr
         {targets.length > 0 && <MoveMenu lead={lead} targets={targets} onMove={onMove} />}
       </div>
       {details && <p className="mt-1.5 truncate text-xs text-ink-muted">{details}</p>}
+      {lead.status === 'trial_attended' && !lead.converted_child && (
+        <p className="mt-2 rounded-md bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700">{t('Оформить клиента')}</p>
+      )}
       <div className="mt-2.5 flex items-center gap-2 text-[11px]">
         {lead.source_name && <span className="truncate rounded-full bg-surface-muted px-2 py-0.5 font-semibold text-ink-muted">{t(lead.source_name)}</span>}
         <span className={cn('ml-auto flex shrink-0 items-center gap-1', lead.is_stale ? 'font-semibold text-warning-600' : 'text-ink-subtle')} title={lead.is_stale ? t('Висит без движения') : t('Дней в статусе')}>

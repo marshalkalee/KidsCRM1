@@ -48,7 +48,7 @@ export function DataTable({
       <>
         {/* Десктоп */}
         {/* Прокрутка внутри карточки: на казахском/английском подписи длиннее. */}
-        <div className="hidden overflow-x-auto md:block">
+        <div className="hidden overflow-x-auto xl:block">
         <table className={cn('w-full text-sm', loading && 'opacity-60')}>
           <thead>
             <tr className="border-b border-line">
@@ -96,7 +96,7 @@ export function DataTable({
         </div>
 
         {/* Телефон */}
-        <ul className={cn('divide-y divide-line md:hidden', loading && 'opacity-60')}>
+        <ul className={cn('divide-y divide-line xl:hidden', loading && 'opacity-60')}>
           {rows.map(row => (
             <li
               key={rowKey(row)}
@@ -144,11 +144,11 @@ function Pagination({ page, pageSize, total, onPageChange }) {
     <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-3 text-[13px] text-ink-muted">
       <span>{from}–{to} {t('из')} {total}</span>
       <div className="flex items-center gap-1">
-        <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)} className="rounded-md p-1.5 hover:bg-surface-muted disabled:opacity-40" aria-label={t('Предыдущая страница')}>
+        <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)} className="flex size-9 items-center justify-center rounded-md hover:bg-surface-muted disabled:opacity-40" aria-label={t('Предыдущая страница')}>
           <ChevronLeft className="size-4" />
         </button>
         <span className="px-2 font-semibold text-ink">{page} / {pages}</span>
-        <button type="button" disabled={page >= pages} onClick={() => onPageChange(page + 1)} className="rounded-md p-1.5 hover:bg-surface-muted disabled:opacity-40" aria-label={t('Следующая страница')}>
+        <button type="button" disabled={page >= pages} onClick={() => onPageChange(page + 1)} className="flex size-9 items-center justify-center rounded-md hover:bg-surface-muted disabled:opacity-40" aria-label={t('Следующая страница')}>
           <ChevronRight className="size-4" />
         </button>
       </div>

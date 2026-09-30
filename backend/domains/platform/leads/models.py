@@ -166,6 +166,16 @@ class Lead(TenantModel):
     converted_child = models.ForeignKey(
         "clients.Child", on_delete=models.SET_NULL, null=True, blank=True, related_name="leads"
     )
+    # TRU-103: конкретный результат закрытия продажи. FK остаётся даже
+    # после завершения воронки, чтобы из заявки всегда открыть именно тот
+    # абонемент, который был продан в этом потоке.
+    sold_subscription = models.ForeignKey(
+        "subscriptions.Subscription",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_leads",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -209,6 +219,10 @@ class LeadStatusChange(UUIDPrimaryKeyModel):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
     )
     changed_at = models.DateTimeField(default=timezone.now)
+    is_automatic = models.BooleanField(
+        default=False,
+        help_text="Переход выполнен системой по бизнес-событию, а не вручную в заявке.",
+    )
     rejection_reason = models.ForeignKey(
         LeadRejectionReason,
         on_delete=models.PROTECT,

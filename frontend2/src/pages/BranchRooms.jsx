@@ -72,12 +72,12 @@ export default function BranchRooms() {
               {editingId === room.id ? (
                 <RoomForm room={room} onSave={values => save(room, values)} onCancel={() => setEditingId(null)} />
               ) : (
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <DoorOpen className="size-4 shrink-0 text-ink-subtle" />
-                  <span className="flex-1 font-medium text-ink">{room.name}</span>
-                  <span className="text-sm text-ink-muted">{room.capacity ? t('до {n} чел.', { n: room.capacity }) : t('вместимость не указана')}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-ink">{room.name}</span>
+                  <span className="order-4 w-full pl-7 text-sm text-ink-muted sm:order-none sm:w-auto sm:pl-0">{room.capacity ? t('до {n} чел.', { n: room.capacity }) : t('вместимость не указана')}</span>
                   {canManage && (
-                    <div className="flex gap-1">
+                    <div className="order-3 flex gap-1 sm:order-none">
                       <Button variant="ghost" size="icon" aria-label={t('Изменить')} onClick={() => setEditingId(room.id)}><Pencil className="size-4" /></Button>
                       <Button variant="danger-ghost" size="icon" aria-label={t('Удалить')} onClick={() => remove(room)}><Trash2 className="size-4" /></Button>
                     </div>
