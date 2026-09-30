@@ -7,6 +7,8 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .branches import COLUMNS as BRANCH_COLUMNS
+from .branches import compare_branches
 from .breakdowns import breakdown, visits_heatmap
 from .export import Column, Export, Section
 from .funnel import BY as FUNNEL_BY
@@ -521,6 +523,31 @@ def rejections_report(scope, period, params):
         ],
     )
     return [reasons, lost, monthly, by_source, comments]
+
+
+@report("branches", "Сравнение филиалов")
+def branches_report(scope, period, params):
+    data = compare_branches(scope, period)
+    columns = [Column("Филиал", width=24)]
+    for column in BRANCH_COLUMNS:
+        title = f"{column.label}{UNIT_TITLE[column.unit]}"
+        columns.append(Column(title, column.unit, 16, total=False))
+    rows = [
+        [row["branch"]["name"], *[row["values"][c.key]["value"] for c in BRANCH_COLUMNS]]
+        for row in data["rows"]
+    ]
+    rows.append(["Всего по выборке", *[data["total"][c.key]["value"] for c in BRANCH_COLUMNS]])
+    return [
+        Section(
+            "Филиалы",
+            columns,
+            rows,
+            note=(
+                "Сравнивать честно по относительным колонкам: на ребёнка, доли, конверсия. "
+                "Ребёнок — ходил на занятия в периоде. Задолженность — на сегодня."
+            ),
+        )
+    ]
 
 
 def build(name, scope, period, params=None) -> Export:
