@@ -36,6 +36,7 @@ from .period import PRESETS, PeriodError, parse_period
 from .registry import REGISTRY, compute
 from .reports import REPORTS, build
 from .scope import ScopeError, allowed_branch_ids, scope_for
+from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
 
 # Больше метрик за запрос — это уже выгрузка, а не экран.
 MAX_METRICS = 12
@@ -205,7 +206,9 @@ def export_api(request, version=None):
     period, scope, error = _period_and_scope(request)
     if error:
         return error
-    filters = _funnel_filters(request) if name == "funnel" else {}
+    filters = _funnel_filters(request) if name in ("funnel", "sources") else {}
+    if name == "sources":
+        filters = {key: value for key, value in filters.items() if key == "direction"}
     report_params = {
         "funnel_filters": filters,
         "filter_labels": _filter_labels(scope.organization, filters),
@@ -224,6 +227,25 @@ def export_api(request, version=None):
     )
     response["Content-Disposition"] = f'attachment; filename="{filename(name, period)}"'
     return response
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def sources_api(request, version=None):
+    """Качество источников заявок за период (TRU-116): воронка по источнику,
+    средний чек, помета малой выборки, заявки и покупки по месяцам."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    filters = {k: v for k, v in _funnel_filters(request).items() if k == "direction"}
+    return Response(
+        {
+            "period": period.as_dict(),
+            "small_sample": SMALL_SAMPLE,
+            "items": sources_quality(scope, period, filters),
+            "by_month": sources_by_month(scope, period, filters),
+        }
+    )
 
 
 @api_view(["GET"])

@@ -162,6 +162,32 @@ class AuthTests(TestCase):
         self.assertIn("access", response.data)
         self.assertIn("refresh", response.data)
 
+    def test_stale_token_of_disabled_user_does_not_block_login(self):
+        """В браузере остался токен пользователя, которого потом отключили:
+        вход и регистрация должны работать, остальные запросы — 401, не 500."""
+        gone = User.objects.create_user(
+            phone="77005550000", password="x", full_name="Бывший", organization=self.org
+        )
+        stale = str(RefreshToken.for_user(gone).access_token)
+        User.objects.filter(pk=gone.pk).update(is_active=False)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {stale}")
+        login = self.client.post(
+            "/api/v1/users/auth/login/", {"phone": "77001234567", "password": "StrongPass123!"}
+        )
+        self.assertEqual(login.status_code, status.HTTP_200_OK)
+        register = self.client.post(
+            "/api/v1/users/auth/register/",
+            {
+                "org_name": "Ещё школа",
+                "org_slug": "one-more-school",
+                "full_name": "Директор",
+                "phone": "77008888888",
+                "password": "StrongPass123!",
+            },
+        )
+        self.assertEqual(register.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(self.client.get("/api/v1/users/auth/me/").status_code, 401)
+
     def test_login_normalizes_formatted_phone(self):
         response = self.client.post(
             "/api/v1/users/auth/login/",
