@@ -15,6 +15,8 @@ DEFAULT_REJECTION_REASONS = [
     "Не пришёл на пробное",
     "Другое",
 ]
+# Эти причины — потеря контакта, а не возражение (TRU-117).
+LOST_CONTACT_REASONS = {"Не пришёл на пробное"}
 # Отказ от продления (TRU-98) — клиент уже свой, причины другие.
 DEFAULT_RENEWAL_REJECTION_REASONS = [
     "Дорого",
@@ -41,5 +43,11 @@ def ensure_default_dictionaries(
         if reason_model.objects.filter(organization=organization, kind=kind).exists():
             continue
         reason_model.objects.bulk_create(
-            reason_model(organization=organization, name=name, kind=kind) for name in names
+            reason_model(
+                organization=organization,
+                name=name,
+                kind=kind,
+                is_lost_contact=kind == LeadKind.NEW and name in LOST_CONTACT_REASONS,
+            )
+            for name in names
         )

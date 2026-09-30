@@ -33,6 +33,7 @@ from .funnel import FILTERS as FUNNEL_FILTERS
 from .funnel import FunnelError, funnel, funnel_by
 from .period import PRESETS, PeriodError, parse_period
 from .registry import REGISTRY, compute
+from .rejections import RejectionError, rejection_comments, rejections, rejections_by
 from .reports import REPORTS, build
 from .scope import ScopeError, allowed_branch_ids, scope_for
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
@@ -195,9 +196,11 @@ def export_api(request, version=None):
     period, scope, error = _period_and_scope(request)
     if error:
         return error
-    filters = _funnel_filters(request) if name in ("funnel", "sources") else {}
+    filters = _funnel_filters(request) if name in ("funnel", "sources", "rejections") else {}
     if name == "sources":
         filters = {k: v for k, v in filters.items() if k == "direction"}
+    if name == "rejections":
+        filters = {k: v for k, v in filters.items() if k in ("source", "direction")}
     export = build(
         name,
         scope,
@@ -205,6 +208,7 @@ def export_api(request, version=None):
         {
             "funnel_filters": filters,
             "filter_labels": _filter_labels(scope.organization, filters),
+            "kind": request.query_params.get("kind", "new"),
         },
     )
     response = HttpResponse(
@@ -232,6 +236,52 @@ def sources_api(request, version=None):
             "by_month": sources_by_month(scope, period, filters),
         }
     )
+
+
+def _rejection_filters(request):
+    return {k: v for k, v in _funnel_filters(request).items() if k in ("source", "direction")}
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def rejections_api(request, version=None):
+    """Отказы за период (TRU-117): причины, этапы, потеря контакта отдельно,
+    динамика по месяцам, комментарии списком. ?kind=renewal — продления."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    kind = request.query_params.get("kind", "new")
+    filters = _rejection_filters(request)
+    try:
+        summary = rejections(scope, period, kind, filters)
+    except RejectionError as exc:
+        return Response({"kind": [str(exc)]}, status=400)
+    return Response(
+        {
+            "period": period.as_dict(),
+            "summary": summary,
+            "comments": rejection_comments(scope, period, kind, filters),
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def rejections_by_api(request, version=None):
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    try:
+        items = rejections_by(
+            scope,
+            period,
+            request.query_params.get("by", ""),
+            request.query_params.get("kind", "new"),
+            _rejection_filters(request),
+        )
+    except RejectionError as exc:
+        return Response({"by": [str(exc)]}, status=400)
+    return Response({"period": period.as_dict(), "items": items})
 
 
 @api_view(["GET"])
