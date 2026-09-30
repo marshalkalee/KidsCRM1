@@ -7,7 +7,7 @@
 from django.db.models import Sum
 
 from .models import BalanceDiscrepancy, Subscription
-from .subscriptions import sync_cache
+from .subscriptions import recompute_sessions_remaining
 
 
 def reconcile_all_active_subscriptions() -> int:
@@ -35,7 +35,17 @@ def reconcile_all_active_subscriptions() -> int:
 
 def manual_recompute(subscription: Subscription) -> int | None:
     """Кнопка администратора при споре с родителем — пересчёт для одного
-    конкретного абонемента, без ожидания ночной сверки."""
-    sync_cache(subscription)
-    subscription.refresh_from_db(fields=["sessions_remaining_cache"])
-    return subscription.sessions_remaining_cache
+    конкретного абонемента, без ожидания ночной сверки. Расхождение пишется
+    в тот же отчёт, что и у ночной сверки."""
+    before = subscription.sessions_remaining_cache
+    after = recompute_sessions_remaining(subscription)
+    if before != after:
+        BalanceDiscrepancy.objects.create(
+            organization=subscription.organization,
+            subscription=subscription,
+            cached_value=before,
+            recomputed_value=after,
+        )
+        subscription.sessions_remaining_cache = after
+        subscription.save(update_fields=["sessions_remaining_cache"])
+    return after

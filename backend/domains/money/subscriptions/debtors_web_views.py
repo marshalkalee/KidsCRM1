@@ -6,9 +6,11 @@ from django.shortcuts import render
 from domains.platform.core.decorators import role_required
 from domains.platform.core.role_permissions import CLIENT_MONEY_VIEW_ROLES, can_view_phone
 from domains.platform.tenants.models import Branch, Direction
+from domains.platform.tenants.org_settings import DEBT_OVERDUE_DAYS_THRESHOLD, get_org_setting
 
 from .debt import debt_age_days, debtor_subscriptions
 from .debt_report import build_debtors_workbook
+from .lists_api import debtor_rows
 from .tasks_stub import create_debt_reminder_task
 
 DEFAULT_PAGE_SIZE = 50
@@ -109,7 +111,15 @@ def create_reminder_task_view(request, subscription_id):
 
 @role_required(*CLIENT_MONEY_VIEW_ROLES)
 def export_debtors(request):
-    workbook = build_debtors_workbook(_filtered_queryset(request).order_by("-debt"))
+    org = request.user.organization
+    show_phones = can_view_phone(request.user)
+    rows = debtor_rows(
+        org,
+        _filtered_queryset(request).order_by("-debt"),
+        show_phones=show_phones,
+        threshold=get_org_setting(org, DEBT_OVERDUE_DAYS_THRESHOLD),
+    )
+    workbook = build_debtors_workbook(rows, show_phones=show_phones)
     response = HttpResponse(
         workbook.read(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
