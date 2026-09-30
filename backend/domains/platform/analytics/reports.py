@@ -11,6 +11,7 @@ from .breakdowns import breakdown, visits_heatmap
 from .export import Column, Export, Section
 from .funnel import BY as FUNNEL_BY
 from .funnel import STAGES, funnel, funnel_by
+from .group_occupancy import group_occupancy
 from .registry import REGISTRY, compute
 
 UNIT_TITLE = {"money": ", ₸", "percent": ", %", "count": "", "decimal": ""}
@@ -290,6 +291,105 @@ def funnel_report(scope, period, params):
                         item["conversion"],
                     ]
                     for item in items
+                ],
+            )
+        )
+    return sections
+
+
+@report("group_occupancy", "Заполняемость групп")
+def group_occupancy_report(scope, period, params):
+    data = group_occupancy(scope, period, params.get("occupancy_filters"))
+    summary = data["summary"]
+    summary_section = Section(
+        "Сводка",
+        [
+            Column("Групп", "count", 12, total=False),
+            Column("Занято", "count", 12, total=False),
+            Column("Вместимость", "count", 14, total=False),
+            Column("Заполняемость, %", "percent", 18, total=False),
+            Column("Недозаполнено", "count", 18, total=False),
+            Column("Порог, %", "percent", 12, total=False),
+        ],
+        [
+            [
+                summary["groups_count"],
+                summary["occupied"],
+                summary["capacity"],
+                summary["percent"],
+                summary["underfilled_count"],
+                data["threshold"],
+            ]
+        ],
+    )
+    groups = Section(
+        "Группы",
+        [
+            Column("Группа", width=28),
+            Column("Филиал", width=22),
+            Column("Направление", width=22),
+            Column("Занято", "count", 10),
+            Column("Вместимость", "count", 14),
+            Column("Заполняемость, %", "percent", 18, total=False),
+            Column("Недозаполнена", width=16),
+            Column("Рекомендация", width=24),
+        ],
+        [
+            [
+                row["name"],
+                row["branch"],
+                row["direction"],
+                row["occupied"],
+                row["capacity"],
+                row["percent"],
+                "Да" if row["is_underfilled"] else "Нет",
+                "Рассмотреть объединение"
+                if row["suggested_action"] == "merge"
+                else "Продвигать набор",
+            ]
+            for row in data["groups"]
+        ],
+        note=f"Недозаполненной считается активная группа ниже {data['threshold']}%.",
+    )
+    trend = Section(
+        "Динамика",
+        [
+            Column("Месяц", "date", 14),
+            Column("Занято", "count", 12),
+            Column("Вместимость", "count", 14),
+            Column("Заполняемость, %", "percent", 18, total=False),
+        ],
+        [[row["date"], row["occupied"], row["capacity"], row["value"]] for row in data["trend"]],
+        note="Состав на конец каждого месяца выбранного периода.",
+    )
+    sections = [summary_section, groups, trend]
+    titles = {
+        "branch": ("По филиалам", "Филиал"),
+        "direction": ("По направлениям", "Направление"),
+        "teacher": ("По преподавателям", "Преподаватель"),
+        "weekday": ("По дням недели", "День недели"),
+        "time": ("По времени", "Время"),
+    }
+    for key, (title, label) in titles.items():
+        sections.append(
+            Section(
+                title,
+                [
+                    Column(label, width=24),
+                    Column("Групп", "count", 10),
+                    Column("Занято", "count", 10),
+                    Column("Вместимость", "count", 14),
+                    Column("Заполняемость, %", "percent", 18, total=False),
+                ],
+                [
+                    [
+                        row["label"],
+                        row["groups_count"],
+                        row["occupied"],
+                        row["capacity"],
+                        row["value"],
+                    ]
+                    for row in data["breakdowns"][key]
                 ],
             )
         )

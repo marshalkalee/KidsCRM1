@@ -58,7 +58,8 @@ export function useAnalyticsCatalog() {
 export function useAnalyticsGet(path, extra, filters) {
   const { activeBranchId } = useSession()
   const [state, setState] = useState({ key: null, data: null, error: null })
-  const key = `${path}|${extra}|${filters.query}|${activeBranchId}`
+  const [reloadKey, setReloadKey] = useState(0)
+  const key = `${path}|${extra}|${filters.query}|${activeBranchId}|${reloadKey}`
   useEffect(() => {
     if (!filters.ready) return undefined
     const controller = new AbortController()
@@ -71,7 +72,8 @@ export function useAnalyticsGet(path, extra, filters) {
       })
     return () => controller.abort()
   }, [key, path, extra, filters.query, filters.ready])
-  return { data: state.data, loading: filters.ready && state.key !== key, error: state.key === key ? state.error : null }
+  const reload = useCallback(() => setReloadKey(value => value + 1), [])
+  return { data: state.data, loading: filters.ready && state.key !== key, error: state.key === key ? state.error : null, reload }
 }
 
 export function useBreakdown(metric, by, filters) {
