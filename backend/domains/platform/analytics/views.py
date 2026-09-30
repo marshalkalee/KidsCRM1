@@ -15,6 +15,9 @@ GET /api/v1/analytics/catalog/ — какие метрики есть, каки�
     дашборда (TRU-113).
 """
 
+import uuid
+
+from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
@@ -25,6 +28,10 @@ from domains.scheduling.groups.queries import underfilled_threshold
 
 from . import metrics  # noqa: F401 — регистрирует базовые метрики
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
+from .funnel import BY as FUNNEL_BY
+from .funnel import FILTERS as FUNNEL_FILTERS
+from .funnel import FunnelError, funnel, funnel_by
+from .funnel_export import funnel_workbook
 from .period import PRESETS, PeriodError, parse_period
 from .registry import REGISTRY, compute
 from .scope import ScopeError, allowed_branch_ids, scope_for
@@ -111,6 +118,72 @@ def heatmap_api(request, version=None):
     if error:
         return error
     return Response({"period": period.as_dict(), "cells": visits_heatmap(scope, period)})
+
+
+def _funnel_filters(request):
+    """?source=<id>&direction=<id>&manager=<id> — кривой id просто не находит."""
+    filters = {}
+    for name in FUNNEL_FILTERS:
+        raw = request.query_params.get(name)
+        if raw:
+            try:
+                filters[name] = uuid.UUID(raw)
+            except ValueError:
+                filters[name] = uuid.UUID(int=0)
+    return filters
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def funnel_api(request, version=None):
+    """Воронка новых заявок за период (TRU-115) + прошлый период."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(
+        {
+            "period": period.as_dict(),
+            "previous_period": period.previous().as_dict(),
+            "funnel": funnel(scope, period, _funnel_filters(request)),
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def funnel_by_api(request, version=None):
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    try:
+        items = funnel_by(
+            scope, period, request.query_params.get("by", ""), _funnel_filters(request)
+        )
+    except FunnelError as exc:
+        return Response({"by": [str(exc)]}, status=400)
+    return Response({"period": period.as_dict(), "items": items})
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def funnel_export_api(request, version=None):
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    filters = _funnel_filters(request)
+    content = funnel_workbook(
+        period,
+        funnel(scope, period, filters, compare=False),
+        {by: funnel_by(scope, period, by, filters) for by in FUNNEL_BY},
+    )
+    response = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="funnel-{period.start:%Y%m%d}-{period.end:%Y%m%d}.xlsx"'
+    )
+    return response
 
 
 @api_view(["GET"])

@@ -108,6 +108,17 @@ class Command(BaseCommand):
             )
             for i in range(25)
         ]
+        # Менеджеры по продажам — для воронки «по ответственному» (TRU-115).
+        self.managers = [
+            User.objects.create_user(
+                phone=f"+7700999{2000 + i}",
+                password=None,
+                full_name=f"Менеджер {i + 1}",
+                organization=organization,
+                role=User.Role.MANAGER,
+            )
+            for i in range(4)
+        ]
         return owner
 
     def _catalog(self, organization):
@@ -302,23 +313,40 @@ class Command(BaseCommand):
         self.stdout.write(f"  абонементов {len(subscriptions)}, оплат {len(payments)}")
 
     def _leads(self, organization, branches, directions, owner):
+        """Заявки проходят воронку по шагам (TRU-115): связались → пробное →
+        пришёл → купил, на каждом шаге часть отваливается в «думает» или отказ,
+        немногие покупают сразу после звонка."""
+        S = Lead.Status
         leads, changes = [], []
-        # Справочник источников заводится сигналом у новой организации.
         sources = list(LeadSource.objects.for_tenant(organization)) or [None]
-        statuses = [
-            Lead.Status.NEW,
-            Lead.Status.CONTACTED,
-            Lead.Status.TRIAL_SCHEDULED,
-            Lead.Status.PURCHASED,
-            Lead.Status.REJECTED,
-        ]
+        managers = self.managers
+
+        def path():
+            steps = [S.NEW]
+            if random.random() > 0.72:
+                return steps + [random.choice([S.REJECTED, S.NEW])]
+            steps.append(S.CONTACTED)
+            if random.random() < 0.08:
+                return steps + [S.PURCHASED]
+            if random.random() > 0.62:
+                return steps + [random.choice([S.THINKING, S.REJECTED])]
+            steps.append(S.TRIAL_SCHEDULED)
+            if random.random() > 0.76:
+                return steps + [random.choice([S.CONTACTED, S.REJECTED])]
+            steps.append(S.TRIAL_ATTENDED)
+            if random.random() < 0.55:
+                return steps + [S.PURCHASED]
+            return steps + [random.choice([S.THINKING, S.REJECTED])]
+
         for i in range(4000):
             created = self.tz.localize(
                 datetime.combine(
                     self.first_day + timedelta(days=random.randint(0, DAYS - 1)), time(11)
                 )
             )
-            status = random.choices(statuses, weights=[10, 20, 15, 35, 20])[0]
+            steps = path()
+            if steps[-1] == S.NEW and len(steps) > 1:
+                steps = steps[:-1]
             lead = Lead(
                 id=uuid.uuid4(),
                 organization=organization,
@@ -326,37 +354,31 @@ class Command(BaseCommand):
                 branch=random.choice(branches),
                 direction=random.choice(directions),
                 source=random.choices(sources, weights=range(len(sources), 0, -1))[0],
+                assigned_to=random.choice(managers),
                 parent_name=f"Родитель {i}",
                 phone=f"+7701{i:07d}",
                 child_name=f"Ребёнок заявки {i}",
-                status=status,
+                status=steps[-1],
                 status_changed_at=created,
                 created_at=created,
             )
             leads.append(lead)
-            changes.append(
-                LeadStatusChange(
-                    id=uuid.uuid4(),
-                    organization=organization,
-                    lead=lead,
-                    from_status="",
-                    to_status=Lead.Status.NEW,
-                    changed_by=owner,
-                    changed_at=created,
-                )
-            )
-            if status != Lead.Status.NEW:
+            moment = created
+            previous = ""
+            for status in steps:
                 changes.append(
                     LeadStatusChange(
                         id=uuid.uuid4(),
                         organization=organization,
                         lead=lead,
-                        from_status=Lead.Status.NEW,
+                        from_status=previous,
                         to_status=status,
                         changed_by=owner,
-                        changed_at=created + timedelta(days=random.randint(1, 20)),
+                        changed_at=moment,
                     )
                 )
+                previous = status
+                moment += timedelta(days=random.randint(1, 6))
         Lead.objects.bulk_create(leads, batch_size=BATCH)
         LeadStatusChange.objects.bulk_create(changes, batch_size=BATCH)
         self.stdout.write(f"  заявок {len(leads)}")

@@ -1,7 +1,7 @@
 // Каркас отчётов (TRU-113): отчёт M3 собирается из этих частей, а не рисует
 // свой выбор периода, плитки и графики. Примеры всех состояний — /analytics/kit.
 export { useAnalyticsFilters, PERIODS } from './filters'
-export { useMetrics, useAnalyticsCatalog, useBreakdown, useHeatmap } from './useMetrics'
+export { useMetrics, useAnalyticsCatalog, useAnalyticsGet, useBreakdown, useHeatmap } from './useMetrics'
 export { AnalyticsToolbar, PeriodPicker, BranchPicker } from './Toolbar'
 export { MetricTile, Change } from './MetricTile'
 export { ChartCard, NotEnoughData } from './ChartCard'
