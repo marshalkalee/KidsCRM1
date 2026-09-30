@@ -1,5 +1,6 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from unittest import mock
 
 import pytz
 from django.test import SimpleTestCase, tag
@@ -285,6 +286,14 @@ class ApiTests(AnalyticsFixtures):
         bad_period = self.get(self.owner, period="custom", **{"from": "2026-01-01"})
         self.assertEqual(bad_period.status_code, 400)
         self.assertIn("period", bad_period.data)
+
+    def test_works_without_redis(self):
+        from . import registry
+
+        with mock.patch.object(registry, "caches") as broken:
+            broken.__getitem__.return_value.get.side_effect = ConnectionError
+            broken.__getitem__.return_value.set.side_effect = ConnectionError
+            self.assertEqual(self.get(self.owner).data["metrics"]["revenue"]["value"], "45000")
 
     @tag("tenant_isolation")
     def test_other_organization_is_invisible(self):
