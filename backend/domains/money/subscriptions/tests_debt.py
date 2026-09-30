@@ -60,7 +60,6 @@ class DebtorChildIdsTests(TestCase):
                 organization=child.organization, name="Центральный"
             )[0],
             starts_on=date.today(),
-            ends_on=date.today().replace(day=28),
             paid_amount=paid_amount,
             payment_method="cash",
         )
@@ -122,7 +121,6 @@ class DebtorChildIdsTests(TestCase):
                 organization=other_child.organization, name="Центральный"
             )[0],
             starts_on=date.today(),
-            ends_on=date.today().replace(day=28),
             paid_amount=0,
             payment_method="cash",
         )
@@ -299,3 +297,23 @@ class CrossScreenConsistencyTests(TestCase):
         self.client.force_login(self.admin)
         response = self.client.get(reverse("payments_web:child-tab-payments", args=[self.child.id]))
         self.assertEqual(response.context["debt"], Decimal(4000))
+
+    def test_api_screens_show_same_number(self):
+        """Список детей, шапка карточки, карточка родителя, «Задолженности»
+        и вкладка «Абонементы» во frontend2 — одна цифра."""
+        from rest_framework.test import APIClient
+
+        api = APIClient()
+        api.force_authenticate(self.admin)
+        child_id = str(self.child.id)
+        table = api.get("/api/v1/clients/children/table/").data["results"]
+        self.assertEqual([row["debt"] for row in table if str(row["id"]) == child_id], ["4000"])
+        card = api.get(f"/api/v1/clients/children/{child_id}/card/").data
+        self.assertEqual(card["money"]["debt"], "4000")
+        parent = api.get(f"/api/v1/clients/parents/{self.parent.id}/card/").data
+        self.assertEqual(parent["money"]["total_debt"], "4000")
+        debtors = api.get("/api/v1/subscriptions/debtors/").data
+        self.assertEqual(Decimal(debtors["total_debt"]), Decimal(4000))
+        subs = api.get("/api/v1/subscriptions/", {"child": child_id}).data
+        subs = subs.get("results", subs) if isinstance(subs, dict) else subs
+        self.assertEqual(sum(Decimal(s["debt"]) for s in subs), Decimal(4000))

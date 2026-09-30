@@ -8,18 +8,19 @@
 оплата"), а "есть хотя бы один абонемент, где цена больше суммы оплат
 по нему": переплата по одному абонементу не гасит долг по другому.
 
-payments/debt.py (TRU-66) считается устаревшим — использовал другую
-формулу (сумма по ребёнку, с взаимозачётом между абонементами) и не
-использовался ни одним реальным экраном. Не импортировать оттуда.
+Второго расчёта нет: payments/debt.py (TRU-66) со взаимозачётом между
+абонементами удалён в TRU-73. Экран оплаты, вкладки карточки и отчёты
+берут долг только отсюда.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 from django.db.models import F, Q, Sum
 from django.db.models.functions import Coalesce
 
 from domains.money.payments.models import Payment
+from domains.platform.core.utils import today_for_org
 
 from .models import Subscription
 
@@ -30,6 +31,20 @@ from .models import Subscription
 _CONFIRMED_PAYMENT = Q(payments__status=Payment.Status.CONFIRMED, payments__deleted_at__isnull=True)
 
 
+def paid_sum():
+    """Сколько оплачено по абонементу — для .annotate(paid=paid_sum())."""
+    return Coalesce(Sum("payments__amount", filter=_CONFIRMED_PAYMENT), Decimal(0))
+
+
+def subscription_debt(subscription) -> Decimal:
+    """Долг по одному абонементу, по той же формуле, что списки: не меньше
+    нуля. Берёт annotate(paid=…), если он есть, иначе считает сам."""
+    paid = getattr(subscription, "paid", None)
+    if paid is None:
+        paid = Subscription.objects.filter(pk=subscription.pk).aggregate(paid=paid_sum())["paid"]
+    return max(subscription.price - paid, Decimal(0))
+
+
 def debtor_child_ids(organization):
     """Подзапрос id детей с хотя бы одним недоплаченным абонементом —
     предназначен для `Child.objects.filter(id__in=debtor_child_ids(org))`,
@@ -38,7 +53,7 @@ def debtor_child_ids(organization):
     детей за ≤1с)."""
     return (
         Subscription.objects.for_tenant(organization)
-        .annotate(paid=Coalesce(Sum("payments__amount", filter=_CONFIRMED_PAYMENT), Decimal(0)))
+        .annotate(paid=paid_sum())
         .filter(price__gt=F("paid"))
         .values("child_id")
     )
@@ -53,7 +68,7 @@ def debt_by_child(organization, child_ids) -> dict:
     rows = (
         Subscription.objects.for_tenant(organization)
         .filter(child_id__in=child_ids)
-        .annotate(paid=Coalesce(Sum("payments__amount", filter=_CONFIRMED_PAYMENT), Decimal(0)))
+        .annotate(paid=paid_sum())
         .filter(price__gt=F("paid"))
         .values_list("child_id", "price", "paid")
     )
@@ -71,7 +86,7 @@ def debtor_subscriptions(organization, *, branch=None, direction=None, min_age_d
     направлениям одновременно)."""
     qs = (
         Subscription.objects.for_tenant(organization)
-        .annotate(paid=Coalesce(Sum("payments__amount", filter=_CONFIRMED_PAYMENT), Decimal(0)))
+        .annotate(paid=paid_sum())
         .filter(price__gt=F("paid"))
         .annotate(debt=F("price") - F("paid"))
         .select_related("child", "subscription_type_version", "direction", "branch")
@@ -81,7 +96,7 @@ def debtor_subscriptions(organization, *, branch=None, direction=None, min_age_d
     if direction:
         qs = qs.filter(direction=direction)
     if min_age_days is not None:
-        cutoff = date.today() - timedelta(days=min_age_days)
+        cutoff = today_for_org(organization) - timedelta(days=min_age_days)
         qs = qs.filter(starts_on__lte=cutoff)
     return qs
 
@@ -89,7 +104,7 @@ def debtor_subscriptions(organization, *, branch=None, direction=None, min_age_d
 def debt_age_days(subscription: Subscription) -> int:
     """Давность — от даты продажи (starts_on): отдельного поля 'плановая
     дата оплаты' в модели нет. Появится — поправить только здесь."""
-    return (date.today() - subscription.starts_on).days
+    return (today_for_org(subscription.organization) - subscription.starts_on).days
 
 
 def debt_for_child(organization, child_id) -> Decimal:

@@ -63,7 +63,6 @@ class AssistFixtures(AIFixtures):
             direction=self.ballet,
             branch=self.branch,
             starts_on=datetime.date.today(),
-            ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=10000,
             payment_method="cash",
         )

@@ -15,13 +15,14 @@ from datetime import date, timedelta
 from django.db import transaction
 
 from domains.platform.core.audit import AuditLog
+from domains.platform.core.utils import today_for_org
 
 from .models import Subscription, SubscriptionFreeze
 from .subscriptions import transition_status
 
 
 def _freezes_used_last_year(subscription: Subscription) -> int:
-    cutoff = date.today() - timedelta(days=365)
+    cutoff = today_for_org(subscription.organization) - timedelta(days=365)
     return subscription.freezes.filter(starts_on__gte=cutoff).count()
 
 
@@ -67,11 +68,14 @@ def unfreeze_subscription(
     actor=None,
     actual_end_date: date | None = None,
 ) -> SubscriptionFreeze:
-    freeze = subscription.freezes.filter(ends_on__gte=date.today()).order_by("-starts_on").first()
+    today = today_for_org(subscription.organization)
+    freeze = subscription.freezes.filter(ends_on__gte=today).order_by("-starts_on").first()
     if freeze is None:
         raise ValueError("Активной заморозки не найдено")
 
     actual_end_date = actual_end_date or freeze.ends_on
+    # Раньше начала заморозки закончить нельзя — иначе срок уедет назад.
+    actual_end_date = max(actual_end_date, freeze.starts_on)
     planned_days = (freeze.ends_on - freeze.starts_on).days
     actual_days = (actual_end_date - freeze.starts_on).days
     adjustment = actual_days - planned_days  # отрицательное при досрочной разморозке

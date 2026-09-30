@@ -86,7 +86,6 @@ class NotificationFixtures(TestCase):
             direction=self.direction,
             branch=branch,
             starts_on=starts,
-            ends_on=starts + datetime.timedelta(days=60),
             paid_amount=paid,
             payment_method="cash",
         )
