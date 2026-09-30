@@ -134,8 +134,9 @@ class EventMetric(Metric):
     date_field: str = ""
     # Что считаем: Sum("amount"), Count("id"), Count("child_id", distinct=True).
     aggregate: Callable = None
-    # Разбивки: {"измерение": "путь до поля"} — {"method": "method",
-    # "branch": "subscription__branch_id"}. Подписи — breakdowns.DIMENSIONS.
+    # Разбивки: {"измерение": "путь до поля" или выражение} — {"method":
+    # "method", "branch": "subscription__branch_id", "client": Case(...)}.
+    # Подписи — breakdowns.DIMENSIONS.
     breakdowns: dict = None
 
     kind = "event"
@@ -172,12 +173,11 @@ class EventMetric(Metric):
     def breakdown(self, scope, period, dimension):
         """[(ключ, значение)] за период по одному измерению, по убыванию."""
         field = (self.breakdowns or {})[dimension]
-        rows = (
-            self._in_period(scope, period)
-            .values(field)
-            .annotate(v=self.aggregate())
-            .values_list(field, "v")
-        )
+        qs = self._in_period(scope, period)
+        if not isinstance(field, str):
+            # Вычисляемое измерение (новый клиент / продление) — через аннотацию.
+            qs, field = qs.annotate(_dimension=field), "_dimension"
+        rows = qs.values(field).annotate(v=self.aggregate()).values_list(field, "v")
         return sorted(((key, v or 0) for key, v in rows), key=lambda row: row[1], reverse=True)
 
     def data_since(self, scope):

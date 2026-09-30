@@ -57,6 +57,7 @@ export default function LeadDetail() {
   const autoSaleHandled = useRef(false)
   const [writing, setWriting] = useState(false)
   const ai = useAI()
+  const autoSaleHandled = useRef(false)
 
   const loadExtras = useCallback(() => {
     api.get(`leads/${id}/history/`).then(res => setHistory(res.data)).catch(() => {})
@@ -108,6 +109,7 @@ export default function LeadDetail() {
     try {
       const res = await api.post(`leads/${lead.id}/status/`, { status: to, ...extra })
       setLead(res.data)
+      if (to === 'trial_attended' && !res.data.converted_child) setConverting(true)
       loadExtras()
       toast.success(t('Статус: {status}', { status: LEAD_STATUS[to].label }))
     } catch (err) {
@@ -300,6 +302,36 @@ export default function LeadDetail() {
           onCancelled={saved => {
             setLead(saved)
             setCancellingTrial(false)
+            loadExtras()
+          }}
+        />
+      )}
+      {converting && (
+        <LeadConversionModal
+          lead={lead}
+          forSale={saleAfterConversion}
+          onClose={() => {
+            setConverting(false)
+            setSaleAfterConversion(false)
+          }}
+          onConverted={saved => {
+            setLead(saved)
+            setConverting(false)
+            if (saleAfterConversion) {
+              setSaleAfterConversion(false)
+              setSelling(true)
+            }
+            loadExtras()
+          }}
+        />
+      )}
+      {selling && (
+        <LeadSaleModal
+          lead={lead}
+          onClose={() => setSelling(false)}
+          onSold={saved => {
+            setLead(saved)
+            setSelling(false)
             loadExtras()
           }}
         />
