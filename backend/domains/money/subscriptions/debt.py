@@ -126,3 +126,22 @@ def debt_for_parent(organization, parent) -> Decimal:
         .values_list("child_id", flat=True)
     )
     return sum(debt_by_child(organization, child_ids).values(), Decimal(0))
+
+
+def debt_total(organization, *, branch_ids=None) -> Decimal:
+    """Сумма долга по организации или набору филиалов — для аналитики
+    (TRU-118): та же формула, что debtor_subscriptions, но одним агрегатом
+    в базе, без строк. Цифра дашборда = итог экрана «Задолженности»."""
+    qs = (
+        Subscription.objects.for_tenant(organization)
+        .annotate(paid=paid_sum())
+        .filter(price__gt=F("paid"))
+    )
+    if branch_ids is not None:
+        qs = qs.filter(branch_id__in=branch_ids)
+    # Складываем в Python: Django не суммирует выражение поверх агрегата
+    # paid_sum() в одном SELECT, а своя формула «оплачено» через подзапрос
+    # была бы вторым определением долга. Строк — только должники (сотни,
+    # не десятки тысяч), замер в ADR-0006.
+    rows = qs.values_list("price", "paid")
+    return sum((price - paid for price, paid in rows), Decimal(0))

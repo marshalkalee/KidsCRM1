@@ -34,6 +34,7 @@
 | 5   | Деньги → всем: `debt_by_child` / `debt_for_child` / `debt_for_parent` / `debtor_subscriptions` | Bekzat | Анель (список детей, карточка родителя), экраны «Задолженности», вкладка «Оплаты» | [`backend/domains/money/subscriptions/debt.py`](../domains/money/subscriptions/debt.py) |
 | 6   | Люди → всем: вкладки карточки ребёнка (frontend2) | Анель | Bekzat («Абонементы», «Оплаты»), Дарья («Посещения») | [`frontend2/src/components/child-card/tabs.js`](../../frontend2/src/components/child-card/tabs.js) |
 | 7   | Продажи → всем: `create_lead` / `change_status` | Анель | Дарья (пробные, TRU-100), Bekzat (задачи, продления), приём с сайта | [`backend/domains/platform/leads/services.py`](../domains/platform/leads/services.py) |
+| 8   | Аналитика → все отчёты M3: `register` / `compute`, `/api/v1/analytics/metrics/` | Анель | Дарья, Bekzat (отчёты TRU-114–128, дашборд TRU-129), каркас дашборда TRU-113 | [`backend/domains/platform/analytics/registry.py`](../domains/platform/analytics/registry.py) |
 
 
 
@@ -232,5 +233,38 @@ lead, created = create_renewal_lead(child, actor=None)               # авто�
   `?kind=renewal`. В конверсию новых заявок не попадают.
 - «Продлил» — `change_status(lead, to_status=PURCHASED)` после продажи
   абонемента.
+
+Владелец: Анель. Потребители: Дарья, Bekzat.
+
+## 8. Аналитика → все отчёты (TRU-118, ADR-0006)
+
+```python
+from domains.platform.analytics.registry import EventMetric, register, count, total
+
+register(EventMetric(
+    name="trial_visits", label="Пробных посещений", unit="count",
+    source="Посещаемость: пробные записи", min_history_days=28,
+    queryset=lambda scope: scope.filter(<queryset>, "lesson__group__branch_id"),
+    date_field="lesson__starts_at", aggregate=count(),
+))
+
+compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, series, …}}
+```
+
+- Отчёт не пишет свой SQL в view и свой выбор периода: регистрирует метрику
+  в `analytics/metrics.py` (или своём модуле, импортированном оттуда) и
+  получает значение, прошлый период, график и «данных пока мало» одинаково.
+- Виды: `EventMetric` (события с датой), `RatioMetric` (отношение двух
+  метрик), `SnapshotMetric` (состояние «на сейчас», история — из почасовых
+  снимков `MetricSnapshot`).
+- Цифра, которая уже считается в операционке, берётся из того же сервиса:
+  долг — `subscriptions.debt`, заполняемость — `groups.queries`, оплаты —
+  правило `paid_sum` (подтверждённые, не отменённые).
+- Филиалы — только через `scope.filter(qs, "<путь до branch_id>")`: права
+  управляющего проверяются в одном месте (`analytics/scope.py`).
+- API: `GET /api/v1/analytics/metrics/?metrics=a,b&period=month|week|today|
+  quarter|year|custom&from=&to=&branch=<id>…&compare=0&series=0`,
+  `GET /api/v1/analytics/catalog/` — список метрик, доступные филиалы,
+  периоды. Доступ — `can_view_analytics` (владелец, управляющий).
 
 Владелец: Анель. Потребители: Дарья, Bekzat.
