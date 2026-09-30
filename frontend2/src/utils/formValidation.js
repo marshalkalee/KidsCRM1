@@ -2,7 +2,13 @@ export const PHONE_MAX_LENGTH = 11
 export const NAME_MAX_LENGTH = 255
 
 export function phoneDigits(value) {
-  return String(value ?? '').replace(/\D/g, '').slice(0, PHONE_MAX_LENGTH)
+  const raw = String(value ?? '')
+  const digits = raw.replace(/\D/g, '').slice(0, PHONE_MAX_LENGTH)
+  // Храним значение поля в привычном международном виде. Важно очищать всю
+  // вставленную строку до ограничения количества цифр: иначе пробелы, скобки
+  // и дефисы занимают maxLength, и браузер отбрасывает конец номера.
+  if (digits) return `+${digits}`
+  return raw.includes('+') ? '+' : ''
 }
 
 export function personNameInput(value) {
@@ -24,8 +30,7 @@ export const entityNameInputProps = {
 
 export const phoneInputProps = {
   type: 'tel',
-  inputMode: 'numeric',
-  minLength: 10,
-  maxLength: PHONE_MAX_LENGTH,
-  pattern: '(?:[78]\\d{10}|\\d{10})',
+  inputMode: 'tel',
+  minLength: 11,
+  pattern: '\\+?(?:[78]\\d{10}|\\d{10})',
 }

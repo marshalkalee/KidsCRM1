@@ -51,7 +51,7 @@ export default function Login() {
               autoComplete="tel"
               value={phone}
               onChange={e => setPhone(phoneDigits(e.target.value))}
-              placeholder="77012345678"
+              placeholder="+77012345678"
               required
               autoFocus
               {...phoneInputProps}

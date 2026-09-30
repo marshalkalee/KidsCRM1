@@ -57,7 +57,6 @@ export default function LeadDetail() {
   const autoSaleHandled = useRef(false)
   const [writing, setWriting] = useState(false)
   const ai = useAI()
-  const autoSaleHandled = useRef(false)
 
   const loadExtras = useCallback(() => {
     api.get(`leads/${id}/history/`).then(res => setHistory(res.data)).catch(() => {})
