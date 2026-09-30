@@ -21,4 +21,5 @@ urlpatterns = router.urls + [
     path("auth/invite/", views.InviteStaffView.as_view(), name="invite"),
     path("auth/change-password/", views.ChangePasswordView.as_view(), name="change-password"),
     path("auth/me/", views.MeView.as_view(), name="me"),
+    path("auth/me/photo/", views.MePhotoView.as_view(), name="me-photo"),
 ]

@@ -332,3 +332,22 @@ def create_renewal_lead(child, *, actor=None, assigned_to=None, comment="") -> t
     if comment:
         lead.comments.create(organization=organization, author=actor, text=comment)
     return lead, True
+
+
+def close_renewal_on_sale(child, *, actor, subscription_name="") -> Lead | None:
+    """
+    Абонемент продан — открытое продление ребёнка закрывается «Купил»
+    (TRU-98). Вызывается из продажи абонемента (деньги), чтобы заявка не
+    висела на доске после оплаты и конверсия продлений считалась сама.
+    Нет открытого продления — ничего не делает.
+    """
+    lead = (
+        Lead.objects.for_tenant(child.organization)
+        .filter(kind=LeadKind.RENEWAL, child=child)
+        .exclude(status__in=[Lead.Status.PURCHASED, Lead.Status.REJECTED])
+        .first()
+    )
+    if lead is None:
+        return None
+    comment = f"Продан абонемент «{subscription_name}»" if subscription_name else ""
+    return change_status(lead, to_status=Lead.Status.PURCHASED, actor=actor, comment=comment)

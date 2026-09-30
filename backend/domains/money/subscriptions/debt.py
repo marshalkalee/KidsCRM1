@@ -8,9 +8,9 @@
 оплата"), а "есть хотя бы один абонемент, где цена больше суммы оплат
 по нему": переплата по одному абонементу не гасит долг по другому.
 
-payments/debt.py (TRU-66) считается устаревшим — использовал другую
-формулу (сумма по ребёнку, с взаимозачётом между абонементами) и не
-использовался ни одним реальным экраном. Не импортировать оттуда.
+Второго расчёта нет: payments/debt.py (TRU-66) со взаимозачётом между
+абонементами удалён в TRU-73. Экран оплаты, вкладки карточки и отчёты
+берут долг только отсюда.
 """
 
 from datetime import timedelta
@@ -105,3 +105,43 @@ def debt_age_days(subscription: Subscription) -> int:
     """Давность — от даты продажи (starts_on): отдельного поля 'плановая
     дата оплаты' в модели нет. Появится — поправить только здесь."""
     return (today_for_org(subscription.organization) - subscription.starts_on).days
+
+
+def debt_for_child(organization, child_id) -> Decimal:
+    """Долг одного ребёнка — тонкая обёртка над debt_by_child для мест,
+    где нужен ровно один ребёнок, не список (например, вкладка «Оплаты»)."""
+    return debt_by_child(organization, [child_id]).get(child_id, Decimal(0))
+
+
+def debt_for_parent(organization, parent) -> Decimal:
+    """Долг родителя — сумма по ВСЕМ привязанным детям (любая роль в
+    ChildContact, не только is_payer) — так уже считает карточка
+    родителя (people.clients.parents.parent_money); эта функция даёт то
+    же самое через общий debt_by_child, а не отдельную формулу."""
+    from domains.people.clients.models import ChildContact
+
+    child_ids = list(
+        ChildContact.objects.for_tenant(organization)
+        .filter(parent_contact=parent, child__deleted_at__isnull=True)
+        .values_list("child_id", flat=True)
+    )
+    return sum(debt_by_child(organization, child_ids).values(), Decimal(0))
+
+
+def debt_total(organization, *, branch_ids=None) -> Decimal:
+    """Сумма долга по организации или набору филиалов — для аналитики
+    (TRU-118): та же формула, что debtor_subscriptions, но одним агрегатом
+    в базе, без строк. Цифра дашборда = итог экрана «Задолженности»."""
+    qs = (
+        Subscription.objects.for_tenant(organization)
+        .annotate(paid=paid_sum())
+        .filter(price__gt=F("paid"))
+    )
+    if branch_ids is not None:
+        qs = qs.filter(branch_id__in=branch_ids)
+    # Складываем в Python: Django не суммирует выражение поверх агрегата
+    # paid_sum() в одном SELECT, а своя формула «оплачено» через подзапрос
+    # была бы вторым определением долга. Строк — только должники (сотни,
+    # не десятки тысяч), замер в ADR-0006.
+    rows = qs.values_list("price", "paid")
+    return sum((price - paid for price, paid in rows), Decimal(0))
