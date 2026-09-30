@@ -17,6 +17,7 @@
 берётся из того же сервиса, а не пересчитывается здесь.
 """
 
+import logging
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -81,6 +82,24 @@ def series_of(name, scope, period):
 
 
 REGISTRY: dict[str, "Metric"] = {}
+
+logger = logging.getLogger(__name__)
+
+
+def _cache_get(key):
+    # Redis недоступен — отчёт просто считается заново, а не падает.
+    try:
+        return caches[CACHE_ALIAS].get(key)
+    except Exception:
+        logger.warning("analytics cache unavailable", exc_info=True)
+        return None
+
+
+def _cache_set(key, value, ttl):
+    try:
+        caches[CACHE_ALIAS].set(key, value, ttl)
+    except Exception:
+        logger.warning("analytics cache unavailable", exc_info=True)
 
 
 @dataclass(frozen=True)
@@ -260,13 +279,12 @@ def _compute(metric: Metric, scope, period: Period, *, compare: bool, series: bo
             {"date": day.isoformat(), "value": _number(v)}
             for day, v in series_of(metric.name, scope, period)
         ]
-    cache = caches[CACHE_ALIAS]
     since_key = f"since:{metric.name}:{scope.cache_key}"
-    since = cache.get(since_key)
+    since = _cache_get(since_key)
     if since is None:
         since = metric.data_since(scope) or ""
         # «Данных ещё нет» не держим долго — первая оплата должна появиться сразу.
-        cache.set(since_key, since, DATA_SINCE_TTL if since else OPEN_PERIOD_TTL)
+        _cache_set(since_key, since, DATA_SINCE_TTL if since else OPEN_PERIOD_TTL)
     since = since or None
     history_days = (today - since).days + 1 if since else 0
     result["data_since"] = since.isoformat() if since else None
@@ -283,7 +301,6 @@ def compute(names, scope, period: Period, *, compare=True, series=True, use_cach
     unknown = [name for name in names if name not in REGISTRY]
     if unknown:
         raise KeyError(", ".join(unknown))
-    cache = caches[CACHE_ALIAS]
     open_period = period.end >= today_for_org(scope.organization)
     results = {}
     token = _memo.set({})
@@ -300,7 +317,7 @@ def compute(names, scope, period: Period, *, compare=True, series=True, use_cach
                     f"m:{name}:{scope.cache_key}:{period.start}:{period.end}:{period.preset}"
                     f":{int(compare)}{int(series)}"
                 )
-                cached = cache.get(key) if use_cache else None
+                cached = _cache_get(key) if use_cache else None
                 if cached is None:
                     cached = _compute(metric, scope, period, compare=compare, series=series)
                     ttl = (
@@ -308,7 +325,7 @@ def compute(names, scope, period: Period, *, compare=True, series=True, use_cach
                         if open_period or metric.kind == "snapshot"
                         else CLOSED_PERIOD_TTL
                     )
-                    cache.set(key, cached, ttl)
+                    _cache_set(key, cached, ttl)
                 results[name] = cached
     finally:
         _memo.reset(token)
