@@ -1401,5 +1401,20 @@
  "Разрез": "Segment",
  "сейчас на этапе: {n}": "now at this stage: {n}",
  "Та же воронка в разрезе — от этапа к этапу": "The same funnel by segment — stage by stage",
- "Этапы": "Stages"
+ "Этапы": "Stages",
+ "«Мало данных» — меньше {n} заявок: по ним рано делать выводы.": "\"Not enough data\" — fewer than {n} leads: too early to draw conclusions.",
+ "{leads} заявок → {bought} купили": "{leads} leads → {bought} bought",
+ "До пробного": "To trial",
+ "Другие": "Others",
+ "Заявки и покупки": "Leads and purchases",
+ "Заявки по месяцам": "Leads by month",
+ "Источники": "Sources",
+ "Как меняется вклад каналов": "How each channel's share changes",
+ "Какой источник приносит клиентов, а не только заявки": "Which source brings clients, not just leads",
+ "Лучше всего покупают из источника": "Best-converting source",
+ "мало данных": "not enough data",
+ "Новые заявки, созданные за период; продления не входят": "New leads created in the period; renewals are excluded",
+ "Светлая полоса — заявки, яркая — сколько купили": "Light bar — leads, bright — how many bought",
+ "средний чек {sum}": "average check {sum}",
+ "Стоимость заявки и клиента не считаем: расходов на рекламу в системе нет. Отчёт показывает качество источника, а не окупаемость.": "We don't calculate cost per lead or client: advertising spend isn't in the system. The report shows source quality, not ROI."
 }

@@ -13,6 +13,7 @@ from .funnel import BY as FUNNEL_BY
 from .funnel import STAGES, funnel, funnel_by
 from .group_occupancy import group_occupancy
 from .registry import REGISTRY, compute
+from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
 
 UNIT_TITLE = {"money": ", ₸", "percent": ", %", "count": "", "decimal": ""}
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -394,6 +395,55 @@ def group_occupancy_report(scope, period, params):
             )
         )
     return sections
+@report("sources", "Источники заявок")
+def sources_report(scope, period, params):
+    filters = params.get("funnel_filters") or {}
+    items = sources_quality(scope, period, filters)
+    quality = Section(
+        "Источники",
+        [
+            Column("Источник", width=24),
+            Column("Заявок", "count", 10),
+            Column("Пришли на пробное", "count", 14),
+            Column("Купили", "count", 10),
+            Column("До пробного, %", "percent", 14),
+            Column("Конверсия в покупку, %", "percent", 16),
+            Column("Средний чек, ₸", "money", 14, total=False),
+            Column("Мало данных", width=12),
+        ],
+        [
+            [
+                item["label"] or NOT_SET,
+                item["leads"],
+                item["trial"],
+                item["purchased"],
+                item["trial_rate"],
+                item["conversion"],
+                item["avg_check"],
+                "да" if item["small_sample"] else "",
+            ]
+            for item in items
+        ],
+        note=(
+            f"Новые заявки, созданные за период. Меньше {SMALL_SAMPLE} заявок — выводы рано. "
+            "Стоимость источника не считается: расходов на рекламу в системе нет. "
+            "Средний чек — по абонементам, проданным из заявки."
+        ),
+    )
+    monthly = Section(
+        "По месяцам",
+        [
+            Column("Месяц", "date", 12),
+            Column("Источник", width=24),
+            Column("Заявок", "count", 10),
+            Column("Купили", "count", 10),
+        ],
+        [
+            [row["month"], row["label"] or NOT_SET, row["leads"], row["purchased"]]
+            for row in sources_by_month(scope, period, filters)
+        ],
+    )
+    return [quality, monthly]
 
 
 def build(name, scope, period, params=None) -> Export:
