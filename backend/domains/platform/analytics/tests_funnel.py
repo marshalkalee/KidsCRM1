@@ -16,7 +16,7 @@ URL = "/api/v1/analytics/funnel/"
 S = Lead.Status
 
 
-class FunnelTests(APITestCase):
+class FunnelFixtures(APITestCase):
     def setUp(self):
         self.org = Organization.objects.create(name="True Ballet", slug="tb-funnel")
         self.abaya = Branch.objects.create(organization=self.org, name="Абая")
@@ -62,6 +62,8 @@ class FunnelTests(APITestCase):
             previous = status
         return lead
 
+
+class FunnelTests(FunnelFixtures):
     def stages(self, **params):
         data = self.client.get(URL, params).data["funnel"]
         return data, {stage["key"]: stage["count"] for stage in data["stages"]}
