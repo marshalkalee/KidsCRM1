@@ -278,7 +278,6 @@ class ChildListDataWebViewTests(TestCase):
                 organization=child.organization, name="Центральный"
             )[0],
             starts_on=datetime.date.today(),
-            ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=Decimal("15000"),
             payment_method="cash",
         )
@@ -305,7 +304,6 @@ class ChildListDataWebViewTests(TestCase):
                 organization=child.organization, name="Центральный"
             )[0],
             starts_on=datetime.date.today(),
-            ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=Decimal("15000"),
             payment_method="cash",
         )
@@ -342,7 +340,6 @@ class ChildListDataWebViewTests(TestCase):
                 organization=child.organization, name="Центральный"
             )[0],
             starts_on=datetime.date.today(),
-            ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=Decimal("25000"),
             payment_method="cash",
         )
@@ -398,7 +395,6 @@ class ChildListDataWebViewTests(TestCase):
                     organization=child.organization, name="Центральный"
                 )[0],
                 starts_on=datetime.date.today(),
-                ends_on=datetime.date.today() + datetime.timedelta(days=30),
                 paid_amount=Decimal("10000"),
                 payment_method="cash",
             )
@@ -523,7 +519,6 @@ class ChildListFiltersWebViewTests(TestCase):
             direction=self.direction,
             branch=Branch.objects.get_or_create(organization=self.org, name="Центральный")[0],
             starts_on=datetime.date.today(),
-            ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=paid_amount,
             payment_method="cash",
         )
@@ -545,7 +540,7 @@ class ChildListFiltersWebViewTests(TestCase):
             self.org, name="8 занятий", price=25000, quota_sessions=8, duration_days=30
         )
         soon = self._make_child("Скоро истекает")
-        sell_subscription(
+        soon_sub, _payment = sell_subscription(
             actor=self.owner,
             child=soon,
             subscription_type_version=sub_type.versions.latest(),
@@ -554,12 +549,14 @@ class ChildListFiltersWebViewTests(TestCase):
                 0
             ],
             starts_on=datetime.date.today(),
-            ends_on=datetime.date.today() + datetime.timedelta(days=2),
             paid_amount=Decimal("25000"),
             payment_method="cash",
         )
+        soon_sub.ends_on = datetime.date.today() + datetime.timedelta(days=2)
+        soon_sub.save(update_fields=["ends_on"])
+
         far = self._make_child("Далеко до конца")
-        sell_subscription(
+        far_sub, _payment = sell_subscription(
             actor=self.owner,
             child=far,
             subscription_type_version=sub_type.versions.latest(),
@@ -568,10 +565,11 @@ class ChildListFiltersWebViewTests(TestCase):
                 0
             ],
             starts_on=datetime.date.today(),
-            ends_on=datetime.date.today() + datetime.timedelta(days=60),
             paid_amount=Decimal("25000"),
             payment_method="cash",
         )
+        far_sub.ends_on = datetime.date.today() + datetime.timedelta(days=60)
+        far_sub.save(update_fields=["ends_on"])
 
         response = self._get({"expiring": "1"})
 

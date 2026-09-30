@@ -60,6 +60,7 @@ DOMAIN_APPS = [
     "domains.platform.tasks",
     "domains.platform.leads",
     "domains.platform.ai",
+    "domains.platform.analytics",
     "domains.scheduling.schedule_templates",
 ]
 
@@ -222,9 +223,23 @@ CACHES = {
         "LOCATION": env("REDIS_URL", default="redis://localhost:6379/0"),
         "KEY_PREFIX": "import_progress",
     },
+    # Аналитика (TRU-118, ADR-0006): общий для всех воркеров кэш готовых
+    # метрик — locmem у каждого процесса свой, и дашборд считался бы заново
+    # в каждом воркере.
+    "analytics": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("REDIS_URL", default="redis://localhost:6379/0"),
+        "KEY_PREFIX": "analytics",
+    },
 }
 
 CELERY_BEAT_SCHEDULE = {
+    # Снимки долга и заполняемости для истории (TRU-118, ADR-0006): каждый
+    # час на сегодняшнюю дату центра, последний за день перезаписывает.
+    "snapshot-analytics-metrics": {
+        "task": "domains.platform.analytics.tasks.snapshot_metrics_task",
+        "schedule": crontab(minute=50),
+    },
     "generate-lessons-daily": {
         "task": (
             "domains.scheduling.schedule_templates.tasks"
@@ -235,6 +250,12 @@ CELERY_BEAT_SCHEDULE = {
     "reconcile-subscription-balances": {
         "task": "domains.money.subscriptions.tasks.reconcile_balances_task",
         "schedule": crontab(hour=3, minute=0),
+    },
+    # Заявки-продления по заканчивающимся абонементам (TRU-98) — после
+    # пересчёта статусов, чтобы список «заканчивается» был свежим.
+    "create-renewal-leads": {
+        "task": "domains.money.subscriptions.tasks.create_renewal_leads_task",
+        "schedule": crontab(hour=1, minute=0),
     },
     "update-subscription-statuses": {
         "task": "domains.money.subscriptions.tasks.update_subscription_statuses_task",

@@ -11,6 +11,7 @@ Subscription (TRU-58) обязан ссылаться на SubscriptionTypeVersi
 поведение уже проданных абонементов (критерий приёмки TRU-57).
 """
 
+from django.conf import settings
 from django.db import models
 
 from domains.platform.core.models import TenantModel
@@ -132,6 +133,13 @@ class Subscription(TenantModel):
     discount_amount = models.DecimalField(max_digits=12, decimal_places=0, default=0)
     discount_reason = models.CharField(max_length=20, choices=DiscountReason.choices, blank=True)
     discount_comment = models.CharField(max_length=255, blank=True)
+    renewed_from = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="renewals",
+    )
     price = models.DecimalField(max_digits=12, decimal_places=0)  # = list_price - discount_amount
 
     class Meta:
@@ -228,3 +236,23 @@ class BalanceDiscrepancy(TenantModel):
             f"{self.subscription}: {self.cached_value} -> {self.recomputed_value} "
             f"({self.found_at:%d.%m.%Y})"
         )
+
+
+class RenewalContact(TenantModel):
+    """Отметка «связались» (ТЗ п. 4.4) — чтобы не звонить дважды за
+    неделю. Не скрывает абонемент из списка, только информирует."""
+
+    subscription = models.ForeignKey(
+        Subscription, on_delete=models.CASCADE, related_name="renewal_contacts"
+    )
+    contacted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    contacted_at = models.DateTimeField(auto_now_add=True)
+    note = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-contacted_at"]
+
+    def __str__(self) -> str:
+        return f"{self.subscription} — {self.contacted_at:%d.%m.%Y}"

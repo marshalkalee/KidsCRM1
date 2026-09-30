@@ -10,6 +10,7 @@ get_selectable_subscription_types(), не денежное правило, ве�
 """
 
 from django.db import transaction
+from django.db.models import Q
 
 from .models import RULES_SCHEMA_VERSION, SubscriptionType, SubscriptionTypeVersion
 
@@ -81,5 +82,7 @@ def get_selectable_subscription_types(organization, branch=None):
     но не трогать уже проданные (они хранят версию, не тип)."""
     qs = SubscriptionType.objects.for_tenant(organization).filter(is_active=True)
     if branch is not None:
-        qs = qs.filter(branches=branch)
+        # Филиалы у типа не указаны — он продаётся во всех (так заводят
+        # большинство центров); указаны — только в них.
+        qs = qs.filter(Q(branches=branch) | Q(branches__isnull=True)).distinct()
     return qs.order_by("name")

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowRight, CalendarPlus, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Sparkles, Trash2, UserRound,
+  ArrowRight, CalendarPlus, CreditCard, ListTodo, MessageCircle, Pencil, Phone, SearchX, Send, Sparkles, Trash2, UserRound,
 } from 'lucide-react'
 import api from '../api/axios'
 import LeadConversionModal from '../components/leads/LeadConversionModal'
@@ -54,6 +54,7 @@ export default function LeadDetail() {
   const [staff, setStaff] = useState([])
   const [writing, setWriting] = useState(false)
   const ai = useAI()
+  const autoSaleHandled = useRef(false)
 
   const loadExtras = useCallback(() => {
     api.get(`leads/${id}/history/`).then(res => setHistory(res.data)).catch(() => {})
@@ -105,6 +106,7 @@ export default function LeadDetail() {
     try {
       const res = await api.post(`leads/${lead.id}/status/`, { status: to, ...extra })
       setLead(res.data)
+      if (to === 'trial_attended' && !res.data.converted_child) setConverting(true)
       loadExtras()
       toast.success(t('Статус: {status}', { status: LEAD_STATUS[to].label }))
     } catch (err) {
@@ -480,7 +482,11 @@ function HistoryCard({ history }) {
                 </p>
                 <p className="text-xs text-ink-subtle">
                   {formatDateTime(change.changed_at)}
-                  {change.changed_by_name ? ` · ${change.changed_by_name}` : ` · ${t('система')}`}
+                  {change.is_automatic
+                    ? ` · ${t('Автоматически')}`
+                    : change.changed_by_name
+                      ? ` · ${change.changed_by_name}`
+                      : ` · ${t('система')}`}
                 </p>
                 {change.rejection_reason_name && <p className="mt-0.5 text-xs text-danger-600">{t('Причина')}: {t(change.rejection_reason_name)}{change.comment && ` — ${change.comment}`}</p>}
                 {!change.rejection_reason_name && change.comment && <p className="mt-0.5 text-xs text-ink-muted">{change.comment}</p>}

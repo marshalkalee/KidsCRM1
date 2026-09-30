@@ -219,6 +219,10 @@ class LeadStatusChange(UUIDPrimaryKeyModel):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
     )
     changed_at = models.DateTimeField(default=timezone.now)
+    is_automatic = models.BooleanField(
+        default=False,
+        help_text="Переход выполнен системой по бизнес-событию, а не вручную в заявке.",
+    )
     rejection_reason = models.ForeignKey(
         LeadRejectionReason,
         on_delete=models.PROTECT,

@@ -76,7 +76,6 @@ class ParentFixtures(TestCase):
             direction=direction,
             branch=branch,
             starts_on=datetime.date.today(),
-            ends_on=datetime.date.today() + datetime.timedelta(days=30),
             paid_amount=Decimal(paid),
             payment_method="cash",
         )

@@ -1,7 +1,5 @@
 """Закрытие заявки фактической продажей абонемента (TRU-103)."""
 
-import datetime
-
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -181,7 +179,6 @@ def sell_from_lead(lead, *, actor, data):
 
     group, membership = _get_group(lead, child, data.get("group"))
     starts_on = data["starts_on"]
-    ends_on = starts_on + datetime.timedelta(days=version.duration_days)
     subscription, _payment = sell_subscription(
         actor=actor,
         child=child,
@@ -189,7 +186,6 @@ def sell_from_lead(lead, *, actor, data):
         direction=lead.direction,
         branch=lead.branch,
         starts_on=starts_on,
-        ends_on=ends_on,
         discount_amount=discount,
         discount_reason=data.get("discount_reason", ""),
         discount_comment=data.get("discount_comment", ""),

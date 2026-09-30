@@ -4,10 +4,13 @@
 Частичный сбой посередине недопустим — либо продажа целиком, либо ничего.
 """
 
+from datetime import timedelta
+
 from django.db import transaction
 
 from domains.money.payments.services import record_payment
 from domains.platform.core.audit import AuditLog
+from domains.platform.leads.services import close_renewal_on_sale
 
 from .models import Subscription, SubscriptionLedgerEntry
 from .subscriptions import add_ledger_entry
@@ -22,7 +25,6 @@ def sell_subscription(
     direction,
     branch,
     starts_on,
-    ends_on,
     discount_amount=0,
     discount_reason="",
     discount_comment="",
@@ -32,6 +34,8 @@ def sell_subscription(
 ):
     if discount_amount and not discount_reason:
         raise ValueError("Скидка без причины не допускается")
+
+    ends_on = starts_on + timedelta(days=subscription_type_version.duration_days)
 
     list_price = subscription_type_version.price
     subscription = Subscription.objects.create(
@@ -57,8 +61,6 @@ def sell_subscription(
             delta=subscription_type_version.quota_sessions,
         )
 
-    # Продажа без оплаты (весь абонемент в долг) — законный случай: оплаты
-    # нет, а не оплата на 0 ₸.
     payment = None
     if paid_amount and paid_amount > 0:
         payment = record_payment(
@@ -81,5 +83,9 @@ def sell_subscription(
             "price": str(subscription.price),
             "paid_amount": str(paid_amount),
         },
+    )
+    # Клиента удержали — заявка-продление, если была, закрыта продажей (TRU-98).
+    close_renewal_on_sale(
+        child, actor=actor, subscription_name=subscription_type_version.subscription_type.name
     )
     return subscription, payment

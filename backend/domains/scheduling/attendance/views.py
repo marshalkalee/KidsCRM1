@@ -9,7 +9,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsStaffOfOrganization
-from domains.platform.leads.services import mark_trial_attended
+from domains.platform.leads.services import create_trial_no_show_follow_up, mark_trial_attended
+from domains.platform.tasks.services import cancel_trial_no_show_task
 from domains.scheduling.schedule.enrollment_service import (
     available_makeups_for_child,
     makeup_candidate_lessons,
@@ -132,11 +133,19 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
             )
             attendance.mark(status_value, actor=request.user, absence_reason=absence_reason)
             if status_value == Attendance.Status.PRESENT:
+                cancel_trial_no_show_task(attendance=attendance)
                 mark_trial_attended(
                     organization=request.organization,
                     lesson=lesson,
                     child=child,
                     actor=request.user,
+                )
+            elif status_value == Attendance.Status.ABSENT:
+                create_trial_no_show_follow_up(
+                    organization=request.organization,
+                    lesson=lesson,
+                    child=child,
+                    attendance=attendance,
                 )
         return Response(AttendanceSerializer(attendance, context={"request": request}).data)
 
@@ -158,6 +167,7 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
         if attendance is None:
             return Response({"reset": False, "lesson": str(lesson.id), "child": str(child_id)})
 
+        cancel_trial_no_show_task(attendance=attendance)
         attendance.clear_mark(actor=request.user)
         return Response({"reset": True, "lesson": str(lesson.id), "child": str(child_id)})
 
@@ -175,6 +185,7 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
                 .filter(lesson=lesson)
             )
             for attendance in attendances:
+                cancel_trial_no_show_task(attendance=attendance)
                 attendance.clear_mark(actor=request.user)
         return Response({"reset_count": len(attendances), "lesson": str(lesson.id)})
 

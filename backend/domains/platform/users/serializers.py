@@ -215,6 +215,17 @@ class InviteStaffSerializer(serializers.Serializer):
         return user
 
 
+class ProfileSerializer(serializers.ModelSerializer):
+    """Что сотрудник меняет в своём профиле сам. Телефон — логин, его меняет владелец."""
+
+    class Meta:
+        model = User
+        fields = ["full_name"]
+
+    def validate_full_name(self, value):
+        return normalize_person_name(value)
+
+
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True)
@@ -226,7 +237,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         return value
 
     def validate_new_password(self, value):
-        validate_password(value)
+        validate_password(value, user=self.context["request"].user)
         return value
 
     def save(self):
