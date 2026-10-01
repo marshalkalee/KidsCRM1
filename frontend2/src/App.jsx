@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LegacyRedirect from './pages/LegacyRedirect'
+import TestPay from './pages/TestPay'
 import ChildImport from './pages/ChildImport'
 import Onboarding from './pages/Onboarding'
 import ParentDetail from './pages/ParentDetail'
@@ -50,6 +51,7 @@ function App() {
             <Routes key={lang}>
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
+              <Route path="/pay/test/:id" element={<TestPay />} />
               <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />

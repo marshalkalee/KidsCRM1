@@ -14,6 +14,7 @@ SUBSCRIPTION_ENDING_LESSONS_THRESHOLD = "subscription_ending_lessons_threshold"
 SUBSCRIPTION_ENDING_DAYS_THRESHOLD = "subscription_ending_days_threshold"
 DEBT_OVERDUE_DAYS_THRESHOLD = "debt_overdue_days_threshold"
 GROUP_UNDERFILLED_PERCENT_THRESHOLD = "group_underfilled_percent_threshold"
+KASPI_PAYMENT_DETAILS = "kaspi_payment_details"
 
 DEFAULT_ORG_SETTINGS = {
     # Абонемент "заканчивается", когда остаётся <= N занятий ИЛИ <= N дней.
@@ -23,6 +24,9 @@ DEFAULT_ORG_SETTINGS = {
     DEBT_OVERDUE_DAYS_THRESHOLD: 5,
     # Группа считается недозаполненной при заполненности < X% вместимости.
     GROUP_UNDERFILLED_PERCENT_THRESHOLD: 50,
+    # Куда родителю платить по счёту из CRM без шлюза Kaspi: ссылка Kaspi
+    # Pay или номер для перевода (payments/remote.py). Пусто — не настроено.
+    KASPI_PAYMENT_DETAILS: "",
 }
 
 
