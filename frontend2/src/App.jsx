@@ -35,6 +35,8 @@ import AnalyticsAttendance from './pages/AnalyticsAttendance'
 import AnalyticsFunnel from './pages/AnalyticsFunnel'
 import AnalyticsGroups from './pages/AnalyticsGroups'
 import AnalyticsSources from './pages/AnalyticsSources'
+import AnalyticsTeachers from './pages/AnalyticsTeachers'
+import Staff from './pages/Staff'
 
 function App() {
   // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
@@ -71,6 +73,7 @@ function App() {
                 <Route path="analytics/funnel" element={<RequirePermission permission="can_view_analytics"><AnalyticsFunnel /></RequirePermission>} />
                 <Route path="analytics/groups" element={<RequirePermission permission="can_view_analytics"><AnalyticsGroups /></RequirePermission>} />
                 <Route path="analytics/sources" element={<RequirePermission permission="can_view_analytics"><AnalyticsSources /></RequirePermission>} />
+                <Route path="analytics/teachers" element={<RequirePermission permission="can_view_analytics"><AnalyticsTeachers /></RequirePermission>} />
                 <Route path="analytics/kit" element={<RequirePermission permission="can_view_analytics"><AnalyticsKit /></RequirePermission>} />
                 <Route path="groups" element={<Groups />} />
                 <Route path="groups/:id" element={<GroupDetail />} />
@@ -78,6 +81,7 @@ function App() {
                 <Route path="branches/:id/rooms" element={<BranchRooms />} />
                 <Route path="directions" element={<RequirePermission permission="can_manage_directions"><Directions /></RequirePermission>} />
                 <Route path="settings/sales" element={<RequirePermission permission="can_manage_lead_dictionaries"><LeadDictionaries /></RequirePermission>} />
+                <Route path="settings/staff" element={<RequirePermission permission="can_manage_staff"><Staff /></RequirePermission>} />
                 <Route path="settings/organization" element={<RequirePermission permission="can_manage_org_settings"><OrganizationSettings /></RequirePermission>} />
                 <Route path="*" element={<NotFound />} />
               </Route>

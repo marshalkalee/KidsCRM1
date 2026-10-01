@@ -34,8 +34,8 @@ export function fetchDirections() {
 
 export function fetchTeachers() {
   return api
-    .get('users/')
-    .then(res => (res.data.results || res.data).filter(u => u.role === 'teacher'))
+    .get('users/', { params: { role: 'teacher' } })
+    .then(res => (res.data.results || res.data).filter(u => u.is_active !== false))
 }
 
 export function fetchMe() {
