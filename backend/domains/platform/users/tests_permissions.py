@@ -84,6 +84,25 @@ class UserPermissionTests(TestCase):
         )
         self.assertEqual(api.delete(f"{URL}{self.owner.pk}/").status_code, 400)
 
+    def test_nobody_deactivates_self(self):
+        response = self.as_(self.owner).patch(
+            f"{URL}{self.owner.pk}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.owner.refresh_from_db()
+        self.assertTrue(self.owner.is_active)
+
+    def test_role_change_immediately_updates_teacher_directory(self):
+        response = self.as_(self.owner).patch(
+            f"{URL}{self.manager.pk}/", {"role": User.Role.TEACHER}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        rows = self.as_(self.owner).get(URL, {"role": User.Role.TEACHER}).json()["results"]
+        self.assertEqual(
+            {row["id"] for row in rows},
+            {str(self.manager.pk), str(self.teacher.pk)},
+        )
+
     def test_role_filter(self):
         rows = self.as_(self.owner).get(URL, {"role": "teacher"}).json()["results"]
         self.assertEqual([r["id"] for r in rows], [str(self.teacher.pk)])

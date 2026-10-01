@@ -43,7 +43,7 @@ export default function Groups() {
 
   useEffect(() => {
     Promise.all([api.get('directions/'), api.get('users/', { params: { role: 'teacher' } })])
-      .then(([d, tch]) => { setDirections(listOf(d)); setTeachers(listOf(tch)) })
+      .then(([d, tch]) => { setDirections(listOf(d)); setTeachers(listOf(tch).filter(user => user.is_active !== false)) })
       .catch(() => {})
   }, [])
 
