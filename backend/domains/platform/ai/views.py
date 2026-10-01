@@ -6,10 +6,11 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOfOrganization
+from domains.platform.core.role_permissions import can_use_ai_chat
 from domains.platform.leads.services import visible_leads
 from domains.platform.leads.views import CanManageLeads
 
-from . import assist, services
+from . import assist, chat, services
 
 
 def _uuid_list(value):
@@ -19,6 +20,13 @@ def _uuid_list(value):
         return [uuid.UUID(str(value))]
     except ValueError:
         return []
+
+
+class CanUseAIChat(IsStaffOfOrganization):
+    message = "Чат с ИИ доступен владельцу, управляющему и администратору."
+
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and can_use_ai_chat(request.user)
 
 
 class AIThrottle(UserRateThrottle):
@@ -210,3 +218,15 @@ def rejection_reason(request, version=None):
             request.user.organization, text=request.data.get("text", ""), kind=kind
         )
     )
+
+
+@api_view(["POST"])
+@permission_classes([CanUseAIChat])
+@throttle_classes([AIThrottle])
+def chat_view(request, version=None):
+    """Чат на главной: {messages: [{role, content}]} → {answer, sources}.
+    ИИ смотрит данные CRM с правами того, кто спрашивает (ai/chat.py)."""
+    messages = request.data.get("messages")
+    if not isinstance(messages, list):
+        return Response({"detail": "Напишите вопрос."}, status=status.HTTP_400_BAD_REQUEST)
+    return _ai(lambda: chat.ask(request.user, messages, host=request.get_host()))

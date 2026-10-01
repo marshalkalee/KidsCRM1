@@ -6,9 +6,10 @@ import { useSession } from '../session/SessionContext'
 import { Button, Card, PageHeader } from '../ui'
 import { t } from '../i18n'
 import { DailyPlan } from '../components/ai/assist'
+import AIChat from '../components/ai/AIChat'
 
 // Главная — приветствие, прогресс настройки центра (владельцу, пока не
-// завершена) и быстрые переходы. Сводка по деньгам и посещаемости — позже.
+// завершена), чат с ИИ (руководителям и администратору) и быстрые переходы. Сводка по деньгам и посещаемости — позже.
 const SHORTCUTS = [
   { to: '/children', get label() { return t('Дети') }, get description() { return t('База, фильтры, карточки') }, icon: Users },
   { to: '/parents', get label() { return t('Родители') }, get description() { return t('Контакты, долги, оплаты') }, icon: Contact },
@@ -31,6 +32,7 @@ export default function Dashboard() {
     <>
       <PageHeader title={`${greeting()}${firstName ? `, ${firstName}` : ''}`} description={t('С чего начнём?')} />
       {isOwner && <OnboardingCard />}
+      <AIChat />
       <DailyPlan />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {SHORTCUTS.map(item => (
