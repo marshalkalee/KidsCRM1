@@ -262,6 +262,9 @@ AI_PROVIDER = env("AI_PROVIDER", default="anthropic")
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-4o-mini")
 OPENAI_VISION_MODEL = env("OPENAI_VISION_MODEL", default="gpt-4o")
+# Чат на главной: инструментов много, вопросы свободные — mini путается в
+# цепочках вызовов, поэтому модель сильнее, чем для коротких задач.
+OPENAI_CHAT_MODEL = env("OPENAI_CHAT_MODEL", default="gpt-4o")
 
 # Удалённая оплата через Kaspi (payments/kaspi.py). Без шлюза счета идут
 # сообщением с реквизитами центра, оплату подтверждает администратор.
