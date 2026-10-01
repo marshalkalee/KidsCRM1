@@ -230,7 +230,14 @@ class Command(BaseCommand):
                     },
                 },
             )
-            for room_name, capacity in (("Большой зал", 20), ("Малый зал", 10)):
+            # Four rooms per branch let the demo calendar show realistic parallel
+            # lessons without manufacturing room conflicts.
+            for room_name, capacity in (
+                ("Большой зал", 24),
+                ("Средний зал", 18),
+                ("Малый зал", 12),
+                ("Хореографический зал", 16),
+            ):
                 Room.objects.get_or_create(
                     organization=self.org,
                     branch=branch,
@@ -318,6 +325,11 @@ class Command(BaseCommand):
 
     def seed_lessons(self, groups):
         created = 0
+        teachers = list(
+            User.objects.filter(organization=self.org, role=User.Role.TEACHER).order_by(
+                "full_name", "id"
+            )
+        )
         for index, group in enumerate(groups):
             if ScheduleTemplate.objects.filter(group=group).exists():
                 continue
@@ -327,11 +339,21 @@ class Command(BaseCommand):
                 valid_from=self.today - datetime.timedelta(days=30),
                 generate_weeks_ahead=3,
             )
-            rooms = list(Room.objects.for_tenant(self.org).filter(branch=group.branch))
-            teacher = group.teachers.first()
-            # Разводим группы одного филиала по времени, чтобы не было накладок.
-            start_hour = 15 + index % 4
-            for weekday in ((0, 2), (1, 3), (0, 3), (2, 4))[index % 4]:
+            rooms = list(
+                Room.objects.for_tenant(self.org).filter(branch=group.branch).order_by("name", "id")
+            )
+            teacher = teachers[index % len(teachers)] if teachers else group.teachers.first()
+            if teacher is not None:
+                group.teachers.add(teacher)
+
+            # Twenty demo groups get two lessons each. Every weekly resource slot
+            # contains at most two groups; their teacher and room indexes differ,
+            # so neither teachers nor rooms overlap. The second lesson is always
+            # two weekdays away from the first one.
+            slot_keys = (index % 20, (index + 7) % 20)
+            for slot_key in slot_keys:
+                weekday = slot_key % 5
+                start_hour = 15 + slot_key // 5
                 ScheduleTemplateSlot.objects.create(
                     organization=self.org,
                     template=template,

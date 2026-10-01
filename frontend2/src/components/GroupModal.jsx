@@ -33,10 +33,10 @@ export default function GroupModal({ group, onClose, onSaved }) {
       .then(([b, d, tch]) => setOptions({
         branches: listOf(b).filter(x => x.is_active || String(x.id) === String(group?.branch)),
         directions: listOf(d).filter(x => x.is_active || String(x.id) === String(group?.direction)),
-        teachers: listOf(tch),
+        teachers: listOf(tch).filter(user => user.is_active !== false || (group?.teachers || []).map(String).includes(String(user.id))),
       }))
       .catch(() => {})
-  }, [group?.branch, group?.direction])
+  }, [group?.branch, group?.direction, group?.teachers])
 
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
 
