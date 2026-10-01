@@ -77,6 +77,38 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
           </Card>
 
           <Card>
+            <CardHeader title={t('Приём заявок с сайта')} description={t('Для формы на сайте центра, которая отправляет заявки напрямую в CRM.')} />
+            <div className="space-y-4">
+              <Field label={t('Домен сайта')} hint={t('Форма сможет слать заявки только с этого адреса')} error={errors.website_domain}>
+                {({ id, invalid }) => (
+                  <Input id={id} invalid={invalid} placeholder="https://trueballet.kz" value={form.website_domain || ''} onChange={e => set('website_domain', e.target.value)} />
+                )}
+              </Field>
+              <div>
+                <span className="block text-sm font-semibold text-ink">{t('Ключ для формы')}</span>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-md bg-surface-muted px-2 py-1.5 text-[13px]">{form.public_api_key}</code>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(form.public_api_key)
+                        toast.success(t('Ключ скопирован'))
+                      } catch {
+                        toast.error(t('Не удалось скопировать — выделите и скопируйте вручную'))
+                      }
+                    }}
+                  >
+                    {t('Копировать')}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card>
             <CardHeader title={t('Пороги автостатусов')} description={t('Когда система сама помечает ребёнка или группу.')} />
             <div className="divide-y divide-line">
               {THRESHOLDS.map(th => (
