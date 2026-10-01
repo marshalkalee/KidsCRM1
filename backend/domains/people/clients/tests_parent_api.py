@@ -178,16 +178,3 @@ class ParentApiTests(ParentFixtures):
         self.api.force_authenticate(self.owner)
 
         self.assertEqual(self.api.get(self.card_url(foreign)).status_code, 404)
-
-
-class ParentDeleteWebTests(ParentFixtures):
-    """Та же проверка в старом вебе (parent_delete)."""
-
-    def test_web_delete_blocked_when_children_linked(self):
-        self.make_child("Аружан", self.ballet)
-        self.client.force_login(self.owner)
-
-        response = self.client.post(reverse("clients_web:parent-delete", args=[self.parent.pk]))
-
-        self.assertRedirects(response, reverse("clients_web:parent-card", args=[self.parent.pk]))
-        self.assertTrue(ParentContact.objects.filter(pk=self.parent.pk).exists())

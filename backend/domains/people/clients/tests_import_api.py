@@ -24,7 +24,7 @@ from .models import (
     ImportJob,
     ParentContact,
 )
-from .tests_import_views import _run_celery_tasks_synchronously, _xlsx_file
+from .tests_import_helpers import _run_celery_tasks_synchronously, _xlsx_file
 
 User = get_user_model()
 

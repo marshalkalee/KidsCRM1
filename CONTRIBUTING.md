@@ -18,7 +18,7 @@
 
 [Conventional Commits](https://www.conventionalcommits.org/), scope —
 домен, который затронут (`people`, `scheduling`, `money`, `platform`),
-либо `web`, если правка про шаблоны/статику/design-system, не привязанные
+либо `frontend2`, если правка про общие компоненты/design-system фронта, не привязанные
 к одному домену (например, правка `kc.css` или i18n-бандла):
 
 ```
