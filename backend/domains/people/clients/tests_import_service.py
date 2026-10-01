@@ -4,7 +4,7 @@
 
 Разбор файла здесь идёт через полный конвейер column_mapping.py
 (read_xlsx/guess_mapping/apply_mapping) + import_service.build_rows —
-так же, как это делают реальные веб-экраны (import_views.py), а не
+так же, как это делает API импорта (import_api_views.py), а не
 напрямую через build_row с ручным словарём: колонки в HEADERS ниже
 специально названы так, чтобы guess_mapping их узнал сама, без ручной
 правки маппинга в тесте.

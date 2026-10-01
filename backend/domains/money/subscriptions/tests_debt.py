@@ -7,7 +7,6 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.test import TestCase
-from django.urls import reverse
 
 from domains.money.payments.models import Payment
 from domains.money.payments.services import cancel_payment, record_payment
@@ -292,11 +291,6 @@ class CrossScreenConsistencyTests(TestCase):
 
     def test_debt_for_parent_matches_child(self):
         self.assertEqual(debt_for_parent(self.org, self.parent), Decimal(4000))
-
-    def test_quick_payment_screen_shows_same_number(self):
-        self.client.force_login(self.admin)
-        response = self.client.get(reverse("payments_web:child-tab-payments", args=[self.child.id]))
-        self.assertEqual(response.context["debt"], Decimal(4000))
 
     def test_api_screens_show_same_number(self):
         """Список детей, шапка карточки, карточка родителя, «Задолженности»

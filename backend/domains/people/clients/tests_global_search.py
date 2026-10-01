@@ -14,6 +14,7 @@ from datetime import date, timedelta
 from django.contrib.auth import get_user_model
 from django.test import TestCase, tag
 from django.urls import reverse
+from rest_framework.test import APIClient
 
 from domains.platform.tenants.models import Organization
 
@@ -33,7 +34,10 @@ def _make_child(org, name, **extra):
     return Child.objects.create(**defaults)
 
 
-class GlobalSearchWebViewTests(TestCase):
+class GlobalSearchApiTests(TestCase):
+    """Поиск в шапке frontend2 — /api/v1/clients/search/ (сервис
+    search.global_search). Серверная страница удалена в TRU-88."""
+
     def setUp(self):
         self.org = Organization.objects.create(name="True Ballet", slug="true-ballet")
         self.owner = User.objects.create_user(
@@ -50,13 +54,17 @@ class GlobalSearchWebViewTests(TestCase):
             organization=self.org,
             role=User.Role.TEACHER,
         )
-        self.client.force_login(self.owner)
 
     def _search(self, query, user=None):
-        if user is not None:
-            self.client.force_login(user)
-        response = self.client.get(reverse("clients_web:global-search"), {"q": query})
+        client = APIClient()
+        client.force_authenticate(user or self.owner)
+        response = client.get(reverse("clients:global-search"), {"q": query})
+        self.assertEqual(response.status_code, 200)
         return response.json()["results"]
+
+    def test_anonymous_gets_401(self):
+        response = APIClient().get(reverse("clients:global-search"), {"q": "Айг"})
+        self.assertEqual(response.status_code, 401)
 
     def test_query_shorter_than_three_chars_returns_empty(self):
         _make_child(self.org, "Айгерим")
@@ -207,11 +215,12 @@ class GlobalSearchPerformanceTests(TestCase):
         )
 
     def setUp(self):
-        self.client.force_login(self.owner)
+        self.client = APIClient()
+        self.client.force_authenticate(self.owner)
 
     def test_three_char_name_search_responds_within_budget(self):
         start = time.perf_counter()
-        response = self.client.get(reverse("clients_web:global-search"), {"q": "Айг"})
+        response = self.client.get(reverse("clients:global-search"), {"q": "Айг"})
         elapsed = time.perf_counter() - start
 
         results = response.json()["results"]
@@ -223,24 +232,3 @@ class GlobalSearchPerformanceTests(TestCase):
             f"global-search ответил за {elapsed:.3f}с на {self.CHILD_COUNT} детей "
             f"(бюджет теста {self.RESPONSE_BUDGET_SECONDS}с, целевой бюджет ТЗ п. 10.2 — 1с)",
         )
-
-
-class GlobalSearchApiTests(GlobalSearchWebViewTests):
-    """Те же проверки через API для frontend2 (TRU-80) — один сервис
-    search.global_search, одинаковые правила в обоих интерфейсах."""
-
-    def _search(self, query, user=None):
-        from rest_framework.test import APIClient
-
-        client = APIClient()
-        client.force_authenticate(user or self.owner)
-        response = client.get(reverse("clients:global-search"), {"q": query})
-        self.assertEqual(response.status_code, 200)
-        return response.json()["results"]
-
-    def test_anonymous_gets_401(self):
-        from rest_framework.test import APIClient
-
-        response = APIClient().get(reverse("clients:global-search"), {"q": "Айг"})
-
-        self.assertEqual(response.status_code, 401)
