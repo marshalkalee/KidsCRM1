@@ -71,7 +71,8 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     name = forms.CharField(max_length=255, label="Название организации")
     timezone = forms.ChoiceField(choices=TIMEZONE_CHOICES, label="Часовой пояс")
     website_domain = forms.CharField(
-        max_length=255, required=False,
+        max_length=255,
+        required=False,
         label="Домен сайта (для формы заявок)",
         help_text=(
             "Например https://trueballet.kz — форма на сайте сможет слать "
