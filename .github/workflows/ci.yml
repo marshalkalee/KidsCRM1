@@ -15,7 +15,7 @@ env:
 
 jobs:
   lint:
-    name: Lint (ruff, djlint)
+    name: Lint (ruff)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,15 +39,7 @@ jobs:
         working-directory: backend
         run: ruff format --check .
 
-      - name: djlint (шаблоны)
-        working-directory: backend
-        run: djlint templates --profile django --check
 
-      # Захардкоженные строки интерфейса — ТЗ п. 10.1, критерий приёмки
-      # тикета UI-каркаса: строка без data-i18n должна ловиться линтером.
-      - name: Захардкоженные строки (i18n)
-        working-directory: backend
-        run: python scripts/check_hardcoded_strings.py
 
   test:
     name: Tests + coverage (Postgres, Redis)

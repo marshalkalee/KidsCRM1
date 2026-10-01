@@ -1,8 +1,7 @@
 """
-Корневой urlconf. Веб — серверный рендеринг Django-шаблонами на «голых»
-путях (см. ADR-002). Публичный REST API живёт под /api/v1/ (версионирование
-через URL-префикс) — на него же ходят и AJAX-вызовы со страниц (DataTables,
-Select2 и т.п.), отдельного «внутреннего» API нет. Каждый домен подключает
+Корневой urlconf. Публичный REST API живёт под /api/v1/ (версионирование
+через URL-префикс) — на него ходит веб frontend2 (React, ADR-004).
+Серверные Django-страницы удалены в TRU-88. Каждый домен подключает
 свои urls.py отдельным include(), чтобы домены не правили один и тот же
 файл маршрутов.
 """
@@ -38,15 +37,9 @@ api_v1_patterns = [
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/", include(api_v1_patterns)),
-    # Веб-страницы (серверный рендеринг). Домен "platform" отдаёт главную —
-    # у остальных доменов свои веб-маршруты добавляются по мере надобности,
-    # не заводятся заранее пустыми.
+    # Веб — только frontend2 (React, ADR-004); nginx отдаёт его на всё,
+    # что не /api/, /admin/, /static/, /media/ и /healthz/.
     path("", include("domains.platform.core.urls")),
-    path("", include("domains.platform.tenants.urls_web")),
-    path("", include("domains.people.clients.urls_web")),
-    path("", include("domains.money.subscriptions.urls_web")),
-    path("", include("domains.scheduling.groups.urls_web")),
-    path("payments/", include("domains.money.payments.urls_web")),
 ]
 
 if settings.DEBUG:

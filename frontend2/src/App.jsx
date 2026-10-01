@@ -6,7 +6,7 @@ import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
-import NotFound from './pages/NotFound'
+import LegacyRedirect from './pages/LegacyRedirect'
 import ChildImport from './pages/ChildImport'
 import Onboarding from './pages/Onboarding'
 import ParentDetail from './pages/ParentDetail'
@@ -43,7 +43,6 @@ function RoleLandingRedirect() {
   const { user } = useSession()
   return <Navigate to={user?.role === 'admin' ? '/tasks' : '/dashboard'} replace />
 }
-
 function App() {
   // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
   // сессия и адрес страницы остаются.
@@ -90,7 +89,7 @@ function App() {
                 <Route path="directions" element={<RequirePermission permission="can_manage_directions"><Directions /></RequirePermission>} />
                 <Route path="settings/sales" element={<RequirePermission permission="can_manage_lead_dictionaries"><LeadDictionaries /></RequirePermission>} />
                 <Route path="settings/organization" element={<RequirePermission permission="can_manage_org_settings"><OrganizationSettings /></RequirePermission>} />
-                <Route path="*" element={<NotFound />} />
+                <Route path="*" element={<LegacyRedirect />} />
               </Route>
             </Routes>
           </SessionProvider>

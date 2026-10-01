@@ -83,9 +83,8 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        # Шаблоны организованы по доменам (см. domains/README.md) —
-        # backend/templates/<домен>/..., а не общий шаблон-суп.
-        "DIRS": [BASE_DIR / "templates"],
+        # Своих шаблонов нет (веб — frontend2, TRU-88): только админка Django.
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -93,12 +92,6 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                # Каркас: филиалы для переключателя + права для скрытия
-                # пунктов меню — доступны во всех шаблонах.
-                "domains.platform.core.context_processors.branches",
-                "domains.platform.core.context_processors.user_permissions",
-                "domains.platform.core.context_processors.language",
-                "domains.platform.core.context_processors.global_search",
             ],
         },
     },
@@ -126,7 +119,6 @@ USE_TZ = True
 LOCALE_PATHS = [BASE_DIR / "locale"]
 
 STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
     # Django требует явный "default" в STORAGES, если этот словарь вообще
@@ -159,8 +151,6 @@ AUTH_USER_MODEL = "users.User"
 
 # Сессия для страниц (не JWT — тот только для API, см.
 # domains/platform/core/decorators.py).
-LOGIN_URL = "core:login"
-LOGIN_REDIRECT_URL = "core:home"
 LOGOUT_REDIRECT_URL = "core:login"
 
 REST_FRAMEWORK = {

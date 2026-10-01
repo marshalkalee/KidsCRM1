@@ -355,8 +355,8 @@ def child_photo_api(request):
 @api_view(["GET"])
 @permission_classes([IsStaffOfOrganization])
 def global_search_api(request):
-    """Поиск в шапке frontend2 (TRU-80): тот же сервис, что у старого веба
-    (search.global_search). Ссылки строит фронт по type + id."""
+    """Поиск в шапке frontend2 (TRU-80) — сервис search.global_search.
+    Ссылки строит фронт по type + id."""
     results = search.global_search(
         request.user.organization,
         request.query_params.get("q"),
@@ -369,7 +369,7 @@ def global_search_api(request):
 @permission_classes([IsStaffOfOrganization])
 def child_table_api(request):
     """Таблица детей frontend2 (TRU-81): фильтры, сортировка и пагинация на
-    сервере — тот же сервис, что у старой веб-страницы (child_list).
+    сервере — сервис child_list.
     Без ?branch= берётся активный филиал из шапки (X-Branch-Id)."""
     params = request.query_params.dict()
     if not params.get("branch"):
