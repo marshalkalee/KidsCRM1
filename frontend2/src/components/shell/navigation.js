@@ -24,6 +24,7 @@ export const NAV_SECTIONS = [
       { to: '/renewals', get label() { return t('Продления') }, icon: CalendarClock, permission: 'can_view_client_money' },
       { to: '/debts', get label() { return t('Задолженности') }, icon: Wallet, permission: 'can_view_client_money' },
       { to: '/analytics', get label() { return t('Аналитика') }, icon: ChartColumn, permission: 'can_view_analytics' },
+      { to: '/tasks/escalation', get label() { return t('Эскалация задач') }, icon: AlertTriangle, permission: 'can_manage_staff' },
     ],
   },
   {
