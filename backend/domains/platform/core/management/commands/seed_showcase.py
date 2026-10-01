@@ -157,7 +157,9 @@ class Command(DemoCommand):
                 organization=org,
                 template=template,
                 weekday=5,
-                start_time=datetime.time(10 + index % 4, 0),
+                # One distinct Saturday hour per group: the optional showcase
+                # lessons cannot conflict by room or by teacher.
+                start_time=datetime.time(9 + index, 0),
                 duration_minutes=60,
                 room=first.room if first else None,
                 teacher=first.teacher if first else None,
