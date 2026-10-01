@@ -1465,7 +1465,6 @@
  "Выручка за прошлый месяц по филиалам": "Last month's revenue by branch",
  "Здравствуйте, {name}!": "Hello, {name}!",
  "Здравствуйте!": "Hello!",
- "ИИ может ошибаться — важные цифры проверяйте на экранах. Телефоны и почта в ИИ не передаются.": "AI can make mistakes — double-check important numbers on the screens. Phones and emails are never sent to the AI.",
  "ИИ-помощник": "AI assistant",
  "ИИ-помощник не подключён": "AI assistant is not connected",
  "Какие группы заполнены меньше всего?": "Which groups are the least full?",
@@ -1503,5 +1502,14 @@
  "аналитика": "analytics",
  "воронка продаж": "sales funnel",
  "источники заявок": "lead sources",
- "заполненность групп": "group occupancy"
+ "заполненность групп": "group occupancy",
+ "Вчера": "Yesterday",
+ "Здесь появятся ваши чаты.": "Your chats will appear here.",
+ "История и полный экран": "History and full screen",
+ "История чатов": "Chat history",
+ "Раньше": "Earlier",
+ "Удалить чат": "Delete chat",
+ "Удалить чат?": "Delete chat?",
+ "Чаты сохраняются, их видите только вы. ИИ может ошибаться — важные цифры проверяйте на экранах.": "Chats are saved and only you can see them. AI can make mistakes — double-check important numbers on the screens.",
+ "К чату": "Back to chat"
 }

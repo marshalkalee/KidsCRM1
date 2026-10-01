@@ -1,7 +1,7 @@
 """Чат с ИИ на главной (ai/chat.py): модель подменена — проверяем, кому
 чат доступен, что инструменты смотрят данные с правами спрашивающего,
 что контакты не уходят в модель и как устроен цикл вызовов у обоих
-провайдеров."""
+провайдеров, как переписка сохраняется и кто её видит."""
 
 import json
 from datetime import date
@@ -16,17 +16,25 @@ from domains.platform.tenants.models import Branch, Organization
 from domains.platform.users.models import User
 
 from . import chat, services
+from .models import AIConversation, AIMessage
 from .tests import AIFixtures
 
 
-def ask_as(user, messages):
+def api_as(user):
     client = APIClient()
     client.force_authenticate(user=user)
-    return client.post("/api/v1/ai/chat/", {"messages": messages}, format="json")
+    return client
 
 
-def question(text):
-    return [{"role": "user", "content": text}]
+def ask_as(user, message, conversation=None):
+    body = {"message": message, **({"conversation": conversation} if conversation else {})}
+    return api_as(user).post("/api/v1/ai/chat/", body, format="json")
+
+
+def anthropic_answers(*texts):
+    create = mock.Mock(side_effect=[final_text(t) for t in texts])
+    client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=create)))
+    return mock.patch.object(services, "_client", return_value=client), create
 
 
 class ChatFixtures(AIFixtures):
@@ -58,22 +66,72 @@ class ChatAccessTests(ChatFixtures):
     def test_only_leaders_and_admin(self):
         for role, phone in (("teacher", "77010000002"), ("accountant", "77010000003")):
             with self.subTest(role=role):
-                self.assertEqual(
-                    ask_as(self.user(role, phone), question("Привет")).status_code, 403
-                )
+                self.assertEqual(ask_as(self.user(role, phone), "Привет").status_code, 403)
         me = self.client_api.get("/api/v1/users/auth/me/").data
         self.assertTrue(me["permissions"]["can_use_ai_chat"])
 
     def test_disabled_without_key(self):
         with override_settings(ANTHROPIC_API_KEY=""):
-            response = ask_as(self.owner, question("Привет"))
+            response = ask_as(self.owner, "Привет")
         self.assertEqual(response.status_code, 400)
         self.assertIn("не настроен", response.data["detail"])
 
-    def test_history_must_end_with_question(self):
-        response = ask_as(self.owner, [{"role": "assistant", "content": "Здравствуйте!"}])
+    def test_empty_question(self):
+        response = ask_as(self.owner, "   ")
         self.assertEqual(response.status_code, 400)
         self.assertIn("Напишите вопрос", response.data["detail"])
+
+
+class ChatHistoryTests(ChatFixtures):
+    def test_conversation_is_saved_and_continued(self):
+        patch, create = anthropic_answers("Долгов нет.", "Да, все оплатили.")
+        with patch:
+            first = ask_as(self.owner, "Есть долги?")
+            conversation = first.data["conversation"]["id"]
+            second = ask_as(self.owner, "Точно?", conversation)
+        self.assertEqual(first.data["conversation"]["title"], "Есть долги?")
+        self.assertEqual(second.data["conversation"]["id"], conversation)
+        # Во второй вопрос модель получила всю переписку этого чата.
+        roles = [(m["role"], m["content"]) for m in create.call_args_list[1].kwargs["messages"]]
+        self.assertEqual(
+            roles,
+            [("user", "Есть долги?"), ("assistant", "Долгов нет."), ("user", "Точно?")],
+        )
+        listed = api_as(self.owner).get("/api/v1/ai/conversations/").data
+        self.assertEqual([c["id"] for c in listed], [conversation])
+        detail = api_as(self.owner).get(f"/api/v1/ai/conversations/{conversation}/").data
+        self.assertEqual(
+            [m["content"] for m in detail["messages"]],
+            ["Есть долги?", "Долгов нет.", "Точно?", "Да, все оплатили."],
+        )
+
+    def test_failed_answer_saves_nothing(self):
+        with override_settings(ANTHROPIC_API_KEY=""):
+            ask_as(self.owner, "Есть долги?")
+        self.assertEqual(api_as(self.owner).get("/api/v1/ai/conversations/").data, [])
+
+    def test_only_author_sees_conversation(self):
+        patch, _ = anthropic_answers("Ответ.")
+        with patch:
+            conversation = ask_as(self.owner, "Мой вопрос").data["conversation"]["id"]
+        manager = self.user("manager", "77010000005")
+        self.assertEqual(api_as(manager).get("/api/v1/ai/conversations/").data, [])
+        url = f"/api/v1/ai/conversations/{conversation}/"
+        self.assertEqual(api_as(manager).get(url).status_code, 404)
+        self.assertEqual(api_as(manager).delete(url).status_code, 404)
+        self.assertEqual(ask_as(manager, "Влезть", conversation).status_code, 404)
+
+    def test_delete(self):
+        patch, _ = anthropic_answers("Ответ.")
+        with patch:
+            conversation = ask_as(self.owner, "Вопрос").data["conversation"]["id"]
+        url = f"/api/v1/ai/conversations/{conversation}/"
+        self.assertEqual(api_as(self.owner).delete(url).status_code, 204)
+        self.assertEqual(api_as(self.owner).get("/api/v1/ai/conversations/").data, [])
+        self.assertEqual(api_as(self.owner).get(url).status_code, 404)
+
+    def test_long_question_title_is_cut(self):
+        self.assertEqual(len(chat._title("слово " * 50)), chat.TITLE_CHARS)
 
 
 class ChatToolsTests(ChatFixtures):
@@ -155,7 +213,7 @@ class ChatAnthropicLoopTests(ChatFixtures):
         )
         client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=create)))
         with mock.patch.object(services, "_client", return_value=client):
-            response = ask_as(self.owner, question("Найди Касымову"))
+            response = ask_as(self.owner, "Найди Касымову")
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["answer"], "Нашла: Касымова Айлин.")
         self.assertEqual(response.data["sources"], ["поиск"])
@@ -170,7 +228,7 @@ class ChatAnthropicLoopTests(ChatFixtures):
         create = mock.Mock(return_value=tool_use("branches", {}))
         client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=create)))
         with mock.patch.object(services, "_client", return_value=client):
-            response = ask_as(self.owner, question("?"))
+            response = ask_as(self.owner, "?")
         self.assertEqual(response.status_code, 400)
         self.assertEqual(create.call_count, chat.MAX_TOOL_ROUNDS)
 
@@ -206,13 +264,15 @@ class ChatOpenAILoopTests(ChatFixtures):
             ]
         )
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-        history = [
-            {"role": "user", "content": "Привет"},
-            {"role": "assistant", "content": "Здравствуйте!"},
-            {"role": "user", "content": "Что с Айлин?"},
-        ]
+        conversation = AIConversation.objects.create(
+            organization=self.org, user=self.owner, title="Привет"
+        )
+        AIMessage.objects.create(conversation=conversation, role="user", content="Привет")
+        AIMessage.objects.create(
+            conversation=conversation, role="assistant", content="Здравствуйте!"
+        )
         with mock.patch.object(services, "_openai_client", return_value=client):
-            response = ask_as(self.owner, history)
+            response = ask_as(self.owner, "Что с Айлин?", str(conversation.id))
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["answer"], "У Айлин долга нет.")
         self.assertEqual(response.data["sources"], ["карточка ребёнка"])

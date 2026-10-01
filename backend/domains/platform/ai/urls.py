@@ -7,6 +7,12 @@ app_name = "ai"
 urlpatterns = [
     path("status/", views.ai_status, name="status"),
     path("chat/", views.chat_view, name="chat"),
+    path("conversations/", views.conversations, name="conversations"),
+    path(
+        "conversations/<uuid:conversation_id>/",
+        views.conversation_detail,
+        name="conversation-detail",
+    ),
     path("lead-from-text/", views.lead_from_text, name="lead-from-text"),
     path("leads/<uuid:lead_id>/message/", views.lead_message, name="lead-message"),
     path("search/", views.search, name="search"),

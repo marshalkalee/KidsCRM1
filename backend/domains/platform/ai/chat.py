@@ -15,8 +15,9 @@ GET к тому же API, на котором работают экраны, о�
 в модель не уходят (вырезаются из ответов), как и в остальных
 ИИ-функциях. Чат только у руководителей (role_permissions.can_use_ai_chat).
 
-История переписки не хранится на сервере: экран присылает последние
-сообщения, ИИ при необходимости заново смотрит данные.
+Переписка сохраняется (models.AIConversation): видит её только автор.
+В модель уходят последние MAX_HISTORY реплик; результаты инструментов
+не хранятся — ИИ при новом вопросе заново смотрит текущие данные.
 """
 
 import datetime
@@ -27,11 +28,13 @@ import uuid
 from collections import Counter
 
 from django.conf import settings
+from django.db import transaction
 from django.urls import Resolver404, resolve
 from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from . import services
+from .models import AIConversation, AIMessage
 from .services import AIError
 
 logger = logging.getLogger(__name__)
@@ -797,3 +800,46 @@ def _ask_openai(viewer, history, used) -> str:
                 }
             )
     raise _too_long()
+
+
+TITLE_CHARS = 80
+
+
+def own_conversations(user):
+    """Чаты сотрудника — только его собственные, в его организации."""
+    return AIConversation.objects.for_tenant(user.organization).filter(user=user)
+
+
+def _title(question: str) -> str:
+    text = " ".join(question.split())
+    return text if len(text) <= TITLE_CHARS else text[: TITLE_CHARS - 1].rstrip() + "…"
+
+
+def reply(user, *, question: str, conversation=None, host="localhost") -> dict:
+    """Вопрос в чат (новый, если conversation=None): ответ ИИ по истории
+    этого чата. Сохраняются обе реплики — и только если ответ получен:
+    ошибка ИИ не оставляет в истории пустых чатов и вопросов без ответа."""
+    question = (question or "").strip()[:MAX_MESSAGE_CHARS]
+    if not question:
+        raise AIError("Напишите вопрос.")
+    history = []
+    if conversation is not None:
+        last = conversation.messages.order_by("-created_at", "-id")[: MAX_HISTORY - 1]
+        history = [{"role": m.role, "content": m.content} for m in reversed(list(last))]
+    result = ask(user, [*history, {"role": "user", "content": question}], host=host)
+    with transaction.atomic():
+        if conversation is None:
+            conversation = AIConversation.objects.create(
+                organization=user.organization, user=user, title=_title(question)
+            )
+        AIMessage.objects.create(
+            conversation=conversation, role=AIMessage.Role.USER, content=question
+        )
+        AIMessage.objects.create(
+            conversation=conversation,
+            role=AIMessage.Role.ASSISTANT,
+            content=result["answer"],
+            sources=result["sources"],
+        )
+        conversation.save(update_fields=["updated_at"])
+    return {"conversation": {"id": str(conversation.id), "title": conversation.title}, **result}
