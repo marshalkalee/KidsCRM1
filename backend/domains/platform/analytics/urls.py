@@ -7,6 +7,7 @@ urlpatterns = [
     path("breakdown/", views.breakdown_api, name="analytics-breakdown"),
     path("heatmap/", views.heatmap_api, name="analytics-heatmap"),
     path("group-occupancy/", views.group_occupancy_api, name="analytics-group-occupancy"),
+    path("teacher-workload/", views.teacher_workload_api, name="analytics-teacher-workload"),
     path("funnel/", views.funnel_api, name="analytics-funnel"),
     path("funnel/by/", views.funnel_by_api, name="analytics-funnel-by"),
     path("sources/", views.sources_api, name="analytics-sources"),

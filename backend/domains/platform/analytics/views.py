@@ -37,6 +37,7 @@ from .registry import REGISTRY, compute
 from .reports import REPORTS, build
 from .scope import ScopeError, allowed_branch_ids, scope_for
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
+from .teacher_load import teacher_workload
 
 # Больше метрик за запрос — это уже выгрузка, а не экран.
 MAX_METRICS = 12
@@ -132,6 +133,16 @@ def group_occupancy_api(request, version=None):
     return Response(group_occupancy(scope, period, request.query_params))
 
 
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def teacher_workload_api(request, version=None):
+    """Нагрузка преподавателей по данным расписания (TRU-120)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(teacher_workload(scope, period, request.query_params))
+
+
 def _funnel_filters(request):
     """?source=<id>&direction=<id>&manager=<id> — кривой id просто не находит."""
     filters = {}
@@ -215,6 +226,8 @@ def export_api(request, version=None):
     }
     if name == "group_occupancy":
         report_params["occupancy_filters"] = request.query_params
+    if name == "teacher_workload":
+        report_params["teacher_filters"] = request.query_params
     export = build(
         name,
         scope,
