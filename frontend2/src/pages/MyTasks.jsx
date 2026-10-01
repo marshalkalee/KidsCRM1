@@ -4,7 +4,7 @@ import { AlertTriangle, CalendarClock, MessageCircle, Phone, Tag, UserCheck } fr
 import api from '../api/axios'
 import { fetchTeachers } from '../api/lessons'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
-import SellModal from '../components/money/SellModal'
+import { SellModal } from '../components/money/SubscriptionsTab'
 import { useSession } from '../session/SessionContext'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, Select, Skeleton, Tabs, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
