@@ -20,6 +20,7 @@ from .rejections import STAGES as REJECTION_STAGES
 from .rejections import rejection_comments, rejections, rejections_by
 from .risk_list import risk_list
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
+from .teacher_load import teacher_workload
 
 UNIT_TITLE = {"money": ", ₸", "percent": ", %", "count": "", "decimal": ""}
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -552,6 +553,108 @@ def sources_report(scope, period, params):
         ],
     )
     return [quality, monthly]
+
+
+@report("teacher_workload", "Загрузка преподавателей")
+def teacher_workload_report(scope, period, params):
+    data = teacher_workload(scope, period, params.get("teacher_filters"))
+    teachers = Section(
+        "Преподаватели",
+        [
+            Column("Преподаватель", width=28),
+            Column("Занятий в неделю", "decimal", 18, total=False),
+            Column("Учеников", "count", 12),
+            Column("Запланировано", "count", 16),
+            Column("Проведено", "count", 12),
+            Column("Отменено", "count", 12),
+            Column("По причине преподавателя", "count", 22),
+            Column("Заполняемость групп, %", "percent", 22, total=False),
+        ],
+        [
+            [
+                row["name"],
+                row["lessons_per_week"],
+                row["students"],
+                row["planned"],
+                row["completed"],
+                row["cancelled"],
+                row["teacher_cancelled"],
+                row["fill_percent"],
+            ]
+            for row in data["teachers"]
+        ],
+        note=(
+            "Отчёт показывает объём нагрузки, а не качество работы. Число учеников зависит "
+            "от направления, возраста групп и времени занятий."
+        ),
+    )
+    trend = Section(
+        "Динамика по месяцам",
+        [
+            Column("Месяц", "date", 14),
+            Column("Преподаватель", width=28),
+            Column("Запланировано", "count", 16),
+            Column("Проведено", "count", 12),
+            Column("Отменено", "count", 12),
+            Column("Учеников", "count", 12),
+            Column("Заполняемость, %", "percent", 18, total=False),
+        ],
+        [
+            [
+                point["date"],
+                teacher["name"],
+                point["planned"],
+                point["completed"],
+                point["cancelled"],
+                point["students"],
+                point["fill_percent"],
+            ]
+            for teacher in data["teachers"]
+            for point in teacher["trend"]
+        ],
+    )
+    cancellations = Section(
+        "Причины отмен",
+        [
+            Column("Причина", width=30),
+            Column("Отменено", "count", 12),
+            Column("Связано с преподавателем", width=24),
+        ],
+        [
+            [row["label"], row["value"], "Да" if row["teacher_fault"] else "Нет"]
+            for row in data["cancel_reasons"]
+        ],
+    )
+    sections = [teachers, trend, cancellations]
+    for key, title, label in (
+        ("branch", "По филиалам", "Филиал"),
+        ("direction", "По направлениям", "Направление"),
+    ):
+        sections.append(
+            Section(
+                title,
+                [
+                    Column(label, width=26),
+                    Column("Преподавателей", "count", 16),
+                    Column("Учеников", "count", 12),
+                    Column("Запланировано", "count", 16),
+                    Column("Проведено", "count", 12),
+                    Column("Отменено", "count", 12),
+                ],
+                [
+                    [
+                        row["label"],
+                        row["teachers"],
+                        row["students"],
+                        row["planned"],
+                        row["completed"],
+                        row["cancelled"],
+                    ]
+                    for row in data["breakdowns"][key]
+                ],
+            )
+        )
+    return sections
 
 
 @report("rejections", "Причины отказов")

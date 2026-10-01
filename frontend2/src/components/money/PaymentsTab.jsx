@@ -8,8 +8,9 @@ import {
 } from '../../ui'
 import { t } from '../../i18n'
 import AcceptPaymentModal from './AcceptPaymentModal'
+import { PendingInvoices } from './KaspiInvoice'
 
-/** Вкладка «Оплаты» (TRU-70, TRU-67): долг, «Принять оплату», история с отменёнными. */
+/** Вкладка «Оплаты» (TRU-70, TRU-67): долг, «Принять оплату», счета Kaspi в ожидании, история с отменёнными. */
 export default function PaymentsTab({ child, onCountChange }) {
   const { can } = useSession()
   const canAccept = can('can_accept_payments')
@@ -18,6 +19,7 @@ export default function PaymentsTab({ child, onCountChange }) {
   const [error, setError] = useState(false)
   const [accepting, setAccepting] = useState(false)
   const [cancelling, setCancelling] = useState(null)
+  const [invoicesKey, setInvoicesKey] = useState(0)
 
   const load = useCallback(() => {
     Promise.all([fetchChildPayments(child.id), fetchChildDebt(child.id)])
@@ -49,6 +51,8 @@ export default function PaymentsTab({ child, onCountChange }) {
         )}
       </Card>
 
+      <PendingInvoices child={child} reloadKey={invoicesKey} onChanged={load} />
+
       {payments.length === 0 ? (
         <Card><EmptyState icon={Wallet} title={t('Оплат пока нет')} /></Card>
       ) : (
@@ -76,7 +80,7 @@ export default function PaymentsTab({ child, onCountChange }) {
       )}
 
       {accepting && (
-        <AcceptPaymentModal child={child} onClose={() => setAccepting(false)} onPaid={load} />
+        <AcceptPaymentModal child={child} onClose={() => setAccepting(false)} onPaid={load} onInvoiced={() => setInvoicesKey(k => k + 1)} />
       )}
       {cancelling && (
         <CancelPaymentModal payment={cancelling} onClose={() => setCancelling(null)} onDone={() => { setCancelling(null); load() }} />

@@ -110,6 +110,13 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
             </div>
           </Card>
 
+          <Card>
+            <CardHeader title={t('Удалённая оплата Kaspi')} description={t('Куда родителю платить по счёту из CRM. Попадёт в сообщение, которое администратор отправит в WhatsApp.')} />
+            <Field label={t('Ссылка Kaspi Pay или номер для перевода')} hint={t('Например, ссылка на оплату из приложения Kaspi Pay или «Kaspi Gold +7 777 000 00 00, Айгерим А.»')} error={errors.kaspi_payment_details}>
+              {({ id, invalid }) => <Input id={id} invalid={invalid} maxLength={255} value={form.kaspi_payment_details || ''} onChange={e => set('kaspi_payment_details', e.target.value)} />}
+            </Field>
+          </Card>
+
           <div className="flex flex-wrap justify-end gap-2">
             {secondaryAction}
             <Button variant="primary" type="submit" loading={saving}>{submitLabel}</Button>

@@ -16,6 +16,7 @@ DEBT_OVERDUE_DAYS_THRESHOLD = "debt_overdue_days_threshold"
 GROUP_UNDERFILLED_PERCENT_THRESHOLD = "group_underfilled_percent_threshold"
 RISK_ABSENCE_CHANGE_PP_THRESHOLD = "risk_absence_change_pp_threshold"
 RISK_CURRENT_ABSENCES_MIN = "risk_current_absences_min"
+KASPI_PAYMENT_DETAILS = "kaspi_payment_details"
 
 DEFAULT_ORG_SETTINGS = {
     # Абонемент "заканчивается", когда остаётся <= N занятий ИЛИ <= N дней.
@@ -29,6 +30,9 @@ DEFAULT_ORG_SETTINGS = {
     # отклонении от личной нормы и хотя бы двух пропусках в выбранном периоде.
     RISK_ABSENCE_CHANGE_PP_THRESHOLD: 20,
     RISK_CURRENT_ABSENCES_MIN: 2,
+    # Куда родителю платить по счёту из CRM без шлюза Kaspi: ссылка Kaspi
+    # Pay или номер для перевода (payments/remote.py). Пусто — не настроено.
+    KASPI_PAYMENT_DETAILS: "",
 }
 
 

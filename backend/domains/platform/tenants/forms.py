@@ -13,6 +13,7 @@ from domains.platform.tenants.org_settings import (
     DEBT_OVERDUE_DAYS_THRESHOLD,
     DEFAULT_ORG_SETTINGS,
     GROUP_UNDERFILLED_PERCENT_THRESHOLD,
+    KASPI_PAYMENT_DETAILS,
     RISK_ABSENCE_CHANGE_PP_THRESHOLD,
     RISK_CURRENT_ABSENCES_MIN,
     SUBSCRIPTION_ENDING_DAYS_THRESHOLD,
@@ -97,6 +98,9 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
         required=False,
         label="Минимум пропусков за период для риск-сигнала",
     )
+    kaspi_payment_details = forms.CharField(
+        max_length=255, required=False, label="Kaspi для удалённой оплаты"
+    )
 
     def clean_timezone(self):
         tz_name = self.cleaned_data["timezone"]
@@ -143,6 +147,7 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             or get_org_setting(organization, RISK_ABSENCE_CHANGE_PP_THRESHOLD),
             RISK_CURRENT_ABSENCES_MIN: self.cleaned_data.get(RISK_CURRENT_ABSENCES_MIN)
             or get_org_setting(organization, RISK_CURRENT_ABSENCES_MIN),
+            KASPI_PAYMENT_DETAILS: self.cleaned_data[KASPI_PAYMENT_DETAILS].strip(),
         }
         organization.save(update_fields=["name", "timezone", "settings", "updated_at"])
         return organization

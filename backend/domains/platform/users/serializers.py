@@ -66,6 +66,10 @@ class UserSerializer(serializers.ModelSerializer):
             if self.instance is not None:
                 # Любая правка владельца (пароль, телефон) — только владельцем.
                 check_role_change(request.user, role or self.instance.role, self.instance)
+                if self.instance.pk == request.user.pk and attrs.get("is_active") is False:
+                    raise serializers.ValidationError(
+                        {"is_active": "Нельзя отключить собственную учётную запись."}
+                    )
             else:
                 check_role_change(request.user, role)
         return attrs
