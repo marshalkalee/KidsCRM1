@@ -7,6 +7,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .attendance_trends import attendance_trends
 from .branches import COLUMNS as BRANCH_COLUMNS
 from .branches import compare_branches
 from .breakdowns import breakdown, visits_heatmap
@@ -212,21 +213,121 @@ def revenue(scope, period, params):
 
 @report("attendance", "Посещаемость и пропуски")
 def attendance(scope, period, params):
-    return [
-        metrics_section(
-            ["visits", "attendance_marks", "attendance_rate", "absences", "active_children"],
-            scope,
-            period,
+    data = attendance_trends(scope, period)
+    summary = data["summary"]
+    sections = [
+        Section(
+            "Сводка",
+            [
+                Column("Проведено занятий", "count", 18, total=False),
+                Column("Отметок", "count", 12, total=False),
+                Column("Посещений", "count", 12, total=False),
+                Column("Пропусков", "count", 12, total=False),
+                Column("Посещаемость, %", "percent", 18, total=False),
+            ],
+            [
+                [
+                    summary["lessons_held"],
+                    summary["marked"],
+                    summary["attended"],
+                    summary["absences"],
+                    summary["attendance_rate"],
+                ]
+            ],
         ),
-        series_section(
-            ["visits", "attendance_marks", "absences", "attendance_rate"], scope, period
+        Section(
+            "Динамика по неделям",
+            [
+                Column("Неделя с", "date", 14),
+                Column("Проведено занятий", "count", 18),
+                Column("Отметок", "count", 12),
+                Column("Посещений", "count", 12),
+                Column("Пропусков", "count", 12),
+                Column("Посещаемость, %", "percent", 18, total=False),
+            ],
+            [
+                [
+                    row["date"],
+                    row["lessons_held"],
+                    row["marked"],
+                    row["attended"],
+                    row["absences"],
+                    row["value"],
+                ]
+                for row in data["weekly"]
+            ],
+            note="Шаг всегда одна неделя: тренд важнее отдельного абсолютного числа.",
         ),
-        breakdown_section("Причины пропусков", "Причина", "absences", "reason", scope, period),
-        rate_section("Группы", "Группа", "group", scope, period),
-        rate_section("Преподаватели", "Преподаватель", "teacher", scope, period),
-        rate_section("Направления", "Направление", "direction", scope, period),
-        heatmap_section(scope, period),
+        Section(
+            "Причины пропусков",
+            [Column("Причина", width=28), Column("Пропусков", "count", 12)],
+            [[row["label"] or NOT_SET, row["value"]] for row in data["absence_reasons"]],
+        ),
     ]
+    titles = {
+        "group": ("По группам", "Группа"),
+        "direction": ("По направлениям", "Направление"),
+        "branch": ("По филиалам", "Филиал"),
+        "teacher": ("По преподавателям", "Преподаватель"),
+        "weekday": ("По дням недели", "День недели"),
+    }
+    for key, (title, label) in titles.items():
+        sections.append(
+            Section(
+                title,
+                [
+                    Column(label, width=26),
+                    Column("Проведено занятий", "count", 18),
+                    Column("Отметок", "count", 12),
+                    Column("Посещений", "count", 12),
+                    Column("Пропусков", "count", 12),
+                    Column("Посещаемость, %", "percent", 18, total=False),
+                ],
+                [
+                    [
+                        row["label"] or NOT_SET,
+                        row["lessons_held"],
+                        row["marked"],
+                        row["attended"],
+                        row["absences"],
+                        row["value"],
+                    ]
+                    for row in data["breakdowns"][key]
+                ],
+            )
+        )
+    sections.append(
+        Section(
+            "По детям — отклонение от личной нормы",
+            [
+                Column("Ребёнок", width=28),
+                Column("Отметок", "count", 12),
+                Column("Посещений", "count", 12),
+                Column("Пропусков", "count", 12),
+                Column("Текущие пропуски, %", "percent", 20, total=False),
+                Column("Личная норма, %", "percent", 18, total=False),
+                Column("Отклонение, п.п.", "decimal", 18, total=False),
+            ],
+            [
+                [
+                    row["name"],
+                    row["marked"],
+                    row["attended"],
+                    row["absences"],
+                    row["absence_rate"],
+                    row["baseline"]["absence_rate"] if row["has_baseline"] else None,
+                    row["absence_change_pp"],
+                ]
+                for row in data["children"]
+            ],
+            note=(
+                f"Личная норма — предыдущие {data['baseline']['days']} дней; "
+                f"для сравнения нужно не меньше {data['baseline']['minimum_marks']} отметок. "
+                "Отклонение доступно риск-листу, общий порог детям не назначается."
+            ),
+        )
+    )
+    return sections
 
 
 FUNNEL_TITLES = {

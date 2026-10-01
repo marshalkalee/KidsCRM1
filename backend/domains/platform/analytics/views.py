@@ -28,6 +28,7 @@ from domains.platform.tenants.plans import has_feature
 from domains.scheduling.groups.queries import underfilled_threshold
 
 from . import metrics  # noqa: F401 — регистрирует базовые метрики
+from .attendance_trends import attendance_trends
 from .branches import branch_trends, compare_branches
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
 from .export import filename, workbook
@@ -123,6 +124,16 @@ def heatmap_api(request, version=None):
     if error:
         return error
     return Response({"period": period.as_dict(), "cells": visits_heatmap(scope, period)})
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def attendance_trends_api(request, version=None):
+    """Недельная динамика, разрезы и личная норма ребёнка (TRU-121)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(attendance_trends(scope, period))
 
 
 @api_view(["GET"])
