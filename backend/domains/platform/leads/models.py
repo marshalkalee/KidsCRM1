@@ -61,6 +61,10 @@ class LeadRejectionReason(LeadDictionary):
     свой список (ушли из центра, переезд), поэтому причина знает свой вид."""
 
     kind = models.CharField(max_length=10, choices=LeadKind.choices, default=LeadKind.NEW)
+    # «Не пришёл на пробное» — не возражение, а потерянный контакт (TRU-117):
+    # отчёт по отказам считает такие отдельно. Признак, а не название —
+    # центр может причину переименовать.
+    is_lost_contact = models.BooleanField(default=False)
 
 
 class Lead(TenantModel):

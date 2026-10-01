@@ -24,9 +24,11 @@ from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_view_analytics
+from domains.platform.tenants.plans import has_feature
 from domains.scheduling.groups.queries import underfilled_threshold
 
 from . import metrics  # noqa: F401 — регистрирует базовые метрики
+from .branches import branch_trends, compare_branches
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
 from .export import filename, workbook
 from .funnel import FILTERS as FUNNEL_FILTERS
@@ -34,6 +36,7 @@ from .funnel import FunnelError, funnel, funnel_by
 from .group_occupancy import group_occupancy
 from .period import PRESETS, PeriodError, parse_period
 from .registry import REGISTRY, compute
+from .rejections import RejectionError, rejection_comments, rejections, rejections_by
 from .reports import REPORTS, build
 from .scope import ScopeError, allowed_branch_ids, scope_for
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
@@ -212,17 +215,22 @@ def export_api(request, version=None):
     """GET /analytics/export/?report=revenue&period=…&branch=… — Excel
     отчёта с тем же периодом, филиалами и фильтрами, что на экране (TRU-114)."""
     name = request.query_params.get("report", "")
+    if name == "branches" and (denied := _network_only(request)):
+        return denied
     if name not in REPORTS:
         return Response({"report": [f"Нет такого отчёта: {name}"]}, status=400)
     period, scope, error = _period_and_scope(request)
     if error:
         return error
-    filters = _funnel_filters(request) if name in ("funnel", "sources") else {}
+    filters = _funnel_filters(request) if name in ("funnel", "sources", "rejections") else {}
     if name == "sources":
-        filters = {key: value for key, value in filters.items() if key == "direction"}
+        filters = {k: v for k, v in filters.items() if k == "direction"}
+    if name == "rejections":
+        filters = {k: v for k, v in filters.items() if k in ("source", "direction")}
     report_params = {
         "funnel_filters": filters,
         "filter_labels": _filter_labels(scope.organization, filters),
+        "kind": request.query_params.get("kind", "new"),
     }
     if name == "group_occupancy":
         report_params["occupancy_filters"] = request.query_params
@@ -261,6 +269,106 @@ def sources_api(request, version=None):
     )
 
 
+def _rejection_filters(request):
+    return {k: v for k, v in _funnel_filters(request).items() if k in ("source", "direction")}
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def rejections_api(request, version=None):
+    """Отказы за период (TRU-117): причины, этапы, потеря контакта отдельно,
+    динамика по месяцам, комментарии списком. ?kind=renewal — продления."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    kind = request.query_params.get("kind", "new")
+    filters = _rejection_filters(request)
+    try:
+        summary = rejections(scope, period, kind, filters)
+    except RejectionError as exc:
+        return Response({"kind": [str(exc)]}, status=400)
+    return Response(
+        {
+            "period": period.as_dict(),
+            "summary": summary,
+            "comments": rejection_comments(scope, period, kind, filters),
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def rejections_by_api(request, version=None):
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    try:
+        items = rejections_by(
+            scope,
+            period,
+            request.query_params.get("by", ""),
+            request.query_params.get("kind", "new"),
+            _rejection_filters(request),
+        )
+    except RejectionError as exc:
+        return Response({"by": [str(exc)]}, status=400)
+    return Response({"period": period.as_dict(), "items": items})
+
+
+# Динамика по филиалам — для метрик реестра с графиком (снимки — из истории).
+TREND_METRICS = {
+    "revenue",
+    "average_check",
+    "attendance_rate",
+    "active_children",
+    "new_leads",
+    "visits",
+    "debt_total",
+    "group_fill",
+}
+
+
+def _network_only(request):
+    if not has_feature(request.user.organization, "branch_compare"):
+        return Response(
+            {"detail": "Сравнение филиалов входит в тариф Network.", "code": "plan"}, status=403
+        )
+    return None
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def branches_api(request, version=None):
+    """Сравнение филиалов (TRU-128): филиалы × метрики, абсолютные и на
+    ребёнка, с прошлым периодом. Управляющий — только свои филиалы."""
+    if denied := _network_only(request):
+        return denied
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response({"period": period.as_dict(), **compare_branches(scope, period)})
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def branch_trends_api(request, version=None):
+    if denied := _network_only(request):
+        return denied
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    metric = request.query_params.get("metric", "revenue")
+    if metric not in TREND_METRICS:
+        return Response({"metric": [f"Нет динамики для метрики {metric}."]}, status=400)
+    return Response(
+        {
+            "period": period.as_dict(),
+            "metric": metric,
+            "branches": branch_trends(scope, period, metric),
+        }
+    )
+
+
 @api_view(["GET"])
 @permission_classes([CanViewAnalytics])
 def catalog_api(request, version=None):
@@ -286,6 +394,9 @@ def catalog_api(request, version=None):
             "branches": [{"id": str(b.id), "name": b.name} for b in branches.order_by("name")],
             "can_see_all_branches": allowed is None,
             "periods": list(PRESETS),
+            "features": {
+                "branch_compare": has_feature(request.user.organization, "branch_compare")
+            },
             # Порог «группа недозаполнена» — отметка на шкале заполняемости.
             "group_underfilled_percent": underfilled_threshold(request.user.organization),
         }
