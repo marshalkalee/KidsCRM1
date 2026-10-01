@@ -1474,7 +1474,7 @@
  "Выберите преподавателя": "Select a teacher",
  "Введите имя преподавателя": "Enter a teacher name",
  "Введите название группы": "Enter a group name",
- "Открыть список": "Open list"
+ "Открыть список": "Open list",
  "{p}% отказов": "{p}% of rejections",
  "{p}% отказов — про само занятие": "{p}% of rejections are about the class itself",
  "без потери контакта": "excluding lost contact",
@@ -1486,7 +1486,6 @@
  "Комментарии к отказам": "Rejection comments",
  "На каком шаге отказались: сразу после звонка — про цену и ожидания, после пробного — про занятие": "At which step they declined: right after the call — price and expectations, after the trial — the class",
  "не пришли на пробное — не возражение": "didn't come to the trial — not an objection",
- "Не указана": "Not specified",
  "Нет отказов": "No rejections",
  "отказов": "rejections",
  "Отказов": "Rejections",

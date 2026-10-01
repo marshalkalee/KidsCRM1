@@ -553,6 +553,8 @@ def teacher_workload_report(scope, period, params):
             )
         )
     return sections
+
+
 @report("rejections", "Причины отказов")
 def rejections_report(scope, period, params):
     kind = params.get("kind", "new")
