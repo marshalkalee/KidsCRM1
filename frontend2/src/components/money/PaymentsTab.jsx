@@ -3,7 +3,7 @@ import { Plus, Wallet } from 'lucide-react'
 import { cancelPayment, fetchChildDebt, fetchChildPayments } from '../../api/payments'
 import { useSession } from '../../session/SessionContext'
 import {
-  Badge, Button, Card, EmptyState, ErrorState, Field, Modal, Skeleton, Textarea,
+  Badge, Button, Card, CardHeader, ErrorState, Field, Modal, Skeleton, Textarea,
   apiErrorMessage, formatDateTime, money, useToast,
 } from '../../ui'
 import { t } from '../../i18n'
@@ -41,43 +41,49 @@ export default function PaymentsTab({ child, onCountChange }) {
 
   return (
     <div className="space-y-4">
-      <Card className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-[13px] text-ink-muted">{t('Текущая задолженность')}</p>
-          <p className={owes ? 'text-xl font-bold text-danger-600' : 'text-xl font-bold text-success-600'}>{money(debt)}</p>
-        </div>
-        {canAccept && (
-          <Button variant="primary" icon={Plus} onClick={() => setAccepting(true)}>{t('Принять оплату')}</Button>
-        )}
-      </Card>
-
       <PendingInvoices child={child} reloadKey={invoicesKey} onChanged={load} />
 
-      {payments.length === 0 ? (
-        <Card><EmptyState icon={Wallet} title={t('Оплат пока нет')} /></Card>
-      ) : (
-        <div className="space-y-2">
-          {payments.map(p => (
-            <Card key={p.id} className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className={p.deleted_at ? 'flex items-center gap-2 font-semibold text-ink-subtle' : 'flex items-center gap-2 font-semibold text-ink'}>
-                  {money(p.amount)}
-                  <span className="text-[13px] font-normal text-ink-muted">{t(p.method_display)}</span>
-                  {p.deleted_at && <Badge tone="danger">{t('Отменено')}</Badge>}
-                </p>
-                <p className="text-[13px] text-ink-muted">
-                  {formatDateTime(p.paid_at)} · {t('принял {name}', { name: p.received_by_name })}
-                </p>
-                {p.comment && <p className="text-[13px] text-ink-muted">{p.comment}</p>}
-                {p.cancelled_reason && <p className="text-[13px] text-danger-600">{t('Причина отмены: {reason}', { reason: p.cancelled_reason })}</p>}
-              </div>
-              {canAccept && !p.deleted_at && (
-                <Button variant="ghost" size="sm" onClick={() => setCancelling(p)}>{t('Отменить')}</Button>
-              )}
-            </Card>
-          ))}
-        </div>
-      )}
+      <Card>
+        <CardHeader
+          title={t('История оплат')}
+          description={(
+            <>
+              {t('Текущая задолженность')}:{' '}
+              <span className={owes ? 'font-semibold text-danger-600' : 'font-semibold text-success-600'}>{money(debt)}</span>
+            </>
+          )}
+          actions={canAccept && (
+            <Button variant="primary" size="sm" icon={Plus} onClick={() => setAccepting(true)}>{t('Принять оплату')}</Button>
+          )}
+        />
+        {payments.length === 0 ? (
+          <p className="flex items-center gap-2 rounded-lg bg-surface-muted px-4 py-3 text-sm text-ink-muted">
+            <Wallet className="size-4 shrink-0" /> {t('Оплат пока нет')}
+          </p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {payments.map(p => (
+              <li key={p.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className={p.deleted_at ? 'flex flex-wrap items-center gap-2 font-semibold text-ink-subtle' : 'flex flex-wrap items-center gap-2 font-semibold text-ink'}>
+                    {money(p.amount)}
+                    <span className="text-[13px] font-normal text-ink-muted">{t(p.method_display)}</span>
+                    {p.deleted_at && <Badge tone="danger">{t('Отменено')}</Badge>}
+                  </p>
+                  <p className="text-[13px] text-ink-muted">
+                    {formatDateTime(p.paid_at)} · {t('принял {name}', { name: p.received_by_name })}
+                  </p>
+                  {p.comment && <p className="text-[13px] text-ink-muted">{p.comment}</p>}
+                  {p.cancelled_reason && <p className="text-[13px] text-danger-600">{t('Причина отмены: {reason}', { reason: p.cancelled_reason })}</p>}
+                </div>
+                {canAccept && !p.deleted_at && (
+                  <Button variant="ghost" size="sm" onClick={() => setCancelling(p)}>{t('Отменить')}</Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       {accepting && (
         <AcceptPaymentModal child={child} onClose={() => setAccepting(false)} onPaid={load} onInvoiced={() => setInvoicesKey(k => k + 1)} />

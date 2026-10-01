@@ -1671,5 +1671,10 @@
  "Требует внимания": "Needs attention",
  "Ходят без абонемента": "Attending without a subscription",
  "Что хотите узнать о центре?": "What would you like to know about your center?",
- "plural:оплата": ["payment", "payments"]
+ "plural:оплата": ["payment", "payments"],
+ "Действующего абонемента нет.": "No active subscription.",
+ "Других абонементов не было.": "No other subscriptions yet.",
+ "История оплат": "Payment history",
+ "Пропусков для отработки нет.": "No missed classes to make up.",
+ "Текущий абонемент": "Current subscription"
 }
