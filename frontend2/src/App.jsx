@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/shell/Layout'
 import { useLang } from './i18n'
-import { RequireAuth, RequirePermission, SessionProvider } from './session/SessionContext'
+import { RequireAuth, RequirePermission, SessionProvider, useSession } from './session/SessionContext'
 import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
@@ -28,6 +28,7 @@ import Profile from './pages/Profile'
 import LeadDetail from './pages/LeadDetail'
 import Debts from './pages/Debts'
 import Renewals from './pages/Renewals'
+import MyTasks from './pages/MyTasks'
 import Analytics from './pages/Analytics'
 import AnalyticsKit from './pages/AnalyticsKit'
 import AnalyticsRevenue from './pages/AnalyticsRevenue'
@@ -36,6 +37,12 @@ import AnalyticsFunnel from './pages/AnalyticsFunnel'
 import AnalyticsGroups from './pages/AnalyticsGroups'
 import AnalyticsSources from './pages/AnalyticsSources'
 import AnalyticsRejections from './pages/AnalyticsRejections'
+import AnalyticsBranches from './pages/AnalyticsBranches'
+
+function RoleLandingRedirect() {
+  const { user } = useSession()
+  return <Navigate to={user?.role === 'admin' ? '/tasks' : '/dashboard'} replace />
+}
 
 function App() {
   // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
@@ -50,8 +57,9 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
-                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route index element={<RoleLandingRedirect />} />
                 <Route path="dashboard" element={<Dashboard />} />
+                <Route path="tasks" element={<MyTasks />} />
                 <Route path="onboarding" element={<RequirePermission permission="can_manage_org_settings"><Onboarding /></RequirePermission>} />
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
@@ -71,6 +79,7 @@ function App() {
                 <Route path="analytics/attendance" element={<RequirePermission permission="can_view_analytics"><AnalyticsAttendance /></RequirePermission>} />
                 <Route path="analytics/funnel" element={<RequirePermission permission="can_view_analytics"><AnalyticsFunnel /></RequirePermission>} />
                 <Route path="analytics/groups" element={<RequirePermission permission="can_view_analytics"><AnalyticsGroups /></RequirePermission>} />
+                <Route path="analytics/branches" element={<RequirePermission permission="can_view_analytics"><AnalyticsBranches /></RequirePermission>} />
                 <Route path="analytics/rejections" element={<RequirePermission permission="can_view_analytics"><AnalyticsRejections /></RequirePermission>} />
                 <Route path="analytics/sources" element={<RequirePermission permission="can_view_analytics"><AnalyticsSources /></RequirePermission>} />
                 <Route path="analytics/kit" element={<RequirePermission permission="can_view_analytics"><AnalyticsKit /></RequirePermission>} />
