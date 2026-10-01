@@ -14,6 +14,7 @@ import {
   fetchWhoToCall, markCalled, unmarkCalled,
 } from '../api/lessons'
 import { t } from '../i18n'
+import { initialHours } from '../components/workingHours'
 
 const ACCENT = '#C97B6E'
 const DEFAULT_COLOR = '#7C6FF7'
@@ -196,14 +197,41 @@ function lessonTitle(lesson) {
   return t('Индив. занятие')
 }
 
-function computeHourRange(lessons) {
-  let min = 8, max = 21
+const WORKDAY_BY_JS_DAY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+
+function computeHourRange(lessons, branches, visibleDates) {
+  let min = Infinity
+  let max = -Infinity
+
+  branches.forEach(branch => {
+    const workingHours = initialHours(branch.working_hours)
+    visibleDates.forEach(visibleDate => {
+      const day = workingHours[WORKDAY_BY_JS_DAY[visibleDate.getDay()]]
+      if (!day || day.closed) return
+
+      const opensAt = timeToMinutes(day.open)
+      const closesAt = timeToMinutes(day.close)
+      if (!Number.isFinite(opensAt) || !Number.isFinite(closesAt)) return
+
+      min = Math.min(min, Math.floor(opensAt / 60))
+      // Keep the closing-hour mark visible, matching the existing calendar scale.
+      max = Math.max(max, Math.floor(closesAt / 60) + 1)
+    })
+  })
+
+  // A lesson outside the configured branch hours must never be clipped.
   lessons.forEach(l => {
     const startH = Math.floor(l.startMin / 60)
     const endH = Math.ceil(l.endMin / 60)
     if (startH < min) min = startH
     if (endH > max) max = endH
   })
+
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    min = 8
+    max = 21
+  }
+  if (max <= min) max = min + 1
   return Array.from({ length: max - min }, (_, i) => min + i)
 }
 
@@ -309,6 +337,22 @@ export default function Schedule() {
     [rooms, filters.branch]
   )
 
+  const scheduleBranches = useMemo(() => {
+    if (filters.branch) {
+      return branches.filter(branch => String(branch.id) === String(filters.branch))
+    }
+    if (filters.room) {
+      const room = rooms.find(item => String(item.id) === String(filters.room))
+      if (room) return branches.filter(branch => String(branch.id) === String(room.branch))
+    }
+    return branches
+  }, [branches, rooms, filters.branch, filters.room])
+
+  const visibleDates = useMemo(
+    () => view === 'week' ? weekDays : [new Date(`${date}T12:00:00`)],
+    [view, weekDays, date]
+  )
+
   const byWeekday = useMemo(() => {
     const raw = {}
     weekDays.forEach(d => { raw[toISODate(d)] = [] })
@@ -342,8 +386,8 @@ export default function Schedule() {
   }, [filteredRooms, byRoom])
 
   const hours = useMemo(
-    () => computeHourRange(view === 'week' ? lessons.map(withMinutes) : lessons.map(withMinutes)),
-    [lessons, view]
+    () => computeHourRange(lessons.map(withMinutes), scheduleBranches, visibleDates),
+    [lessons, scheduleBranches, visibleDates]
   )
 
   function goToday() {

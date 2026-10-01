@@ -16,6 +16,7 @@ class Task(TenantModel):
     class Type(models.TextChoices):
         TRIAL_NO_SHOW = "trial_no_show", "Не пришёл на пробное"
         MISSING_SUBSCRIPTION = "missing_subscription", "Нет абонемента"
+        RETENTION = "retention", "Удержание клиента"
         OTHER = "other", "Другое"
 
     class Status(models.TextChoices):

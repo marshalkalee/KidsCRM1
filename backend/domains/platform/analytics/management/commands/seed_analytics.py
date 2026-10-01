@@ -179,6 +179,7 @@ class Command(BaseCommand):
             ]
         )
         memberships = []
+        departed_ids = []
         self.members = {}
         for index, child in enumerate(children):
             group = groups[index % group_count]
@@ -189,6 +190,8 @@ class Command(BaseCommand):
             )
             if left and left >= self.today:
                 left = None
+            if left:
+                departed_ids.append(child.id)
             memberships.append(
                 GroupMembership(
                     id=uuid.uuid4(),
@@ -201,6 +204,10 @@ class Command(BaseCommand):
             )
             self.members.setdefault(group.id, []).append((child.id, joined, left))
         GroupMembership.objects.bulk_create(memberships, batch_size=BATCH)
+        Child.objects.filter(pk__in=departed_ids).update(
+            status=Child.Status.LEFT,
+            leave_reason="Перестали посещать занятия",
+        )
         self.stdout.write(f"  детей {len(children)}, групп {len(groups)}")
         return children, groups
 
@@ -231,11 +238,17 @@ class Command(BaseCommand):
                         for child_id, joined, left in self.members[group.id]:
                             if joined <= day and (left is None or day < left):
                                 roll = random.random()
+                                # Перед уходом посещаемость заметно проседает. Это даёт
+                                # реалистичную ретровыборку для калибровки TRU-122,
+                                # а не искусственный одинаковый процент на всём году.
+                                leaving_window = (
+                                    left is not None and left - timedelta(days=21) <= day
+                                )
                                 status = (
                                     Attendance.Status.PRESENT
-                                    if roll < 0.82
+                                    if roll < (0.3 if leaving_window else 0.82)
                                     else Attendance.Status.MAKEUP
-                                    if roll < 0.84
+                                    if roll < (0.32 if leaving_window else 0.84)
                                     else Attendance.Status.ABSENT
                                 )
                                 marks.append(

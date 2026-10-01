@@ -25,6 +25,8 @@ import LeadDictionaries from './pages/LeadDictionaries'
 import Leads from './pages/Leads'
 import Notifications from './pages/Notifications'
 import Profile from './pages/Profile'
+import StaffDetail from './pages/StaffDetail'
+import Staff from './pages/Staff'
 import LeadDetail from './pages/LeadDetail'
 import Debts from './pages/Debts'
 import Renewals from './pages/Renewals'
@@ -37,6 +39,7 @@ import AnalyticsGroups from './pages/AnalyticsGroups'
 import AnalyticsSources from './pages/AnalyticsSources'
 import AnalyticsRejections from './pages/AnalyticsRejections'
 import AnalyticsBranches from './pages/AnalyticsBranches'
+import AnalyticsRisk from './pages/AnalyticsRisk'
 
 function App() {
   // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
@@ -58,6 +61,8 @@ function App() {
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
                 <Route path="notifications" element={<Notifications />} />
                 <Route path="profile" element={<Profile />} />
+                <Route path="staff" element={<RequirePermission permission="can_manage_staff"><Staff /></RequirePermission>} />
+                <Route path="staff/:id" element={<StaffDetail />} />
                 <Route path="children" element={<Children />} />
                 <Route path="children/import" element={<RequirePermission permission="can_manage_children"><ChildImport /></RequirePermission>} />
                 <Route path="children/:id" element={<ChildDetail />} />
@@ -70,6 +75,7 @@ function App() {
                 <Route path="analytics" element={<RequirePermission permission="can_view_analytics"><Analytics /></RequirePermission>} />
                 <Route path="analytics/revenue" element={<RequirePermission permission="can_view_analytics"><AnalyticsRevenue /></RequirePermission>} />
                 <Route path="analytics/attendance" element={<RequirePermission permission="can_view_analytics"><AnalyticsAttendance /></RequirePermission>} />
+                <Route path="analytics/risk" element={<RequirePermission permission="can_view_analytics"><AnalyticsRisk /></RequirePermission>} />
                 <Route path="analytics/funnel" element={<RequirePermission permission="can_view_analytics"><AnalyticsFunnel /></RequirePermission>} />
                 <Route path="analytics/groups" element={<RequirePermission permission="can_view_analytics"><AnalyticsGroups /></RequirePermission>} />
                 <Route path="analytics/branches" element={<RequirePermission permission="can_view_analytics"><AnalyticsBranches /></RequirePermission>} />

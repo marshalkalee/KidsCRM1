@@ -22,8 +22,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 
+from domains.people.clients.models import Child
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_view_analytics
+from domains.platform.tasks.services import create_retention_task
 from domains.platform.tenants.plans import has_feature
 from domains.scheduling.groups.queries import underfilled_threshold
 
@@ -39,6 +41,7 @@ from .period import PRESETS, PeriodError, parse_period
 from .registry import REGISTRY, compute
 from .rejections import RejectionError, rejection_comments, rejections, rejections_by
 from .reports import REPORTS, build
+from .risk_list import risk_list
 from .scope import ScopeError, allowed_branch_ids, scope_for
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
 
@@ -134,6 +137,39 @@ def attendance_trends_api(request, version=None):
     if error:
         return error
     return Response(attendance_trends(scope, period))
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def risk_list_api(request, version=None):
+    """Три междоменных сигнала удержания, сведённые в один список (TRU-122)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(risk_list(scope, period))
+
+
+@api_view(["POST"])
+@permission_classes([CanViewAnalytics])
+def risk_retention_task_api(request, child_id, version=None):
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    data = risk_list(scope, period)
+    item = next((row for row in data["items"] if row["id"] == str(child_id)), None)
+    if item is None:
+        return Response({"detail": "Ребёнок не входит в доступный риск-лист."}, status=404)
+    child = Child.objects.for_tenant(scope.organization).get(pk=child_id)
+    task, created = create_retention_task(child=child, actor=request.user, signals=item["signals"])
+    return Response(
+        {
+            "id": str(task.id),
+            "title": task.title,
+            "status": task.status,
+            "created": created,
+        },
+        status=201 if created else 200,
+    )
 
 
 @api_view(["GET"])

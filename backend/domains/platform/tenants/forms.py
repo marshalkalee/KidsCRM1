@@ -13,8 +13,11 @@ from domains.platform.tenants.org_settings import (
     DEBT_OVERDUE_DAYS_THRESHOLD,
     DEFAULT_ORG_SETTINGS,
     GROUP_UNDERFILLED_PERCENT_THRESHOLD,
+    RISK_ABSENCE_CHANGE_PP_THRESHOLD,
+    RISK_CURRENT_ABSENCES_MIN,
     SUBSCRIPTION_ENDING_DAYS_THRESHOLD,
     SUBSCRIPTION_ENDING_LESSONS_THRESHOLD,
+    get_org_setting,
 )
 
 # Полный zoneinfo.available_timezones() — это ~600 записей (включая
@@ -82,6 +85,18 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     group_underfilled_percent_threshold = forms.IntegerField(
         min_value=0, max_value=100, label="Группа недозаполнена при < X% вместимости"
     )
+    risk_absence_change_pp_threshold = forms.IntegerField(
+        min_value=1,
+        max_value=100,
+        required=False,
+        label="Рост пропусков относительно личной нормы, п.п.",
+    )
+    risk_current_absences_min = forms.IntegerField(
+        min_value=1,
+        max_value=100,
+        required=False,
+        label="Минимум пропусков за период для риск-сигнала",
+    )
 
     def clean_timezone(self):
         tz_name = self.cleaned_data["timezone"]
@@ -122,6 +137,12 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             GROUP_UNDERFILLED_PERCENT_THRESHOLD: self.cleaned_data[
                 GROUP_UNDERFILLED_PERCENT_THRESHOLD
             ],
+            RISK_ABSENCE_CHANGE_PP_THRESHOLD: self.cleaned_data.get(
+                RISK_ABSENCE_CHANGE_PP_THRESHOLD
+            )
+            or get_org_setting(organization, RISK_ABSENCE_CHANGE_PP_THRESHOLD),
+            RISK_CURRENT_ABSENCES_MIN: self.cleaned_data.get(RISK_CURRENT_ABSENCES_MIN)
+            or get_org_setting(organization, RISK_CURRENT_ABSENCES_MIN),
         }
         organization.save(update_fields=["name", "timezone", "settings", "updated_at"])
         return organization

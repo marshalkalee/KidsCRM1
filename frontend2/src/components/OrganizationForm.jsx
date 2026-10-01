@@ -11,6 +11,8 @@ const THRESHOLDS = [
   { key: 'subscription_ending_days_threshold', get label() { return t('Абонемент скоро закончится') }, get hint() { return t('Попадает в «Продления»') }, get suffix() { return t('дней и меньше') }, max: 365 },
   { key: 'debt_overdue_days_threshold', get label() { return t('Долг просрочен') }, get hint() { return t('Неоплаченный абонемент старше') }, get suffix() { return t('дней') }, max: 365 },
   { key: 'group_underfilled_percent_threshold', get label() { return t('Группа недозаполнена') }, get hint() { return t('Заполненность группы') }, get suffix() { return t('% и меньше') }, max: 100 },
+  { key: 'risk_absence_change_pp_threshold', get label() { return t('Рост пропусков для риск-листа') }, get hint() { return t('Отклонение от личной нормы ребёнка') }, get suffix() { return t('п.п. и больше') }, min: 1, max: 100 },
+  { key: 'risk_current_absences_min', get label() { return t('Минимум пропусков для риск-листа') }, get hint() { return t('За выбранный период') }, get suffix() { return t('пропуска и больше') }, min: 1, max: 100 },
 ]
 
 /**
@@ -91,7 +93,7 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
                         <Input
                           id={th.key}
                           type="number"
-                          min={0}
+                          min={th.min ?? 0}
                           max={th.max}
                           className="text-right"
                           invalid={Boolean(errors[th.key])}

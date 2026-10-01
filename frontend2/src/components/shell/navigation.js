@@ -1,5 +1,5 @@
 import {
-  Building2, CalendarClock, ChartColumn, CalendarDays, CheckSquare, Contact, Home, Inbox, ListChecks, Settings, Tag, Users, UsersRound, Wallet,
+  Building2, CalendarClock, ChartColumn, CalendarDays, CheckSquare, Contact, Home, Inbox, ListChecks, Settings, Tag, UserRoundCog, Users, UsersRound, Wallet,
 } from 'lucide-react'
 import { t } from '../../i18n'
 
@@ -29,6 +29,7 @@ export const NAV_SECTIONS = [
   {
     get label() { return t('Настройки') },
     items: [
+      { to: '/staff', get label() { return t('Сотрудники') }, icon: UserRoundCog, permission: 'can_manage_staff' },
       { to: '/branches', get label() { return t('Филиалы') }, icon: Building2, permission: 'can_manage_branches' },
       { to: '/directions', get label() { return t('Направления') }, icon: Tag, permission: 'can_manage_directions' },
       { to: '/settings/sales', get label() { return t('Справочники продаж') }, icon: ListChecks, permission: 'can_manage_lead_dictionaries' },

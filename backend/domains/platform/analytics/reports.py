@@ -18,6 +18,7 @@ from .group_occupancy import group_occupancy
 from .registry import REGISTRY, compute
 from .rejections import STAGES as REJECTION_STAGES
 from .rejections import rejection_comments, rejections, rejections_by
+from .risk_list import risk_list
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
 
 UNIT_TITLE = {"money": ", ₸", "percent": ", %", "count": "", "decimal": ""}
@@ -646,6 +647,54 @@ def branches_report(scope, period, params):
             note=(
                 "Сравнивать честно по относительным колонкам: на ребёнка, доли, конверсия. "
                 "Ребёнок — ходил на занятия в периоде. Задолженность — на сегодня."
+            ),
+        )
+    ]
+
+
+@report("risk_list", "Риск-лист — в зоне ухода")
+def risk_list_report(scope, period, params):
+    data = risk_list(scope, period)
+    signal_labels = {
+        "attendance": "Участились пропуски",
+        "subscription": "Абонемент заканчивается или истёк",
+        "debt": "Есть задолженность",
+    }
+    return [
+        Section(
+            "Риск-лист",
+            [
+                Column("Ребёнок", width=28),
+                Column("Уровень", width=14),
+                Column("Сигналы", width=54),
+                Column("Пропусков", "count", 13, total=False),
+                Column("Рост к норме, п.п.", "percent", 18, total=False),
+                Column("Абонемент", width=24),
+                Column("Долг, ₸", "money", 14),
+                Column("Филиал", width=20),
+                Column("Направление", width=20),
+                Column("Родитель", width=24),
+                Column("Телефон", width=18),
+            ],
+            [
+                [
+                    row["name"],
+                    "Срочно" if row["level"] == "urgent" else "Внимание",
+                    ", ".join(signal_labels[key] for key in row["signals"]),
+                    (row["attendance"] or {}).get("absences"),
+                    (row["attendance"] or {}).get("absence_change_pp"),
+                    (row["subscription"] or {}).get("name"),
+                    row["debt"],
+                    row["branch"],
+                    row["direction"],
+                    row.get("parent"),
+                    row.get("phone"),
+                ]
+                for row in data["items"]
+            ],
+            note=(
+                "Один сигнал — внимание, два или три — срочно. "
+                "Пороги пропусков настраиваются в настройках организации."
             ),
         )
     ]

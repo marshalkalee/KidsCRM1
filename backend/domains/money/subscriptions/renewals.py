@@ -77,6 +77,46 @@ def expiring_child_ids(organization, today=None):
     )
 
 
+def renewal_risk_by_child(organization, child_ids, today=None):
+    """Канонический сигнал продления для риск-листа.
+
+    Условие «заканчивается» переиспользует выборку продлений, а «истёк» берётся
+    из сохранённого автостатуса. Аналитика не повторяет ни одну из формул.
+    """
+    child_ids = set(child_ids)
+    if not child_ids:
+        return {}
+    result = {}
+    for subscription in expiring_subscriptions(organization, today=today).filter(
+        child_id__in=child_ids
+    ):
+        result[subscription.child_id] = {
+            "state": "ending",
+            "ends_on": subscription.ends_on.isoformat(),
+            "name": subscription.subscription_type_version.name,
+        }
+
+    # Только последний абонемент ребёнка: старый истёкший абонемент не должен
+    # тревожить, если после него уже куплен новый.
+    latest = {}
+    subscriptions = (
+        Subscription.objects.for_tenant(organization)
+        .filter(child_id__in=child_ids)
+        .select_related("subscription_type_version")
+        .order_by("child_id", "-starts_on", "-created_at")
+    )
+    for subscription in subscriptions:
+        latest.setdefault(subscription.child_id, subscription)
+    for child_id, subscription in latest.items():
+        if subscription.status in (Subscription.Status.EXPIRED, Subscription.Status.EXHAUSTED):
+            result[child_id] = {
+                "state": "expired",
+                "ends_on": subscription.ends_on.isoformat(),
+                "name": subscription.subscription_type_version.name,
+            }
+    return result
+
+
 def expiring_subscriptions(organization, *, branch=None, direction=None, group=None, today=None):
     """То же условие, что и expiring_child_ids, но полные объекты
     Subscription с фильтрами — для экрана «Продления»."""

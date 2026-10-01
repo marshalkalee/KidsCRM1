@@ -4,6 +4,8 @@ from rest_framework import serializers
 
 from domains.people.clients.models import Child
 from domains.platform.core.text_validation import normalize_entity_name
+from domains.platform.tenants.models import Room
+from domains.platform.users.models import User
 
 from . import queries
 from .models import Group, GroupMembership
@@ -126,6 +128,7 @@ class GroupSerializer(serializers.ModelSerializer):
                 "start_time": slot.start_time.strftime("%H:%M"),
                 "duration_minutes": slot.duration_minutes,
                 "room": slot.room.name if slot.room else None,
+                "teacher": slot.teacher.full_name if slot.teacher else None,
             }
             for slot in sorted(template.slots.all(), key=lambda s: (s.weekday, s.start_time))
         ]
@@ -191,3 +194,65 @@ class GroupMembershipSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data["organization"] = validated_data["group"].organization
         return super().create(validated_data)
+
+
+class GroupScheduleSlotSerializer(serializers.Serializer):
+    """Один повторяющийся слот недельного расписания группы."""
+
+    id = serializers.UUIDField(required=False)
+    weekday = serializers.IntegerField(min_value=0, max_value=6)
+    start_time = serializers.TimeField(input_formats=["%H:%M", "%H:%M:%S"])
+    duration_minutes = serializers.IntegerField(min_value=15, max_value=360)
+    room = serializers.PrimaryKeyRelatedField(
+        queryset=Room.objects.none(), required=False, allow_null=True
+    )
+    teacher = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.none(), required=False, allow_null=True
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            return
+        organization = request.user.organization
+        self.fields["room"].queryset = Room.objects.for_tenant(organization)
+        self.fields["teacher"].queryset = User.objects.filter(
+            organization=organization,
+            role=User.Role.TEACHER,
+            is_active=True,
+        )
+
+    def validate_room(self, room):
+        group = self.context.get("group")
+        if room is not None and group is not None and room.branch_id != group.branch_id:
+            raise serializers.ValidationError(_("Зал должен относиться к филиалу группы."))
+        return room
+
+
+class GroupScheduleSerializer(serializers.Serializer):
+    """Атомарная замена постоянного расписания и будущих занятий группы."""
+
+    generate_weeks_ahead = serializers.IntegerField(min_value=1, max_value=12, default=8)
+    slots = GroupScheduleSlotSerializer(many=True, max_length=21)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            return
+        child = self.fields["slots"].child
+        child.fields["room"].queryset = Room.objects.for_tenant(request.user.organization)
+        child.fields["teacher"].queryset = User.objects.filter(
+            organization=request.user.organization,
+            role=User.Role.TEACHER,
+            is_active=True,
+        )
+
+    def validate_slots(self, slots):
+        keys = [(slot["weekday"], slot["start_time"]) for slot in slots]
+        if len(keys) != len(set(keys)):
+            raise serializers.ValidationError(
+                _("Нельзя добавить два занятия группы в один день и одно время.")
+            )
+        return slots

@@ -41,6 +41,7 @@ class UserSerializer(serializers.ModelSerializer):
             "phone",
             "full_name",
             "role",
+            "photo_url",
             "organization",
             "branches",
             "is_active",
@@ -48,7 +49,7 @@ class UserSerializer(serializers.ModelSerializer):
             "updated_at",
             "password",
         ]
-        read_only_fields = ["id", "organization", "created_at", "updated_at"]
+        read_only_fields = ["id", "photo_url", "organization", "created_at", "updated_at"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
