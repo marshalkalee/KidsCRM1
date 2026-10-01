@@ -262,3 +262,10 @@ AI_PROVIDER = env("AI_PROVIDER", default="anthropic")
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-4o-mini")
 OPENAI_VISION_MODEL = env("OPENAI_VISION_MODEL", default="gpt-4o")
+
+# Удалённая оплата через Kaspi (payments/kaspi.py). Без шлюза счета идут
+# сообщением с реквизитами центра, оплату подтверждает администратор.
+# "fake" — тестовый шлюз для стенда, на проде не включать.
+KASPI_PAY_GATEWAY = env("KASPI_PAY_GATEWAY", default="")
+KASPI_PAY_WEBHOOK_SECRET = env("KASPI_PAY_WEBHOOK_SECRET", default="")
+KASPI_PAY_INVOICE_TTL_HOURS = env.int("KASPI_PAY_INVOICE_TTL_HOURS", default=24)
