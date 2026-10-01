@@ -9,7 +9,7 @@ import { t } from '../i18n'
 export default function Assistant() {
   const ai = useAI()
   const available = useAIChatAvailable()
-  if (available) return <AIChat full />
+  if (available) return <AIChat />
   return (
     <Card>
       <EmptyState icon={Sparkles} title={ai.enabled === false ? t('ИИ-помощник не подключён') : t('Загрузка…')} />
