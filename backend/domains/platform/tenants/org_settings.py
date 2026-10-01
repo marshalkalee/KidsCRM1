@@ -3,7 +3,7 @@
 
 Хранятся в Organization.settings (JSONField), не отдельными колонками —
 это ключи одного словаря, настраиваемые владельцем на экране "Настройки
-организации" во frontend2. На них будут
+организации" (см. web_views.organization_settings). На них будут
 опираться экраны Bekzat (продления, задолженности) и аналитика в M3 —
 поэтому именно здесь, а не разбросанными хардкодами по доменам:
 domains.money.* должен читать пороги через get_org_setting(), а не
@@ -14,6 +14,12 @@ SUBSCRIPTION_ENDING_LESSONS_THRESHOLD = "subscription_ending_lessons_threshold"
 SUBSCRIPTION_ENDING_DAYS_THRESHOLD = "subscription_ending_days_threshold"
 DEBT_OVERDUE_DAYS_THRESHOLD = "debt_overdue_days_threshold"
 GROUP_UNDERFILLED_PERCENT_THRESHOLD = "group_underfilled_percent_threshold"
+LEAD_STALE_DAYS_THRESHOLD = "lead_stale_days_threshold"
+RULE_LEAD_STALE_ENABLED = "rule_lead_stale_enabled"
+RULE_RENEWAL_OFFER_ENABLED = "rule_renewal_offer_enabled"
+RULE_DEBT_REMINDER_ENABLED = "rule_debt_reminder_enabled"
+RULE_MISSING_SUBSCRIPTION_ENABLED = "rule_missing_subscription_enabled"
+RULE_TRIAL_NO_SHOW_ENABLED = "rule_trial_no_show_enabled"
 
 DEFAULT_ORG_SETTINGS = {
     # Абонемент "заканчивается", когда остаётся <= N занятий ИЛИ <= N дней.
@@ -23,6 +29,14 @@ DEFAULT_ORG_SETTINGS = {
     DEBT_OVERDUE_DAYS_THRESHOLD: 5,
     # Группа считается недозаполненной при заполненности < X% вместимости.
     GROUP_UNDERFILLED_PERCENT_THRESHOLD: 50,
+    # Заявка считается "без движения", если статус не менялся N дней.
+    LEAD_STALE_DAYS_THRESHOLD: 3,
+    # Автоправила создания задач (TRU-108) — владелец может выключить любое.
+    RULE_LEAD_STALE_ENABLED: True,
+    RULE_RENEWAL_OFFER_ENABLED: True,
+    RULE_DEBT_REMINDER_ENABLED: True,
+    RULE_MISSING_SUBSCRIPTION_ENABLED: True,
+    RULE_TRIAL_NO_SHOW_ENABLED: True,
 }
 
 

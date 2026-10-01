@@ -13,6 +13,12 @@ from domains.platform.tenants.org_settings import (
     DEBT_OVERDUE_DAYS_THRESHOLD,
     DEFAULT_ORG_SETTINGS,
     GROUP_UNDERFILLED_PERCENT_THRESHOLD,
+    LEAD_STALE_DAYS_THRESHOLD,
+    RULE_DEBT_REMINDER_ENABLED,
+    RULE_LEAD_STALE_ENABLED,
+    RULE_MISSING_SUBSCRIPTION_ENABLED,
+    RULE_RENEWAL_OFFER_ENABLED,
+    RULE_TRIAL_NO_SHOW_ENABLED,
     SUBSCRIPTION_ENDING_DAYS_THRESHOLD,
     SUBSCRIPTION_ENDING_LESSONS_THRESHOLD,
 )
@@ -82,6 +88,24 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     group_underfilled_percent_threshold = forms.IntegerField(
         min_value=0, max_value=100, label="Группа недозаполнена при < X% вместимости"
     )
+    lead_stale_days_threshold = forms.IntegerField(
+        min_value=0, max_value=90, required=False, label="Заявка без движения после N дней"
+    )
+    rule_lead_stale_enabled = forms.BooleanField(
+        required=False, label="Напоминать перезвонить по зависшим заявкам"
+    )
+    rule_renewal_offer_enabled = forms.BooleanField(
+        required=False, label="Предлагать продление заранее"
+    )
+    rule_debt_reminder_enabled = forms.BooleanField(
+        required=False, label="Напоминать о просроченном долге"
+    )
+    rule_missing_subscription_enabled = forms.BooleanField(
+        required=False, label="Напоминать оформить абонемент без него"
+    )
+    rule_trial_no_show_enabled = forms.BooleanField(
+        required=False, label="Напоминать перезвонить после пропуска пробного"
+    )
 
     def clean_timezone(self):
         tz_name = self.cleaned_data["timezone"]
@@ -122,6 +146,16 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             GROUP_UNDERFILLED_PERCENT_THRESHOLD: self.cleaned_data[
                 GROUP_UNDERFILLED_PERCENT_THRESHOLD
             ],
+            LEAD_STALE_DAYS_THRESHOLD: self.cleaned_data[LEAD_STALE_DAYS_THRESHOLD]
+            if self.cleaned_data[LEAD_STALE_DAYS_THRESHOLD] is not None
+            else organization.settings.get(
+                LEAD_STALE_DAYS_THRESHOLD, DEFAULT_ORG_SETTINGS[LEAD_STALE_DAYS_THRESHOLD]
+            ),
+            RULE_LEAD_STALE_ENABLED: self.cleaned_data[RULE_LEAD_STALE_ENABLED],
+            RULE_RENEWAL_OFFER_ENABLED: self.cleaned_data[RULE_RENEWAL_OFFER_ENABLED],
+            RULE_DEBT_REMINDER_ENABLED: self.cleaned_data[RULE_DEBT_REMINDER_ENABLED],
+            RULE_MISSING_SUBSCRIPTION_ENABLED: self.cleaned_data[RULE_MISSING_SUBSCRIPTION_ENABLED],
+            RULE_TRIAL_NO_SHOW_ENABLED: self.cleaned_data[RULE_TRIAL_NO_SHOW_ENABLED],
         }
         organization.save(update_fields=["name", "timezone", "settings", "updated_at"])
         return organization

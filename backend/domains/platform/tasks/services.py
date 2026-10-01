@@ -2,8 +2,15 @@
 
 import datetime
 
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
+from domains.platform.tenants.org_settings import (
+    RULE_MISSING_SUBSCRIPTION_ENABLED,
+    RULE_TRIAL_NO_SHOW_ENABLED,
+    get_org_setting,
+)
 from domains.platform.users.models import User
 
 from .models import Task
@@ -11,8 +18,21 @@ from .models import Task
 
 def create_admin_task_for_missing_subscription(*, attendance):
     """attendance — domains.scheduling.attendance.models.Attendance с уже
-    выставленным no_subscription_flag=True. Ничего не делает в M1."""
-    return None
+    выставленным no_subscription_flag=True (ТЗ п. 5.2, TRU-108)."""
+    organization = attendance.lesson.organization
+    if not get_org_setting(organization, RULE_MISSING_SUBSCRIPTION_ENABLED):
+        return None
+    return create_task(
+        type=Task.Type.MISSING_SUBSCRIPTION,
+        assignee=None,
+        due_date=None,
+        subject=f"Оформить абонемент: {attendance.child.full_name}",
+        organization=organization,
+        source=Task.Source.AUTO,
+        branch=attendance.lesson.room.branch if attendance.lesson.room_id else None,
+        child=attendance.child,
+        source_key=f"missing_subscription:{attendance.id}",
+    )
 
 
 def _lead_assignee(lead):
@@ -36,6 +56,8 @@ def create_trial_no_show_task(*, lead, lesson, attendance):
     записи на другое пробное создастся новая задача, потому что у неё будет
     другой Attendance и, соответственно, другой ``source_key``.
     """
+    if not get_org_setting(lead.organization, RULE_TRIAL_NO_SHOW_ENABLED):
+        return None
     local_start = timezone.localtime(lesson.starts_at)
     lesson_name = lesson.group.name if lesson.group_id else "Индивидуальное занятие"
     assignee = _lead_assignee(lead)
@@ -85,24 +107,32 @@ def create_task(
     child=None,
     created_by=None,
     description="",
-) -> Task:
+    source_key="",
+):
     """TaskService.create — единый вход для создания задач из любого домена
     (ТЗ п. 3.1, контракт §9 в docs/contracts.md). organization берётся у
-    assignee, если не передана явно — исполнитель всегда в своей
-    организации, дублировать её на каждый вызов необязательно."""
-    return Task.objects.create(
-        organization=organization or assignee.organization,
-        type=type,
-        assigned_to=assignee,
-        due_at=due_date,
-        title=subject,
-        description=description,
-        source=source,
-        branch=branch,
-        lead=lead,
-        child=child,
-        created_by=created_by,
-    )
+    assignee, если не передана явно. Возвращает None, если задача с таким
+    же (organization, type, source_key) уже открыта — идемпотентность
+    автоправил (TRU-108): для ручного создания source_key всегда пустой,
+    ограничение на него не распространяется, поведение не меняется."""
+    try:
+        with transaction.atomic():
+            return Task.objects.create(
+                organization=organization or assignee.organization,
+                type=type,
+                assigned_to=assignee,
+                due_at=due_date,
+                title=subject,
+                description=description,
+                source=source,
+                branch=branch,
+                lead=lead,
+                child=child,
+                created_by=created_by,
+                source_key=source_key,
+            )
+    except IntegrityError:
+        return None
 
 
 def complete_task(task: Task, *, actor, comment="") -> Task:
@@ -130,6 +160,4 @@ def visible_tasks(user):
     branch_ids = list(user.branches.values_list("id", flat=True))
     if not branch_ids:
         return qs
-    from django.db.models import Q
-
     return qs.filter(Q(branch_id__in=branch_ids) | Q(branch__isnull=True) | Q(assigned_to=user))

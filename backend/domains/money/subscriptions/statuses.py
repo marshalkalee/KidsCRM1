@@ -11,6 +11,7 @@ import logging
 
 from domains.platform.core.utils import today_for_org
 from domains.platform.tenants.models import Organization
+from domains.platform.tenants.org_settings import RULE_RENEWAL_OFFER_ENABLED, get_org_setting
 
 from .freezes import finish_freeze
 from .models import Subscription
@@ -24,10 +25,27 @@ DISPLAY_LABELS = {ENDING_SOON: "Заканчивается", **dict(Subscription
 
 
 def suggest_renewal(subscription: Subscription) -> None:
-    """Точка вызова автозадачи «предложить продление» (ТЗ п. 5.2).
-    Сама задача — M2 (TRU-108), на M1 — заглушка. Ночная задача зовёт её
-    КАЖДУЮ ночь для каждого «заканчивающегося» абонемента, поэтому то, что
-    сюда подключат, обязано быть идемпотентным — как create_renewal_lead."""
+    """Точка вызова автозадачи «предложить продление» (ТЗ п. 5.2, TRU-108).
+    Ночная задача зовёт её КАЖДУЮ ночь для каждого «заканчивающегося»
+    абонемента — идемпотентность через source_key на Subscription.id:
+    пока задача по этому абонементу открыта, вторая не создаётся."""
+    from domains.platform.tasks.models import Task
+    from domains.platform.tasks.services import create_task
+
+    organization = subscription.organization
+    if not get_org_setting(organization, RULE_RENEWAL_OFFER_ENABLED):
+        return
+    create_task(
+        type=Task.Type.RENEWAL_OFFER,
+        assignee=None,
+        due_date=None,
+        subject=f"Предложить продление: {subscription.child.full_name}",
+        organization=organization,
+        source=Task.Source.AUTO,
+        branch=subscription.branch,
+        child=subscription.child,
+        source_key=f"renewal_offer:{subscription.id}",
+    )
 
 
 def get_display_status(subscription: Subscription, today=None) -> str:
