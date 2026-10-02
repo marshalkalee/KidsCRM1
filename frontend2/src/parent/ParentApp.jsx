@@ -5,6 +5,7 @@ import ParentLayout from './ParentLayout'
 import ParentLogin from './ParentLogin'
 import { ParentSessionProvider, RequireParent } from './ParentSession'
 import ParentHome from './pages/ParentHome'
+import ParentNews from './pages/ParentNews'
 import ParentProfile from './pages/ParentProfile'
 import ParentSubscription from './pages/ParentSubscription'
 import ParentSoon from './pages/ParentSoon'
@@ -27,6 +28,7 @@ export default function ParentApp() {
           <Route path="attendance" element={<ParentSoon icon={CheckSquare} title={t('Посещения')} />} />
           <Route path="subscription" element={<ParentSubscription />} />
           <Route path="profile" element={<ParentProfile />} />
+          <Route path="news" element={<ParentNews />} />
           <Route path="*" element={<ParentSoon icon={Home} title={t('Страница не найдена')} />} />
         </Route>
       </Routes>

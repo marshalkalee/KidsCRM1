@@ -32,6 +32,7 @@ import LeadDetail from './pages/LeadDetail'
 import Debts from './pages/Debts'
 import Renewals from './pages/Renewals'
 import Analytics from './pages/Analytics'
+import Announcements from './pages/Announcements'
 import AnalyticsKit from './pages/AnalyticsKit'
 import AnalyticsRevenue from './pages/AnalyticsRevenue'
 import AnalyticsAttendance from './pages/AnalyticsAttendance'
@@ -77,6 +78,7 @@ function StaffApp() {
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
                 <Route path="assistant" element={<RequirePermission permission="can_use_ai_chat"><Assistant /></RequirePermission>} />
+                <Route path="announcements" element={<RequirePermission permission="can_manage_announcements"><Announcements /></RequirePermission>} />
                 <Route path="notifications" element={<Notifications />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="children" element={<Children />} />

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, CalendarDays, Clock, MapPin, Snowflake, UserRound, Wallet } from 'lucide-react'
+import { ArrowRight, CalendarDays, Clock, MapPin, Megaphone, Snowflake, UserRound, Wallet } from 'lucide-react'
 import { Card, ErrorState, Skeleton, cn, money, plural } from '../../ui'
 import { locale, t } from '../../i18n'
 import { usePortalData } from '../api'
@@ -53,6 +53,7 @@ export default function ParentHome() {
       <NextLesson lessons={data.next_lessons} today={data.today} left={child.status === 'left'} />
       <SubscriptionCard subscription={data.subscription} />
       <ToPay amount={Number(data.to_pay)} kaspi={data.payment?.kaspi} />
+      <News />
     </div>
   )
 }
@@ -185,5 +186,27 @@ function ToPay({ amount, kaspi }) {
       </div>
       {kaspi && !isLink && <p className="mt-2 text-[13px] text-ink-muted">{t('Перевод через Kaspi: {details}', { details: kaspi })}</p>}
     </Card>
+  )
+}
+
+/** Непрочитанные объявления центра (TRU-140) — счётчик и последние заголовки. */
+function News() {
+  const { data } = usePortalData('announcements/')
+  const rows = data?.results || []
+  if (!rows.length) return null
+  const unread = data.unread
+  return (
+    <Link to="/parent/news" className="block">
+      <Card className="transition-shadow hover:shadow-pop">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600"><Megaphone className="size-5" /></span>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-ink">{unread ? t('Новых объявлений: {n}', { n: unread }) : t('Объявления центра')}</p>
+            <p className="truncate text-[13px] text-ink-muted">{rows.slice(0, 2).map(r => r.title).join(' · ')}</p>
+          </div>
+          <ArrowRight className="size-4 shrink-0 text-ink-subtle" />
+        </div>
+      </Card>
+    </Link>
   )
 }
