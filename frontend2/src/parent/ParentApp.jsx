@@ -1,19 +1,14 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { Megaphone, Wallet } from 'lucide-react'
-import { Route, Routes } from 'react-router-dom'
-import { CalendarDays, CheckSquare, Home } from 'lucide-react'
-import { t, useLang } from '../i18n'
+import { useLang } from '../i18n'
 import ParentLayout from './ParentLayout'
 import ParentLogin from './ParentLogin'
 import { ParentSessionProvider, RequireParent } from './ParentSession'
+import ParentAttendance from './pages/ParentAttendance'
 import ParentHome from './pages/ParentHome'
 import ParentNews from './pages/ParentNews'
 import ParentProfile from './pages/ParentProfile'
-import ParentAttendance from './pages/ParentAttendance'
-import ParentHome from './pages/ParentHome'
-import ParentSubscription from './pages/ParentSubscription'
-import ParentSoon from './pages/ParentSoon'
 import ParentSchedule from './pages/ParentSchedule'
+import ParentSubscription from './pages/ParentSubscription'
 
 /*
  * Кабинет родителя — отдельное приложение внутри frontend2 по адресу
@@ -31,16 +26,11 @@ export default function ParentApp() {
           <Route index element={<ParentHome />} />
           <Route path="schedule" element={<ParentSchedule />} />
           <Route path="attendance" element={<ParentAttendance />} />
-          <Route path="subscription" element={<ParentSoon icon={Wallet} title={t('Абонемент')} />} />
-          <Route path="announcements" element={<ParentSoon icon={Megaphone} title={t('Объявления')} />} />
-          <Route path="profile" element={<ParentProfile />} />
-          <Route path="*" element={<Navigate to="." replace />} />
-          <Route path="schedule" element={<ParentSoon icon={CalendarDays} title={t('Расписание')} />} />
-          <Route path="attendance" element={<ParentSoon icon={CheckSquare} title={t('Посещения')} />} />
           <Route path="subscription" element={<ParentSubscription />} />
+          <Route path="announcements" element={<ParentNews />} />
+          <Route path="news" element={<Navigate to="/parent/announcements" replace />} />
           <Route path="profile" element={<ParentProfile />} />
-          <Route path="news" element={<ParentNews />} />
-          <Route path="*" element={<ParentSoon icon={Home} title={t('Страница не найдена')} />} />
+          <Route path="*" element={<Navigate to="/parent" replace />} />
         </Route>
       </Routes>
     </ParentSessionProvider>

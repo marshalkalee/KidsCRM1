@@ -1826,7 +1826,7 @@
  "Открыть расписание": "Open schedule",
  "Вернуться к посещениям": "Back to attendance",
  "Нет связи. Проверьте интернет и попробуйте ещё раз.": "No connection. Check your internet connection and try again.",
- "Не удалось записаться на это занятие.": "Could not book this lesson."
+ "Не удалось записаться на это занятие.": "Could not book this lesson.",
  "Абонемент скоро закончится — можно продлить у администратора.": "The subscription ends soon — you can renew it with the administrator.",
  "Без ограничения по занятиям": "Unlimited classes",
  "Ближайших занятий в расписании нет.": "No upcoming classes in the schedule.",
@@ -1888,7 +1888,6 @@
  "Новых объявлений: {n}": "New announcements: {n}",
  "Объявление": "Announcement",
  "Объявлений пока нет": "No announcements yet",
- "Объявления": "Announcements",
  "Объявления центра": "Center announcements",
  "Объявления, новых: {n}": "Announcements, {n} new",
  "Опубликовано": "Published",

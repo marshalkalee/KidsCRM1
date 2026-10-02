@@ -28,7 +28,11 @@ urlpatterns = [
         "children/<uuid:child_id>/makeups/<uuid:attendance_id>/",
         views.ChildMakeupView.as_view(),
         name="child-makeup",
-        "children/<uuid:child_id>/summary/", views.ChildSummaryView.as_view(), name="child-summary"
+    ),
+    path(
+        "children/<uuid:child_id>/summary/",
+        views.ChildSummaryView.as_view(),
+        name="child-summary",
     ),
     path("children/<uuid:child_id>/money/", views.ChildMoneyView.as_view(), name="child-money"),
     path("announcements/", views.AnnouncementsView.as_view(), name="announcements"),

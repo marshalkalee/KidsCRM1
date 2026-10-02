@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import {
+  Bell,
   Check,
   ChevronDown,
   CloudOff,
@@ -8,7 +9,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react'
-import { Bell, Check, ChevronDown, CloudOff } from 'lucide-react'
 import { Avatar, Modal, cn, formatDateTime } from '../ui'
 import { t, useLang } from '../i18n'
 import { useParent } from './useParent'
@@ -83,26 +83,9 @@ export default function ParentLayout() {
           </button>
 
           <ChildButton child={child} childOptions={children} onPick={() => setPicking(true)} />
-        <div className="mx-auto flex h-14 max-w-2xl items-center gap-3 px-4">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-[linear-gradient(135deg,#ff9d8a,#e4586e)] text-[11px] font-bold text-white">KC</span>
-          {child ? (
-            <button
-              type="button"
-              onClick={() => children.length > 1 && setPicking(true)}
-              className={cn('flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left', children.length > 1 && 'hover:bg-canvas')}
-              aria-label={children.length > 1 ? t('Выбрать ребёнка') : undefined}
-            >
-              <Avatar name={child.full_name} src={child.photo_url} />
-              <span className="min-w-0">
-                <span className="block truncate text-[15px] font-bold text-ink">{child.full_name}</span>
-                <span className="block truncate text-[12px] text-ink-muted">{child.organization.name}</span>
-              </span>
-              {children.length > 1 && <ChevronDown className="size-4 shrink-0 text-ink-muted" />}
-            </button>
-          ) : (
-            <span className="flex-1 text-[15px] font-bold text-ink">{t('Кабинет родителя')}</span>
-          )}
-          <NewsBell />
+          <div className="ml-auto">
+            <NewsBell />
+          </div>
         </div>
       </header>
 
@@ -278,7 +261,7 @@ function NewsBell() {
   const { data } = usePortalData('announcements/')
   const unread = data?.unread || 0
   return (
-    <Link to="/parent/news" aria-label={unread ? t('Объявления, новых: {n}', { n: unread }) : t('Объявления')} className="relative flex size-10 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-canvas">
+    <Link to="/parent/announcements" aria-label={unread ? t('Объявления, новых: {n}', { n: unread }) : t('Объявления')} className="relative flex size-10 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-canvas">
       <Bell className="size-5" />
       {unread > 0 && <span className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold text-white">{unread}</span>}
     </Link>
