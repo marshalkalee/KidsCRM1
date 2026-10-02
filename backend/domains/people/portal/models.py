@@ -92,12 +92,15 @@ class ParentAccessLog(models.Model):
         LOGOUT = "logout", "Выход"
         LOGOUT_ALL = "logout_all", "Выход на всех устройствах"
         PHONE_CHANGED = "phone_changed", "Сменил телефон"
+        DATA_VIEW = "data_view", "Смотрел данные"
 
     account = models.ForeignKey(
         ParentAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="access_log"
     )
     phone = models.CharField(max_length=20)
     event = models.CharField(max_length=30, choices=Event.choices)
+    # Для DATA_VIEW — какой адрес кабинета запрошен (чей ребёнок, какой раздел).
+    path = models.CharField(max_length=255, blank=True)
     ip = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
