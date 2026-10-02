@@ -1,0 +1,16 @@
+from django.urls import path
+
+from . import views
+
+app_name = "portal"
+
+urlpatterns = [
+    path("auth/request-code/", views.RequestCodeView.as_view(), name="request-code"),
+    path("auth/verify/", views.VerifyCodeView.as_view(), name="verify"),
+    path("auth/logout/", views.LogoutView.as_view(), name="logout"),
+    path("auth/sessions/", views.SessionsView.as_view(), name="sessions"),
+    path(
+        "auth/sessions/<uuid:session_id>/", views.SessionDetailView.as_view(), name="session-detail"
+    ),
+    path("me/", views.MeView.as_view(), name="me"),
+]
