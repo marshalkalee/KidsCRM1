@@ -48,6 +48,8 @@ CASES = {
     "child-attendance": ("child", "get"),
     "child-schedule": ("child", "get"),
     "child-makeup": ("makeup", "get"),
+    "child-lesson-request-options": ("child", "get"),
+    "child-lesson-requests": ("child", "get"),
     "child-summary": ("child", "get"),
     "child-money": ("child", "get"),
     "session-detail": ("session", "delete"),

@@ -79,6 +79,88 @@ class ParentSession(UUIDPrimaryKeyModel):
         ordering = ["-last_seen_at"]
 
 
+class ParentLessonRequest(TenantModel):
+    """Запрос родителя на изменение участия ребёнка в занятии (TRU-143).
+
+    Сам запрос намеренно не меняет состав занятия. Запись или отмена
+    выполняется сотрудником отдельным процессом обработки (TRU-146).
+    """
+
+    class Type(models.TextChoices):
+        ENROLL = "enroll", "Запись"
+        CANCEL = "cancel", "Отмена"
+
+    class Kind(models.TextChoices):
+        REGULAR = "regular", "Обычное занятие"
+        MAKEUP = "makeup", "Отработка"
+
+    class Status(models.TextChoices):
+        NEW = "new", "Новый"
+        APPROVED = "approved", "Одобрен"
+        REJECTED = "rejected", "Отклонён"
+
+    requested_by = models.ForeignKey(
+        ParentAccount, on_delete=models.PROTECT, related_name="lesson_requests"
+    )
+    child = models.ForeignKey(
+        "clients.Child", on_delete=models.PROTECT, related_name="parent_lesson_requests"
+    )
+    lesson = models.ForeignKey(
+        "schedule.Lesson", on_delete=models.PROTECT, related_name="parent_requests"
+    )
+    type = models.CharField(max_length=10, choices=Type.choices)
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.REGULAR)
+    comment = models.TextField(blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.NEW)
+    source_attendance = models.ForeignKey(
+        "attendance.Attendance",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="parent_makeup_requests",
+    )
+    spots_available_at_request = models.PositiveSmallIntegerField(null=True, blank=True)
+    processed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="processed_parent_lesson_requests",
+    )
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["organization", "status", "-created_at"]),
+            models.Index(fields=["organization", "child", "-created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "child", "lesson", "type", "kind"],
+                condition=models.Q(status="new", deleted_at__isnull=True),
+                name="unique_open_parent_lesson_request",
+            ),
+            models.UniqueConstraint(
+                fields=["organization", "source_attendance"],
+                condition=models.Q(
+                    status="new", source_attendance__isnull=False, deleted_at__isnull=True
+                ),
+                name="unique_open_parent_makeup_source",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(kind="makeup", type="enroll", source_attendance__isnull=False)
+                    | models.Q(kind="regular", source_attendance__isnull=True)
+                ),
+                name="valid_parent_request_source",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_type_display()}: {self.child} — {self.lesson}"
+
+
 class ParentAccessLog(models.Model):
     """Журнал входов кабинета — и неудачных, и по номерам, которых нет в
     базе. Успешный вход дополнительно пишется в AuditLog каждой

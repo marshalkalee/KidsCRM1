@@ -18,6 +18,7 @@ class Task(TenantModel):
         TRIAL_NO_SHOW = "trial_no_show", "Не пришёл на пробное"
         MISSING_SUBSCRIPTION = "missing_subscription", "Нет абонемента"
         RETENTION = "retention", "Удержание клиента"
+        PARENT_REQUEST = "parent_request", "Запрос родителя"
         CALL_BACK = "call_back", "Перезвонить"
         PAYMENT_REMINDER = "payment_reminder", "Напомнить об оплате"
         TRIAL_SIGNUP = "trial_signup", "Записать на пробное"

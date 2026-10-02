@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { CalendarDays, CheckCircle2, CloudOff, MapPin, RotateCcw, UserRound, UsersRound } from 'lucide-react'
+import { CalendarDays, CheckCircle2, CloudOff, MapPin, RotateCcw, Send, UserRound, UsersRound } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
-import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton } from '../../ui'
+import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, PageHeader, Skeleton, Textarea } from '../../ui'
 import { locale, t } from '../../i18n'
 import portal, { portalError, usePortalData } from '../api'
 import { useParent } from '../useParent'
@@ -22,6 +22,14 @@ function scheduleUrl(childId) {
 
 function makeupUrl(childId, attendanceId) {
   return childId && attendanceId ? `children/${childId}/makeups/${attendanceId}/` : null
+}
+
+function requestsUrl(childId) {
+  return childId ? `children/${childId}/lesson-requests/` : null
+}
+
+function requestOptionsUrl(childId) {
+  return childId ? `children/${childId}/lesson-request-options/` : null
 }
 
 function dayKey(value) {
@@ -49,6 +57,9 @@ export default function ParentSchedule() {
   const makeupId = searchParams.get('makeup')
   const schedule = usePortalData(scheduleUrl(child?.id))
   const makeup = usePortalData(makeupUrl(child?.id, makeupId))
+  const requests = usePortalData(requestsUrl(child?.id))
+  const options = usePortalData(requestOptionsUrl(child?.id))
+  const [requestDialog, setRequestDialog] = useState(null)
 
   if (!child) {
     return <Card><EmptyState icon={CalendarDays} title={t('Ребёнок не выбран')} /></Card>
@@ -73,7 +84,10 @@ export default function ParentSchedule() {
       <PageHeader
         title={t('Расписание')}
         description={t('Ближайшие занятия ребёнка: время, место и преподаватель.')}
+        actions={<Button variant="primary" onClick={() => setRequestDialog({ type: 'enroll' })}>{t('Запросить запись')}</Button>}
       />
+
+      <RequestHistory data={requests.data} loading={requests.loading} />
 
       {schedule.stale && (
         <p className="flex items-center gap-2 rounded-lg bg-warning-50 px-3 py-2 text-[13px] text-warning-600">
@@ -92,7 +106,7 @@ export default function ParentSchedule() {
             <div className="mb-2 px-1">
               <h2 id="next-lesson-title" className="text-base font-bold text-ink">{t('Ближайшее занятие')}</h2>
             </div>
-            <NextLesson row={next} />
+            <NextLesson row={next} onCancel={() => setRequestDialog({ type: 'cancel', row: next })} />
           </section>
 
           {rest.length > 0 && (
@@ -103,7 +117,7 @@ export default function ParentSchedule() {
               </div>
               <div className="grid items-start gap-3 xl:grid-cols-2">
                 {Object.entries(grouped).map(([date, rows]) => (
-                  <DayCard key={date} date={date} rows={rows} />
+                  <DayCard key={date} date={date} rows={rows} onCancel={row => setRequestDialog({ type: 'cancel', row })} />
                 ))}
               </div>
             </section>
@@ -118,6 +132,19 @@ export default function ParentSchedule() {
           />
         </Card>
       )}
+
+      {requestDialog && (
+        <LessonRequestModal
+          child={child}
+          request={requestDialog}
+          options={options}
+          onClose={() => setRequestDialog(null)}
+          onCreated={() => {
+            setRequestDialog(null)
+            requests.reload()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -126,12 +153,13 @@ function MakeupBooking({ child, attendanceId, options }) {
   const [submitting, setSubmitting] = useState(null)
   const [error, setError] = useState('')
   const [booked, setBooked] = useState(null)
+  const [comment, setComment] = useState('')
 
   async function book(row) {
     setSubmitting(row.id)
     setError('')
     try {
-      await portal.post(makeupUrl(child.id, attendanceId), { lesson_id: row.id })
+      await portal.post(makeupUrl(child.id, attendanceId), { lesson_id: row.id, comment })
       setBooked(row)
     } catch (requestError) {
       setError(portalError(requestError, {
@@ -150,8 +178,8 @@ function MakeupBooking({ child, attendanceId, options }) {
         <Card>
           <EmptyState
             icon={CheckCircle2}
-            title={t('Ребёнок записан на отработку')}
-            description={t('{name} — {date}, {start}–{end}. Занятие уже добавлено в расписание.', {
+            title={t('Запрос отправлен')}
+            description={t('{name} — {date}, {start}–{end}. Администратор рассмотрит запрос. Место пока не забронировано.', {
               name: booked.group_name,
               date: dateLabel(booked.starts_at_local),
               start: timeLabel(booked.starts_at_local),
@@ -174,7 +202,7 @@ function MakeupBooking({ child, attendanceId, options }) {
     <div className="space-y-4">
       <PageHeader
         title={t('Запись на отработку')}
-        description={t('Выберите свободное занятие того же направления. Новое занятие с абонемента не спишется.')}
+        description={t('Выберите свободное занятие того же направления. Администратор подтвердит запись отдельно.')}
         back={{ to: '/parent/attendance', label: t('Посещения') }}
       />
 
@@ -190,6 +218,9 @@ function MakeupBooking({ child, attendanceId, options }) {
             <p className="text-sm font-semibold text-ink">{t('Подходящие занятия')}</p>
             <Badge tone="info">{t('Отработка действует до {date}', { date: options.data.expires_on })}</Badge>
           </div>
+          <Field label={t('Комментарий')} hint={t('Необязательно. Администратор увидит его вместе с запросом.')}>
+            {({ id }) => <Textarea id={id} value={comment} onChange={event => setComment(event.target.value)} maxLength={1000} rows={2} />}
+          </Field>
           {error && <p role="alert" className="rounded-lg bg-danger-50 px-4 py-3 text-sm font-semibold text-danger-600">{error}</p>}
           <div className="grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3">
             {rows.map(row => (
@@ -218,7 +249,7 @@ function MakeupBooking({ child, attendanceId, options }) {
                   disabled={Boolean(submitting)}
                   onClick={() => book(row)}
                 >
-                  {t('Записаться на это занятие')}
+                  {t('Отправить запрос')}
                 </Button>
               </Card>
             ))}
@@ -249,7 +280,7 @@ function LoadingState() {
   )
 }
 
-function NextLesson({ row }) {
+function NextLesson({ row, onCancel }) {
   return (
     <Card className="overflow-hidden border-brand-200 bg-gradient-to-br from-surface via-surface to-brand-50/70 p-0">
       <div className="grid md:grid-cols-[220px_minmax(0,1fr)]">
@@ -270,13 +301,14 @@ function NextLesson({ row }) {
             <LessonBadges row={row} />
           </div>
           <LessonMeta row={row} className="mt-5 grid gap-2 text-sm sm:grid-cols-2" />
+          {row.status === 'scheduled' && <Button className="mt-4" onClick={onCancel}>{t('Запросить отмену')}</Button>}
         </div>
       </div>
     </Card>
   )
 }
 
-function DayCard({ date, rows }) {
+function DayCard({ date, rows, onCancel }) {
   return (
     <Card className="p-0" padded={false}>
       <div className="border-b border-line px-4 py-3 sm:px-5">
@@ -299,12 +331,127 @@ function DayCard({ date, rows }) {
                   <LessonBadges row={row} />
                 </div>
                 <LessonMeta row={row} className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px]" />
+                {row.status === 'scheduled' && <Button className="mt-3" onClick={() => onCancel(row)}>{t('Запросить отмену')}</Button>}
               </div>
             </div>
           </li>
         ))}
       </ul>
     </Card>
+  )
+}
+
+const REQUEST_STATUS = {
+  new: { label: 'Ожидает решения', tone: 'warning' },
+  approved: { label: 'Одобрен', tone: 'success' },
+  rejected: { label: 'Отклонён', tone: 'danger' },
+}
+
+function RequestHistory({ data, loading }) {
+  const rows = data?.results || []
+  if (loading && !data) return <Skeleton className="h-24" />
+  if (!rows.length) return null
+  return (
+    <Card>
+      <div className="mb-3">
+        <h2 className="font-bold text-ink">{t('Мои запросы')}</h2>
+        <p className="text-[13px] text-ink-muted">{t('Запрос не меняет расписание, пока администратор его не одобрит.')}</p>
+      </div>
+      <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {rows.slice(0, 6).map(row => {
+          const state = REQUEST_STATUS[row.status] || REQUEST_STATUS.new
+          return (
+            <li key={row.id} className="rounded-lg border border-line bg-canvas p-3">
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-semibold text-ink">{row.type === 'cancel' ? t('Отмена занятия') : row.kind === 'makeup' ? t('Запись на отработку') : t('Запись на занятие')}</p>
+                <Badge tone={state.tone}>{t(state.label)}</Badge>
+              </div>
+              <p className="mt-1 text-[12.5px] text-ink-muted">{dateLabel(row.lesson.starts_at_local)} · {timeLabel(row.lesson.starts_at_local)} · {row.lesson.group_name}</p>
+              {row.type === 'enroll' && row.spots_available_at_request != null && (
+                <p className="mt-1 text-xs text-ink-subtle">{t('На момент запроса свободно: {count}', { count: row.spots_available_at_request })}</p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </Card>
+  )
+}
+
+function LessonRequestModal({ child, request, options, onClose, onCreated }) {
+  const [selected, setSelected] = useState(request.row || null)
+  const [comment, setComment] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const isCancel = request.type === 'cancel'
+  const rows = options.data?.results || []
+
+  async function submit() {
+    if (!selected) return
+    setSubmitting(true)
+    setError('')
+    try {
+      await portal.post(requestsUrl(child.id), {
+        type: request.type,
+        lesson_id: selected.id,
+        comment,
+      })
+      onCreated()
+    } catch (requestError) {
+      setError(portalError(requestError, {
+        offline: t('Нет связи. Проверьте интернет и попробуйте ещё раз.'),
+        other: t('Не удалось отправить запрос.'),
+      }))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size={isCancel ? 'md' : 'xl'}
+      title={isCancel ? t('Запросить отмену занятия') : t('Запросить запись на занятие')}
+      description={t('Это запрос администратору. Расписание и число свободных мест пока не изменятся.')}
+      footer={(
+        <>
+          <Button onClick={onClose}>{t('Закрыть')}</Button>
+          <Button variant="primary" onClick={submit} disabled={!selected} loading={submitting}>
+            <Send className="size-4" />{t('Отправить запрос')}
+          </Button>
+        </>
+      )}
+    >
+      {!isCancel && (
+        options.loading && !options.data ? <Skeleton className="h-48" /> : options.error ? <ErrorState onRetry={options.reload} /> : rows.length ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {rows.map(row => (
+              <button
+                type="button"
+                key={row.id}
+                onClick={() => setSelected(row)}
+                className={`rounded-lg border p-3 text-left transition-colors ${selected?.id === row.id ? 'border-brand-500 bg-brand-50' : 'border-line hover:border-brand-200'}`}
+              >
+                <div className="flex justify-between gap-2"><strong>{row.group_name}</strong><Badge tone="success">{t('Свободно: {count}', { count: row.spots_left })}</Badge></div>
+                <p className="mt-1 text-sm text-ink-muted">{dateLabel(row.starts_at_local)} · {timeLabel(row.starts_at_local)}–{timeLabel(row.ends_at_local)}</p>
+                <p className="text-xs text-ink-subtle">{[row.branch_name, row.room_name].filter(Boolean).join(' · ')}</p>
+              </button>
+            ))}
+          </div>
+        ) : <EmptyState icon={CalendarDays} title={t('Подходящих занятий пока нет')} description={t('Показываются только будущие занятия по направлению и возрасту ребёнка, где есть места.')} />
+      )}
+      {isCancel && selected && (
+        <div className="rounded-lg border border-line bg-canvas p-3">
+          <p className="font-semibold text-ink">{title(selected)}</p>
+          <p className="text-sm text-ink-muted">{dateLabel(selected.starts_at_local)} · {timeLabel(selected.starts_at_local)}–{timeLabel(selected.ends_at_local)}</p>
+        </div>
+      )}
+      <Field label={t('Комментарий')} hint={t('Необязательно. Администратор увидит его вместе с запросом.')}>
+        {({ id }) => <Textarea id={id} className="mt-3" value={comment} onChange={event => setComment(event.target.value)} maxLength={1000} rows={3} />}
+      </Field>
+      {error && <p role="alert" className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm font-semibold text-danger-600">{error}</p>}
+    </Modal>
   )
 }
 

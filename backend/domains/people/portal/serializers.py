@@ -6,6 +6,8 @@ from rest_framework import serializers
 from domains.scheduling.attendance.models import Attendance
 from domains.scheduling.schedule.models import Lesson
 
+from .models import ParentLessonRequest
+
 
 class AttendancePeriodSerializer(serializers.Serializer):
     date_from = serializers.DateField(required=False)
@@ -113,6 +115,37 @@ class ParentMakeupCandidateSerializer(serializers.ModelSerializer):
 
 class ParentMakeupBookingSerializer(serializers.Serializer):
     lesson_id = serializers.UUIDField()
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class ParentLessonRequestCreateSerializer(serializers.Serializer):
+    lesson_id = serializers.UUIDField()
+    type = serializers.ChoiceField(choices=ParentLessonRequest.Type.choices)
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class ParentLessonRequestSerializer(serializers.ModelSerializer):
+    lesson = ParentMakeupCandidateSerializer(read_only=True)
+    source_attendance_id = serializers.UUIDField(read_only=True, allow_null=True)
+    processed_by_name = serializers.CharField(
+        source="processed_by.full_name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = ParentLessonRequest
+        fields = [
+            "id",
+            "type",
+            "kind",
+            "status",
+            "comment",
+            "lesson",
+            "source_attendance_id",
+            "spots_available_at_request",
+            "processed_by_name",
+            "processed_at",
+            "created_at",
+        ]
 
 
 class ParentAttendanceSerializer(serializers.ModelSerializer):

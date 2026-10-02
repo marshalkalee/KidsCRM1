@@ -30,6 +30,16 @@ urlpatterns = [
         name="child-makeup",
     ),
     path(
+        "children/<uuid:child_id>/lesson-request-options/",
+        views.ChildLessonRequestOptionsView.as_view(),
+        name="child-lesson-request-options",
+    ),
+    path(
+        "children/<uuid:child_id>/lesson-requests/",
+        views.ChildLessonRequestsView.as_view(),
+        name="child-lesson-requests",
+    ),
+    path(
         "children/<uuid:child_id>/summary/",
         views.ChildSummaryView.as_view(),
         name="child-summary",

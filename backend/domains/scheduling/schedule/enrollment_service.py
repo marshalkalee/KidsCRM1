@@ -45,6 +45,7 @@ class EnrollOutcome(enum.Enum):
     SOURCE_CHILD_MISMATCH = "source_child_mismatch"
     SOURCE_ALREADY_USED = "source_already_used"
     SOURCE_EXPIRED = "source_expired"
+    SOURCE_LIMIT_EXCEEDED = "source_limit_exceeded"
     SOURCE_DIRECTION_MISMATCH = "source_direction_mismatch"
     SOURCE_LEAD_INVALID = "source_lead_invalid"
     SOURCE_LEAD_ALREADY_BOOKED = "source_lead_already_booked"
@@ -68,6 +69,54 @@ def _org_today(organization):
 
 def _direction_id(lesson):
     return lesson.group.direction_id if lesson.group_id else None
+
+
+def makeup_policy_for_attendance(attendance):
+    """Return the sold subscription's immutable makeup rules for a missed lesson.
+
+    Old subscriptions and demo data without a matching sale keep the M1 defaults:
+    14 days and no numeric limit.
+    """
+    from domains.money.subscriptions.models import Subscription
+
+    lesson = attendance.lesson
+    organization = lesson.organization
+    tz = timezone.zoneinfo.ZoneInfo(organization.timezone or "Asia/Almaty")
+    missed_on = lesson.starts_at.astimezone(tz).date()
+    direction_id = _direction_id(lesson)
+    subscription = (
+        Subscription.objects.for_tenant(organization)
+        .filter(
+            child_id=attendance.child_id,
+            direction_id=direction_id,
+            starts_on__lte=missed_on,
+            ends_on__gte=missed_on,
+        )
+        .select_related("subscription_type_version")
+        .order_by("-starts_on")
+        .first()
+    )
+    rules = subscription.subscription_type_version.rules if subscription else {}
+    window = rules.get("makeup_window_days")
+    limit = rules.get("makeups_limit")
+    if not isinstance(window, int) or isinstance(window, bool) or window < 0:
+        window = MAKEUP_EXPIRY_DAYS
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
+        limit = None
+    return {"subscription": subscription, "window_days": window, "limit": limit}
+
+
+def used_makeups_for_subscription(subscription):
+    if subscription is None:
+        return 0
+    return LessonEnrollment.objects.filter(
+        organization=subscription.organization,
+        child=subscription.child,
+        kind=LessonEnrollment.Kind.MAKEUP,
+        cancelled_at__isnull=True,
+        source_attendance__lesson__starts_at__date__gte=subscription.starts_on,
+        source_attendance__lesson__starts_at__date__lte=subscription.ends_on,
+    ).count()
 
 
 class LessonService:
@@ -111,11 +160,17 @@ class LessonService:
                 source_attendance=source_attendance, cancelled_at__isnull=True
             ).exists():
                 return EnrollResult(EnrollOutcome.SOURCE_ALREADY_USED)
+            policy = makeup_policy_for_attendance(source_attendance)
             expires_on = source_attendance.lesson.starts_at.astimezone(
                 timezone.zoneinfo.ZoneInfo(lesson.organization.timezone or "Asia/Almaty")
-            ).date() + datetime.timedelta(days=MAKEUP_EXPIRY_DAYS)
+            ).date() + datetime.timedelta(days=policy["window_days"])
             if expires_on < _org_today(lesson.organization):
                 return EnrollResult(EnrollOutcome.SOURCE_EXPIRED)
+            if (
+                policy["limit"] is not None
+                and used_makeups_for_subscription(policy["subscription"]) >= policy["limit"]
+            ):
+                return EnrollResult(EnrollOutcome.SOURCE_LIMIT_EXCEEDED)
             if (
                 _direction_id(source_attendance.lesson) != _direction_id(lesson)
                 or _direction_id(lesson) is None
@@ -228,8 +283,14 @@ def available_makeups_for_child(organization, child_id):
 
     results = []
     for attendance in qs:
+        policy = makeup_policy_for_attendance(attendance)
+        if (
+            policy["limit"] is not None
+            and used_makeups_for_subscription(policy["subscription"]) >= policy["limit"]
+        ):
+            continue
         expires_on = attendance.lesson.starts_at.astimezone(tz).date() + datetime.timedelta(
-            days=MAKEUP_EXPIRY_DAYS
+            days=policy["window_days"]
         )
         if expires_on < today:
             continue
@@ -238,6 +299,8 @@ def available_makeups_for_child(organization, child_id):
                 "attendance": attendance,
                 "expires_on": expires_on,
                 "days_left": (expires_on - today).days,
+                "makeups_limit": policy["limit"],
+                "makeups_used": used_makeups_for_subscription(policy["subscription"]),
             }
         )
     return results
