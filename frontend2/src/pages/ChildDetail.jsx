@@ -10,7 +10,7 @@ import {
   ageLabel, cn, formatDate, money,
 } from '../ui'
 import { t } from '../i18n'
-import { ChildBrief } from '../components/ai/assist'
+import { ChildBriefButton, ChildBriefCard } from '../components/ai/assist'
 
 const GENDERS = { get female() { return t('Девочка') }, get male() { return t('Мальчик') } }
 
@@ -26,6 +26,7 @@ export default function ChildDetail() {
   const [card, setCard] = useState(null)
   const [status, setStatus] = useState('loading') // loading | ready | missing | error
   const [editing, setEditing] = useState(false)
+  const [brief, setBrief] = useState(null)
   const [counts, setCounts] = useState({})
 
   const load = useCallback(() => {
@@ -73,10 +74,15 @@ export default function ChildDetail() {
       <PageHeader
         back={back}
         title={child.full_name}
-        actions={permissions.can_edit && <Button icon={Pencil} onClick={() => setEditing(true)}>{t('Редактировать')}</Button>}
+        actions={
+          <>
+            <ChildBriefButton childId={child.id} onLoaded={setBrief} />
+            {permissions.can_edit && <Button icon={Pencil} onClick={() => setEditing(true)}>{t('Редактировать')}</Button>}
+          </>
+        }
       />
 
-      <ChildBrief childId={child.id} />
+      {brief && <ChildBriefCard brief={brief} onHide={() => setBrief(null)} />}
 
       <Card className="mb-6">
         <div className="flex flex-col gap-5 md:flex-row md:items-start">
@@ -100,6 +106,8 @@ export default function ChildDetail() {
                     {index > 0 && ', '}
                     <Link to={`/leads/${lead.id}`} className="font-semibold text-brand-600 hover:underline">
                       {lead.source_name ? t(lead.source_name) : t('заявка')} · {formatDate(lead.created_at)}
+                      {lead.branch_name ? ` · ${lead.branch_name}` : ''}
+                      {lead.direction_name ? ` · ${lead.direction_name}` : ''}
                     </Link>
                   </span>
                 ))}

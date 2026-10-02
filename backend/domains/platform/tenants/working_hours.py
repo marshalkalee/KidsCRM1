@@ -1,7 +1,6 @@
 """
 Рабочие часы филиала — {"mon": {"closed": False, "open": "09:00", "close": "20:00"}, …}.
-Одна проверка для веб-формы (BranchForm) и API (BranchSerializer), чтобы
-филиал, сохранённый из React, выглядел так же, как из старого веба.
+Одна проверка для формы (BranchForm) и API (BranchSerializer).
 """
 
 import datetime

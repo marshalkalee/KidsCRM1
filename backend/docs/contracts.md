@@ -34,6 +34,7 @@
 | 5   | Деньги → всем: `debt_by_child` / `debt_for_child` / `debt_for_parent` / `debtor_subscriptions` | Bekzat | Анель (список детей, карточка родителя), экраны «Задолженности», вкладка «Оплаты» | [`backend/domains/money/subscriptions/debt.py`](../domains/money/subscriptions/debt.py) |
 | 6   | Люди → всем: вкладки карточки ребёнка (frontend2) | Анель | Bekzat («Абонементы», «Оплаты»), Дарья («Посещения») | [`frontend2/src/components/child-card/tabs.js`](../../frontend2/src/components/child-card/tabs.js) |
 | 7   | Продажи → всем: `create_lead` / `change_status` | Анель | Дарья (пробные, TRU-100), Bekzat (задачи, продления), приём с сайта | [`backend/domains/platform/leads/services.py`](../domains/platform/leads/services.py) |
+| 8   | Аналитика → все отчёты M3: `register` / `compute`, `/api/v1/analytics/metrics/` | Анель | Дарья, Bekzat (отчёты TRU-114–128, дашборд TRU-129), каркас дашборда TRU-113 | [`backend/domains/platform/analytics/registry.py`](../domains/platform/analytics/registry.py) |
 
 
 
@@ -173,8 +174,13 @@ domains/money/subscriptions/debt.py — единственный модуль, �
   вкладку не видно. `component: null` — заглушка «скоро появится».
 - Верстка — из общих компонентов `frontend2/src/ui` (см. `frontend2/README.md`).
 
-Сейчас заглушки: «Абонементы», «Оплаты» (Bekzat, TRU-70), «Посещения»
-(Дарья, TRU-55).
+Вкладки «Абонементы» и «Посещения» подключены через этот реестр.
+«Оплаты» пока остаётся заглушкой денежного домена.
+
+Для «Абонементов»: `GET /api/v1/subscriptions/?child_id=<uuid>` возвращает
+историю абонементов ребёнка со сроком, остатком занятий, стоимостью,
+подтверждённой оплатой и долгом. Преподавателю денежный API недоступен;
+другие организации отсекаются tenant-queryset.
 
 Владелец: Анель. Потребители: Bekzat, Дарья.
 
@@ -212,6 +218,27 @@ change_status(lead, to_status=Lead.Status.REJECTED, actor=user, rejection_reason
 `TRIAL_ATTENDED`. Если заявка уже дальше по воронке, переход вернёт
 `LeadTransitionError` — его можно молча пропустить.
 
+### Закрытие продажей абонемента (TRU-103)
+
+```python
+from domains.platform.leads.sale import sale_options, sell_from_lead
+
+options = sale_options(lead)
+lead, membership, created = sell_from_lead(lead, actor=user, data=validated_data)
+```
+
+- `sale_options()` возвращает активные типы абонементов и группы,
+  подходящие по направлению, филиалу, возрасту и свободным местам.
+- `sell_from_lead()` одной транзакцией вызывает денежный контракт
+  `sell_subscription`, связывает результат с `Lead.sold_subscription`,
+  при выборе группы создаёт `GroupMembership` и переводит заявку в
+  `purchased` с записью в истории.
+- Если у новой заявки ещё нет `converted_child`, сначала вызывается
+  конвертация TRU-102. Интерфейс продолжает продажу в той же карточке.
+- API: `GET /api/v1/leads/<id>/sale/` — варианты и предзаполненные данные;
+  `POST /api/v1/leads/<id>/sale/` — продажа. Повторный POST идемпотентен и
+  не создаёт второй абонемент.
+
 ### Продления (TRU-98) — для экрана «Продления» (TRU-69) и автоправила (TRU-108)
 
 ```python
@@ -220,6 +247,12 @@ from domains.platform.leads.services import RenewalError, create_renewal_lead
 lead, created = create_renewal_lead(child, actor=user, comment="")   # экран «Продления»
 lead, created = create_renewal_lead(child, actor=None)               # автоправило — система
 ```
+
+- Автоправило уже есть: `subscriptions/renewal_leads.create_renewal_leads(org)`,
+  Celery каждый день в 01:00 UTC (`create_renewal_leads_task`). Берёт те же
+  абонементы, что экран «Продления»; по абонементу, на который продление уже
+  заводили и закрыли (продлил или отказ), второй раз не заводит; ребёнка без
+  телефона пропускает. TRU-108 может подключить его к общему списку правил.
 
 - Идемпотентно: открытое продление по ребёнку уже есть — вернёт его
   (`created=False`), второе не заведёт. Автоправило может вызывать каждый день.
@@ -230,7 +263,54 @@ lead, created = create_renewal_lead(child, actor=None)               # авто�
 - Продления — отдельная воронка (`kind=renewal`): без пробного, свои причины
   отказа (`rejection-reasons/?kind=renewal`), в списке и на доске —
   `?kind=renewal`. В конверсию новых заявок не попадают.
-- «Продлил» — `change_status(lead, to_status=PURCHASED)` после продажи
-  абонемента.
+- «Продлил» ставится сам: `sell_subscription` (и продление, и продажа из
+  карточки) вызывает `close_renewal_on_sale(child, actor=…)` — открытое
+  продление ребёнка уходит в `PURCHASED` с автором и названием абонемента.
+  Отказ по продлению продажа не трогает.
+
+Владелец: Анель. Потребители: Дарья, Bekzat.
+
+## 8. Аналитика → все отчёты (TRU-118, ADR-0006)
+
+```python
+from domains.platform.analytics.registry import EventMetric, register, count, total
+
+register(EventMetric(
+    name="trial_visits", label="Пробных посещений", unit="count",
+    source="Посещаемость: пробные записи", min_history_days=28,
+    queryset=lambda scope: scope.filter(<queryset>, "lesson__group__branch_id"),
+    date_field="lesson__starts_at", aggregate=count(),
+))
+
+compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, series, …}}
+```
+
+- Отчёт не пишет свой SQL в view и свой выбор периода: регистрирует метрику
+  в `analytics/metrics.py` (или своём модуле, импортированном оттуда) и
+  получает значение, прошлый период, график и «данных пока мало» одинаково.
+- Виды: `EventMetric` (события с датой), `RatioMetric` (отношение двух
+  метрик), `SnapshotMetric` (состояние «на сейчас», история — из почасовых
+  снимков `MetricSnapshot`).
+- Цифра, которая уже считается в операционке, берётся из того же сервиса:
+  долг — `subscriptions.debt`, заполняемость — `groups.queries`, оплаты —
+  правило `paid_sum` (подтверждённые, не отменённые).
+- Филиалы — только через `scope.filter(qs, "<путь до branch_id>")`: права
+  управляющего проверяются в одном месте (`analytics/scope.py`).
+- API: `GET /api/v1/analytics/metrics/?metrics=a,b&period=month|week|today|
+  quarter|year|custom&from=&to=&branch=<id>…&compare=0&series=0`,
+  `GET /api/v1/analytics/catalog/` — список метрик, доступные филиалы,
+  периоды. Доступ — `can_view_analytics` (владелец, управляющий).
+- Фронт (TRU-113): отчёт собирается из `frontend2/src/components/analytics`:
+  `useAnalyticsFilters()` (период и филиалы в адресе, общие для всех
+  отчётов), `useMetrics([...], filters)`, `AnalyticsToolbar`, `MetricTile`,
+  `ChartCard` (загрузка, ошибка, «данных пока мало», пусто) с `TrendChart` /
+  `BarsChart`, `FunnelChart`. Все состояния на примерах — `/analytics/kit`.
+  Подпись и «хорошее направление» новой метрики — в `analytics/meta.js`.
+- Excel (TRU-114): отчёт описывает свои таблицы функцией `@report("имя", "Заголовок")`
+  в `analytics/reports.py` (секции из `metrics_section`, `series_section`,
+  `breakdown_section`… или свои `Section`/`Column`), на странице —
+  `<ExportButton report="имя" filters={filters} />`. Шапка листа, форматы
+  чисел/дат и «Итого» формулами — общие (`analytics/export.py`),
+  `GET /api/v1/analytics/export/?report=…` с теми же period/branch/фильтрами.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.

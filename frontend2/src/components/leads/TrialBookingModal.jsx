@@ -18,7 +18,7 @@ function ageRange(lesson) {
 }
 
 /** Один мобильный/десктопный экран подбора: фильтры берутся из заявки. */
-export default function TrialBookingModal({ lead, onClose, onEdit, onBooked }) {
+export default function TrialBookingModal({ lead, mode = 'book', onClose, onEdit, onBooked }) {
   const toast = useToast()
   const [lessons, setLessons] = useState([])
   const [state, setState] = useState('loading')
@@ -28,21 +28,22 @@ export default function TrialBookingModal({ lead, onClose, onEdit, onBooked }) {
   const load = useCallback(() => {
     setState('loading')
     setError('')
-    api.get(`leads/${lead.id}/trial-lessons/`)
+    api.get(`leads/${lead.id}/trial-lessons/${mode === 'reschedule' ? '?mode=reschedule' : ''}`)
       .then(res => { setLessons(res.data); setState('ready') })
       .catch(err => {
         setError(apiErrorMessage(err))
         setState(err.response?.status === 400 ? 'incomplete' : 'error')
       })
-  }, [lead.id])
+  }, [lead.id, mode])
 
   useEffect(() => { load() }, [load])
 
   async function book(lesson) {
     setSavingId(lesson.id)
     try {
-      const { data } = await api.post(`leads/${lead.id}/book-trial/`, { lesson: lesson.id })
-      toast.success(t('Пробное занятие назначено'))
+      const endpoint = mode === 'reschedule' ? 'reschedule-trial' : 'book-trial'
+      const { data } = await api.post(`leads/${lead.id}/${endpoint}/`, { lesson: lesson.id })
+      toast.success(t(mode === 'reschedule' ? 'Пробное занятие перенесено' : 'Пробное занятие назначено'))
       onBooked(data)
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -57,8 +58,10 @@ export default function TrialBookingModal({ lead, onClose, onEdit, onBooked }) {
       open
       onClose={onClose}
       size="xl"
-      title={t('Записать на пробное')}
-      description={t('Показываем только будущие занятия со свободными местами.')}
+      title={t(mode === 'reschedule' ? 'Перенести пробное' : 'Записать на пробное')}
+      description={t(mode === 'reschedule'
+        ? 'Выберите другое будущее занятие со свободными местами.'
+        : 'Показываем только будущие занятия со свободными местами.')}
       footer={<Button onClick={onClose}>{t('Закрыть')}</Button>}
     >
       <div className="mb-4 flex flex-wrap gap-2">
@@ -118,7 +121,7 @@ export default function TrialBookingModal({ lead, onClose, onEdit, onBooked }) {
                 disabled={Boolean(savingId)}
                 onClick={() => book(lesson)}
               >
-                {t('Записать на это занятие')}
+                {t(mode === 'reschedule' ? 'Перенести на это занятие' : 'Записать на это занятие')}
               </Button>
             </article>
           ))}

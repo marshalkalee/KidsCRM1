@@ -53,8 +53,11 @@ export function installAuth(instance) {
   instance.interceptors.request.use(config => {
     if (!isApiUrl(config) || config.skipAuthRefresh) return config
     const token = localStorage.getItem('access')
+    // Вход и регистрация — без старого токена: он может принадлежать
+    // отключённому пользователю, и тогда входа не было бы вовсе.
+    const anonymous = NO_REFRESH.some(u => (config.url || '').includes(u))
     // Всегда текущий токен — даже если страница подставила свой заголовок раньше.
-    if (token) config.headers.Authorization = `Bearer ${token}`
+    if (token && !anonymous) config.headers.Authorization = `Bearer ${token}`
     const branch = localStorage.getItem(ACTIVE_BRANCH_KEY)
     if (branch) config.headers['X-Branch-Id'] = branch
     return config

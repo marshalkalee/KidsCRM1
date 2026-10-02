@@ -15,18 +15,25 @@ from domains.platform.core.active_branch import get_active_branch
 from domains.platform.core.audit import AuditLog
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_manage_lead_dictionaries, can_manage_leads
+from domains.platform.core.utils import day_bounds_for_org
 from domains.platform.core.viewsets import TenantModelViewSet
 
+from .conversion import LeadConversionError, conversion_preview, convert_lead
 from .models import Lead, LeadComment, LeadKind, LeadRejectionReason, LeadSource
 from .reporting import leads_workbook
+from .sale import LeadSaleError, sale_options, sell_from_lead
 from .serializers import (
     LeadBulkSerializer,
     LeadCommentSerializer,
+    LeadConversionQuerySerializer,
+    LeadConversionSerializer,
     LeadRejectionReasonSerializer,
+    LeadSaleSerializer,
     LeadSerializer,
     LeadSourceSerializer,
     LeadStatusChangeSerializer,
     LeadStatusSerializer,
+    TrialBookingCancelSerializer,
     TrialBookingSerializer,
     TrialLessonSerializer,
 )
@@ -39,7 +46,13 @@ from .services import (
     find_phone_matches,
     visible_leads,
 )
-from .trial_booking import TrialBookingError, book_trial, trial_lesson_candidates
+from .trial_booking import (
+    TrialBookingError,
+    book_trial,
+    cancel_trial_booking,
+    reschedule_trial_booking,
+    trial_lesson_candidates,
+)
 
 
 class CanManageLeads(IsStaffOfOrganization):
@@ -117,7 +130,13 @@ class LeadViewSet(TenantModelViewSet):
 
     def get_queryset(self):
         qs = visible_leads(self.request.user).select_related(
-            "branch", "direction", "source", "assigned_to", "rejection_reason", "converted_child"
+            "branch",
+            "direction",
+            "source",
+            "assigned_to",
+            "rejection_reason",
+            "converted_child",
+            "sold_subscription__subscription_type_version",
         )
         if self.action not in ("list", "board", "export"):
             return qs
@@ -135,10 +154,14 @@ class LeadViewSet(TenantModelViewSet):
                 values = [str(self.request.user.pk) if value == "me" else value for value in values]
             if values:
                 qs = qs.filter(**{f"{field}_id__in": _uuids(values)})
+        # Дни — по времени центра, а не UTC: заявка в 02:00 по Алматы — это
+        # уже сегодня. Так же считает воронка в аналитике (TRU-115), и список
+        # по клику «сейчас на этапе» совпадает с её цифрой.
+        organization = self.request.user.organization
         if created_from := parse_date(params.get("created_from") or ""):
-            qs = qs.filter(created_at__date__gte=created_from)
+            qs = qs.filter(created_at__gte=day_bounds_for_org(organization, created_from)[0])
         if created_to := parse_date(params.get("created_to") or ""):
-            qs = qs.filter(created_at__date__lte=created_to)
+            qs = qs.filter(created_at__lte=day_bounds_for_org(organization, created_to)[1])
         if q := (params.get("q") or "").strip():
             digits = "".join(ch for ch in q if ch.isdigit())
             condition = Q(parent_name__icontains=q) | Q(child_name__icontains=q)
@@ -326,7 +349,9 @@ class LeadViewSet(TenantModelViewSet):
     def trial_lessons(self, request, pk=None, version=None):
         lead = self.get_object()
         try:
-            lessons = trial_lesson_candidates(lead)
+            lessons = trial_lesson_candidates(
+                lead, for_reschedule=request.query_params.get("mode") == "reschedule"
+            )
         except TrialBookingError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
@@ -350,6 +375,77 @@ class LeadViewSet(TenantModelViewSet):
         return Response(
             LeadSerializer(lead, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="cancel-trial")
+    def cancel_trial_action(self, request, pk=None, version=None):
+        lead = self.get_object()
+        serializer = TrialBookingCancelSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lead, _enrollment = cancel_trial_booking(
+                lead, reason=serializer.validated_data["reason"], actor=request.user
+            )
+        except TrialBookingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(LeadSerializer(lead, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="reschedule-trial")
+    def reschedule_trial_action(self, request, pk=None, version=None):
+        lead = self.get_object()
+        serializer = TrialBookingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lead, _enrollment = reschedule_trial_booking(
+                lead, serializer.validated_data["lesson"], actor=request.user
+            )
+        except TrialBookingError as exc:
+            response_status = (
+                status.HTTP_409_CONFLICT if exc.code == "capacity" else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc)}, status=response_status)
+        return Response(LeadSerializer(lead, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["get", "post"], url_path="conversion")
+    def conversion(self, request, pk=None, version=None):
+        """Предпросмотр дублей и явное подтверждение конвертации TRU-102."""
+        lead = self.get_object()
+        if request.method == "GET":
+            query = LeadConversionQuerySerializer(data=request.query_params)
+            query.is_valid(raise_exception=True)
+            return Response(conversion_preview(lead, **query.validated_data))
+
+        serializer = LeadConversionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lead, created = convert_lead(lead, actor=request.user, data=serializer.validated_data)
+        except (LeadConversionError, Child.DoesNotExist) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            LeadSerializer(lead, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["get", "post"], url_path="sale")
+    def sale(self, request, pk=None, version=None):
+        """Подбор абонемента/группы и атомарное закрытие продажи TRU-103."""
+        lead = self.get_object()
+        if request.method == "GET":
+            return Response(sale_options(lead))
+
+        serializer = LeadSaleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            lead, membership, created = sell_from_lead(
+                lead, actor=request.user, data=serializer.validated_data
+            )
+        except LeadSaleError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        result = LeadSerializer(lead, context=self.get_serializer_context()).data
+        result["group_membership_id"] = str(membership.id) if membership else None
+        return Response(
+            result,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
     @action(detail=True, methods=["get"])

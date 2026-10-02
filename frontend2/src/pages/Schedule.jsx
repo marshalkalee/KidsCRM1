@@ -232,7 +232,10 @@ export default function Schedule() {
   const [selectedLesson, setSelectedLesson] = useState(null)
   const [whoToCallLessonId, setWhoToCallLessonId] = useState(null)
   const [createSlot, setCreateSlot] = useState(null)
-  const [mobileDay, setMobileDay] = useState(0)
+  const [mobileDay, setMobileDay] = useState(() => {
+    const weekday = new Date(date).getDay()
+    return weekday === 0 ? 6 : weekday - 1
+  })
   const [conflictsCount, setConflictsCount] = useState(0)
   const [showConflicts, setShowConflicts] = useState(false)
   const [showBulkCancel, setShowBulkCancel] = useState(false)
@@ -351,6 +354,18 @@ export default function Schedule() {
   function goPrev() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? -7 : -1))) }
   function goNext() { setDate(d => toISODate(addDays(new Date(d), view === 'week' ? 7 : 1))) }
 
+  function openCreateLesson() {
+    const selectedDate = view === 'week' && isMobile ? toISODate(weekDays[mobileDay]) : date
+    setCreateSlot({
+      date: selectedDate,
+      time: '09:00',
+      room: filters.room || '',
+      groupId: '',
+      teacherId: filters.teacher || '',
+      durationMin: 60,
+    })
+  }
+
   function closeSelectedLesson() {
     setSelectedLesson(null)
     if (searchParams.has('lesson')) {
@@ -378,6 +393,8 @@ export default function Schedule() {
         onShowConflicts={() => setShowConflicts(true)}
         showBulkCancelBtn={isOwnerOrManager}
         onBulkCancel={() => setShowBulkCancel(true)}
+        showMobileCreateBtn={isMobile && !isTeacher}
+        onCreateLesson={openCreateLesson}
       />
 
       <FiltersBar
@@ -496,7 +513,7 @@ export default function Schedule() {
   )
 }
 
-function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, loading, conflictsCount, onShowConflicts, showBulkCancelBtn, onBulkCancel }) {
+function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, loading, conflictsCount, onShowConflicts, showBulkCancelBtn, onBulkCancel, showMobileCreateBtn, onCreateLesson }) {
   return (
     <div style={{
       background: '#fff', borderRadius: 16, padding: '16px 24px', marginBottom: 16,
@@ -507,7 +524,7 @@ function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, lo
         <h1 style={{ fontSize: 20, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>{t('Расписание')}</h1>
         <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0' }}>{label}{loading ? ` · ${t('Загрузка…')}` : ''}</p>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div className="kc-schedule-header-controls" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {conflictsCount > 0 && (
           <button
             onClick={onShowConflicts}
@@ -533,13 +550,31 @@ function CalendarHeader({ label, view, onViewChange, onPrev, onNext, onToday, lo
             <Ban size={13} /> {t('Отменить за период')}
           </button>
         )}
-        <div style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2 }}>
-          <ViewToggleBtn active={view === 'week'} onClick={() => onViewChange('week')} icon={<Rows3 size={14} />} label={t('Неделя')} />
-          <ViewToggleBtn active={view === 'day'} onClick={() => onViewChange('day')} icon={<CalendarDays size={14} />} label={t('День')} />
+        {showMobileCreateBtn && (
+          <button
+            className="kc-schedule-mobile-create"
+            onClick={onCreateLesson}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+              minHeight: 40, padding: '0 16px', border: 'none', borderRadius: 10,
+              background: 'linear-gradient(135deg, #FF9D8A 0%, #E4586E 100%)', color: '#fff',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Manrope',
+            }}
+          >
+            <Plus size={16} /> {t('Новое занятие')}
+          </button>
+        )}
+        <div className="kc-schedule-main-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="kc-schedule-view-toggle" style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2 }}>
+            <ViewToggleBtn active={view === 'week'} onClick={() => onViewChange('week')} icon={<Rows3 size={14} />} label={t('Неделя')} />
+            <ViewToggleBtn active={view === 'day'} onClick={() => onViewChange('day')} icon={<CalendarDays size={14} />} label={t('День')} />
+          </div>
+          <div className="kc-schedule-date-nav" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={onPrev} style={navBtnStyle} aria-label={t('Назад')}><ChevronLeft size={16} /></button>
+            <button className="kc-schedule-today" onClick={onToday} style={{ ...navBtnStyle, width: 'auto', padding: '0 16px', fontWeight: 600, fontSize: 13, color: ACCENT }}>{t('Сегодня')}</button>
+            <button onClick={onNext} style={navBtnStyle} aria-label={t('Вперёд')}><ChevronRight size={16} /></button>
+          </div>
         </div>
-        <button onClick={onPrev} style={navBtnStyle} aria-label={t('Назад')}><ChevronLeft size={16} /></button>
-        <button onClick={onToday} style={{ ...navBtnStyle, width: 'auto', padding: '0 16px', fontWeight: 600, fontSize: 13, color: ACCENT }}>{t('Сегодня')}</button>
-        <button onClick={onNext} style={navBtnStyle} aria-label={t('Вперёд')}><ChevronRight size={16} /></button>
       </div>
     </div>
   )
@@ -572,12 +607,22 @@ const navBtnStyle = {
 // variant 'filter' — компактный чип для панели фильтров (подсвечивается,
 // когда выбрано не значение по умолчанию); 'field' — обычное поле формы
 // в модалках (тот же вид, что inputStyle/select у соседних инпутов).
-function Dropdown({ value, onChange, options, width = 160, variant = 'filter', placeholder }) {
+function Dropdown({
+  value, onChange, options, width = 160, variant = 'filter', placeholder,
+  searchable = false, searchPlaceholder,
+}) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const ref = useRef()
+  const inputRef = useRef()
 
   useEffect(() => {
-    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    function handler(e) {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
@@ -585,36 +630,122 @@ function Dropdown({ value, onChange, options, width = 160, variant = 'filter', p
   const selected = options.find(([v]) => v === value)
   const active = variant === 'filter' && value !== ''
   const displayText = selected ? selected[1] : (placeholder ?? options[0][1])
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const visibleOptions = searchable && normalizedQuery
+    ? options.filter(([optionValue, label]) => {
+        if (optionValue === '') return false
+        const normalizedLabel = String(label).toLocaleLowerCase()
+        return normalizedLabel.startsWith(normalizedQuery)
+          || normalizedLabel.split(/\s+/).some(word => word.startsWith(normalizedQuery))
+      })
+    : options
+
+  function close() {
+    setOpen(false)
+    setQuery('')
+  }
 
   return (
-    <div ref={ref} style={{ width, flexShrink: 0, position: 'relative' }}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          width: '100%', boxSizing: 'border-box',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: variant === 'field' ? '9px 12px' : '8px 12px',
-          border: `1.5px solid ${open || active ? ACCENT : '#EBEBF0'}`,
-          borderRadius: 8,
-          background: active ? '#FDF0EE' : (variant === 'field' ? '#fff' : '#FAFAFA'),
-          fontSize: variant === 'field' ? 13 : 12,
-          fontFamily: 'Manrope', fontWeight: active ? 600 : 400,
-          color: active ? ACCENT : (variant === 'field' ? '#1A1A2E' : '#6B7280'),
-          cursor: 'pointer', outline: 'none',
-          transition: 'border-color 0.15s, background 0.15s',
-          boxShadow: open ? `0 0 0 3px ${ACCENT}1F` : 'none',
-        }}
-      >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {displayText}
-        </span>
-        <ChevronDown
-          size={13}
-          style={{ flexShrink: 0, marginLeft: 6, color: active ? ACCENT : '#9CA3AF',
-            transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
-        />
-      </button>
+    <div ref={ref} className={variant === 'filter' ? 'kc-schedule-filter' : undefined} style={{ width, flexShrink: 0, position: 'relative' }}>
+      {searchable ? (
+        <div
+          style={{
+            width: '100%', boxSizing: 'border-box', position: 'relative',
+            border: `1.5px solid ${open ? ACCENT : '#EBEBF0'}`,
+            borderRadius: 8, background: 'transparent',
+            boxShadow: open ? `0 0 0 3px ${ACCENT}1F` : 'none',
+            transition: 'border-color 0.15s, box-shadow 0.15s',
+          }}
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            role="combobox"
+            aria-expanded={open}
+            autoComplete="off"
+            value={open ? query : (selected && selected[0] !== '' ? selected[1] : '')}
+            placeholder={placeholder ?? searchPlaceholder ?? t('Начните вводить...')}
+            onFocus={() => {
+              setQuery('')
+              setOpen(true)
+            }}
+            onChange={event => {
+              setQuery(event.target.value)
+              setOpen(true)
+            }}
+            onKeyDown={event => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                close()
+                inputRef.current?.blur()
+              }
+              if (event.key === 'Enter' && visibleOptions.length > 0) {
+                event.preventDefault()
+                const firstChoice = visibleOptions.find(([optionValue]) => optionValue !== '') ?? visibleOptions[0]
+                onChange(firstChoice[0])
+                close()
+              }
+            }}
+            style={{
+              width: '100%', height: 38, boxSizing: 'border-box',
+              border: 'none', outline: 'none', borderRadius: 8,
+              background: 'transparent', padding: '9px 34px 9px 12px',
+              fontSize: 13, fontFamily: 'Manrope', color: '#1A1A2E',
+            }}
+          />
+          <button
+            type="button"
+            aria-label={t('Открыть список')}
+            onMouseDown={event => event.preventDefault()}
+            onClick={() => {
+              if (open) close()
+              else {
+                setQuery('')
+                setOpen(true)
+                inputRef.current?.focus()
+              }
+            }}
+            style={{
+              position: 'absolute', top: 0, right: 0, width: 34, height: 38,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', background: 'transparent', color: '#9CA3AF', cursor: 'pointer',
+            }}
+          >
+            <ChevronDown
+              size={13}
+              style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+            />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: variant === 'field' ? '9px 12px' : '8px 12px',
+            border: `1.5px solid ${open || active ? ACCENT : '#EBEBF0'}`,
+            borderRadius: 8,
+            background: active ? '#FDF0EE' : (variant === 'field' ? '#fff' : '#FAFAFA'),
+            fontSize: variant === 'field' ? 13 : 12,
+            fontFamily: 'Manrope', fontWeight: active ? 600 : 400,
+            color: active ? ACCENT : (variant === 'field' ? '#1A1A2E' : '#6B7280'),
+            cursor: 'pointer', outline: 'none',
+            transition: 'border-color 0.15s, background 0.15s',
+            boxShadow: open ? `0 0 0 3px ${ACCENT}1F` : 'none',
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {displayText}
+          </span>
+          <ChevronDown
+            size={13}
+            style={{ flexShrink: 0, marginLeft: 6, color: active ? ACCENT : '#9CA3AF',
+              transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+          />
+        </button>
+      )}
 
       {open && (
         <div style={{
@@ -626,12 +757,17 @@ function Dropdown({ value, onChange, options, width = 160, variant = 'filter', p
           overflow: 'hidden',
           maxHeight: 260, overflowY: 'auto',
         }}>
-          {options.map(([v, l]) => {
+          {visibleOptions.length === 0 && (
+            <div style={{ padding: '10px 12px', color: '#9CA3AF', fontSize: 12, fontFamily: 'Manrope' }}>
+              {t('Ничего не найдено')}
+            </div>
+          )}
+          {visibleOptions.map(([v, l]) => {
             const isSelected = value === v
             return (
               <div
                 key={v}
-                onClick={() => { onChange(v); setOpen(false) }}
+                onClick={() => { onChange(v); close() }}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '9px 12px',
@@ -1271,7 +1407,7 @@ function WhoToCallModal({ lessonId, onClose }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [pending, setPending] = useState(null) // parent_contact_id пока идёт запрос
+  const [pending, setPending] = useState(null)
 
   const load = useCallback(() => {
     setLoading(true); setError('')
@@ -1286,22 +1422,27 @@ function WhoToCallModal({ lessonId, onClose }) {
   // Оптимистично меняем локальное состояние сразу — карточка отвечает без
   // рывка от перерисовки всего списка, запрос идёт в фоне; при ошибке
   // откатываем обратно.
-  function setContactCalled(parentContactId, called) {
+  function contactKey(contact) {
+    return contact.contact_key || `parent:${contact.parent_contact_id}`
+  }
+
+  function setContactCalled(key, called) {
     setData(prev => ({
       ...prev,
-      contacts: prev.contacts.map(c => c.parent_contact_id === parentContactId ? { ...c, called } : c),
+      contacts: prev.contacts.map(c => contactKey(c) === key ? { ...c, called } : c),
     }))
   }
 
   async function toggleCalled(contact) {
     const nextCalled = !contact.called
-    setPending(contact.parent_contact_id)
-    setContactCalled(contact.parent_contact_id, nextCalled)
+    const key = contactKey(contact)
+    setPending(key)
+    setContactCalled(key, nextCalled)
     try {
-      if (nextCalled) await markCalled(lessonId, contact.parent_contact_id, 'call')
-      else await unmarkCalled(lessonId, contact.parent_contact_id)
+      if (nextCalled) await markCalled(lessonId, contact, 'call')
+      else await unmarkCalled(lessonId, contact)
     } catch (e) {
-      setContactCalled(contact.parent_contact_id, contact.called) // откат
+      setContactCalled(key, contact.called) // откат
       setError(e.response?.data?.detail || t('Не удалось сохранить отметку'))
     } finally { setPending(null) }
   }
@@ -1310,8 +1451,9 @@ function WhoToCallModal({ lessonId, onClose }) {
     // Открытие чата — тоже сигнал, что связались; отмечаем как обзвонено,
     // если ещё не отмечено (не блокирует переход по ссылке).
     if (!contact.called) {
-      setContactCalled(contact.parent_contact_id, true)
-      markCalled(lessonId, contact.parent_contact_id, 'whatsapp').catch(() => setContactCalled(contact.parent_contact_id, false))
+      const key = contactKey(contact)
+      setContactCalled(key, true)
+      markCalled(lessonId, contact, 'whatsapp').catch(() => setContactCalled(key, false))
     }
   }
 
@@ -1339,7 +1481,7 @@ function WhoToCallModal({ lessonId, onClose }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {data.contacts.map(contact => (
-                  <div key={contact.parent_contact_id} style={{
+                  <div key={contactKey(contact)} style={{
                     border: `1px solid ${contact.called ? '#BBF7D0' : '#F0F0F5'}`,
                     background: contact.called ? '#F0FDF4' : '#fff',
                     borderRadius: 10, padding: '12px 14px',
@@ -1353,18 +1495,21 @@ function WhoToCallModal({ lessonId, onClose }) {
                         </div>
                         <div style={{ fontSize: 11, color: '#9CA3AF', fontFamily: 'Manrope', marginTop: 2 }}>
                           {contact.children.map(c => c.full_name).join(', ')}
+                          {contact.source_lead_id && (
+                            <> · <Link to={`/leads/${contact.source_lead_id}`} style={{ color: '#7C3AED', fontWeight: 700 }}>{t('Открыть заявку')}</Link></>
+                          )}
                         </div>
                       </div>
                       <button
                         onClick={() => toggleCalled(contact)}
-                        disabled={pending === contact.parent_contact_id}
+                        disabled={pending === contactKey(contact)}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7,
                           border: `1px solid ${contact.called ? '#16A34A' : '#EBEBF0'}`,
                           background: contact.called ? '#16A34A' : '#fff',
                           color: contact.called ? '#fff' : '#6B7280',
                           fontSize: 11, fontWeight: 600, fontFamily: 'Manrope', cursor: 'pointer', whiteSpace: 'nowrap',
-                          opacity: pending === contact.parent_contact_id ? 0.6 : 1,
+                          opacity: pending === contactKey(contact) ? 0.6 : 1,
                           transition: 'background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, opacity 0.15s ease',
                         }}
                       >
@@ -1492,7 +1637,7 @@ function ConflictWarning({ conflicts, onConfirm, onBack, saving }) {
 }
 
 const modalOverlay = { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }
-const modalBox = { background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, padding: '24px 24px 20px', fontFamily: 'Manrope' }
+const modalBox = { background: '#fff', borderRadius: 16, width: '100%', maxWidth: 420, maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', overscrollBehavior: 'contain', padding: '24px 24px 20px', fontFamily: 'Manrope' }
 const primaryBtn = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 18px', border: 'none', borderRadius: 8, background: `linear-gradient(135deg, #E8998D, ${ACCENT})`, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope' }
 const secondaryBtn = { padding: '10px 18px', border: '1px solid #E5E7EB', borderRadius: 8, background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Manrope', color: '#6B7280' }
 const dangerBtn = { ...secondaryBtn, color: '#DC2626', borderColor: '#FECACA' }
@@ -1636,7 +1781,7 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
                   {lesson.status === 'rescheduled' ? t('Занятие перенесено.') : t('Занятие отменено.')}
                 </p>
               )}
-              {lesson.status === 'rescheduled' && (
+              {(lesson.status === 'cancelled' || lesson.status === 'rescheduled') && (
                 <button style={{ ...secondaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => onWhoToCall(lesson.id)}>
                   <PhoneCall size={13} /> {t('Кого обзвонить')}
                 </button>
@@ -1857,13 +2002,13 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
 
   return (
     <div style={modalOverlay} onClick={onClose}>
-      <div style={modalBox} onClick={e => e.stopPropagation()}>
+      <div className="kc-schedule-create-modal" style={modalBox} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
           <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1A1A2E', margin: 0 }}>{t('Новое занятие')}</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF' }}><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit}>
-          <div style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2, marginBottom: 14 }}>
+          <div className="kc-schedule-lesson-type" style={{ display: 'flex', background: '#F8F9FF', borderRadius: 10, padding: 3, gap: 2, marginBottom: 14 }}>
             <ViewToggleBtn active={lessonType === 'group'} onClick={() => setLessonType('group')} icon={<Users size={14} />} label={t('Групповое')} />
             <ViewToggleBtn active={lessonType === 'individual'} onClick={() => setLessonType('individual')} icon={<UserIcon size={14} />} label={t('Индивидуальное')} />
           </div>
@@ -1877,6 +2022,8 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
                 value={groupId}
                 onChange={setGroupId}
                 placeholder={t('Выберите группу')}
+                searchable
+                searchPlaceholder={t('Введите название группы')}
                 options={[['', t('Выберите группу')], ...groups.map(g => [String(g.id), g.name])]}
               />
             </div>
@@ -1886,12 +2033,12 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
               <ChildrenMultiSelect value={children} onChange={setChildren} />
             </div>
           )}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-            <div style={{ flex: 1 }}>
+          <div className="kc-schedule-form-row" style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label style={labelStyle}>{t('Дата')}</label>
               <input type="date" value={slot.date} disabled style={{ ...inputStyle, background: '#FAFAFA', color: '#9CA3AF' }} />
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label style={labelStyle}>{t('Время')}</label>
               <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle} required />
             </div>
@@ -1900,25 +2047,31 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
               <input type="number" min={15} max={480} step={15} value={durationMin} onChange={e => setDurationMin(Number(e.target.value))} style={inputStyle} required />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-            <div style={{ flex: 1 }}>
+          <div className="kc-schedule-form-row" style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label style={labelStyle}>{t('Зал')}</label>
               <Dropdown
                 variant="field"
                 width="100%"
                 value={roomId}
                 onChange={setRoomId}
-                options={[['', '—'], ...rooms.map(r => [String(r.id), r.name])]}
+                placeholder={t('Выберите зал')}
+                searchable
+                searchPlaceholder={t('Введите название зала')}
+                options={[['', t('Выберите зал')], ...rooms.map(r => [String(r.id), r.name])]}
               />
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label style={labelStyle}>{t('Преподаватель')}</label>
               <Dropdown
                 variant="field"
                 width="100%"
                 value={teacherId}
                 onChange={setTeacherId}
-                options={[['', '—'], ...teachers.map(t => [String(t.id), t.full_name])]}
+                placeholder={t('Выберите преподавателя')}
+                searchable
+                searchPlaceholder={t('Введите имя преподавателя')}
+                options={[['', t('Выберите преподавателя')], ...teachers.map(t => [String(t.id), t.full_name])]}
               />
             </div>
           </div>

@@ -1,6 +1,13 @@
+import io
+import shutil
+import tempfile
+from pathlib import Path
+
 from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
-from django.test import TestCase, tag
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings, tag
+from PIL import Image
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -155,6 +162,32 @@ class AuthTests(TestCase):
         self.assertIn("access", response.data)
         self.assertIn("refresh", response.data)
 
+    def test_stale_token_of_disabled_user_does_not_block_login(self):
+        """В браузере остался токен пользователя, которого потом отключили:
+        вход и регистрация должны работать, остальные запросы — 401, не 500."""
+        gone = User.objects.create_user(
+            phone="77005550000", password="x", full_name="Бывший", organization=self.org
+        )
+        stale = str(RefreshToken.for_user(gone).access_token)
+        User.objects.filter(pk=gone.pk).update(is_active=False)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {stale}")
+        login = self.client.post(
+            "/api/v1/users/auth/login/", {"phone": "77001234567", "password": "StrongPass123!"}
+        )
+        self.assertEqual(login.status_code, status.HTTP_200_OK)
+        register = self.client.post(
+            "/api/v1/users/auth/register/",
+            {
+                "org_name": "Ещё школа",
+                "org_slug": "one-more-school",
+                "full_name": "Директор",
+                "phone": "77008888888",
+                "password": "StrongPass123!",
+            },
+        )
+        self.assertEqual(register.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(self.client.get("/api/v1/users/auth/me/").status_code, 401)
+
     def test_login_normalizes_formatted_phone(self):
         response = self.client.post(
             "/api/v1/users/auth/login/",
@@ -263,6 +296,71 @@ class AuthTests(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    def test_change_password_wrong_old(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.post(
+            "/api/v1/users/auth/change-password/",
+            {"old_password": "Nope", "new_password": "NewStrongPass456!"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("old_password", response.data)
+
+    def test_change_password_rejects_password_like_name(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.post(
+            "/api/v1/users/auth/change-password/",
+            {"old_password": "StrongPass123!", "new_password": "77001234567"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("new_password", response.data)
+
+    def test_profile_updates_own_name(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.patch(
+            "/api/v1/users/auth/me/", {"full_name": "  Сауле   Бекмуханова "}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["full_name"], "Сауле Бекмуханова")
+        self.assertIn("permissions", response.data)
+        self.owner.refresh_from_db()
+        self.assertEqual(self.owner.full_name, "Сауле Бекмуханова")
+
+    def test_profile_cannot_change_phone_or_role(self):
+        teacher = User.objects.create_user(
+            phone="77005550000",
+            password="StrongPass123!",
+            full_name="Педагог",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.client.force_authenticate(teacher)
+        response = self.client.patch(
+            "/api/v1/users/auth/me/",
+            {"full_name": "Жанна Абенова", "phone": "77009999999", "role": "owner"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        teacher.refresh_from_db()
+        self.assertEqual(teacher.phone, "77005550000")
+        self.assertEqual(teacher.role, User.Role.TEACHER)
+        self.assertEqual(teacher.full_name, "Жанна Абенова")
+
+    def test_profile_rejects_bad_name(self):
+        self.client.force_authenticate(self.owner)
+        for bad in ["", "А", "Admin123"]:
+            response = self.client.patch(
+                "/api/v1/users/auth/me/", {"full_name": bad}, format="json"
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, bad)
+        self.owner.refresh_from_db()
+        self.assertEqual(self.owner.full_name, "Владелец")
+
+    def test_profile_requires_login(self):
+        response = self.client.patch(
+            "/api/v1/users/auth/me/", {"full_name": "Кто-то"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
     def test_password_not_stored_in_plain_text(self):
         self.assertNotEqual(self.owner.password, "StrongPass123!")
         self.assertTrue(self.owner.password.startswith("argon2"))
@@ -274,3 +372,78 @@ class AuthTests(TestCase):
                 {"phone": "77001234567", "password": "WrongPass"},
             )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+def _png(name="me.png", size=(20, 20)):
+    buffer = io.BytesIO()
+    Image.new("RGB", size, (228, 88, 110)).save(buffer, format="PNG")
+    return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
+
+
+class ProfilePhotoTests(APITestCase):
+    def setUp(self):
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, ignore_errors=True)
+        override = override_settings(MEDIA_ROOT=self.media)
+        override.enable()
+        self.addCleanup(override.disable)
+        org = Organization.objects.create(name="Балет Астана", slug="ballet-astana")
+        self.user = User.objects.create_user(
+            phone="77001234567",
+            password="StrongPass123!",
+            full_name="Айнур Касымова",
+            organization=org,
+            role=User.Role.ADMIN,
+        )
+        self.client.force_authenticate(self.user)
+
+    def upload(self, file):
+        return self.client.post("/api/v1/users/auth/me/photo/", {"file": file}, format="multipart")
+
+    def stored_files(self):
+        folder = Path(self.media) / "users" / "photos"
+        return sorted(p.name for p in folder.iterdir()) if folder.exists() else []
+
+    def test_upload_sets_photo(self):
+        response = self.upload(_png())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("/media/users/photos/", response.data["photo_url"])
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.photo_url, response.data["photo_url"])
+        self.assertEqual(len(self.stored_files()), 1)
+
+    def test_replace_removes_old_file(self):
+        first = self.upload(_png()).data["photo_url"]
+        second = self.upload(_png("second.png")).data["photo_url"]
+        self.assertNotEqual(first, second)
+        self.assertEqual(self.stored_files(), [second.rsplit("/", 1)[1]])
+
+    def test_delete_clears_photo_and_file(self):
+        self.upload(_png())
+        response = self.client.delete("/api/v1/users/auth/me/photo/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["photo_url"], "")
+        self.assertEqual(self.stored_files(), [])
+
+    def test_rejects_not_image(self):
+        fake = SimpleUploadedFile("me.png", b"not an image", content_type="image/png")
+        response = self.upload(fake)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("file", response.data)
+        self.assertEqual(self.stored_files(), [])
+
+    def test_rejects_too_big(self):
+        big = SimpleUploadedFile("big.png", b"0" * (5 * 1024 * 1024 + 1), content_type="image/png")
+        response = self.upload(big)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["file"], ["Файл больше 5 МБ."])
+
+    def test_foreign_url_is_not_deleted(self):
+        self.user.photo_url = "https://example.com/media/users/photos/x.png"
+        self.user.save()
+        response = self.client.delete("/api/v1/users/auth/me/photo/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_requires_login(self):
+        self.client.force_authenticate(None)
+        self.assertEqual(self.upload(_png()).status_code, status.HTTP_401_UNAUTHORIZED)

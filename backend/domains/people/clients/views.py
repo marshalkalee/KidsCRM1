@@ -62,6 +62,17 @@ class ChildViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(organization=self.request.user.organization)
 
+    @action(detail=False, methods=["get"])
+    def birthdays(self, request):
+        """Главная: дни рождения в ближайшие ?days= дней (по умолчанию 7)."""
+        from .birthdays import upcoming_birthdays
+
+        try:
+            days = int(request.query_params.get("days", 7))
+        except ValueError:
+            days = 7
+        return Response(upcoming_birthdays(request.user.organization, days))
+
     @action(detail=True, methods=["get"])
     def card(self, request, pk=None):
         """Шапка карточки ребёнка во frontend2 (TRU-82): сам ребёнок,
@@ -123,12 +134,15 @@ class ChildViewSet(viewsets.ModelViewSet):
                     {
                         "id": str(lead.id),
                         "source_name": lead.source.name if lead.source else None,
+                        "branch_name": lead.branch.name if lead.branch else None,
+                        "direction_name": lead.direction.name if lead.direction else None,
+                        "lead_child_age": lead.child_age,
                         "created_at": lead.created_at,
                         "status": lead.status,
                     }
                     for lead in Lead.objects.for_tenant(organization)
                     .filter(converted_child=child)
-                    .select_related("source")
+                    .select_related("source", "branch", "direction")
                 ]
                 if can_manage_leads(request.user)
                 else [],
@@ -352,8 +366,8 @@ def child_photo_api(request):
 @api_view(["GET"])
 @permission_classes([IsStaffOfOrganization])
 def global_search_api(request):
-    """Поиск в шапке frontend2 (TRU-80): тот же сервис, что у старого веба
-    (search.global_search). Ссылки строит фронт по type + id."""
+    """Поиск в шапке frontend2 (TRU-80) — сервис search.global_search.
+    Ссылки строит фронт по type + id."""
     results = search.global_search(
         request.user.organization,
         request.query_params.get("q"),
@@ -366,7 +380,7 @@ def global_search_api(request):
 @permission_classes([IsStaffOfOrganization])
 def child_table_api(request):
     """Таблица детей frontend2 (TRU-81): фильтры, сортировка и пагинация на
-    сервере — тот же сервис, что у старой веб-страницы (child_list).
+    сервере — сервис child_list.
     Без ?branch= берётся активный филиал из шапки (X-Branch-Id)."""
     params = request.query_params.dict()
     if not params.get("branch"):

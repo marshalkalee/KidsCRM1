@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from domains.people.clients.models import ChildContact
 
-from .models import RescheduleCallLog
+from .models import Lesson, LessonEnrollment, RescheduleCallLog
 
 RU_MONTHS_GENITIVE = [
     "января",
@@ -42,6 +42,19 @@ def build_reschedule_message(old_lesson, new_lesson, tz):
     return f"Занятие {old_label} переносится на {new_label}."
 
 
+def build_cancellation_message(lesson, tz):
+    lesson_label = _format_ru_datetime(lesson.starts_at, tz)
+    reason = lesson.cancel_reason.strip()
+    suffix = f" Причина: {reason}." if reason else ""
+    return f"Занятие {lesson_label} отменено центром.{suffix}"
+
+
+def build_lesson_change_message(lesson, tz):
+    if lesson.status == Lesson.Status.CANCELLED:
+        return build_cancellation_message(lesson, tz)
+    return build_reschedule_message(lesson, lesson.rescheduled_to, tz)
+
+
 def _whatsapp_link(number, message):
     if not number:
         return None
@@ -57,15 +70,26 @@ def build_who_to_call(lesson, organization):
     (parent_contact), а не по ребёнку — один родитель с двумя детьми в
     одной группе получает одну карточку на обзвон, не две."""
     tz = timezone.zoneinfo.ZoneInfo(organization.timezone or "Asia/Almaty")
-    new_lesson = lesson.rescheduled_to
-    message = build_reschedule_message(lesson, new_lesson, tz)
+    message = build_lesson_change_message(lesson, tz)
 
     children = list(lesson.participants())
     child_by_id = {child.id: child for child in children}
+    trial_enrollments = list(
+        LessonEnrollment.objects.filter(
+            lesson=lesson,
+            kind=LessonEnrollment.Kind.TRIAL,
+            cancelled_at__isnull=True,
+            source_lead__isnull=False,
+        )
+        .select_related("source_lead", "child")
+        .order_by("created_at")
+    )
+    trial_child_ids = {enrollment.child_id for enrollment in trial_enrollments}
 
     child_contacts = (
         ChildContact.objects.for_tenant(organization)
         .filter(child_id__in=child_by_id.keys())
+        .exclude(child_id__in=trial_child_ids)
         .select_related("parent_contact")
         .prefetch_related("parent_contact__phones")
     )
@@ -79,8 +103,15 @@ def build_who_to_call(lesson, organization):
         entry["children"].append(child_by_id[cc.child_id])
         entry["roles"].add(cc.role)
 
-    called_ids = set(
-        RescheduleCallLog.objects.filter(lesson=lesson).values_list("parent_contact_id", flat=True)
+    called_parent_ids = set(
+        RescheduleCallLog.objects.filter(lesson=lesson, parent_contact__isnull=False).values_list(
+            "parent_contact_id", flat=True
+        )
+    )
+    called_lead_ids = set(
+        RescheduleCallLog.objects.filter(lesson=lesson, source_lead__isnull=False).values_list(
+            "source_lead_id", flat=True
+        )
     )
 
     role_labels = dict(ChildContact.Role.choices)
@@ -91,7 +122,9 @@ def build_who_to_call(lesson, organization):
         whatsapp_number = parent_contact.whatsapp or (phones[0] if phones else "")
         contacts.append(
             {
+                "contact_key": f"parent:{parent_contact_id}",
                 "parent_contact_id": str(parent_contact_id),
+                "source_lead_id": None,
                 "parent_contact_name": parent_contact.full_name,
                 "roles": [role_labels.get(role, role) for role in sorted(entry["roles"])],
                 "children": [
@@ -101,7 +134,26 @@ def build_who_to_call(lesson, organization):
                 "phones": phones,
                 "whatsapp_number": whatsapp_number,
                 "whatsapp_link": _whatsapp_link(whatsapp_number, message),
-                "called": parent_contact_id in called_ids,
+                "called": parent_contact_id in called_parent_ids,
+            }
+        )
+
+    for enrollment in trial_enrollments:
+        lead = enrollment.source_lead
+        contacts.append(
+            {
+                "contact_key": f"lead:{lead.id}",
+                "parent_contact_id": None,
+                "source_lead_id": str(lead.id),
+                "parent_contact_name": lead.parent_name,
+                "roles": ["Заявка на пробное"],
+                "children": [
+                    {"id": str(enrollment.child_id), "full_name": enrollment.child.full_name}
+                ],
+                "phones": [lead.phone],
+                "whatsapp_number": lead.phone,
+                "whatsapp_link": _whatsapp_link(lead.phone, message),
+                "called": lead.id in called_lead_ids,
             }
         )
     contacts.sort(key=lambda c: c["parent_contact_name"])

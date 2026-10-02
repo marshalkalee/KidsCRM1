@@ -26,9 +26,11 @@ from domains.people.clients.models import (
     ParentContact,
 )
 from domains.platform.core.audit import AuditLog
+from domains.platform.leads.models import LeadComment
+from domains.platform.leads.services import create_lead
 from domains.platform.tenants.models import Branch, Direction, Organization, Room
 from domains.scheduling.groups.models import Group, GroupMembership
-from domains.scheduling.schedule.models import Lesson, RescheduleCallLog
+from domains.scheduling.schedule.models import Lesson, LessonEnrollment, RescheduleCallLog
 
 User = get_user_model()
 
@@ -1433,6 +1435,61 @@ class RescheduleWhoToCallTest(APITestCase):
         father = contacts["Иванов Папа"]
         self.assertEqual({c["full_name"] for c in father["children"]}, {"Бекзат Иванов"})
         self.assertEqual(father["phones"], ["+77029876543"])
+
+    def test_cancelled_lesson_includes_trial_lead_in_call_list(self):
+        lead = create_lead(
+            organization=self.org,
+            actor=self.owner,
+            parent_name="Мама пробного",
+            phone="+77075550101",
+            child_name="Пробный ребёнок",
+            child_age=8,
+            branch=self.branch,
+            direction=self.direction,
+        )
+        trial_child = Child.objects.create(
+            organization=self.org,
+            full_name="Пробный ребёнок",
+            birth_date=datetime.date.today() - datetime.timedelta(days=365 * 8),
+            gender=Child.Gender.FEMALE,
+            status=Child.Status.TRIAL,
+        )
+        LessonEnrollment.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=trial_child,
+            kind=LessonEnrollment.Kind.TRIAL,
+            enrolled_by=self.owner,
+            source_lead=lead,
+        )
+        client = _authenticated_client(self.owner)
+
+        cancelled = client.post(
+            f"/api/v1/schedule/{self.lesson.id}/cancel/",
+            {"reason_category": "holiday"},
+            format="json",
+        )
+        response = client.get(f"/api/v1/schedule/{self.lesson.id}/who-to-call/")
+
+        self.assertEqual(cancelled.status_code, status.HTTP_200_OK, cancelled.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn("отменено центром", response.data["message"])
+        trial_contact = next(
+            row for row in response.data["contacts"] if row["source_lead_id"] == str(lead.id)
+        )
+        self.assertEqual(trial_contact["phones"], ["+77075550101"])
+        self.assertEqual(trial_contact["children"][0]["full_name"], "Пробный ребёнок")
+
+        marked = client.post(
+            f"/api/v1/schedule/{self.lesson.id}/mark-called/",
+            {"source_lead": str(lead.id)},
+            format="json",
+        )
+        self.assertEqual(marked.status_code, status.HTTP_200_OK, marked.data)
+        self.assertTrue(
+            RescheduleCallLog.objects.filter(lesson=self.lesson, source_lead=lead).exists()
+        )
+        self.assertTrue(LeadComment.objects.filter(lead=lead).exists())
 
     def test_mark_called_persists_and_is_idempotent(self):
         client, _r = self._reschedule()

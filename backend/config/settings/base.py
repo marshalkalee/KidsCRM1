@@ -45,6 +45,7 @@ THIRD_PARTY_APPS = [
 DOMAIN_APPS = [
     # Люди — владелец домена: Анель.
     "domains.people.clients",
+    "domains.people.portal",
     # Расписание — владелец домена: Дарья.
     "domains.scheduling.schedule",
     "domains.scheduling.groups",
@@ -60,6 +61,7 @@ DOMAIN_APPS = [
     "domains.platform.tasks",
     "domains.platform.leads",
     "domains.platform.ai",
+    "domains.platform.analytics",
     "domains.scheduling.schedule_templates",
 ]
 
@@ -82,9 +84,8 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        # Шаблоны организованы по доменам (см. domains/README.md) —
-        # backend/templates/<домен>/..., а не общий шаблон-суп.
-        "DIRS": [BASE_DIR / "templates"],
+        # Своих шаблонов нет (веб — frontend2, TRU-88): только админка Django.
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -92,12 +93,6 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                # Каркас: филиалы для переключателя + права для скрытия
-                # пунктов меню — доступны во всех шаблонах.
-                "domains.platform.core.context_processors.branches",
-                "domains.platform.core.context_processors.user_permissions",
-                "domains.platform.core.context_processors.language",
-                "domains.platform.core.context_processors.global_search",
             ],
         },
     },
@@ -125,7 +120,6 @@ USE_TZ = True
 LOCALE_PATHS = [BASE_DIR / "locale"]
 
 STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
     # Django требует явный "default" в STORAGES, если этот словарь вообще
@@ -158,8 +152,6 @@ AUTH_USER_MODEL = "users.User"
 
 # Сессия для страниц (не JWT — тот только для API, см.
 # domains/platform/core/decorators.py).
-LOGIN_URL = "core:login"
-LOGIN_REDIRECT_URL = "core:home"
 LOGOUT_REDIRECT_URL = "core:login"
 
 REST_FRAMEWORK = {
@@ -222,9 +214,23 @@ CACHES = {
         "LOCATION": env("REDIS_URL", default="redis://localhost:6379/0"),
         "KEY_PREFIX": "import_progress",
     },
+    # Аналитика (TRU-118, ADR-0006): общий для всех воркеров кэш готовых
+    # метрик — locmem у каждого процесса свой, и дашборд считался бы заново
+    # в каждом воркере.
+    "analytics": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("REDIS_URL", default="redis://localhost:6379/0"),
+        "KEY_PREFIX": "analytics",
+    },
 }
 
 CELERY_BEAT_SCHEDULE = {
+    # Снимки долга и заполняемости для истории (TRU-118, ADR-0006): каждый
+    # час на сегодняшнюю дату центра, последний за день перезаписывает.
+    "snapshot-analytics-metrics": {
+        "task": "domains.platform.analytics.tasks.snapshot_metrics_task",
+        "schedule": crontab(minute=50),
+    },
     "generate-lessons-daily": {
         "task": (
             "domains.scheduling.schedule_templates.tasks"
@@ -235,6 +241,12 @@ CELERY_BEAT_SCHEDULE = {
     "reconcile-subscription-balances": {
         "task": "domains.money.subscriptions.tasks.reconcile_balances_task",
         "schedule": crontab(hour=3, minute=0),
+    },
+    # Заявки-продления по заканчивающимся абонементам (TRU-98) — после
+    # пересчёта статусов, чтобы список «заканчивается» был свежим.
+    "create-renewal-leads": {
+        "task": "domains.money.subscriptions.tasks.create_renewal_leads_task",
+        "schedule": crontab(hour=1, minute=0),
     },
     "update-subscription-statuses": {
         "task": "domains.money.subscriptions.tasks.update_subscription_statuses_task",
@@ -251,3 +263,21 @@ AI_PROVIDER = env("AI_PROVIDER", default="anthropic")
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-4o-mini")
 OPENAI_VISION_MODEL = env("OPENAI_VISION_MODEL", default="gpt-4o")
+# Чат на главной: инструментов много, вопросы свободные — mini путается в
+# цепочках вызовов, поэтому модель сильнее, чем для коротких задач.
+OPENAI_CHAT_MODEL = env("OPENAI_CHAT_MODEL", default="gpt-4o")
+
+# Удалённая оплата через Kaspi (payments/kaspi.py). Без шлюза счета идут
+# сообщением с реквизитами центра, оплату подтверждает администратор.
+# "fake" — тестовый шлюз для стенда, на проде не включать.
+KASPI_PAY_GATEWAY = env("KASPI_PAY_GATEWAY", default="")
+KASPI_PAY_WEBHOOK_SECRET = env("KASPI_PAY_WEBHOOK_SECRET", default="")
+KASPI_PAY_INVOICE_TTL_HOURS = env.int("KASPI_PAY_INVOICE_TTL_HOURS", default=24)
+
+# Код входа родителя (ADR-0007, otp/senders.py): каналы по порядку, через
+# запятую — первый не доставил, пробуем следующий. console — код в лог.
+OTP_CHANNELS = env("OTP_CHANNELS", default="console")
+OTP_CODE_TTL_SECONDS = env.int("OTP_CODE_TTL_SECONDS", default=300)
+OTP_TELEGRAM_TOKEN = env("OTP_TELEGRAM_TOKEN", default="")
+OTP_MOBIZON_API_KEY = env("OTP_MOBIZON_API_KEY", default="")
+OTP_MOBIZON_SENDER = env("OTP_MOBIZON_SENDER", default="")

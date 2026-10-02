@@ -173,7 +173,7 @@ class LessonService:
 
     @staticmethod
     @transaction.atomic
-    def cancel_enrollment(enrollment_id, *, actor) -> bool:
+    def cancel_enrollment(enrollment_id, *, actor, reason="") -> bool:
         """True — реально отменили; False — уже была отменена (идемпотентно)."""
         from domains.platform.core.audit import AuditLog
 
@@ -181,15 +181,19 @@ class LessonService:
         if enrollment.cancelled_at is not None:
             return False
 
-        before = {"cancelled_at": None}
+        before = {"cancelled_at": None, "cancel_reason": enrollment.cancel_reason}
         enrollment.cancelled_at = timezone.now()
-        enrollment.save(update_fields=["cancelled_at", "updated_at"])
+        enrollment.cancel_reason = reason.strip()
+        enrollment.save(update_fields=["cancelled_at", "cancel_reason", "updated_at"])
         AuditLog.record(
             actor=actor,
             action=AuditLog.Action.UNENROLL,
             entity=enrollment,
             before=before,
-            after={"cancelled_at": enrollment.cancelled_at.isoformat()},
+            after={
+                "cancelled_at": enrollment.cancelled_at.isoformat(),
+                "cancel_reason": enrollment.cancel_reason,
+            },
         )
         return True
 

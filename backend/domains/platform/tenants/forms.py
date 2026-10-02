@@ -13,6 +13,7 @@ from domains.platform.tenants.org_settings import (
     DEBT_OVERDUE_DAYS_THRESHOLD,
     DEFAULT_ORG_SETTINGS,
     GROUP_UNDERFILLED_PERCENT_THRESHOLD,
+    KASPI_PAYMENT_DETAILS,
     SUBSCRIPTION_ENDING_DAYS_THRESHOLD,
     SUBSCRIPTION_ENDING_LESSONS_THRESHOLD,
 )
@@ -82,6 +83,9 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     group_underfilled_percent_threshold = forms.IntegerField(
         min_value=0, max_value=100, label="Группа недозаполнена при < X% вместимости"
     )
+    kaspi_payment_details = forms.CharField(
+        max_length=255, required=False, label="Kaspi для удалённой оплаты"
+    )
 
     def clean_timezone(self):
         tz_name = self.cleaned_data["timezone"]
@@ -122,6 +126,7 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             GROUP_UNDERFILLED_PERCENT_THRESHOLD: self.cleaned_data[
                 GROUP_UNDERFILLED_PERCENT_THRESHOLD
             ],
+            KASPI_PAYMENT_DETAILS: self.cleaned_data[KASPI_PAYMENT_DETAILS].strip(),
         }
         organization.save(update_fields=["name", "timezone", "settings", "updated_at"])
         return organization

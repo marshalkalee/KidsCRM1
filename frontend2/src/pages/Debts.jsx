@@ -18,7 +18,6 @@ const PAGE_SIZE = 25
 function waLink(phone, text) {
   return `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
 }
-
 /** «Задолженности» (TRU-68): деньги, которые центр заработал, но не получил. */
 export default function Debts() {
   const navigate = useNavigate()
@@ -235,7 +234,6 @@ export default function Debts() {
     </div>
   )
 }
-
 /** Звонок, WhatsApp с готовым напоминанием, приём оплаты — не открывая карточку. */
 function RowActions({ row, canAccept, onPay }) {
   const stop = e => e.stopPropagation()
@@ -255,7 +253,6 @@ function RowActions({ row, canAccept, onPay }) {
     </div>
   )
 }
-
 function DebtFilters({ params, update, branches, directions, overdueDays, onReset }) {
   const applied = Object.fromEntries(PANEL_KEYS.map(key => [key, params.get(key) || '']))
   const { draft, set, dirty } = useFilterDraft(applied)
@@ -274,4 +271,3 @@ function DebtFilters({ params, update, branches, directions, overdueDays, onRese
     </FilterPanel>
   )
 }
-

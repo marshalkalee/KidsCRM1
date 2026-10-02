@@ -17,6 +17,7 @@ from domains.people.clients.models import Child
 from domains.platform.core.audit import AuditLog
 from domains.platform.leads.models import Lead, LeadStatusChange
 from domains.platform.leads.services import change_status, create_lead
+from domains.platform.tasks.models import Task
 from domains.platform.tenants.models import Branch, Direction, Organization
 from domains.scheduling.groups.models import Group, GroupMembership
 from domains.scheduling.schedule.models import Lesson, LessonEnrollment
@@ -614,6 +615,7 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
             child_age=7,
             branch=self.branch,
             direction=self.direction,
+            assigned_to=self.owner,
         )
         lead = change_status(
             lead,
@@ -735,10 +737,22 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
             lead=lead, to_status=Lead.Status.TRIAL_ATTENDED
         ).get()
         self.assertEqual(change.from_status, Lead.Status.TRIAL_SCHEDULED)
-        self.assertEqual(change.changed_by, self.teacher)
+        self.assertIsNone(change.changed_by)
+        self.assertTrue(change.is_automatic)
         self.assertIn(self.group.name, change.comment)
+        self.assertIn(self.teacher.full_name, change.comment)
         self.assertFalse(response.data["no_subscription_flag"])
         self.assertEqual(response.data["consume_outcome"], "trial_no_charge")
+
+        history_response = _authenticated_client(self.owner).get(
+            f"/api/v1/leads/{lead.id}/history/"
+        )
+        self.assertEqual(history_response.status_code, status.HTTP_200_OK)
+        automatic_change = next(
+            row for row in history_response.data if row["to_status"] == Lead.Status.TRIAL_ATTENDED
+        )
+        self.assertTrue(automatic_change["is_automatic"])
+        self.assertIsNone(automatic_change["changed_by_name"])
 
         # Повторный клик не должен плодить переходы в истории.
         repeated = client.post(
@@ -753,7 +767,7 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
             1,
         )
 
-    def test_trial_absence_does_not_move_lead_to_attended(self):
+    def test_trial_absence_creates_callback_task_without_moving_lead(self):
         lead, child = self._create_trial_enrollment()
         client = _authenticated_client(self.teacher)
 
@@ -765,6 +779,48 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         lead.refresh_from_db()
         self.assertEqual(lead.status, Lead.Status.TRIAL_SCHEDULED)
+        task = Task.objects.get(lead=lead, type=Task.Type.TRIAL_NO_SHOW)
+        self.assertEqual(task.assigned_to, self.owner)
+        self.assertEqual(task.status, Task.Status.OPEN)
+        self.assertIn("Не пришёл на пробное", task.description)
+        self.assertIn("Перезвонить", task.title)
+
+        # Повторное сохранение той же отметки не плодит задачи.
+        repeated = client.post(
+            "/api/v1/attendance/mark/",
+            {"lesson": str(self.lesson.id), "child": str(child.id), "status": "absent"},
+        )
+        self.assertEqual(repeated.status_code, status.HTTP_200_OK)
+        self.assertEqual(Task.objects.filter(lead=lead).count(), 1)
+
+        reset = client.post(
+            "/api/v1/attendance/reset/",
+            {"lesson": str(self.lesson.id), "child": str(child.id)},
+        )
+        self.assertEqual(reset.status_code, status.HTTP_200_OK)
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.Status.CANCELLED)
+
+    def test_trial_attendance_does_not_roll_purchased_lead_back(self):
+        lead, child = self._create_trial_enrollment()
+        lead = change_status(
+            lead,
+            to_status=Lead.Status.TRIAL_ATTENDED,
+            actor=self.owner,
+            comment="Администратор перевёл вручную.",
+        )
+        lead = change_status(lead, to_status=Lead.Status.PURCHASED, actor=self.owner)
+        client = _authenticated_client(self.teacher)
+
+        response = client.post(
+            "/api/v1/attendance/mark/",
+            {"lesson": str(self.lesson.id), "child": str(child.id), "status": "present"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, Lead.Status.PURCHASED)
+        self.assertFalse(LeadStatusChange.objects.filter(lead=lead, is_automatic=True).exists())
 
     def test_bulk_present_moves_trial_lead_to_attended(self):
         lead, _child = self._create_trial_enrollment()

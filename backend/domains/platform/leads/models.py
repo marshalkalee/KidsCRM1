@@ -61,6 +61,10 @@ class LeadRejectionReason(LeadDictionary):
     свой список (ушли из центра, переезд), поэтому причина знает свой вид."""
 
     kind = models.CharField(max_length=10, choices=LeadKind.choices, default=LeadKind.NEW)
+    # «Не пришёл на пробное» — не возражение, а потерянный контакт (TRU-117):
+    # отчёт по отказам считает такие отдельно. Признак, а не название —
+    # центр может причину переименовать.
+    is_lost_contact = models.BooleanField(default=False)
 
 
 class Lead(TenantModel):
@@ -166,6 +170,16 @@ class Lead(TenantModel):
     converted_child = models.ForeignKey(
         "clients.Child", on_delete=models.SET_NULL, null=True, blank=True, related_name="leads"
     )
+    # TRU-103: конкретный результат закрытия продажи. FK остаётся даже
+    # после завершения воронки, чтобы из заявки всегда открыть именно тот
+    # абонемент, который был продан в этом потоке.
+    sold_subscription = models.ForeignKey(
+        "subscriptions.Subscription",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_leads",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -201,6 +215,10 @@ class LeadStatusChange(UUIDPrimaryKeyModel):
     (from_status пустой), чтобы этап «заявка» был в истории с временем.
     """
 
+    class EventType(models.TextChoices):
+        STATUS_CHANGE = "status_change", "Смена статуса"
+        TRIAL_RESCHEDULED = "trial_rescheduled", "Пробное перенесено"
+
     organization = models.ForeignKey("tenants.Organization", on_delete=models.PROTECT)
     lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="status_changes")
     from_status = models.CharField(max_length=20, choices=Lead.Status.choices, blank=True)
@@ -209,6 +227,15 @@ class LeadStatusChange(UUIDPrimaryKeyModel):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
     )
     changed_at = models.DateTimeField(default=timezone.now)
+    event_type = models.CharField(
+        max_length=24,
+        choices=EventType.choices,
+        default=EventType.STATUS_CHANGE,
+    )
+    is_automatic = models.BooleanField(
+        default=False,
+        help_text="Переход выполнен системой по бизнес-событию, а не вручную в заявке.",
+    )
     rejection_reason = models.ForeignKey(
         LeadRejectionReason,
         on_delete=models.PROTECT,

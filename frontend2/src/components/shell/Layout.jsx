@@ -131,7 +131,7 @@ function Sidebar({ onNavigate, collapsed = false }) {
         ))}
       </nav>
 
-      <UserMenu collapsed={collapsed} />
+      <UserMenu collapsed={collapsed} onNavigate={onNavigate} />
     </>
   )
 }
@@ -203,21 +203,32 @@ function Notifications() {
   )
 }
 
-/** Пользователь внизу меню: аватар, имя, роль и «Выйти» (свёрнутое меню — только аватар и выход). */
-function UserMenu({ collapsed = false }) {
+/** Пользователь внизу меню: аватар и имя ведут в профиль, рядом «Выйти» (свёрнутое меню — только аватар и выход). */
+function UserMenu({ collapsed = false, onNavigate }) {
   const { user, roleLabel, logout } = useSession()
   return (
     <div className={cn('border-t border-line p-3', collapsed && 'flex flex-col items-center gap-1 px-2')}>
-      <div className={cn('flex items-center gap-3 rounded-md py-2', collapsed ? 'justify-center px-0' : 'px-2')} title={collapsed ? `${user?.full_name} · ${roleLabel}` : undefined}>
-        <span className="bg-brand-gradient flex size-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white">
-          {initials(user?.full_name)}
-        </span>
-        {!collapsed && (
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-ink">{user?.full_name}</p>
-            <p className="truncate text-xs text-ink-muted">{roleLabel}</p>
-          </div>
-        )}
+      <div className={cn('flex items-center gap-1', collapsed && 'justify-center')}>
+        <NavLink
+          to="/profile"
+          onClick={onNavigate}
+          title={collapsed ? `${user?.full_name} · ${roleLabel}` : t('Профиль')}
+          className={({ isActive }) => cn(
+            'flex min-w-0 flex-1 items-center gap-3 rounded-md py-2 transition-colors',
+            collapsed ? 'justify-center px-1' : 'px-2',
+            isActive ? 'bg-brand-50' : 'hover:bg-surface-muted',
+          )}
+        >
+          <span className="bg-brand-gradient flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-[13px] font-bold text-white">
+            {user?.photo_url ? <img src={user.photo_url} alt="" className="size-full object-cover" /> : initials(user?.full_name)}
+          </span>
+          {!collapsed && (
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-ink">{user?.full_name}</span>
+              <span className="block truncate text-xs text-ink-muted">{roleLabel}</span>
+            </span>
+          )}
+        </NavLink>
         {!collapsed && (
           <button type="button" onClick={logout} className="rounded-md p-2 text-ink-subtle hover:bg-surface-muted hover:text-ink" title={t('Выйти')} aria-label={t('Выйти')}>
             <LogOut className="size-4" />
