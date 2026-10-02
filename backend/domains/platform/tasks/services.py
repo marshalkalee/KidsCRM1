@@ -70,3 +70,66 @@ def cancel_trial_no_show_task(*, attendance) -> int:
         )
         .update(status=Task.Status.CANCELLED, updated_at=timezone.now())
     )
+
+
+def create_task(
+    *,
+    type,
+    assignee,
+    due_date,
+    subject,
+    organization=None,
+    source=Task.Source.MANUAL,
+    branch=None,
+    lead=None,
+    child=None,
+    created_by=None,
+    description="",
+) -> Task:
+    """TaskService.create — единый вход для создания задач из любого домена
+    (ТЗ п. 3.1, контракт §9 в docs/contracts.md). organization берётся у
+    assignee, если не передана явно — исполнитель всегда в своей
+    организации, дублировать её на каждый вызов необязательно."""
+    return Task.objects.create(
+        organization=organization or assignee.organization,
+        type=type,
+        assigned_to=assignee,
+        due_at=due_date,
+        title=subject,
+        description=description,
+        source=source,
+        branch=branch,
+        lead=lead,
+        child=child,
+        created_by=created_by,
+    )
+
+
+def complete_task(task: Task, *, actor, comment="") -> Task:
+    task.status = Task.Status.DONE
+    task.closing_comment = comment
+    task.save(update_fields=["status", "closing_comment", "updated_at"])
+    return task
+
+
+def cancel_task(task: Task, *, actor, comment="") -> Task:
+    task.status = Task.Status.CANCELLED
+    task.closing_comment = comment
+    task.save(update_fields=["status", "closing_comment", "updated_at"])
+    return task
+
+
+def visible_tasks(user):
+    """Кто видит задачу (ТЗ п. 2): владелец — все, управляющий/админ с
+    закреплёнными филиалами — задачи своих филиалов, задачи без филиала
+    и назначенные лично на него; без закреплённых филиалов — все (тот же
+    принцип, что у visible_leads в platform.leads)."""
+    qs = Task.objects.for_tenant(user.organization)
+    if user.role == User.Role.OWNER:
+        return qs
+    branch_ids = list(user.branches.values_list("id", flat=True))
+    if not branch_ids:
+        return qs
+    from django.db.models import Q
+
+    return qs.filter(Q(branch_id__in=branch_ids) | Q(branch__isnull=True) | Q(assigned_to=user))

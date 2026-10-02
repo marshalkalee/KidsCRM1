@@ -314,3 +314,20 @@ compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, seri
   `GET /api/v1/analytics/export/?report=…` с теми же period/branch/фильтрами.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.
+
+## 9. Задачи → всем (TRU-104/106)
+
+TaskService.create(type, assignee, due_date, subject, source, organization=None, branch=None, lead=None, child=None, created_by=None, description="") -> Task
+TaskService.complete(task, actor, comment="") -> Task
+TaskService.cancel(task, actor, comment="") -> Task
+
+Единый вход для создания рабочих задач из любого домена (ТЗ п. 3.1).
+source: "manual" (человек, через API) или "auto" (правило/фоновая
+задача) — по нему отчёт отделяет «администратор сам решил» от «система
+напомнила». Для автозадач source_key делает создание идемпотентным
+(TRU-104: повторная отметка того же события не плодит вторую задачу).
+Права (ТЗ п. 2) — visible_tasks(user) в platform.tasks.services: тот же
+принцип, что у visible_leads в platform.leads.
+
+Владелец: Bekzat. Потребители: Анель (TRU-71 — нет абонемента), Дарья
+(TRU-108 — предложить продление, TRU-72 — центр уведомлений).
