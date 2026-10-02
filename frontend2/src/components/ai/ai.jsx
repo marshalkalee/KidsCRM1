@@ -16,7 +16,8 @@ function fetchStatus() {
 }
 
 export function useAI() {
-  const [status, setStatus] = useState({ enabled: false })
+  // loading — пока статус не пришёл: экраны не мигают «без ИИ» → «с ИИ».
+  const [status, setStatus] = useState({ enabled: false, loading: true })
   useEffect(() => {
     let alive = true
     fetchStatus().then(data => { if (alive) setStatus(data) })

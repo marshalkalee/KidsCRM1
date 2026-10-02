@@ -119,7 +119,7 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
           </Card>
 
           <Card>
-            <CardHeader title={t('Автоправила')} description={t('Какие напоминания создаёт система сама — без них список задач останется пустым.')} />
+          <CardHeader title={t('Автоправила')} description={t('Какие напоминания создаёт система сама — без них список задач останется пустым.')} />
             <div className="divide-y divide-line">
               {RULES.map(rule => (
                 <label key={rule.key} htmlFor={rule.key} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
@@ -133,6 +133,13 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
                 </label>
               ))}
             </div>
+          </Card>
+
+          <Card>
+            <CardHeader title={t('Удалённая оплата Kaspi')} description={t('Куда родителю платить по счёту из CRM. Попадёт в сообщение, которое администратор отправит в WhatsApp.')} />
+            <Field label={t('Ссылка Kaspi Pay или номер для перевода')} hint={t('Например, ссылка на оплату из приложения Kaspi Pay или «Kaspi Gold +7 777 000 00 00, Айгерим А.»')} error={errors.kaspi_payment_details}>
+              {({ id, invalid }) => <Input id={id} invalid={invalid} maxLength={255} value={form.kaspi_payment_details || ''} onChange={e => set('kaspi_payment_details', e.target.value)} />}
+            </Field>
           </Card>
 
           <div className="flex flex-wrap justify-end gap-2">

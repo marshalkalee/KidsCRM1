@@ -176,6 +176,25 @@ def can_view_analytics(user) -> bool:
     return user.role in ANALYTICS_VIEW_ROLES
 
 
+# Чат с ИИ на главной (ai/chat.py) — руководители и администратор: он
+# отвечает по всей CRM в пределах прав сотрудника. Педагогам и бухгалтеру
+# не включён — у них узкие задачи и свои экраны.
+AI_CHAT_ROLES = {
+    User.Role.OWNER,
+    User.Role.MANAGER,
+    User.Role.ADMIN,
+}
+
+
+def can_use_ai_chat(user) -> bool:
+    return user.role in AI_CHAT_ROLES
+
+
+def can_manage_announcements(user) -> bool:
+    """Объявления для кабинета родителя (TRU-140) — те же роли, что ведут детей."""
+    return user.role in CHILD_MANAGE_ROLES
+
+
 def get_user_permissions(user) -> dict:
     return {
         "can_view_financials": can_view_financials(user),
@@ -194,4 +213,6 @@ def get_user_permissions(user) -> dict:
         "can_manage_leads": can_manage_leads(user),
         "can_manage_lead_dictionaries": can_manage_lead_dictionaries(user),
         "can_view_analytics": can_view_analytics(user),
+        "can_use_ai_chat": can_use_ai_chat(user),
+        "can_manage_announcements": can_manage_announcements(user),
     }

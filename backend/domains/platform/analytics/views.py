@@ -28,6 +28,7 @@ from domains.platform.tenants.plans import has_feature
 from domains.scheduling.groups.queries import underfilled_threshold
 
 from . import metrics  # noqa: F401 — регистрирует базовые метрики
+from .attendance_trends import attendance_trends
 from .branches import branch_trends, compare_branches
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
 from .export import filename, workbook
@@ -40,6 +41,7 @@ from .rejections import RejectionError, rejection_comments, rejections, rejectio
 from .reports import REPORTS, build
 from .scope import ScopeError, allowed_branch_ids, scope_for
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
+from .teacher_load import teacher_workload
 
 # Больше метрик за запрос — это уже выгрузка, а не экран.
 MAX_METRICS = 12
@@ -127,12 +129,32 @@ def heatmap_api(request, version=None):
 
 @api_view(["GET"])
 @permission_classes([CanViewAnalytics])
+def attendance_trends_api(request, version=None):
+    """Недельная динамика, разрезы и личная норма ребёнка (TRU-121)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(attendance_trends(scope, period))
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
 def group_occupancy_api(request, version=None):
     """Заполняемость групп, недобор, динамика и разрезы (TRU-119)."""
     period, scope, error = _period_and_scope(request)
     if error:
         return error
     return Response(group_occupancy(scope, period, request.query_params))
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def teacher_workload_api(request, version=None):
+    """Нагрузка преподавателей по данным расписания (TRU-120)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(teacher_workload(scope, period, request.query_params))
 
 
 def _funnel_filters(request):
@@ -223,6 +245,8 @@ def export_api(request, version=None):
     }
     if name == "group_occupancy":
         report_params["occupancy_filters"] = request.query_params
+    if name == "teacher_workload":
+        report_params["teacher_filters"] = request.query_params
     export = build(
         name,
         scope,
