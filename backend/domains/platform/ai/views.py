@@ -6,10 +6,11 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOfOrganization
+from domains.platform.core.role_permissions import can_use_ai_chat
 from domains.platform.leads.services import visible_leads
 from domains.platform.leads.views import CanManageLeads
 
-from . import assist, services
+from . import assist, chat, services
 
 
 def _uuid_list(value):
@@ -19,6 +20,13 @@ def _uuid_list(value):
         return [uuid.UUID(str(value))]
     except ValueError:
         return []
+
+
+class CanUseAIChat(IsStaffOfOrganization):
+    message = "Чат с ИИ доступен владельцу, управляющему и администратору."
+
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and can_use_ai_chat(request.user)
 
 
 class AIThrottle(UserRateThrottle):
@@ -209,4 +217,64 @@ def rejection_reason(request, version=None):
         lambda: assist.rejection_reason(
             request.user.organization, text=request.data.get("text", ""), kind=kind
         )
+    )
+
+
+@api_view(["POST"])
+@permission_classes([CanUseAIChat])
+@throttle_classes([AIThrottle])
+def chat_view(request, version=None):
+    """Чат на главной: {message, conversation?} → {conversation, answer, sources}.
+    Без conversation — новый чат. ИИ смотрит данные CRM с правами того,
+    кто спрашивает (ai/chat.py); переписка сохраняется."""
+    conversation = None
+    conversation_id = request.data.get("conversation")
+    if conversation_id:
+        conversation = (
+            chat.own_conversations(request.user).filter(pk__in=_uuid_list(conversation_id)).first()
+        )
+        if conversation is None:
+            return Response({"detail": "Чат не найден."}, status=status.HTTP_404_NOT_FOUND)
+    return _ai(
+        lambda: chat.reply(
+            request.user,
+            question=str(request.data.get("message") or ""),
+            conversation=conversation,
+            host=request.get_host(),
+        )
+    )
+
+
+@api_view(["GET"])
+@permission_classes([CanUseAIChat])
+def conversations(request, version=None):
+    """История чатов сотрудника — последние 50, свежие сверху."""
+    rows = chat.own_conversations(request.user)[:50]
+    return Response([{"id": str(c.id), "title": c.title, "updated_at": c.updated_at} for c in rows])
+
+
+@api_view(["GET", "DELETE"])
+@permission_classes([CanUseAIChat])
+def conversation_detail(request, conversation_id, version=None):
+    conversation = chat.own_conversations(request.user).filter(pk=conversation_id).first()
+    if conversation is None:
+        return Response({"detail": "Чат не найден."}, status=status.HTTP_404_NOT_FOUND)
+    if request.method == "DELETE":
+        conversation.delete()  # soft delete — как везде в CRM
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    return Response(
+        {
+            "id": str(conversation.id),
+            "title": conversation.title,
+            "updated_at": conversation.updated_at,
+            "messages": [
+                {
+                    "role": m.role,
+                    "content": m.content,
+                    "sources": m.sources,
+                    "created_at": m.created_at,
+                }
+                for m in conversation.messages.all()
+            ],
+        }
     )
