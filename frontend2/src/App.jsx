@@ -9,6 +9,7 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LegacyRedirect from './pages/LegacyRedirect'
 import TestPay from './pages/TestPay'
+import ParentApp from './parent/ParentApp'
 import ChildImport from './pages/ChildImport'
 import Onboarding from './pages/Onboarding'
 import ParentDetail from './pages/ParentDetail'
@@ -43,13 +44,27 @@ import AnalyticsRejections from './pages/AnalyticsRejections'
 import AnalyticsBranches from './pages/AnalyticsBranches'
 
 function App() {
-  // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
-  // сессия и адрес страницы остаются.
-  const lang = useLang()
+  // Кабинет родителя (/parent) — отдельное приложение со своим входом и
+  // сессией, CRM сотрудников (SessionProvider) для него не поднимается.
   return (
     <BrowserRouter>
       <ToastProvider>
         <ConfirmProvider>
+          <Routes>
+            <Route path="/parent/*" element={<ParentApp />} />
+            <Route path="*" element={<StaffApp />} />
+          </Routes>
+        </ConfirmProvider>
+      </ToastProvider>
+    </BrowserRouter>
+  )
+}
+
+function StaffApp() {
+  // Смена языка перемонтирует экраны: подписи, колонки и форматы — на новом языке,
+  // сессия и адрес страницы остаются.
+  const lang = useLang()
+  return (
           <SessionProvider>
             <Routes key={lang}>
               <Route path="/login" element={<Login />} />
@@ -95,9 +110,6 @@ function App() {
               </Route>
             </Routes>
           </SessionProvider>
-        </ConfirmProvider>
-      </ToastProvider>
-    </BrowserRouter>
   )
 }
 

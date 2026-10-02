@@ -57,3 +57,71 @@
 
 Заголовок: `Authorization: Parent <token>`. Ошибки — `{detail}` с текстом
 для родителя.
+
+## Фронтенд кабинета (TRU-137) — как сделать экран
+
+Кабинет живёт во frontend2 по адресу `/parent`, код — `frontend2/src/parent/`.
+Это отдельное приложение: своя сессия (`ParentSession.jsx`), свой вход
+(`ParentLogin.jsx`), свой API-клиент (`api.js`). CRM сотрудников оно не
+подключает.
+
+| Что | Где |
+|---|---|
+| Маршруты | `parent/ParentApp.jsx` |
+| Вкладки внизу (телефон) и сверху (широкий экран) | `parent/nav.js` → `PARENT_NAV` |
+| Шапка с выбором ребёнка, «нет связи», навигация | `parent/ParentLayout.jsx` |
+| Кто вошёл, дети, выбранный ребёнок, выход | `useParent()` из `parent/useParent.js` |
+| GET к API кабинета с сохранением на случай плохой связи | `usePortalData(url)` из `parent/api.js` |
+| Произвольный запрос (POST и т.п.) | `portal` из `parent/api.js` — токен подставляется сам |
+
+**Экран — это компонент в `parent/pages/`.** Шапка, отступы и навигация
+уже есть, экран рисует только содержимое:
+
+```jsx
+import { CalendarDays } from 'lucide-react'
+import { Card, EmptyState, ErrorState, Skeleton } from '../../ui'
+import { t } from '../../i18n'
+import { usePortalData } from '../api'
+import { useParent } from '../useParent'
+
+export default function ParentSchedule() {
+  const { child } = useParent() // выбранный ребёнок, переключается в шапке
+  const { data, loading, error, reload } = usePortalData(child && `children/${child.id}/schedule/`)
+  if (loading && !data) return <Skeleton className="h-40" />
+  if (error && !data) return <Card><ErrorState onRetry={reload} /></Card>
+  if (!data?.length) return <Card><EmptyState icon={CalendarDays} title={t('Занятий пока нет')} /></Card>
+  return null // содержимое экрана
+}
+```
+
+- **Состояния.** Загрузка — `Skeleton`, нет данных — `EmptyState`,
+  ошибка — `ErrorState`. «Нет связи» шапка показывает сама: без сети
+  `usePortalData` отдаёт последние сохранённые данные (`stale`, `savedAt`).
+  «Сессия истекла» — тоже сам кабинет: 401 уводит на вход.
+- **Подключение.** Строка в `ParentApp.jsx`. Если экрану нужна вкладка —
+  строка в `nav.js`. Сейчас на месте экранов TRU-138, 139, 142, 145
+  стоят заглушки «скоро».
+- **Сначала телефон.** Ширина 390 px без горизонтальной прокрутки; на
+  широком экране та же колонка до 672 px.
+- **Тексты — через `t()`**, переводы ru/kk (родитель выбирает язык в
+  профиле).
+- **Тон — для клиента, не для сотрудника.** «к оплате», а не
+  «ЗАДОЛЖЕННОСТЬ»; «осталось 2 занятия, можно продлить» (TRU-138).
+- **Эндпоинт экрана — в `backend/domains/people/portal/`.**
+  - Класс `ParentView` (токен родителя).
+  - Ребёнка проверять через `access.child_for_phone(request.user.phone, child_id)`:
+    чужой и несуществующий неотличимы, 404.
+  - Данные брать из сервисов CRM, не пересчитывать.
+
+## Установка на телефон (PWA)
+
+`public/parent/manifest.json`, иконки `public/parent/icon-*.png`,
+сервис-воркер `public/parent/sw.js` (scope `/parent/`). Сервис-воркер
+кэширует только оболочку приложения: без сети кабинет открывается, а
+данные берутся из сохранённого экраном. API он не кэширует.
+Push-уведомления — V3, их можно добавить в тот же `sw.js`.
+
+- **Android (Chrome):** меню → «Установить приложение».
+- **iPhone (Safari):** «Поделиться» → «На экран „Домой“».
+
+Установка требует HTTPS; на `localhost` работает и без него.
