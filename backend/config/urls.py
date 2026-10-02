@@ -29,6 +29,7 @@ api_v1_patterns = [
     path("notifications/", include("domains.platform.notifications.urls")),
     path("tasks/", include("domains.platform.tasks.urls")),
     path("leads/", include("domains.platform.leads.urls")),
+    path("public/leads/", include("domains.platform.leads.public_urls")),
     path("ai/", include("domains.platform.ai.urls")),
     path("audit/", include("domains.platform.core.audit_urls")),
     path("analytics/", include("domains.platform.analytics.urls")),
