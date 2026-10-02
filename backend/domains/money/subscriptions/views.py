@@ -6,13 +6,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from domains.people.clients.models import Child
-from domains.platform.core.permissions import IsNotTeacher, IsOwnerOrManager
+from domains.platform.core.permissions import IsNotTeacher, IsOwnerOrManager, IsStaffOfOrganization
 from domains.platform.core.utils import today_for_org
 from domains.platform.tenants.models import Branch, Direction
 
 from .debt import paid_sum
 from .freezes import freeze_subscription, unfreeze_subscription
-from .models import BalanceDiscrepancy, Subscription
+from .models import BalanceDiscrepancy, Subscription, SubscriptionType
 from .reconciliation import manual_recompute
 from .renewals import sell_renewal
 from .sales import sell_subscription
@@ -23,9 +23,15 @@ from .serializers import (
     SubscriptionFreezeSerializer,
     SubscriptionLedgerEntrySerializer,
     SubscriptionSerializer,
+    SubscriptionTypeSerializer,
     UnfreezeRequestSerializer,
 )
-from .subscription_types import get_selectable_subscription_types
+from .subscription_types import (
+    VERSIONED_FIELDS,
+    create_type,
+    get_selectable_subscription_types,
+    update_rules,
+)
 
 
 class SubscriptionViewSet(
@@ -260,3 +266,64 @@ class SubscriptionViewSet(
             .first()
         )
         return Response({"starts_at": lesson.starts_at.isoformat() if lesson else None})
+
+
+class SubscriptionTypeViewSet(viewsets.ModelViewSet):
+    """Запись — только через create_type()/update_rules() (версии типа,
+    ТЗ TRU-57/74), не через стандартный serializer.save() ModelViewSet."""
+
+    serializer_class = SubscriptionTypeSerializer
+    permission_classes = [IsStaffOfOrganization]
+    http_method_names = [
+        "get",
+        "post",
+        "patch",
+        "head",
+        "options",
+    ]  # без put/delete — архивация, не удаление
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update"):
+            return [IsOwnerOrManager()]
+        return [IsStaffOfOrganization()]
+
+    def get_queryset(self):
+        return SubscriptionType.objects.for_tenant(self.request.user.organization).order_by(
+            "-is_active", "name"
+        )
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        subscription_type = create_type(
+            request.user.organization,
+            name=data["name"],
+            price=data["price"],
+            is_unlimited=data.get("is_unlimited", False),
+            quota_sessions=data.get("quota_sessions"),
+            duration_days=data["duration_days"],
+            directions=data.get("directions", []),
+            branches=data.get("branches", []),
+        )
+        return Response(self.get_serializer(subscription_type).data, status=201)
+
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        versioned_changes = {f: data[f] for f in VERSIONED_FIELDS if f in data}
+        if versioned_changes:
+            update_rules(instance, **versioned_changes)
+        if "directions" in data:
+            instance.directions.set(data["directions"])
+        if "branches" in data:
+            instance.branches.set(data["branches"])
+        if "is_active" in data:
+            instance.is_active = data["is_active"]
+            instance.save(update_fields=["is_active", "updated_at"])
+
+        instance.refresh_from_db()
+        return Response(self.get_serializer(instance).data)

@@ -16,7 +16,7 @@ from .models import Payment
 
 @transaction.atomic
 def record_payment(
-    *, actor, subscription, amount, method, comment="", idempotency_key=None
+    *, actor, subscription, amount, method, payer=None, comment="", idempotency_key=None
 ) -> Payment:
     from .providers import ManualProvider
 
@@ -24,6 +24,7 @@ def record_payment(
         subscription=subscription,
         amount=amount,
         actor=actor,
+        payer=payer,
         comment=comment,
         idempotency_key=idempotency_key,
     )

@@ -3,7 +3,7 @@ from rest_framework import serializers
 from domains.money.payments.models import Payment
 
 from .debt import subscription_debt
-from .models import Subscription, SubscriptionFreeze, SubscriptionLedgerEntry
+from .models import Subscription, SubscriptionFreeze, SubscriptionLedgerEntry, SubscriptionType
 from .statuses import DISPLAY_LABELS, get_display_status
 
 
@@ -117,3 +117,19 @@ class SellRequestSerializer(SaleRequestSerializer):
     child_id = serializers.UUIDField()
     branch_id = serializers.UUIDField()
     direction_id = serializers.UUIDField()
+
+
+class SubscriptionTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubscriptionType
+        fields = [
+            "id",
+            "name",
+            "price",
+            "is_unlimited",
+            "quota_sessions",
+            "duration_days",
+            "directions",
+            "branches",
+            "is_active",
+        ]
