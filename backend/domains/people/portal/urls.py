@@ -15,7 +15,24 @@ urlpatterns = [
     path("me/", views.MeView.as_view(), name="me"),
     path("children/<uuid:child_id>/", views.ChildDetailView.as_view(), name="child"),
     path(
-        "children/<uuid:child_id>/summary/", views.ChildSummaryView.as_view(), name="child-summary"
+        "children/<uuid:child_id>/attendance/",
+        views.ChildAttendanceView.as_view(),
+        name="child-attendance",
+    ),
+    path(
+        "children/<uuid:child_id>/schedule/",
+        views.ChildScheduleView.as_view(),
+        name="child-schedule",
+    ),
+    path(
+        "children/<uuid:child_id>/makeups/<uuid:attendance_id>/",
+        views.ChildMakeupView.as_view(),
+        name="child-makeup",
+    ),
+    path(
+        "children/<uuid:child_id>/summary/",
+        views.ChildSummaryView.as_view(),
+        name="child-summary",
     ),
     path("children/<uuid:child_id>/money/", views.ChildMoneyView.as_view(), name="child-money"),
     path("announcements/", views.AnnouncementsView.as_view(), name="announcements"),

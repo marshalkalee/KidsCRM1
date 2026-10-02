@@ -34,7 +34,7 @@ FAR_AWAY = "+77029990000"
 # Как проверять каждый маршрут кабинета. kind:
 #   public — вход, токен не нужен;
 #   own    — без идентификатора, отдаёт только своё;
-#   child / session / announcement — идентификатор чужого объекта → 404.
+#   child / makeup / session / announcement — идентификатор чужого объекта → 404.
 CASES = {
     "request-code": ("public", "post"),
     "verify": ("public", "post"),
@@ -45,6 +45,9 @@ CASES = {
     "phone-change": ("own", "post"),
     "announcements": ("own", "get"),
     "child": ("child", "get"),
+    "child-attendance": ("child", "get"),
+    "child-schedule": ("child", "get"),
+    "child-makeup": ("makeup", "get"),
     "child-summary": ("child", "get"),
     "child-money": ("child", "get"),
     "session-detail": ("session", "delete"),
@@ -139,14 +142,17 @@ class PortalIsolationTests(PortalAuthBase):
                 self.assertIn(getattr(staff, method)(url).status_code, (401, 403))
 
     def foreign_kwargs(self, kind, which="stranger"):
-        if kind == "child":
-            return {
+        if kind in ("child", "makeup"):
+            kwargs = {
                 "child_id": {
                     "stranger": self.stranger_child.id,
                     "far": self.far_child.id,
                     "missing": uuid.uuid4(),
-                }[which]
+                }[which],
             }
+            if kind == "makeup":
+                kwargs["attendance_id"] = uuid.uuid4()
+            return kwargs
         if kind == "session":
             return {"session_id": self.stranger_session.id if which != "missing" else uuid.uuid4()}
         if kind == "announcement":

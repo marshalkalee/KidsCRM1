@@ -217,7 +217,12 @@ def available_makeups_for_child(organization, child_id):
         Attendance.objects.for_tenant(organization)
         .filter(child_id=child_id, status=Attendance.Status.ABSENT)
         .exclude(id__in=used_attendance_ids)
-        .select_related("lesson", "lesson__group", "lesson__room")
+        .select_related(
+            "lesson",
+            "lesson__group",
+            "lesson__group__direction",
+            "lesson__room",
+        )
         .order_by("-lesson__starts_at")
     )
 
