@@ -168,3 +168,25 @@ class ChildMoneyView(ParentView):
         if child is None:
             return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
         return Response(money.money(child))
+
+
+class AnnouncementsView(ParentView):
+    """Лента объявлений родителя: активные или ?archive=1, и сколько непрочитанных."""
+
+    def get(self, request, version=None):
+        from . import announcements
+
+        archive = request.query_params.get("archive") == "1"
+        rows = announcements.feed(request.user, archive=archive)
+        active = announcements.feed(request.user) if archive else rows
+        return Response({"results": rows, "unread": sum(not r["read"] for r in active)})
+
+
+class AnnouncementReadView(ParentView):
+    def post(self, request, announcement_id, version=None):
+        from . import announcements
+
+        if not announcements.visible_to(request.user, announcement_id):
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        announcements.mark_read(request.user, announcement_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
