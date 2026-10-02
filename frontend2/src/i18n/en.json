@@ -1943,5 +1943,17 @@
  "в срок": "on time",
  "позднее срока": "after the deadline",
  "Занятие спишется": "The lesson will be charged",
- "Занятие не спишется": "The lesson will not be charged"
+ "Занятие не спишется": "The lesson will not be charged",
+ "Предыдущий период": "Previous period",
+ "Следующий период": "Next period",
+ "Занятия за период": "Lessons in this period",
+ "Прошедшие отметки и списания находятся в истории посещений.": "Past attendance records and charges are available in attendance history.",
+ "За выбранный период занятий нет": "There are no lessons in the selected period",
+ "Переключите неделю или месяц либо вернитесь к сегодняшней дате.": "Switch the week or month, or return to today's date.",
+ "Новое время": "New time",
+ "Новое время: {date}, {time}": "New time: {date}, {time}",
+ "Перенесено с {date}, {time}": "Moved from {date}, {time}",
+ "Причина переноса: {reason}": "Reason for rescheduling: {reason}",
+ "Выберите причину переноса": "Choose a reason for rescheduling",
+ "Причина переноса": "Reason for rescheduling"
 }

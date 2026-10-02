@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CalendarDays, CheckCircle2, CloudOff, MapPin, RotateCcw, Send, UserRound, UsersRound } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CloudOff, MapPin, RotateCcw, Send, UserRound, UsersRound } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, PageHeader, Skeleton, Textarea } from '../../ui'
 import { locale, t } from '../../i18n'
@@ -9,6 +9,8 @@ import { useParent } from '../useParent'
 const STATUS = {
   scheduled: { label: 'Запланировано', tone: 'info' },
   cancelled: { label: 'Отменено', tone: 'danger' },
+  rescheduled: { label: 'Перенесено', tone: 'warning' },
+  completed: { label: 'Проведено', tone: 'neutral' },
 }
 
 const KIND = {
@@ -22,8 +24,10 @@ const CANCEL_REASONS = [
   ['other', 'Другое'],
 ]
 
-function scheduleUrl(childId) {
-  return childId ? `children/${childId}/schedule/` : null
+function scheduleUrl(childId, period) {
+  if (!childId) return null
+  const query = new URLSearchParams({ date_from: period.from, date_to: period.to })
+  return `children/${childId}/schedule/?${query}`
 }
 
 function makeupUrl(childId, attendanceId) {
@@ -40,6 +44,39 @@ function requestOptionsUrl(childId) {
 
 function dayKey(value) {
   return value?.slice(0, 10) || ''
+}
+
+function isoDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function addDays(date, count) {
+  const result = new Date(date)
+  result.setDate(result.getDate() + count)
+  return result
+}
+
+function periodFor(view, anchor) {
+  if (view === 'month') {
+    const from = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
+    const to = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)
+    return { from: isoDate(from), to: isoDate(to), fromDate: from, toDate: to }
+  }
+  const weekday = anchor.getDay() || 7
+  const from = addDays(anchor, 1 - weekday)
+  const to = addDays(from, 6)
+  return { from: isoDate(from), to: isoDate(to), fromDate: from, toDate: to }
+}
+
+function periodTitle(view, period) {
+  if (view === 'month') {
+    return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(period.fromDate)
+  }
+  const formatter = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' })
+  return `${formatter.format(period.fromDate)} – ${formatter.format(period.toDate)}`
 }
 
 function dateLabel(value, long = false) {
@@ -60,8 +97,11 @@ function title(row) {
 export default function ParentSchedule() {
   const { child } = useParent()
   const [searchParams] = useSearchParams()
+  const [view, setView] = useState('week')
+  const [anchor, setAnchor] = useState(() => new Date())
   const makeupId = searchParams.get('makeup')
-  const schedule = usePortalData(scheduleUrl(child?.id))
+  const period = periodFor(view, anchor)
+  const schedule = usePortalData(scheduleUrl(child?.id, period))
   const makeup = usePortalData(makeupUrl(child?.id, makeupId))
   const requests = usePortalData(requestsUrl(child?.id))
   const options = usePortalData(requestOptionsUrl(child?.id))
@@ -76,21 +116,47 @@ export default function ParentSchedule() {
   }
 
   const lessons = schedule.data?.results || []
-  const next = lessons.find(row => row.status !== 'cancelled') || lessons[0]
+  const next = lessons.find(row => row.status === 'scheduled' && new Date(row.starts_at_local) > new Date())
   const rest = next ? lessons.filter(row => row.id !== next.id) : []
-  const grouped = rest.reduce((result, row) => {
+  const periodRows = next ? rest : lessons
+  const grouped = periodRows.reduce((result, row) => {
     const key = dayKey(row.starts_at_local)
     if (!result[key]) result[key] = []
     result[key].push(row)
     return result
   }, {})
 
+  function movePeriod(direction) {
+    setAnchor(current => view === 'month'
+      ? new Date(current.getFullYear(), current.getMonth() + direction, 1)
+      : addDays(current, direction * 7))
+  }
+
+  function changeView(nextView) {
+    setView(nextView)
+    setAnchor(new Date())
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
         title={t('Расписание')}
         description={t('Ближайшие занятия ребёнка: время, место и преподаватель.')}
-        actions={<Button variant="primary" onClick={() => setRequestDialog({ type: 'enroll' })}>{t('Запросить запись')}</Button>}
+        actions={(
+          <div className="flex flex-wrap gap-2">
+            <Button to="/parent/attendance">{t('История посещений')}</Button>
+            <Button variant="primary" onClick={() => setRequestDialog({ type: 'enroll' })}>{t('Запросить запись')}</Button>
+          </div>
+        )}
+      />
+
+      <SchedulePeriodControls
+        view={view}
+        title={periodTitle(view, period)}
+        onView={changeView}
+        onPrevious={() => movePeriod(-1)}
+        onNext={() => movePeriod(1)}
+        onToday={() => setAnchor(new Date())}
       />
 
       <RequestHistory data={requests.data} loading={requests.loading} />
@@ -108,18 +174,18 @@ export default function ParentSchedule() {
         <Card><ErrorState onRetry={schedule.reload} /></Card>
       ) : lessons.length ? (
         <>
-          <section aria-labelledby="next-lesson-title">
+          {next && <section aria-labelledby="next-lesson-title">
             <div className="mb-2 px-1">
               <h2 id="next-lesson-title" className="text-base font-bold text-ink">{t('Ближайшее занятие')}</h2>
             </div>
             <NextLesson row={next} onCancel={() => setRequestDialog({ type: 'cancel', row: next })} />
-          </section>
+          </section>}
 
-          {rest.length > 0 && (
+          {periodRows.length > 0 && (
             <section aria-labelledby="upcoming-lessons-title">
               <div className="mb-3 px-1">
-                <h2 id="upcoming-lessons-title" className="text-base font-bold text-ink">{t('Дальше по расписанию')}</h2>
-                <p className="mt-0.5 text-[13px] text-ink-muted">{t('Все запланированные занятия на ближайшие два месяца.')}</p>
+                <h2 id="upcoming-lessons-title" className="text-base font-bold text-ink">{next ? t('Дальше по расписанию') : t('Занятия за период')}</h2>
+                <p className="mt-0.5 text-[13px] text-ink-muted">{t('Прошедшие отметки и списания находятся в истории посещений.')}</p>
               </div>
               <div className="grid items-start gap-3 xl:grid-cols-2">
                 {Object.entries(grouped).map(([date, rows]) => (
@@ -133,8 +199,8 @@ export default function ParentSchedule() {
         <Card>
           <EmptyState
             icon={CalendarDays}
-            title={t('Ближайших занятий пока нет')}
-            description={t('Когда центр добавит занятия в расписание, они появятся здесь автоматически.')}
+            title={t('За выбранный период занятий нет')}
+            description={t('Переключите неделю или месяц либо вернитесь к сегодняшней дате.')}
           />
         </Card>
       )}
@@ -274,6 +340,40 @@ function MakeupBooking({ child, attendanceId, options }) {
   )
 }
 
+function SchedulePeriodControls({ view, title, onView, onPrevious, onNext, onToday }) {
+  return (
+    <Card padded={false} className="p-3 sm:p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex w-full rounded-lg bg-surface-muted p-1 sm:w-auto">
+          {[
+            ['week', 'Неделя'],
+            ['month', 'Месяц'],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onView(value)}
+              className={`min-h-10 flex-1 rounded-md px-4 text-sm font-semibold transition-colors sm:flex-none ${view === value ? 'bg-surface text-brand-600 shadow-sm' : 'text-ink-muted'}`}
+            >
+              {t(label)}
+            </button>
+          ))}
+        </div>
+        <p className="order-first text-center text-sm font-bold capitalize text-ink sm:order-none sm:text-base">{title}</p>
+        <div className="grid grid-cols-[44px_1fr_44px] gap-2 sm:flex">
+          <Button type="button" aria-label={t('Предыдущий период')} onClick={onPrevious} className="justify-center px-0 sm:px-3">
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Button type="button" onClick={onToday} className="justify-center">{t('Сегодня')}</Button>
+          <Button type="button" aria-label={t('Следующий период')} onClick={onNext} className="justify-center px-0 sm:px-3">
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 function LoadingState() {
   return (
     <div className="space-y-4">
@@ -307,7 +407,7 @@ function NextLesson({ row, onCancel }) {
             <LessonBadges row={row} />
           </div>
           <LessonMeta row={row} className="mt-5 grid gap-2 text-sm sm:grid-cols-2" />
-          {row.status === 'scheduled' && <Button className="mt-4" onClick={onCancel}>{t('Не сможем прийти')}</Button>}
+          {row.can_request_cancel && <Button className="mt-4" onClick={onCancel}>{t('Не сможем прийти')}</Button>}
         </div>
       </div>
     </Card>
@@ -337,7 +437,7 @@ function DayCard({ date, rows, onCancel }) {
                   <LessonBadges row={row} />
                 </div>
                 <LessonMeta row={row} className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px]" />
-                {row.status === 'scheduled' && <Button className="mt-3" onClick={() => onCancel(row)}>{t('Не сможем прийти')}</Button>}
+                {row.can_request_cancel && <Button className="mt-3" onClick={() => onCancel(row)}>{t('Не сможем прийти')}</Button>}
               </div>
             </div>
           </li>
@@ -501,18 +601,39 @@ function LessonBadges({ row }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {special && <Badge tone={special.tone}>{t(special.label)}</Badge>}
-      {state && row.status === 'cancelled' && <Badge tone={state.tone}>{t(state.label)}</Badge>}
+      {row.rescheduled_from_starts_at_local && <Badge tone="info">{t('Новое время')}</Badge>}
+      {state && row.status !== 'scheduled' && <Badge tone={state.tone}>{t(state.label)}</Badge>}
     </div>
   )
 }
 
 function LessonMeta({ row, className }) {
   const place = [row.branch_name, row.room_name].filter(Boolean).join(' · ')
+  const cancellationReason = row.cancel_reason || (row.cancel_reason_category_display ? t(row.cancel_reason_category_display) : '')
   return (
     <div className={className}>
       {place && <span className="inline-flex items-center gap-1.5 text-ink-muted"><MapPin className="size-4 shrink-0" />{place}</span>}
+      {row.branch_address && <span className="inline-flex items-center gap-1.5 text-ink-muted"><MapPin className="size-4 shrink-0" />{row.branch_address}</span>}
       {row.teacher_name && <span className="inline-flex items-center gap-1.5 text-ink-muted"><UserRound className="size-4 shrink-0" />{row.teacher_name}</span>}
-      {row.status === 'cancelled' && row.cancel_reason && <p className="col-span-full text-danger-600">{t('Причина отмены: {reason}', { reason: row.cancel_reason })}</p>}
+      {row.status === 'cancelled' && cancellationReason && <p className="col-span-full font-semibold text-danger-600">{t('Причина отмены: {reason}', { reason: cancellationReason })}</p>}
+      {row.status === 'rescheduled' && cancellationReason && <p className="col-span-full font-semibold text-warning-600">{t('Причина переноса: {reason}', { reason: cancellationReason })}</p>}
+      {row.status === 'rescheduled' && row.rescheduled_to && (
+        <p className="col-span-full inline-flex items-center gap-1.5 font-semibold text-warning-600">
+          <ArrowRight className="size-4 shrink-0" />
+          {t('Новое время: {date}, {time}', {
+            date: dateLabel(row.rescheduled_to.starts_at_local),
+            time: timeLabel(row.rescheduled_to.starts_at_local),
+          })}
+        </p>
+      )}
+      {row.rescheduled_from_starts_at_local && (
+        <p className="col-span-full text-info-600">
+          {t('Перенесено с {date}, {time}', {
+            date: dateLabel(row.rescheduled_from_starts_at_local),
+            time: timeLabel(row.rescheduled_from_starts_at_local),
+          })}
+        </p>
+      )}
     </div>
   )
 }

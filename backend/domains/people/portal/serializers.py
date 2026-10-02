@@ -32,10 +32,18 @@ class ParentLessonSerializer(serializers.ModelSerializer):
     direction_name = serializers.CharField(
         source="group.direction.name", read_only=True, default=None
     )
-    branch_name = serializers.CharField(source="group.branch.name", read_only=True, default=None)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    branch_name = serializers.SerializerMethodField()
+    branch_address = serializers.SerializerMethodField()
     room_name = serializers.CharField(source="room.name", read_only=True, default=None)
     teacher_name = serializers.CharField(source="teacher.full_name", read_only=True, default=None)
     enrollment_kind = serializers.SerializerMethodField()
+    cancel_reason_category_display = serializers.CharField(
+        source="get_cancel_reason_category_display", read_only=True
+    )
+    rescheduled_to = serializers.SerializerMethodField()
+    rescheduled_from_starts_at_local = serializers.SerializerMethodField()
+    can_request_cancel = serializers.SerializerMethodField()
 
     class Meta:
         model = Lesson
@@ -44,13 +52,20 @@ class ParentLessonSerializer(serializers.ModelSerializer):
             "starts_at_local",
             "ends_at_local",
             "status",
+            "status_display",
             "group_name",
             "direction_name",
             "branch_name",
+            "branch_address",
             "room_name",
             "teacher_name",
             "enrollment_kind",
+            "cancel_reason_category",
+            "cancel_reason_category_display",
             "cancel_reason",
+            "rescheduled_to",
+            "rescheduled_from_starts_at_local",
+            "can_request_cancel",
         ]
 
     def _local_datetime(self, value):
@@ -67,6 +82,38 @@ class ParentLessonSerializer(serializers.ModelSerializer):
     def get_enrollment_kind(self, obj):
         enrollments = getattr(obj, "parent_enrollments", [])
         return enrollments[0].kind if enrollments else None
+
+    def _branch(self, obj):
+        if obj.group_id:
+            return obj.group.branch
+        return obj.room.branch if obj.room_id else None
+
+    def get_branch_name(self, obj):
+        branch = self._branch(obj)
+        return branch.name if branch else None
+
+    def get_branch_address(self, obj):
+        branch = self._branch(obj)
+        return branch.address if branch else ""
+
+    def get_rescheduled_to(self, obj):
+        try:
+            lesson = obj.rescheduled_to
+        except Lesson.DoesNotExist:
+            return None
+        return {
+            "id": str(lesson.id),
+            "starts_at_local": self._local_datetime(lesson.starts_at),
+            "ends_at_local": self._local_datetime(lesson.ends_at),
+        }
+
+    def get_rescheduled_from_starts_at_local(self, obj):
+        if not obj.rescheduled_from_id:
+            return None
+        return self._local_datetime(obj.rescheduled_from.starts_at)
+
+    def get_can_request_cancel(self, obj):
+        return obj.status == Lesson.Status.SCHEDULED and obj.starts_at > timezone.now()
 
 
 class ParentMakeupCandidateSerializer(serializers.ModelSerializer):

@@ -22,6 +22,8 @@ class ParentScheduleTests(PortalAuthBase):
     def setUp(self):
         super().setUp()
         self.branch = self.org.branch_set.first()
+        self.branch.address = "ул. Абая, 10"
+        self.branch.save(update_fields=["address"])
         self.direction = Direction.objects.create(organization=self.org, name="Балет")
         self.group = Group.objects.create(
             organization=self.org,
@@ -75,7 +77,94 @@ class ParentScheduleTests(PortalAuthBase):
         self.assertEqual(by_id[str(group_lesson.id)]["group_name"], self.group.name)
         self.assertIsNone(by_id[str(individual.id)]["enrollment_kind"])
         self.assertEqual(by_id[str(extra.id)]["enrollment_kind"], "makeup")
+        self.assertEqual(by_id[str(group_lesson.id)]["branch_address"], "ул. Абая, 10")
         self.assertNotIn("note", by_id[str(group_lesson.id)])
+
+    def test_cancelled_and_rescheduled_lessons_are_explicit(self):
+        cancelled = self.lesson(self.today + datetime.timedelta(days=1), hour=16)
+        cancelled.cancel(
+            actor=None,
+            category=Lesson.CancelReasonCategory.TEACHER_ILLNESS,
+            comment="Преподаватель заболел",
+        )
+        original = self.lesson(self.today + datetime.timedelta(days=2), hour=17)
+        original.cancel_reason_category = Lesson.CancelReasonCategory.HOLIDAY
+        original.cancel_reason = "Праздничное мероприятие"
+        original.save(update_fields=["cancel_reason_category", "cancel_reason"])
+        replacement = self.lesson(self.today + datetime.timedelta(days=3), hour=19)
+        original.reschedule_to(replacement, actor=None)
+
+        response = self.get()
+
+        self.assertEqual(response.status_code, 200, response.data)
+        by_id = {str(row["id"]): row for row in response.data["results"]}
+        cancelled_row = by_id[str(cancelled.id)]
+        self.assertEqual(cancelled_row["status"], "cancelled")
+        self.assertEqual(cancelled_row["cancel_reason_category_display"], "Болезнь преподавателя")
+        self.assertEqual(cancelled_row["cancel_reason"], "Преподаватель заболел")
+        self.assertFalse(cancelled_row["can_request_cancel"])
+
+        original_row = by_id[str(original.id)]
+        self.assertEqual(original_row["status"], "rescheduled")
+        self.assertEqual(original_row["rescheduled_to"]["id"], str(replacement.id))
+        self.assertEqual(original_row["cancel_reason_category_display"], "Праздник")
+        self.assertEqual(original_row["cancel_reason"], "Праздничное мероприятие")
+        replacement_row = by_id[str(replacement.id)]
+        self.assertEqual(
+            replacement_row["rescheduled_from_starts_at_local"][:10],
+            original.starts_at.astimezone(self.tz).date().isoformat(),
+        )
+
+    def test_schedule_does_not_include_another_childs_individual_lesson(self):
+        stranger = Child.objects.create(
+            organization=self.org,
+            full_name="Другой ребёнок",
+            birth_date=datetime.date(2018, 1, 1),
+        )
+        lesson = self.lesson(self.today + datetime.timedelta(days=1), group=False)
+        lesson.individual_children.add(stranger)
+
+        response = self.get()
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertNotIn(str(lesson.id), {str(row["id"]) for row in response.data["results"]})
+
+    def test_schedule_respects_week_or_month_period(self):
+        in_range = self.lesson(self.today + datetime.timedelta(days=2))
+        self.lesson(self.today + datetime.timedelta(days=20))
+        token = self.login()
+
+        response = self.as_parent(token).get(
+            f"/api/v1/portal/children/{self.child.id}/schedule/",
+            {
+                "date_from": self.today.isoformat(),
+                "date_to": (self.today + datetime.timedelta(days=6)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([str(row["id"]) for row in response.data["results"]], [str(in_range.id)])
+
+    def test_group_lesson_is_visible_only_during_membership_dates(self):
+        membership = self.child.group_memberships.get(group=self.group)
+        membership.joined_at = self.today + datetime.timedelta(days=3)
+        membership.save(update_fields=["joined_at"])
+        before_joining = self.lesson(self.today + datetime.timedelta(days=2), hour=16)
+        after_joining = self.lesson(self.today + datetime.timedelta(days=4), hour=17)
+        token = self.login()
+
+        response = self.as_parent(token).get(
+            f"/api/v1/portal/children/{self.child.id}/schedule/",
+            {
+                "date_from": self.today.isoformat(),
+                "date_to": (self.today + datetime.timedelta(days=6)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        ids = {str(row["id"]) for row in response.data["results"]}
+        self.assertNotIn(str(before_joining.id), ids)
+        self.assertIn(str(after_joining.id), ids)
 
     def test_foreign_child_is_not_disclosed(self):
         stranger = Child.objects.create(

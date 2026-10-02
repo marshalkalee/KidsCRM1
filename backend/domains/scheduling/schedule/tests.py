@@ -1370,6 +1370,23 @@ class RescheduleWhoToCallTest(APITestCase):
         self.assertEqual(by_id[str(self.lesson.id)]["status"], "rescheduled")
         self.assertEqual(by_id[str(new_lesson.id)]["status"], "scheduled")
 
+    def test_reschedule_saves_reason_on_original_lesson(self):
+        _client, response = self._reschedule(
+            reason_category=Lesson.CancelReasonCategory.HOLIDAY,
+            comment="Перенос из-за городского праздника",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.lesson.refresh_from_db()
+        self.assertEqual(
+            self.lesson.cancel_reason_category,
+            Lesson.CancelReasonCategory.HOLIDAY,
+        )
+        self.assertEqual(
+            self.lesson.cancel_reason,
+            "Перенос из-за городского праздника",
+        )
+
     def test_reschedule_reverts_subscription_consumption_like_cancel(self):
         subscription_type = create_type(
             self.org,
