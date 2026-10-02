@@ -23,6 +23,7 @@ import GroupDetail from './pages/GroupDetail'
 import Branches from './pages/Branches'
 import BranchRooms from './pages/BranchRooms'
 import Directions from './pages/Directions'
+import SubscriptionTypes from './pages/SubscriptionTypes'
 import OrganizationSettings from './pages/OrganizationSettings'
 import LeadDictionaries from './pages/LeadDictionaries'
 import Leads from './pages/Leads'
@@ -33,6 +34,7 @@ import Debts from './pages/Debts'
 import Renewals from './pages/Renewals'
 import MyTasks from './pages/MyTasks'
 import Analytics from './pages/Analytics'
+import Announcements from './pages/Announcements'
 import AnalyticsKit from './pages/AnalyticsKit'
 import AnalyticsRevenue from './pages/AnalyticsRevenue'
 import AnalyticsAttendance from './pages/AnalyticsAttendance'
@@ -83,6 +85,7 @@ function StaffApp() {
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
                 <Route path="assistant" element={<RequirePermission permission="can_use_ai_chat"><Assistant /></RequirePermission>} />
+                <Route path="announcements" element={<RequirePermission permission="can_manage_announcements"><Announcements /></RequirePermission>} />
                 <Route path="notifications" element={<Notifications />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="children" element={<Children />} />
@@ -109,6 +112,7 @@ function StaffApp() {
                 <Route path="branches" element={<RequirePermission permission="can_manage_branches"><Branches /></RequirePermission>} />
                 <Route path="branches/:id/rooms" element={<BranchRooms />} />
                 <Route path="directions" element={<RequirePermission permission="can_manage_directions"><Directions /></RequirePermission>} />
+                <Route path="subscription-types" element={<RequirePermission permission="can_manage_subscription_types"><SubscriptionTypes /></RequirePermission>} />
                 <Route path="settings/sales" element={<RequirePermission permission="can_manage_lead_dictionaries"><LeadDictionaries /></RequirePermission>} />
                 <Route path="settings/staff" element={<RequirePermission permission="can_manage_staff"><Staff /></RequirePermission>} />
                 <Route path="settings/organization" element={<RequirePermission permission="can_manage_org_settings"><OrganizationSettings /></RequirePermission>} />

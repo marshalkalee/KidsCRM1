@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
-import { Check, ChevronDown, CloudOff } from 'lucide-react'
+import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Bell, Check, ChevronDown, CloudOff } from 'lucide-react'
 import { Avatar, Modal, cn, formatDateTime } from '../ui'
 import { t, useLang } from '../i18n'
 import { useParent } from './useParent'
+import { usePortalData } from './api'
 import { installPwa } from './pwa'
 import { PARENT_NAV } from './nav'
 
@@ -56,6 +57,7 @@ export default function ParentLayout() {
           ) : (
             <span className="flex-1 text-[15px] font-bold text-ink">{t('Кабинет родителя')}</span>
           )}
+          <NewsBell />
         </div>
         <nav aria-label={t('Разделы кабинета')} className="mx-auto hidden max-w-2xl gap-1 px-4 md:flex">
           {PARENT_NAV.map(item => (
@@ -125,5 +127,17 @@ function ChildPicker({ onClose }) {
         ))}
       </ul>
     </Modal>
+  )
+}
+
+/** Колокольчик объявлений центра в шапке — со счётчиком непрочитанных. */
+function NewsBell() {
+  const { data } = usePortalData('announcements/')
+  const unread = data?.unread || 0
+  return (
+    <Link to="/parent/news" aria-label={unread ? t('Объявления, новых: {n}', { n: unread }) : t('Объявления')} className="relative flex size-10 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-canvas">
+      <Bell className="size-5" />
+      {unread > 0 && <span className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold text-white">{unread}</span>}
+    </Link>
   )
 }

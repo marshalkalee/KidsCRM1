@@ -1021,8 +1021,8 @@ def execute_import(
 # AuditLog.Action пока нет (домен Bekzat'а) — пишем как создание/удаление
 # записи ImportJob со сводкой в before/after. Когда в AuditLog появятся
 # свои действия — поменять здесь, больше нигде.
-IMPORT_AUDIT_ACTION = AuditLog.Action.CREATE
-IMPORT_ROLLBACK_AUDIT_ACTION = AuditLog.Action.DELETE
+IMPORT_AUDIT_ACTION = AuditLog.Action.IMPORT
+IMPORT_ROLLBACK_AUDIT_ACTION = AuditLog.Action.IMPORT_ROLLBACK
 
 
 def import_audit_summary(job: ImportJob) -> dict:
