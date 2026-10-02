@@ -25,6 +25,7 @@ export const NAV_SECTIONS = [
       { to: '/debts', get label() { return t('Задолженности') }, icon: Wallet, permission: 'can_view_client_money' },
       { to: '/announcements', get label() { return t('Объявления') }, icon: Megaphone, permission: 'can_manage_announcements' },
       { to: '/analytics', get label() { return t('Аналитика') }, icon: ChartColumn, permission: 'can_view_analytics' },
+      { to: '/tasks/escalation', get label() { return t('Эскалация задач') }, icon: AlertTriangle, permission: 'can_manage_staff' },
       { to: '/assistant', get label() { return t('ИИ-помощник') }, icon: Sparkles, permission: 'can_use_ai_chat' },
     ],
   },

@@ -45,6 +45,7 @@ import AnalyticsTeachers from './pages/AnalyticsTeachers'
 import Staff from './pages/Staff'
 import AnalyticsRejections from './pages/AnalyticsRejections'
 import AnalyticsBranches from './pages/AnalyticsBranches'
+import TaskEscalation from './pages/TaskEscalation'
 
 function RoleLandingRedirect() {
   const { user } = useSession()
@@ -81,6 +82,7 @@ function StaffApp() {
                 <Route index element={<RoleLandingRedirect />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="tasks" element={<MyTasks />} />
+                <Route path="tasks/escalation" element={<RequirePermission permission="can_manage_staff"><TaskEscalation /></RequirePermission>} />
                 <Route path="onboarding" element={<RequirePermission permission="can_manage_org_settings"><Onboarding /></RequirePermission>} />
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
