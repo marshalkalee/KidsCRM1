@@ -272,3 +272,11 @@ OPENAI_CHAT_MODEL = env("OPENAI_CHAT_MODEL", default="gpt-4o")
 KASPI_PAY_GATEWAY = env("KASPI_PAY_GATEWAY", default="")
 KASPI_PAY_WEBHOOK_SECRET = env("KASPI_PAY_WEBHOOK_SECRET", default="")
 KASPI_PAY_INVOICE_TTL_HOURS = env.int("KASPI_PAY_INVOICE_TTL_HOURS", default=24)
+
+# Код входа родителя (ADR-0007, otp/senders.py): каналы по порядку, через
+# запятую — первый не доставил, пробуем следующий. console — код в лог.
+OTP_CHANNELS = env("OTP_CHANNELS", default="console")
+OTP_CODE_TTL_SECONDS = env.int("OTP_CODE_TTL_SECONDS", default=300)
+OTP_TELEGRAM_TOKEN = env("OTP_TELEGRAM_TOKEN", default="")
+OTP_MOBIZON_API_KEY = env("OTP_MOBIZON_API_KEY", default="")
+OTP_MOBIZON_SENDER = env("OTP_MOBIZON_SENDER", default="")
