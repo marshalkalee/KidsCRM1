@@ -56,6 +56,7 @@ export default function LeadDetail() {
   const [staff, setStaff] = useState([])
   const autoSaleHandled = useRef(false)
   const [writing, setWriting] = useState(false)
+  const [creatingTask, setCreatingTask] = useState(false)
   const ai = useAI()
 
   const loadExtras = useCallback(() => {
@@ -146,6 +147,32 @@ export default function LeadDetail() {
     setSaleAfterConversion(true)
     setConverting(true)
   }
+
+  const createCallBackTask = useCallback(async () => {
+    setCreatingTask(true)
+    try {
+      const existing = await api.get('tasks/', {
+        params: { lead: lead.id, type: 'call_back', status: 'open' },
+      })
+      const rows = existing.data.results || existing.data
+      if (rows.length > 0) {
+        toast.success(t('По этой заявке уже есть открытая задача «Перезвонить»'))
+        return
+      }
+      await api.post('tasks/', {
+        type: 'call_back',
+        title: t('Перезвонить: {name}', { name: lead.parent_name }),
+        lead: lead.id,
+        branch: lead.branch || null,
+        assigned_to: lead.assigned_to || user.id,
+      })
+      toast.success(t('Задача создана'))
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setCreatingTask(false)
+    }
+  }, [lead, user, toast])
 
   const meta = LEAD_STATUS[lead.status]
   return (
@@ -270,6 +297,8 @@ export default function LeadDetail() {
             onBookTrial={() => setBookingTrial('book')}
             onStartSale={startSale}
             onChange={to => (to === 'rejected' ? setRejecting(true) : changeStatus(to))}
+            onCreateTask={createCallBackTask}
+            creatingTask={creatingTask}
           />
           <CommentsCard leadId={lead.id} comments={comments} onAdded={comment => setComments(list => [...list, comment])} />
           <HistoryCard history={history} />
@@ -421,7 +450,7 @@ function TrialBookingCard({ booking, canModify, onReschedule, onCancel }) {
   )
 }
 
-function StatusCard({ lead, onChange, onBookTrial, onStartSale }) {
+function StatusCard({ lead, onChange, onBookTrial, onStartSale, onCreateTask, creatingTask }) {
   const targets = LEAD_STATUSES.filter(
     s => s.value !== 'trial_scheduled' && lead.allowed_transitions.includes(s.value),
   )
@@ -468,7 +497,7 @@ function StatusCard({ lead, onChange, onBookTrial, onStartSale }) {
             {lead.trial_booking ? t('Пробное назначено') : t('Записать на пробное')}
           </Button>
         )}
-        <Button size="sm" variant="ghost" icon={ListTodo} disabled title={t('Появится вместе с модулем задач')}>{t('Создать задачу')}</Button>
+        <Button size="sm" variant="ghost" icon={ListTodo} loading={creatingTask} onClick={onCreateTask}>{t('Создать задачу')}</Button>
       </div>
     </Card>
   )
