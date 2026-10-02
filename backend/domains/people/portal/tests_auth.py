@@ -243,7 +243,7 @@ class AccessTests(PortalAuthBase):
         family(other_center, "Касымова Гульмира", MAMA, "Касымов Арман")
         me = self.as_parent(self.login()).get("/api/v1/portal/me/").data
         self.assertEqual(
-            sorted((c["full_name"], c["organization"]) for c in me["children"]),
+            sorted((c["full_name"], c["organization"]["name"]) for c in me["children"]),
             [
                 ("Касымов Арман", "Gym Kids"),
                 ("Касымова Адель", "True Ballet"),

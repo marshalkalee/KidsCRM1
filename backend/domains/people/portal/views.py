@@ -5,7 +5,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import access
+from . import account
 from .auth import LoginError, logout, request_code, verify_code
 from .authentication import IsParent, ParentTokenAuthentication, request_meta
 from .models import ParentSession
@@ -90,22 +90,57 @@ class SessionDetailView(ParentView):
 
 
 class MeView(ParentView):
-    """Кто вошёл и какие дети ему видны (подробности — TRU-136)."""
+    """Кто вошёл, его профиль и все его дети — первый запрос кабинета."""
 
     def get(self, request, version=None):
-        children = access.children_for_phone(request.user.phone)
         return Response(
-            {
-                "phone": request.user.phone,
-                "language": request.user.language,
-                "children": [
-                    {
-                        "id": str(child.id),
-                        "full_name": child.full_name,
-                        "status": child.status,
-                        "organization": child.organization.name,
-                    }
-                    for child in children
-                ],
-            }
+            {**account.profile(request.user), "children": account.children(request.user)}
         )
+
+
+class ChildDetailView(ParentView):
+    """Один ребёнок родителя. Чужой и несуществующий — одинаково 404."""
+
+    def get(self, request, child_id, version=None):
+        for child in account.children(request.user):
+            if child["id"] == str(child_id):
+                return Response(child)
+        return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+
+
+class ProfileView(ParentView):
+    def get(self, request, version=None):
+        return Response(account.profile(request.user))
+
+    def patch(self, request, version=None):
+        try:
+            return Response(
+                account.update_profile(
+                    request.user,
+                    email=request.data.get("email"),
+                    language=request.data.get("language"),
+                )
+            )
+        except LoginError as exc:
+            return _error(exc)
+
+
+class PhoneChangeView(ParentView):
+    """Смена телефона: {phone} — код на новый номер; {phone, code} — сменить."""
+
+    def post(self, request, version=None):
+        try:
+            if request.data.get("code"):
+                result = account.confirm_phone_change(
+                    request.user,
+                    request.data.get("phone", ""),
+                    request.data["code"],
+                    request_meta(request),
+                )
+            else:
+                result = account.request_phone_change(
+                    request.user, request.data.get("phone", ""), request_meta(request)
+                )
+            return Response(result)
+        except LoginError as exc:
+            return _error(exc)

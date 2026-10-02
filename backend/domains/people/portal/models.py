@@ -35,7 +35,16 @@ class OtpChallenge(UUIDPrimaryKeyModel):
     Строка создаётся и для номера, которого нет в базе (код никуда не
     уходит): лимиты и ответы одинаковы, по ним не понять, есть ли номер."""
 
+    class Purpose(models.TextChoices):
+        LOGIN = "login", "Вход"
+        PHONE_CHANGE = "phone_change", "Смена телефона"
+
     phone = models.CharField(max_length=20)
+    purpose = models.CharField(max_length=20, choices=Purpose.choices, default=Purpose.LOGIN)
+    # Для смены телефона — чей номер меняется.
+    account = models.ForeignKey(
+        ParentAccount, on_delete=models.CASCADE, null=True, blank=True, related_name="challenges"
+    )
     code_hash = models.CharField(max_length=64)
     ip = models.GenericIPAddressField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -81,6 +90,7 @@ class ParentAccessLog(models.Model):
         LOGIN_FAILED = "login_failed", "Неверный код"
         LOGOUT = "logout", "Выход"
         LOGOUT_ALL = "logout_all", "Выход на всех устройствах"
+        PHONE_CHANGED = "phone_changed", "Сменил телефон"
 
     account = models.ForeignKey(
         ParentAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="access_log"

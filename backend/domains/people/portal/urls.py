@@ -13,4 +13,7 @@ urlpatterns = [
         "auth/sessions/<uuid:session_id>/", views.SessionDetailView.as_view(), name="session-detail"
     ),
     path("me/", views.MeView.as_view(), name="me"),
+    path("children/<uuid:child_id>/", views.ChildDetailView.as_view(), name="child"),
+    path("profile/", views.ProfileView.as_view(), name="profile"),
+    path("profile/phone/", views.PhoneChangeView.as_view(), name="phone-change"),
 ]

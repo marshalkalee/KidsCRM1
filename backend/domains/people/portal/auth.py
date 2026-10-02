@@ -84,6 +84,23 @@ def dispatch_code(phone: str, code: str) -> None:
 
 def request_code(raw_phone: str, request_meta: dict) -> dict:
     phone = normalize(raw_phone)
+    _issue_code(
+        phone,
+        request_meta,
+        purpose=OtpChallenge.Purpose.LOGIN,
+        send=access.phone_is_known(phone),
+    )
+    return {
+        "detail": CODE_SENT,
+        "phone": phone,
+        "resend_in": RESEND_SECONDS,
+        "expires_in": settings.OTP_CODE_TTL_SECONDS,
+    }
+
+
+def _issue_code(phone, request_meta, *, purpose, send, account=None):
+    """Новый код с лимитами. send=False — запрос создаётся, но код никуда
+    не уходит (неизвестный номер при входе)."""
     ip = request_meta.get("ip")
     now = timezone.now()
     hour_ago = now - timedelta(hours=1)
@@ -113,23 +130,18 @@ def request_code(raw_phone: str, request_meta: dict) -> dict:
         raise LoginError(message, status=429, retry_after=wait)
 
     code = "".join(secrets.choice("0123456789") for _ in range(CODE_LENGTH))
-    known = access.phone_is_known(phone)
     OtpChallenge.objects.create(
         phone=phone,
+        purpose=purpose,
+        account=account,
         code_hash=_hash(f"{phone}:{code}"),
         ip=ip,
         expires_at=now + timedelta(seconds=settings.OTP_CODE_TTL_SECONDS),
-        channel="pending" if known else "",
+        channel="pending" if send else "",
     )
-    _log(ParentAccessLog.Event.CODE_REQUESTED, phone, request_meta)
-    if known:
+    _log(ParentAccessLog.Event.CODE_REQUESTED, phone, request_meta, account=account)
+    if send:
         transaction.on_commit(lambda: dispatch_code(phone, code))
-    return {
-        "detail": CODE_SENT,
-        "phone": phone,
-        "resend_in": RESEND_SECONDS,
-        "expires_in": settings.OTP_CODE_TTL_SECONDS,
-    }
 
 
 def verify_code(raw_phone: str, code: str, request_meta: dict) -> dict:
@@ -148,29 +160,22 @@ def _check_code(phone, code, request_meta):
     now = timezone.now()
     challenge = (
         OtpChallenge.objects.select_for_update()
-        .filter(phone=phone, used_at__isnull=True, expires_at__gt=now, attempts__lt=MAX_ATTEMPTS)
+        .filter(
+            phone=phone,
+            purpose=OtpChallenge.Purpose.LOGIN,
+            used_at__isnull=True,
+            expires_at__gt=now,
+            attempts__lt=MAX_ATTEMPTS,
+        )
         .order_by("-created_at")
         .first()
     )
-    if challenge is None:
-        _log(ParentAccessLog.Event.LOGIN_FAILED, phone, request_meta)
-        return LoginError("Код устарел или попыток больше нет. Запросите новый код.")
-
-    challenge.attempts += 1
-    matches = len(code) == CODE_LENGTH and hmac.compare_digest(
-        challenge.code_hash, _hash(f"{phone}:{code}")
-    )
     # Номер мог пропасть из базы, пока родитель вводил код, — тогда не пускаем.
-    if not matches or not access.phone_is_known(phone):
-        challenge.save(update_fields=["attempts"])
-        _log(ParentAccessLog.Event.LOGIN_FAILED, phone, request_meta)
-        left = MAX_ATTEMPTS - challenge.attempts
-        if left <= 0:
-            return LoginError("Код введён неверно слишком много раз. Запросите новый код.")
-        return LoginError(f"Неверный код. Осталось попыток: {left}.")
-
-    challenge.used_at = now
-    challenge.save(update_fields=["attempts", "used_at"])
+    error = _consume(
+        challenge, phone, code, request_meta, extra_ok=lambda: access.phone_is_known(phone)
+    )
+    if error:
+        return error
     account, _ = ParentAccount.objects.get_or_create(phone=phone)
     account.last_login_at = now
     account.save(update_fields=["last_login_at"])
@@ -186,6 +191,28 @@ def _check_code(phone, code, request_meta):
     _log(ParentAccessLog.Event.LOGIN, phone, request_meta, account=account)
     _audit_login(account, session)
     return {"token": token, "expires_at": session.expires_at}
+
+
+def _consume(challenge, phone, code, request_meta, extra_ok=lambda: True):
+    """Проверить код и погасить его. Ошибка — LoginError (не поднимается:
+    вызывающий выходит из транзакции, чтобы счётчик попыток сохранился)."""
+    if challenge is None:
+        _log(ParentAccessLog.Event.LOGIN_FAILED, phone, request_meta)
+        return LoginError("Код устарел или попыток больше нет. Запросите новый код.")
+    challenge.attempts += 1
+    matches = len(code) == CODE_LENGTH and hmac.compare_digest(
+        challenge.code_hash, _hash(f"{phone}:{code}")
+    )
+    if not matches or not extra_ok():
+        challenge.save(update_fields=["attempts"])
+        _log(ParentAccessLog.Event.LOGIN_FAILED, phone, request_meta, account=challenge.account)
+        left = MAX_ATTEMPTS - challenge.attempts
+        if left <= 0:
+            return LoginError("Код введён неверно слишком много раз. Запросите новый код.")
+        return LoginError(f"Неверный код. Осталось попыток: {left}.")
+    challenge.used_at = timezone.now()
+    challenge.save(update_fields=["attempts", "used_at"])
+    return None
 
 
 def _audit_login(account, session):
