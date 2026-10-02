@@ -238,11 +238,8 @@ class Attendance(TenantModel):
         self.no_subscription_flag = False
 
     def _notify_missing_subscription(self):
-        """M1 (согласовано в TRU-50): саму модель Task и её обработку
-        делает Bekzat в M2 (domains.platform.tasks — пока пустой каркас).
-        Вызов уже происходит из правильного места — этот стык не потеряется
-        при передаче; создание реальной Task — заглушка, безопасно
-        заменяемая в M2 без изменений здесь."""
+        """Создаёт задачу «оформить абонемент» (ТЗ п. 5.2, TRU-111) —
+        сама обработка в domains.platform.tasks, здесь только точка вызова."""
         from domains.platform.tasks.services import create_admin_task_for_missing_subscription
 
         create_admin_task_for_missing_subscription(attendance=self)
