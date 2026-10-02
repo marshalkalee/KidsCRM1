@@ -29,8 +29,9 @@ export default function Login() {
       const res = await axios.post('/api/v1/users/auth/login/', { phone: phone.trim(), password })
       localStorage.setItem('access', res.data.access)
       localStorage.setItem('refresh', res.data.refresh)
-      await reload()
-      navigate(next, { replace: true })
+      const freshUser = await reload()
+      const target = location.state?.from || (freshUser?.role === 'admin' ? '/tasks' : '/dashboard')
+      navigate(target, { replace: true })
     } catch (err) {
       setError(err.response?.status === 429 ? t('Слишком много попыток. Подождите минуту.') : t('Неверный телефон или пароль'))
     } finally {

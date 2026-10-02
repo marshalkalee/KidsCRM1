@@ -14,6 +14,9 @@ class TaskSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     child_name = serializers.CharField(source="child.full_name", read_only=True, default=None)
     lead_name = serializers.CharField(source="lead.parent_name", read_only=True, default=None)
+    contact_phone = serializers.SerializerMethodField()
+    contact_whatsapp = serializers.SerializerMethodField()
+    child_debt = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -37,6 +40,41 @@ class TaskSerializer(serializers.ModelSerializer):
             "child",
             "child_name",
             "branch",
+            "contact_phone",
+            "contact_whatsapp",
+            "child_debt",
             "created_at",
         ]
         read_only_fields = ["source", "created_by", "closing_comment"]
+
+    def get_contact_phone(self, obj):
+        contact = self._payer_contact(obj)
+        if contact is None:
+            return obj.lead.phone if obj.lead_id else None
+        phone = contact.phones.first()
+        return phone.number if phone else None
+
+    def get_contact_whatsapp(self, obj):
+        contact = self._payer_contact(obj)
+        if contact and contact.whatsapp:
+            return contact.whatsapp
+        return self.get_contact_phone(obj)
+
+    def get_child_debt(self, obj):
+        if not obj.child_id:
+            return None
+        from domains.money.subscriptions.debt import debt_by_child
+
+        return str(debt_by_child(obj.organization, [obj.child_id]).get(obj.child_id, 0))
+
+    def _payer_contact(self, obj):
+        if not obj.child_id:
+            return None
+        from domains.people.clients.models import ChildContact
+
+        link = (
+            ChildContact.objects.filter(child_id=obj.child_id, is_payer=True)
+            .select_related("parent_contact")
+            .first()
+        )
+        return link.parent_contact if link else None
