@@ -23,6 +23,7 @@ RULES_SCHEMA_VERSION = 1
 RULES_KEYS = {
     "expire_on_miss",  # bool | None — сгорает ли пропущенное занятие
     "makeup_window_days",  # int | None — срок отработки, дней
+    "makeups_limit",  # int | None — максимум отработок за срок абонемента
     "freezes_per_year",  # int | None — сколько заморозок разрешено в год
 }
 

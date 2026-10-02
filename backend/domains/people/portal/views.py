@@ -14,22 +14,26 @@ from domains.scheduling.attendance.history import (
     attendance_history_summary,
 )
 from domains.scheduling.attendance.models import Attendance
-from domains.scheduling.schedule.enrollment_service import (
-    EnrollOutcome,
-    LessonService,
-    available_makeups_for_child,
-    makeup_candidate_lessons,
-)
+from domains.scheduling.schedule.enrollment_service import available_makeups_for_child
 from domains.scheduling.schedule.models import Lesson, LessonEnrollment
 
 from . import access, account
 from .auth import LoginError, logout, request_code, verify_code
 from .authentication import IsParent, ParentTokenAuthentication, request_meta
-from .models import ParentSession
+from .lesson_requests import (
+    ParentRequestError,
+    create_parent_request,
+    makeup_candidates,
+    makeup_source,
+    regular_candidate_lessons,
+)
+from .models import ParentLessonRequest, ParentSession
 from .serializers import (
     AttendancePeriodSerializer,
     ParentAttendanceSerializer,
     ParentAvailableMakeupSerializer,
+    ParentLessonRequestCreateSerializer,
+    ParentLessonRequestSerializer,
     ParentLessonSerializer,
     ParentMakeupBookingSerializer,
     ParentMakeupCandidateSerializer,
@@ -259,7 +263,7 @@ class ChildScheduleView(ParentView):
 
 
 class ChildMakeupView(ParentView):
-    """Choose and book a valid makeup lesson for one missed attendance."""
+    """Choose a valid makeup lesson and send a request to an administrator."""
 
     def _source(self, request, child, attendance_id):
         attendance = (
@@ -274,20 +278,10 @@ class ChildMakeupView(ParentView):
         )
         if attendance is None:
             return None
-        available_ids = {
-            row["attendance"].id
-            for row in available_makeups_for_child(child.organization, child.id)
-        }
-        return attendance if attendance.id in available_ids else None
+        return attendance if makeup_source(child, attendance.id) else None
 
     def _candidates(self, child, attendance):
-        candidates = makeup_candidate_lessons(attendance, child.organization)
-        return [
-            lesson
-            for lesson in candidates
-            if not lesson.participants().filter(pk=child.id).exists()
-            and lesson.participants().count() < lesson.group.capacity
-        ]
+        return makeup_candidates(child, attendance)
 
     def get(self, request, child_id, attendance_id, version=None):
         child = access.child_for_phone(request.user.phone, child_id)
@@ -335,28 +329,93 @@ class ChildMakeupView(ParentView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        result = LessonService.enroll(
-            lesson_id,
-            child.id,
-            LessonEnrollment.Kind.MAKEUP,
-            actor=None,
-            source_attendance_id=attendance.id,
-        )
-        if result.outcome == EnrollOutcome.ENROLLED:
-            return Response(
-                {"status": "enrolled", "enrollment_id": result.enrollment_id},
-                status=status.HTTP_201_CREATED,
+        try:
+            parent_request = create_parent_request(
+                account=request.user,
+                child=child,
+                lesson_id=lesson_id,
+                request_type=ParentLessonRequest.Type.ENROLL,
+                comment=payload.validated_data.get("comment", ""),
+                source_attendance_id=attendance.id,
             )
-        errors = {
-            EnrollOutcome.CAPACITY_EXCEEDED: "Свободных мест уже нет.",
-            EnrollOutcome.SOURCE_ALREADY_USED: "Эта отработка уже использована.",
-            EnrollOutcome.SOURCE_EXPIRED: "Срок этой отработки истёк.",
-            EnrollOutcome.LESSON_CANCELLED: "Занятие отменено.",
-            EnrollOutcome.LESSON_IN_PAST: "Занятие уже прошло.",
-        }
+        except ParentRequestError as exc:
+            return Response({"detail": str(exc)}, status=exc.status_code)
         return Response(
-            {"detail": errors.get(result.outcome, "Не удалось записаться на это занятие.")},
-            status=status.HTTP_409_CONFLICT,
+            ParentLessonRequestSerializer(
+                parent_request, context={"organization": child.organization}
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ChildLessonRequestOptionsView(ParentView):
+    """Suitable future lessons; reading this list never reserves a place."""
+
+    def get(self, request, child_id, version=None):
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {
+                "results": ParentMakeupCandidateSerializer(
+                    regular_candidate_lessons(child),
+                    many=True,
+                    context={"organization": child.organization},
+                ).data
+            }
+        )
+
+
+class ChildLessonRequestsView(ParentView):
+    """List a child's requests or create a regular enroll/cancel request."""
+
+    def _child(self, request, child_id):
+        return access.child_for_phone(request.user.phone, child_id)
+
+    def get(self, request, child_id, version=None):
+        child = self._child(request, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        rows = (
+            ParentLessonRequest.objects.for_tenant(child.organization)
+            .filter(child=child)
+            .select_related(
+                "lesson__group__branch",
+                "lesson__group__direction",
+                "lesson__room",
+                "lesson__teacher",
+                "processed_by",
+            )[:50]
+        )
+        return Response(
+            {
+                "results": ParentLessonRequestSerializer(
+                    rows, many=True, context={"organization": child.organization}
+                ).data
+            }
+        )
+
+    def post(self, request, child_id, version=None):
+        child = self._child(request, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        payload = ParentLessonRequestCreateSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        try:
+            parent_request = create_parent_request(
+                account=request.user,
+                child=child,
+                lesson_id=payload.validated_data["lesson_id"],
+                request_type=payload.validated_data["type"],
+                comment=payload.validated_data.get("comment", ""),
+            )
+        except ParentRequestError as exc:
+            return Response({"detail": str(exc)}, status=exc.status_code)
+        return Response(
+            ParentLessonRequestSerializer(
+                parent_request, context={"organization": child.organization}
+            ).data,
+            status=status.HTTP_201_CREATED,
         )
 
 
