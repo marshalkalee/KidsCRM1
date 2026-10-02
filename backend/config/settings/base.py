@@ -45,6 +45,7 @@ THIRD_PARTY_APPS = [
 DOMAIN_APPS = [
     # Люди — владелец домена: Анель.
     "domains.people.clients",
+    "domains.people.portal",
     # Расписание — владелец домена: Дарья.
     "domains.scheduling.schedule",
     "domains.scheduling.groups",
