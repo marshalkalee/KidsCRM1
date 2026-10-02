@@ -1,5 +1,5 @@
 import {
-  Building2, CalendarClock, ChartColumn, CalendarDays, CheckSquare, Contact, Home, Inbox, ListChecks, Settings, Sparkles, Tag, UserRoundCog, Users, UsersRound, Wallet,
+  Building2, CalendarClock, ChartColumn, CalendarDays, CheckSquare, Contact, Home, Inbox, ListChecks, Megaphone, Settings, Sparkles, Tag, UserRoundCog, Users, UsersRound, Wallet,
 } from 'lucide-react'
 import { t } from '../../i18n'
 
@@ -23,6 +23,7 @@ export const NAV_SECTIONS = [
       { to: '/attendance', get label() { return t('Посещаемость') }, icon: CheckSquare },
       { to: '/renewals', get label() { return t('Продления') }, icon: CalendarClock, permission: 'can_view_client_money' },
       { to: '/debts', get label() { return t('Задолженности') }, icon: Wallet, permission: 'can_view_client_money' },
+      { to: '/announcements', get label() { return t('Объявления') }, icon: Megaphone, permission: 'can_manage_announcements' },
       { to: '/analytics', get label() { return t('Аналитика') }, icon: ChartColumn, permission: 'can_view_analytics' },
       { to: '/assistant', get label() { return t('ИИ-помощник') }, icon: Sparkles, permission: 'can_use_ai_chat' },
     ],

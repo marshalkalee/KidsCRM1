@@ -73,8 +73,32 @@ class VerifyCodeView(PublicView):
 
 
 class ParentView(APIView):
+    """Эндпоинт кабинета: только токен родителя. Каждый удачный запрос
+    данных пишется в журнал кабинета (TRU-141): если данные утекут,
+    видно, через какой аккаунт и что именно смотрели."""
+
     authentication_classes = [ParentTokenAuthentication]
     permission_classes = [IsParent]
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        if (
+            request.method == "GET"
+            and response.status_code == 200
+            and getattr(request, "auth", None)
+        ):
+            from .models import ParentAccessLog
+
+            meta = request_meta(request)
+            ParentAccessLog.objects.create(
+                account=request.user,
+                phone=request.user.phone,
+                event=ParentAccessLog.Event.DATA_VIEW,
+                path=request.get_full_path()[:255],
+                ip=meta["ip"],
+                user_agent=(meta["user_agent"] or "")[:255],
+            )
+        return response
 
 
 class LogoutView(ParentView):
@@ -372,3 +396,49 @@ class PhoneChangeView(ParentView):
             return Response(result)
         except LoginError as exc:
             return _error(exc)
+
+
+class ChildSummaryView(ParentView):
+    """Главный экран кабинета (TRU-138): ближайшие занятия, абонемент, к оплате."""
+
+    def get(self, request, child_id, version=None):
+        from . import access, summary
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(summary.summary(child))
+
+
+class ChildMoneyView(ParentView):
+    """Абонемент и оплаты (TRU-139): текущий, журнал списаний, история, как оплатить."""
+
+    def get(self, request, child_id, version=None):
+        from . import access, money
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(money.money(child))
+
+
+class AnnouncementsView(ParentView):
+    """Лента объявлений родителя: активные или ?archive=1, и сколько непрочитанных."""
+
+    def get(self, request, version=None):
+        from . import announcements
+
+        archive = request.query_params.get("archive") == "1"
+        rows = announcements.feed(request.user, archive=archive)
+        active = announcements.feed(request.user) if archive else rows
+        return Response({"results": rows, "unread": sum(not r["read"] for r in active)})
+
+
+class AnnouncementReadView(ParentView):
+    def post(self, request, announcement_id, version=None):
+        from . import announcements
+
+        if not announcements.visible_to(request.user, announcement_id):
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        announcements.mark_read(request.user, announcement_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)

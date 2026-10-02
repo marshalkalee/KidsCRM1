@@ -26,6 +26,22 @@ from .models import OtpChallenge, ParentAccessLog, ParentAccount
 
 LANGUAGES = {"ru", "kk"}
 
+# Что родитель видит о ребёнке (TRU-141, docs/parent-portal.md). Тест
+# проверяет, что ответ не шире этого списка: новое поле — сначала сюда и
+# в документ, после согласования с центром. Не входят: медицинские
+# заметки, причина ухода, согласие на обработку, записи сотрудников.
+CHILD_FIELDS = (
+    "id",
+    "full_name",
+    "birth_date",
+    "age",
+    "status",
+    "photo_url",
+    "organization",
+    "branches",
+    "groups",
+)
+
 
 def child_summary(child, memberships):
     groups = [

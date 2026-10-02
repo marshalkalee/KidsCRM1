@@ -11,9 +11,10 @@ ParentAccount не привязан к организации: один номе
 если дети ходят в разные центры на платформе.
 """
 
+from django.conf import settings
 from django.db import models
 
-from domains.platform.core.models import UUIDPrimaryKeyModel
+from domains.platform.core.models import TenantModel, UUIDPrimaryKeyModel
 
 
 class ParentAccount(UUIDPrimaryKeyModel):
@@ -91,12 +92,15 @@ class ParentAccessLog(models.Model):
         LOGOUT = "logout", "Выход"
         LOGOUT_ALL = "logout_all", "Выход на всех устройствах"
         PHONE_CHANGED = "phone_changed", "Сменил телефон"
+        DATA_VIEW = "data_view", "Смотрел данные"
 
     account = models.ForeignKey(
         ParentAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="access_log"
     )
     phone = models.CharField(max_length=20)
     event = models.CharField(max_length=30, choices=Event.choices)
+    # Для DATA_VIEW — какой адрес кабинета запрошен (чей ребёнок, какой раздел).
+    path = models.CharField(max_length=255, blank=True)
     ip = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -107,3 +111,69 @@ class ParentAccessLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_event_display()} {self.phone}"
+
+
+class Announcement(TenantModel):
+    """Объявление центра для родителей (TRU-140): концерт, праздничное
+    расписание, сбор на костюмы. Адресат — вся организация, филиал,
+    направление или группа; кому именно видно — portal/announcements.py.
+    Живёт в кабинете; рассылка в WhatsApp — V3 (ТЗ п. 4.5)."""
+
+    class Audience(models.TextChoices):
+        ORGANIZATION = "organization", "Весь центр"
+        BRANCH = "branch", "Филиал"
+        DIRECTION = "direction", "Направление"
+        GROUP = "group", "Группа"
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Черновик"
+        PUBLISHED = "published", "Опубликовано"
+
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
+    published_at = models.DateTimeField(null=True, blank=True)
+    # После этой даты объявление уходит из активных в архив кабинета.
+    expires_on = models.DateField(null=True, blank=True)
+    audience = models.CharField(
+        max_length=15, choices=Audience.choices, default=Audience.ORGANIZATION
+    )
+    branch = models.ForeignKey(
+        "tenants.Branch", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    direction = models.ForeignKey(
+        "tenants.Direction", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    group = models.ForeignKey(
+        "groups.Group", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    attachment_url = models.URLField(max_length=500, blank=True)
+    attachment_name = models.CharField(max_length=200, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["-published_at", "-created_at"]
+        indexes = [models.Index(fields=["organization", "status", "-published_at"])]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class AnnouncementRead(models.Model):
+    """Родитель открыл объявление — для пометки «непрочитанные»."""
+
+    account = models.ForeignKey(ParentAccount, on_delete=models.CASCADE, related_name="reads")
+    announcement = models.ForeignKey(Announcement, on_delete=models.CASCADE, related_name="reads")
+    read_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account", "announcement"], name="unique_announcement_read"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.account} — {self.announcement}"

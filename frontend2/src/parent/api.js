@@ -89,8 +89,11 @@ function writeCache(url, data) {
 export function usePortalData(url) {
   const [state, setState] = useState(() => initial(url))
   const alive = useRef(true)
-  // Сменился адрес (другой ребёнок) — сразу показать его сохранённое, не прежнего.
-  if (state.url !== url) setState(initial(url))
+  // Сменился адрес (появился или сменился ребёнок): в этот же рендер отдать
+  // состояние нового адреса (loading или его сохранённое), а не прежнее —
+  // иначе экран на миг видит «не грузится и данных нет».
+  const current = state.url === url ? state : initial(url)
+  if (state.url !== url) setState(current)
 
   const fetchData = useCallback(() => {
     if (!url) return
@@ -126,7 +129,7 @@ export function usePortalData(url) {
     fetchData()
   }, [fetchData])
 
-  const { url: _url, ...rest } = state
+  const { url: _url, ...rest } = current
   return { ...rest, reload }
 }
 
