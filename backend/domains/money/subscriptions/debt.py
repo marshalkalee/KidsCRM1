@@ -145,3 +145,43 @@ def debt_total(organization, *, branch_ids=None) -> Decimal:
     # не десятки тысяч), замер в ADR-0006.
     rows = qs.values_list("price", "paid")
     return sum((price - paid for price, paid in rows), Decimal(0))
+
+
+def create_tasks_for_overdue_debt() -> int:
+    """Автоправило: задолженность старше N дней → «напомнить об оплате»
+    (ТЗ п. 5.2, TRU-108). Идемпотентность — через source_key на Task."""
+    from domains.platform.tasks.models import RuleRun, Task
+    from domains.platform.tasks.services import create_task
+    from domains.platform.tenants.models import Organization
+    from domains.platform.tenants.org_settings import (
+        DEBT_OVERDUE_DAYS_THRESHOLD,
+        RULE_DEBT_REMINDER_ENABLED,
+        get_org_setting,
+    )
+
+    created = 0
+    for organization in Organization.objects.all():
+        if not get_org_setting(organization, RULE_DEBT_REMINDER_ENABLED):
+            continue
+        threshold_days = get_org_setting(organization, DEBT_OVERDUE_DAYS_THRESHOLD)
+        created_for_org = 0
+        for subscription in debtor_subscriptions(organization, min_age_days=threshold_days):
+            task = create_task(
+                type=Task.Type.PAYMENT_REMINDER,
+                assignee=None,
+                due_date=None,
+                subject=f"Напомнить об оплате: {subscription.child.full_name}",
+                organization=organization,
+                source=Task.Source.AUTO,
+                branch=subscription.branch,
+                child=subscription.child,
+                source_key=f"debt_reminder:{subscription.id}",
+            )
+            if task is not None:
+                created_for_org += 1
+        if created_for_org:
+            RuleRun.objects.create(
+                organization=organization, rule="debt_reminder", tasks_created=created_for_org
+            )
+        created += created_for_org
+    return created

@@ -31,6 +31,19 @@ class Organization(TimestampedSoftDeleteModel):
     is_active = models.BooleanField(default=True)
     timezone = models.CharField(max_length=64, default="Asia/Almaty")
     settings = models.JSONField(default=dict, blank=True)
+    public_api_key = models.CharField(max_length=64, unique=True, editable=False)
+    website_domain = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Домен сайта центра для формы приёма заявок (CORS), например https://trueballet.kz",
+    )
+
+    def save(self, *args, **kwargs):
+        if not self.public_api_key:
+            import secrets
+
+            self.public_api_key = secrets.token_urlsafe(32)
+        super().save(*args, **kwargs)
 
     objects = SoftDeleteManager()
 

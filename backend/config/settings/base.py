@@ -162,6 +162,10 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_THROTTLE_RATES": {
+        "public_lead_ip": "10/hour",
+        "public_lead_org": "100/hour",
+    },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -251,6 +255,14 @@ CELERY_BEAT_SCHEDULE = {
     "update-subscription-statuses": {
         "task": "domains.money.subscriptions.tasks.update_subscription_statuses_task",
         "schedule": crontab(hour=0, minute=5),  # сразу после полуночи — "утром уже истёк"
+    },
+    "create-lead-stale-tasks": {
+        "task": "domains.platform.tasks.tasks.create_lead_stale_tasks_task",
+        "schedule": crontab(hour=2, minute=0),
+    },
+    "create-debt-reminder-tasks": {
+        "task": "domains.platform.tasks.tasks.create_debt_reminder_tasks_task",
+        "schedule": crontab(hour=2, minute=15),
     },
 }
 

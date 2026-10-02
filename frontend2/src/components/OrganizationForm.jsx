@@ -13,6 +13,16 @@ const THRESHOLDS = [
   { key: 'group_underfilled_percent_threshold', get label() { return t('Группа недозаполнена') }, get hint() { return t('Заполненность группы') }, get suffix() { return t('% и меньше') }, max: 100 },
   { key: 'risk_absence_change_pp_threshold', get label() { return t('Рост пропусков для риск-листа') }, get hint() { return t('Отклонение от личной нормы ребёнка') }, get suffix() { return t('п.п. и больше') }, min: 1, max: 100 },
   { key: 'risk_current_absences_min', get label() { return t('Минимум пропусков для риск-листа') }, get hint() { return t('За выбранный период') }, get suffix() { return t('пропуска и больше') }, min: 1, max: 100 },
+  { key: 'lead_stale_days_threshold', get label() { return t('Заявка без движения') }, get hint() { return t('Напомнить перезвонить через') }, get suffix() { return t('дней') }, max: 90 },
+]
+
+// Автоправила создания задач (TRU-108) — владелец может выключить любое.
+const RULES = [
+  { key: 'rule_lead_stale_enabled', get label() { return t('Напоминать перезвонить по зависшим заявкам') } },
+  { key: 'rule_renewal_offer_enabled', get label() { return t('Предлагать продление заранее') } },
+  { key: 'rule_debt_reminder_enabled', get label() { return t('Напоминать о просроченном долге') } },
+  { key: 'rule_missing_subscription_enabled', get label() { return t('Напоминать оформить абонемент без него') } },
+  { key: 'rule_trial_no_show_enabled', get label() { return t('Напоминать перезвонить после пропуска пробного') } },
 ]
 
 /**
@@ -79,6 +89,38 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
           </Card>
 
           <Card>
+            <CardHeader title={t('Приём заявок с сайта')} description={t('Для формы на сайте центра, которая отправляет заявки напрямую в CRM.')} />
+            <div className="space-y-4">
+              <Field label={t('Домен сайта')} hint={t('Форма сможет слать заявки только с этого адреса')} error={errors.website_domain}>
+                {({ id, invalid }) => (
+                  <Input id={id} invalid={invalid} placeholder="https://trueballet.kz" value={form.website_domain || ''} onChange={e => set('website_domain', e.target.value)} />
+                )}
+              </Field>
+              <div>
+                <span className="block text-sm font-semibold text-ink">{t('Ключ для формы')}</span>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-md bg-surface-muted px-2 py-1.5 text-[13px]">{form.public_api_key}</code>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(form.public_api_key)
+                        toast.success(t('Ключ скопирован'))
+                      } catch {
+                        toast.error(t('Не удалось скопировать — выделите и скопируйте вручную'))
+                      }
+                    }}
+                  >
+                    {t('Копировать')}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card>
             <CardHeader title={t('Пороги автостатусов')} description={t('Когда система сама помечает ребёнка или группу.')} />
             <div className="divide-y divide-line">
               {THRESHOLDS.map(th => (
@@ -106,6 +148,23 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
                     {errors[th.key] && <p className="mt-1 text-xs text-danger-600">{errors[th.key][0]}</p>}
                   </div>
                 </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+          <CardHeader title={t('Автоправила')} description={t('Какие напоминания создаёт система сама — без них список задач останется пустым.')} />
+            <div className="divide-y divide-line">
+              {RULES.map(rule => (
+                <label key={rule.key} htmlFor={rule.key} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                  <span className="text-sm text-ink">{rule.label}</span>
+                  <input
+                    id={rule.key}
+                    type="checkbox"
+                    checked={Boolean(form[rule.key])}
+                    onChange={e => set(rule.key, e.target.checked)}
+                  />
+                </label>
               ))}
             </div>
           </Card>
