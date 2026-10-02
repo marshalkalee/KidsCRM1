@@ -49,6 +49,12 @@ class TaskViewSet(
             qs = qs.filter(assigned_to_id=assignee_param)
         if branch_param:
             qs = qs.filter(branch_id=branch_param)
+        lead_param = self.request.query_params.get("lead")
+        child_param = self.request.query_params.get("child")
+        if lead_param:
+            qs = qs.filter(lead_id=lead_param)
+        if child_param:
+            qs = qs.filter(child_id=child_param)
         return qs
 
     def perform_create(self, serializer):
