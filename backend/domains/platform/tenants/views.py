@@ -35,10 +35,11 @@ class OrganizationMeView(RetrieveUpdateAPIView):
         return self.request.user.organization
 
 
-def _settings_payload(form):
+def _settings_payload(form, organization):
     return {
         **{name: form.initial.get(name) for name in form.fields},
         "timezones": [value for value, _label in TIMEZONE_CHOICES],
+        "public_api_key": organization.public_api_key,
     }
 
 
@@ -58,7 +59,9 @@ def organization_settings(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         form.save(organization)
-    return Response(_settings_payload(OrganizationSettingsForm.for_organization(organization)))
+    return Response(
+        _settings_payload(OrganizationSettingsForm.for_organization(organization), organization)
+    )
 
 
 class BranchViewSet(viewsets.ModelViewSet):
