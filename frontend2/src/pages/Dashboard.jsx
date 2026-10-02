@@ -1,50 +1,40 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, CalendarDays, Contact, Sparkles, Users, UsersRound } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { ArrowRight, Sparkles } from 'lucide-react'
 import api from '../api/axios'
 import { useSession } from '../session/SessionContext'
-import { Button, Card, PageHeader } from '../ui'
+import { Button, Card, Skeleton } from '../ui'
 import { t } from '../i18n'
-import { DailyPlan } from '../components/ai/assist'
+import { useAIChatAvailable } from '../components/ai/useAIChatAvailable'
+import { AIHeader, DashboardHeader } from '../components/dashboard/DashboardHeader'
+import { Attention, Birthdays, KpiTiles, Renewals, TodayLessons } from '../components/dashboard/DashboardBlocks'
+import { useDashboardData } from '../components/dashboard/useDashboardData'
 
-// Главная — приветствие, прогресс настройки центра (владельцу, пока не
-// завершена) и быстрые переходы. Сводка по деньгам и посещаемости — позже.
-const SHORTCUTS = [
-  { to: '/children', get label() { return t('Дети') }, get description() { return t('База, фильтры, карточки') }, icon: Users },
-  { to: '/parents', get label() { return t('Родители') }, get description() { return t('Контакты, долги, оплаты') }, icon: Contact },
-  { to: '/groups', get label() { return t('Группы') }, get description() { return t('Состав и заполняемость') }, icon: UsersRound },
-  { to: '/schedule', get label() { return t('Расписание') }, get description() { return t('Занятия на неделю') }, icon: CalendarDays },
-]
-
-function greeting() {
-  const hour = new Date().getHours()
-  if (hour < 12) return t('Доброе утро')
-  if (hour < 18) return t('Добрый день')
-  return t('Добрый вечер')
-}
-
+/*
+ * Главная — «как центр сегодня» (пробник 01.10.2026: шапка из варианта B,
+ * остальное из A). Сверху вопрос к ИИ (у кого есть чат) или дата и быстрые
+ * действия; дальше ключевые цифры за 30 дней, что требует внимания,
+ * продления, дни рождения и занятия на сегодня. Набор блоков — по правам
+ * роли: выручка — руководителям, деньги — тем, кто их видит, педагогу —
+ * его занятия.
+ */
 export default function Dashboard() {
-  const { user, can } = useSession()
-  const firstName = user?.full_name?.split(/\s+/)[0]
-  const isOwner = can('can_manage_org_settings')
+  const { can, user } = useSession()
+  const chatAvailable = useAIChatAvailable()
+  const data = useDashboardData()
+  const block = key => (data ? data[key] : null)
   return (
     <>
-      <PageHeader title={`${greeting()}${firstName ? `, ${firstName}` : ''}`} description={t('С чего начнём?')} />
-      {isOwner && <OnboardingCard />}
-      <DailyPlan />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {SHORTCUTS.map(item => (
-          <Link key={item.to} to={item.to} className="group">
-            <Card className="h-full transition-shadow group-hover:shadow-pop">
-              <span className="mb-4 flex size-10 items-center justify-center rounded-md bg-brand-50 text-brand-600">
-                <item.icon className="size-5" />
-              </span>
-              <p className="font-bold text-ink">{item.label}</p>
-              <p className="mt-0.5 text-sm text-ink-muted">{item.description}</p>
-            </Card>
-          </Link>
-        ))}
+      {can('can_manage_org_settings') && <OnboardingCard />}
+      {chatAvailable === null ? <Skeleton className="mb-5 h-56" /> : chatAvailable ? <AIHeader /> : <DashboardHeader />}
+      <KpiTiles data={data} />
+      <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+        <Attention items={block('attention')} />
+        <div className="flex flex-col gap-4">
+          <Renewals data={block('renewals')} />
+          <Birthdays rows={block('birthdays')} />
+        </div>
       </div>
+      <TodayLessons lessons={block('lessons')} mine={user?.role === 'teacher'} />
     </>
   )
 }

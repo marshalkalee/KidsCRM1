@@ -24,9 +24,12 @@ from rest_framework.response import Response
 
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_view_analytics
+from domains.platform.tenants.plans import has_feature
 from domains.scheduling.groups.queries import underfilled_threshold
 
 from . import metrics  # noqa: F401 — регистрирует базовые метрики
+from .attendance_trends import attendance_trends
+from .branches import branch_trends, compare_branches
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
 from .export import filename, workbook
 from .funnel import FILTERS as FUNNEL_FILTERS
@@ -38,6 +41,7 @@ from .rejections import RejectionError, rejection_comments, rejections, rejectio
 from .reports import REPORTS, build
 from .scope import ScopeError, allowed_branch_ids, scope_for
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
+from .teacher_load import teacher_workload
 
 # Больше метрик за запрос — это уже выгрузка, а не экран.
 MAX_METRICS = 12
@@ -125,12 +129,32 @@ def heatmap_api(request, version=None):
 
 @api_view(["GET"])
 @permission_classes([CanViewAnalytics])
+def attendance_trends_api(request, version=None):
+    """Недельная динамика, разрезы и личная норма ребёнка (TRU-121)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(attendance_trends(scope, period))
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
 def group_occupancy_api(request, version=None):
     """Заполняемость групп, недобор, динамика и разрезы (TRU-119)."""
     period, scope, error = _period_and_scope(request)
     if error:
         return error
     return Response(group_occupancy(scope, period, request.query_params))
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def teacher_workload_api(request, version=None):
+    """Нагрузка преподавателей по данным расписания (TRU-120)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(teacher_workload(scope, period, request.query_params))
 
 
 def _funnel_filters(request):
@@ -202,6 +226,8 @@ def export_api(request, version=None):
     """GET /analytics/export/?report=revenue&period=…&branch=… — Excel
     отчёта с тем же периодом, филиалами и фильтрами, что на экране (TRU-114)."""
     name = request.query_params.get("report", "")
+    if name == "branches" and (denied := _network_only(request)):
+        return denied
     if name not in REPORTS:
         return Response({"report": [f"Нет такого отчёта: {name}"]}, status=400)
     period, scope, error = _period_and_scope(request)
@@ -219,6 +245,8 @@ def export_api(request, version=None):
     }
     if name == "group_occupancy":
         report_params["occupancy_filters"] = request.query_params
+    if name == "teacher_workload":
+        report_params["teacher_filters"] = request.query_params
     export = build(
         name,
         scope,
@@ -298,6 +326,60 @@ def rejections_by_api(request, version=None):
     return Response({"period": period.as_dict(), "items": items})
 
 
+# Динамика по филиалам — для метрик реестра с графиком (снимки — из истории).
+TREND_METRICS = {
+    "revenue",
+    "average_check",
+    "attendance_rate",
+    "active_children",
+    "new_leads",
+    "visits",
+    "debt_total",
+    "group_fill",
+}
+
+
+def _network_only(request):
+    if not has_feature(request.user.organization, "branch_compare"):
+        return Response(
+            {"detail": "Сравнение филиалов входит в тариф Network.", "code": "plan"}, status=403
+        )
+    return None
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def branches_api(request, version=None):
+    """Сравнение филиалов (TRU-128): филиалы × метрики, абсолютные и на
+    ребёнка, с прошлым периодом. Управляющий — только свои филиалы."""
+    if denied := _network_only(request):
+        return denied
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response({"period": period.as_dict(), **compare_branches(scope, period)})
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def branch_trends_api(request, version=None):
+    if denied := _network_only(request):
+        return denied
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    metric = request.query_params.get("metric", "revenue")
+    if metric not in TREND_METRICS:
+        return Response({"metric": [f"Нет динамики для метрики {metric}."]}, status=400)
+    return Response(
+        {
+            "period": period.as_dict(),
+            "metric": metric,
+            "branches": branch_trends(scope, period, metric),
+        }
+    )
+
+
 @api_view(["GET"])
 @permission_classes([CanViewAnalytics])
 def catalog_api(request, version=None):
@@ -323,6 +405,9 @@ def catalog_api(request, version=None):
             "branches": [{"id": str(b.id), "name": b.name} for b in branches.order_by("name")],
             "can_see_all_branches": allowed is None,
             "periods": list(PRESETS),
+            "features": {
+                "branch_compare": has_feature(request.user.organization, "branch_compare")
+            },
             # Порог «группа недозаполнена» — отметка на шкале заполняемости.
             "group_underfilled_percent": underfilled_threshold(request.user.organization),
         }

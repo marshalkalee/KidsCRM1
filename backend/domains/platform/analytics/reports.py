@@ -7,6 +7,9 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .attendance_trends import attendance_trends
+from .branches import COLUMNS as BRANCH_COLUMNS
+from .branches import compare_branches
 from .breakdowns import breakdown, visits_heatmap
 from .export import Column, Export, Section
 from .funnel import BY as FUNNEL_BY
@@ -16,6 +19,7 @@ from .registry import REGISTRY, compute
 from .rejections import STAGES as REJECTION_STAGES
 from .rejections import rejection_comments, rejections, rejections_by
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
+from .teacher_load import teacher_workload
 
 UNIT_TITLE = {"money": ", ₸", "percent": ", %", "count": "", "decimal": ""}
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -210,21 +214,121 @@ def revenue(scope, period, params):
 
 @report("attendance", "Посещаемость и пропуски")
 def attendance(scope, period, params):
-    return [
-        metrics_section(
-            ["visits", "attendance_marks", "attendance_rate", "absences", "active_children"],
-            scope,
-            period,
+    data = attendance_trends(scope, period)
+    summary = data["summary"]
+    sections = [
+        Section(
+            "Сводка",
+            [
+                Column("Проведено занятий", "count", 18, total=False),
+                Column("Отметок", "count", 12, total=False),
+                Column("Посещений", "count", 12, total=False),
+                Column("Пропусков", "count", 12, total=False),
+                Column("Посещаемость, %", "percent", 18, total=False),
+            ],
+            [
+                [
+                    summary["lessons_held"],
+                    summary["marked"],
+                    summary["attended"],
+                    summary["absences"],
+                    summary["attendance_rate"],
+                ]
+            ],
         ),
-        series_section(
-            ["visits", "attendance_marks", "absences", "attendance_rate"], scope, period
+        Section(
+            "Динамика по неделям",
+            [
+                Column("Неделя с", "date", 14),
+                Column("Проведено занятий", "count", 18),
+                Column("Отметок", "count", 12),
+                Column("Посещений", "count", 12),
+                Column("Пропусков", "count", 12),
+                Column("Посещаемость, %", "percent", 18, total=False),
+            ],
+            [
+                [
+                    row["date"],
+                    row["lessons_held"],
+                    row["marked"],
+                    row["attended"],
+                    row["absences"],
+                    row["value"],
+                ]
+                for row in data["weekly"]
+            ],
+            note="Шаг всегда одна неделя: тренд важнее отдельного абсолютного числа.",
         ),
-        breakdown_section("Причины пропусков", "Причина", "absences", "reason", scope, period),
-        rate_section("Группы", "Группа", "group", scope, period),
-        rate_section("Преподаватели", "Преподаватель", "teacher", scope, period),
-        rate_section("Направления", "Направление", "direction", scope, period),
-        heatmap_section(scope, period),
+        Section(
+            "Причины пропусков",
+            [Column("Причина", width=28), Column("Пропусков", "count", 12)],
+            [[row["label"] or NOT_SET, row["value"]] for row in data["absence_reasons"]],
+        ),
     ]
+    titles = {
+        "group": ("По группам", "Группа"),
+        "direction": ("По направлениям", "Направление"),
+        "branch": ("По филиалам", "Филиал"),
+        "teacher": ("По преподавателям", "Преподаватель"),
+        "weekday": ("По дням недели", "День недели"),
+    }
+    for key, (title, label) in titles.items():
+        sections.append(
+            Section(
+                title,
+                [
+                    Column(label, width=26),
+                    Column("Проведено занятий", "count", 18),
+                    Column("Отметок", "count", 12),
+                    Column("Посещений", "count", 12),
+                    Column("Пропусков", "count", 12),
+                    Column("Посещаемость, %", "percent", 18, total=False),
+                ],
+                [
+                    [
+                        row["label"] or NOT_SET,
+                        row["lessons_held"],
+                        row["marked"],
+                        row["attended"],
+                        row["absences"],
+                        row["value"],
+                    ]
+                    for row in data["breakdowns"][key]
+                ],
+            )
+        )
+    sections.append(
+        Section(
+            "По детям — отклонение от личной нормы",
+            [
+                Column("Ребёнок", width=28),
+                Column("Отметок", "count", 12),
+                Column("Посещений", "count", 12),
+                Column("Пропусков", "count", 12),
+                Column("Текущие пропуски, %", "percent", 20, total=False),
+                Column("Личная норма, %", "percent", 18, total=False),
+                Column("Отклонение, п.п.", "decimal", 18, total=False),
+            ],
+            [
+                [
+                    row["name"],
+                    row["marked"],
+                    row["attended"],
+                    row["absences"],
+                    row["absence_rate"],
+                    row["baseline"]["absence_rate"] if row["has_baseline"] else None,
+                    row["absence_change_pp"],
+                ]
+                for row in data["children"]
+            ],
+            note=(
+                f"Личная норма — предыдущие {data['baseline']['days']} дней; "
+                f"для сравнения нужно не меньше {data['baseline']['minimum_marks']} отметок. "
+                "Отклонение доступно риск-листу, общий порог детям не назначается."
+            ),
+        )
+    )
+    return sections
 
 
 FUNNEL_TITLES = {
@@ -450,6 +554,108 @@ def sources_report(scope, period, params):
     return [quality, monthly]
 
 
+@report("teacher_workload", "Загрузка преподавателей")
+def teacher_workload_report(scope, period, params):
+    data = teacher_workload(scope, period, params.get("teacher_filters"))
+    teachers = Section(
+        "Преподаватели",
+        [
+            Column("Преподаватель", width=28),
+            Column("Занятий в неделю", "decimal", 18, total=False),
+            Column("Учеников", "count", 12),
+            Column("Запланировано", "count", 16),
+            Column("Проведено", "count", 12),
+            Column("Отменено", "count", 12),
+            Column("По причине преподавателя", "count", 22),
+            Column("Заполняемость групп, %", "percent", 22, total=False),
+        ],
+        [
+            [
+                row["name"],
+                row["lessons_per_week"],
+                row["students"],
+                row["planned"],
+                row["completed"],
+                row["cancelled"],
+                row["teacher_cancelled"],
+                row["fill_percent"],
+            ]
+            for row in data["teachers"]
+        ],
+        note=(
+            "Отчёт показывает объём нагрузки, а не качество работы. Число учеников зависит "
+            "от направления, возраста групп и времени занятий."
+        ),
+    )
+    trend = Section(
+        "Динамика по месяцам",
+        [
+            Column("Месяц", "date", 14),
+            Column("Преподаватель", width=28),
+            Column("Запланировано", "count", 16),
+            Column("Проведено", "count", 12),
+            Column("Отменено", "count", 12),
+            Column("Учеников", "count", 12),
+            Column("Заполняемость, %", "percent", 18, total=False),
+        ],
+        [
+            [
+                point["date"],
+                teacher["name"],
+                point["planned"],
+                point["completed"],
+                point["cancelled"],
+                point["students"],
+                point["fill_percent"],
+            ]
+            for teacher in data["teachers"]
+            for point in teacher["trend"]
+        ],
+    )
+    cancellations = Section(
+        "Причины отмен",
+        [
+            Column("Причина", width=30),
+            Column("Отменено", "count", 12),
+            Column("Связано с преподавателем", width=24),
+        ],
+        [
+            [row["label"], row["value"], "Да" if row["teacher_fault"] else "Нет"]
+            for row in data["cancel_reasons"]
+        ],
+    )
+    sections = [teachers, trend, cancellations]
+    for key, title, label in (
+        ("branch", "По филиалам", "Филиал"),
+        ("direction", "По направлениям", "Направление"),
+    ):
+        sections.append(
+            Section(
+                title,
+                [
+                    Column(label, width=26),
+                    Column("Преподавателей", "count", 16),
+                    Column("Учеников", "count", 12),
+                    Column("Запланировано", "count", 16),
+                    Column("Проведено", "count", 12),
+                    Column("Отменено", "count", 12),
+                ],
+                [
+                    [
+                        row["label"],
+                        row["teachers"],
+                        row["students"],
+                        row["planned"],
+                        row["completed"],
+                        row["cancelled"],
+                    ]
+                    for row in data["breakdowns"][key]
+                ],
+            )
+        )
+    return sections
+
+
 @report("rejections", "Причины отказов")
 def rejections_report(scope, period, params):
     kind = params.get("kind", "new")
@@ -521,6 +727,31 @@ def rejections_report(scope, period, params):
         ],
     )
     return [reasons, lost, monthly, by_source, comments]
+
+
+@report("branches", "Сравнение филиалов")
+def branches_report(scope, period, params):
+    data = compare_branches(scope, period)
+    columns = [Column("Филиал", width=24)]
+    for column in BRANCH_COLUMNS:
+        title = f"{column.label}{UNIT_TITLE[column.unit]}"
+        columns.append(Column(title, column.unit, 16, total=False))
+    rows = [
+        [row["branch"]["name"], *[row["values"][c.key]["value"] for c in BRANCH_COLUMNS]]
+        for row in data["rows"]
+    ]
+    rows.append(["Всего по выборке", *[data["total"][c.key]["value"] for c in BRANCH_COLUMNS]])
+    return [
+        Section(
+            "Филиалы",
+            columns,
+            rows,
+            note=(
+                "Сравнивать честно по относительным колонкам: на ребёнка, доли, конверсия. "
+                "Ребёнок — ходил на занятия в периоде. Задолженность — на сегодня."
+            ),
+        )
+    ]
 
 
 def build(name, scope, period, params=None) -> Export:

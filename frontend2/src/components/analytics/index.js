@@ -5,7 +5,7 @@ export { useMetrics, useAnalyticsCatalog, useAnalyticsGet, useBreakdown, useHeat
 export { AnalyticsToolbar, PeriodPicker, BranchPicker } from './Toolbar'
 export { MetricTile, Change } from './MetricTile'
 export { ChartCard, NotEnoughData } from './ChartCard'
-export { TrendChart, BarsChart, ComboChart, DonutChart, StackedBars } from './Charts'
+export { TrendChart, BarsChart, ComboChart, DonutChart, MultiLineChart, StackedBars } from './Charts'
 export { GaugeChart, HeatmapChart, QualityBars, RankBars } from './Visuals'
 export { FunnelChart } from './FunnelChart'
 export { formatValue, formatAxis, formatBucket, formatRange } from './format'
