@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Pencil, Plus, Search, UsersRound } from 'lucide-react'
 import api from '../api/axios'
 import { ROLE_LABELS, useSession } from '../session/SessionContext'
@@ -21,6 +22,7 @@ const ALL_ROLES = ['owner', 'manager', 'admin', 'teacher', 'accountant']
 const listOf = response => response.data.results || response.data
 
 export default function Staff() {
+  const navigate = useNavigate()
   const { user, can } = useSession()
   const toast = useToast()
   const [staff, setStaff] = useState(null)
@@ -131,7 +133,7 @@ export default function Staff() {
         loading={!staff && !error}
         error={error}
         onRetry={load}
-        onRowClick={employee => canEdit(employee) && setEditing(employee)}
+        onRowClick={employee => navigate(`/staff/${employee.id}`, { state: { from: '/settings/staff', label: t('Сотрудники') } })}
         empty={query || role ? (
           <EmptyState icon={Search} title={t('Сотрудники не найдены')} description={t('Измените поиск или фильтр по роли.')} />
         ) : (

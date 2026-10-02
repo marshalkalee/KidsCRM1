@@ -6,6 +6,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from domains.platform.core.utils import today_for_org
 from domains.platform.tenants.org_settings import (
     RULE_MISSING_SUBSCRIPTION_ENABLED,
     RULE_TRIAL_NO_SHOW_ENABLED,
@@ -92,6 +93,40 @@ def cancel_trial_no_show_task(*, attendance) -> int:
         )
         .update(status=Task.Status.CANCELLED, updated_at=timezone.now())
     )
+
+
+def create_retention_task(*, child, actor, signals):
+    """Создать одну открытую задачу удержания на ребёнка."""
+    assignee = actor if actor and actor.is_active else None
+    if assignee is None:
+        assignee = (
+            User.objects.filter(
+                organization=child.organization,
+                is_active=True,
+                role__in=[User.Role.ADMIN, User.Role.MANAGER, User.Role.OWNER],
+            )
+            .order_by("role", "full_name")
+            .first()
+        )
+    labels = {
+        "attendance": "участились пропуски",
+        "subscription": "заканчивается или истёк абонемент",
+        "debt": "есть задолженность",
+    }
+    task, created = Task.objects.get_or_create(
+        organization=child.organization,
+        type=Task.Type.RETENTION,
+        source_key=f"retention:{child.id}:{today_for_org(child.organization):%Y-%m}",
+        defaults={
+            "assigned_to": assignee,
+            "child": child,
+            "source": Task.Source.AUTO,
+            "due_at": timezone.now() + datetime.timedelta(days=1),
+            "title": f"Удержать клиента: {child.full_name}",
+            "description": "Сигналы риска: " + ", ".join(labels[key] for key in signals),
+        },
+    )
+    return task, created
 
 
 def create_task(

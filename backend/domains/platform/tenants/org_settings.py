@@ -14,6 +14,8 @@ SUBSCRIPTION_ENDING_LESSONS_THRESHOLD = "subscription_ending_lessons_threshold"
 SUBSCRIPTION_ENDING_DAYS_THRESHOLD = "subscription_ending_days_threshold"
 DEBT_OVERDUE_DAYS_THRESHOLD = "debt_overdue_days_threshold"
 GROUP_UNDERFILLED_PERCENT_THRESHOLD = "group_underfilled_percent_threshold"
+RISK_ABSENCE_CHANGE_PP_THRESHOLD = "risk_absence_change_pp_threshold"
+RISK_CURRENT_ABSENCES_MIN = "risk_current_absences_min"
 LEAD_STALE_DAYS_THRESHOLD = "lead_stale_days_threshold"
 RULE_LEAD_STALE_ENABLED = "rule_lead_stale_enabled"
 RULE_RENEWAL_OFFER_ENABLED = "rule_renewal_offer_enabled"
@@ -30,6 +32,10 @@ DEFAULT_ORG_SETTINGS = {
     DEBT_OVERDUE_DAYS_THRESHOLD: 5,
     # Группа считается недозаполненной при заполненности < X% вместимости.
     GROUP_UNDERFILLED_PERCENT_THRESHOLD: 50,
+    # Осторожный старт для риск-листа: сигнал появляется только при заметном
+    # отклонении от личной нормы и хотя бы двух пропусках в выбранном периоде.
+    RISK_ABSENCE_CHANGE_PP_THRESHOLD: 20,
+    RISK_CURRENT_ABSENCES_MIN: 2,
     # Заявка считается "без движения", если статус не менялся N дней.
     LEAD_STALE_DAYS_THRESHOLD: 3,
     # Автоправила создания задач (TRU-108) — владелец может выключить любое.

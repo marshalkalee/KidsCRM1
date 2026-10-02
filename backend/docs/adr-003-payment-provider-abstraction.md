@@ -112,4 +112,3 @@ class KaspiGatewayProvider(PaymentProvider):
 
 Значение `Payment.Provider.KASPI_PAY` добавлено миграцией вместе с таблицей
 счетов (Django пишет изменение choices в миграцию, схема `payment` не меняется).
-
