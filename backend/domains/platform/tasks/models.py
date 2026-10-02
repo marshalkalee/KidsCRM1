@@ -15,10 +15,8 @@ class Task(TenantModel):
     """
 
     class Type(models.TextChoices):
-        # Существующие — уже используются TRU-104, не переименовываю.
         TRIAL_NO_SHOW = "trial_no_show", "Не пришёл на пробное"
         MISSING_SUBSCRIPTION = "missing_subscription", "Нет абонемента"
-        # Новые — по ТЗ п. 3.1.
         CALL_BACK = "call_back", "Перезвонить"
         PAYMENT_REMINDER = "payment_reminder", "Напомнить об оплате"
         TRIAL_SIGNUP = "trial_signup", "Записать на пробное"
@@ -89,10 +87,29 @@ class Task(TenantModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["organization", "type", "source_key"],
-                condition=~models.Q(source_key="") & models.Q(deleted_at__isnull=True),
+                condition=(
+                    ~models.Q(source_key="")
+                    & models.Q(deleted_at__isnull=True)
+                    & models.Q(status="open")
+                ),
                 name="unique_automatic_task_source",
             )
         ]
 
     def __str__(self):
         return self.title
+
+
+class RuleRun(TenantModel):
+    """Лог срабатывания автоправила (ТЗ п. 5.2, TRU-108) — какое правило,
+    когда, сколько задач реально создало (а не просто «отработало»)."""
+
+    rule = models.CharField(max_length=64)
+    tasks_created = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["organization", "rule", "created_at"])]
+
+    def __str__(self):
+        return f"{self.rule}: {self.tasks_created}"
