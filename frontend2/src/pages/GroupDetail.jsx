@@ -4,6 +4,7 @@ import { ArchiveRestore, CalendarClock, DoorOpen, Lock, Pencil, SearchX, UserMin
 import api from '../api/axios'
 import GroupModal from '../components/GroupModal'
 import FillBar from '../components/groups/FillBar'
+import FixedScheduleModal from '../components/groups/FixedScheduleModal'
 import { GROUP_STATUSES, WEEKDAYS_SHORT } from '../components/groups/format'
 import { useSession } from '../session/SessionContext'
 import {
@@ -31,6 +32,7 @@ export default function GroupDetail() {
   const [history, setHistory] = useState([])
   const [status, setStatus] = useState('loading')
   const [editing, setEditing] = useState(false)
+  const [editingSchedule, setEditingSchedule] = useState(false)
   const [adding, setAdding] = useState(false)
   const tab = params.get('tab') === 'history' ? 'history' : 'members'
 
@@ -125,7 +127,14 @@ export default function GroupDetail() {
           </p>
         </Card>
         <Card>
-          <p className="mb-3 text-[15px] font-bold text-ink">{t('Расписание')}</p>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-[15px] font-bold text-ink">{t('Расписание')}</p>
+            {canManage && !closed && (
+              <Button variant="ghost" size="sm" icon={CalendarClock} onClick={() => setEditingSchedule(true)}>
+                {group.schedule.length ? t('Изменить') : t('Настроить')}
+              </Button>
+            )}
+          </div>
           {group.schedule.length ? (
             <ul className="space-y-2">
               {group.schedule.map(slot => (
@@ -133,7 +142,10 @@ export default function GroupDetail() {
                   <span className="flex w-9 justify-center rounded-md bg-brand-50 py-1 text-xs font-bold text-brand-700" title={t(WEEKDAYS_FULL[slot.weekday])}>{t(WEEKDAYS_SHORT[slot.weekday])}</span>
                   <span className="font-semibold text-ink">{slot.start_time}</span>
                   <span className="text-ink-muted">{slot.duration_minutes} {t('мин')}</span>
-                  {slot.room && <span className="ml-auto flex items-center gap-1 text-[13px] text-ink-subtle"><DoorOpen className="size-3.5" />{slot.room}</span>}
+                  <span className="ml-auto flex min-w-0 flex-col items-end text-[12px] text-ink-subtle">
+                    {slot.room && <span className="flex items-center gap-1"><DoorOpen className="size-3.5" />{slot.room}</span>}
+                    {slot.teacher && <span className="max-w-32 truncate">{slot.teacher}</span>}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -146,7 +158,16 @@ export default function GroupDetail() {
           {group.teachers_detail.length ? (
             <ul className="space-y-2.5">
               {group.teachers_detail.map(tch => (
-                <li key={tch.id} className="flex items-center gap-3 text-sm font-medium text-ink"><Avatar name={tch.full_name} />{tch.full_name}</li>
+                <li key={tch.id}>
+                  <Link
+                    to={`/staff/${tch.id}`}
+                    state={{ from: `/groups/${group.id}`, label: group.name }}
+                    className="flex items-center gap-3 rounded-lg text-sm font-medium text-ink transition-colors hover:bg-brand-50 hover:text-brand-700"
+                  >
+                    <Avatar name={tch.full_name} />
+                    <span className="truncate">{tch.full_name}</span>
+                  </Link>
+                </li>
               ))}
             </ul>
           ) : <p className="text-sm text-ink-subtle">{t('Не назначены')}</p>}
@@ -214,6 +235,13 @@ export default function GroupDetail() {
       )}
 
       {editing && <GroupModal group={group} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
+      {editingSchedule && (
+        <FixedScheduleModal
+          group={group}
+          onClose={() => setEditingSchedule(false)}
+          onSaved={() => { setEditingSchedule(false); load() }}
+        />
+      )}
       {adding && (
         <AddMemberModal
           group={group}

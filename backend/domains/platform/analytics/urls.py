@@ -7,6 +7,12 @@ urlpatterns = [
     path("breakdown/", views.breakdown_api, name="analytics-breakdown"),
     path("heatmap/", views.heatmap_api, name="analytics-heatmap"),
     path("attendance-trends/", views.attendance_trends_api, name="analytics-attendance-trends"),
+    path("risk-list/", views.risk_list_api, name="analytics-risk-list"),
+    path(
+        "risk-list/<uuid:child_id>/task/",
+        views.risk_retention_task_api,
+        name="analytics-risk-retention-task",
+    ),
     path("group-occupancy/", views.group_occupancy_api, name="analytics-group-occupancy"),
     path("teacher-workload/", views.teacher_workload_api, name="analytics-teacher-workload"),
     path("funnel/", views.funnel_api, name="analytics-funnel"),

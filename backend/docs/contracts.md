@@ -268,6 +268,20 @@ lead, created = create_renewal_lead(child, actor=None)               # авто�
   продление ребёнка уходит в `PURCHASED` с автором и названием абонемента.
   Отказ по продлению продажа не трогает.
 
+### Риск-лист (TRU-122): границы доменов
+
+`analytics.risk_list` не пересчитывает финансовые правила. Он объединяет три
+готовых сигнала: `attendance_trends.child_attendance_deviation(...)`,
+`subscriptions.renewals.renewal_risk_by_child(...)` и
+`subscriptions.debt.debt_by_child(...)`. Изменение формулы долга или окончания
+абонемента делается только в money-домене; риск-лист получает новый результат
+автоматически. Один сигнал означает `attention`, два или три — `urgent`.
+
+API: `GET /api/v1/analytics/risk-list/`; задача удержания:
+`POST /api/v1/analytics/risk-list/<child_id>/task/`; Excel:
+`GET /api/v1/analytics/export/?report=risk_list`. Пороги личного роста пропусков
+хранятся в `Organization.settings` и редактируются на общем экране настроек.
+
 Владелец: Анель. Потребители: Дарья, Bekzat.
 
 ## 8. Аналитика → все отчёты (TRU-118, ADR-0006)

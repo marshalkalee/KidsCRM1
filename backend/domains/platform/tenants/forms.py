@@ -15,6 +15,8 @@ from domains.platform.tenants.org_settings import (
     GROUP_UNDERFILLED_PERCENT_THRESHOLD,
     KASPI_PAYMENT_DETAILS,
     LEAD_STALE_DAYS_THRESHOLD,
+    RISK_ABSENCE_CHANGE_PP_THRESHOLD,
+    RISK_CURRENT_ABSENCES_MIN,
     RULE_DEBT_REMINDER_ENABLED,
     RULE_LEAD_STALE_ENABLED,
     RULE_MISSING_SUBSCRIPTION_ENABLED,
@@ -22,6 +24,7 @@ from domains.platform.tenants.org_settings import (
     RULE_TRIAL_NO_SHOW_ENABLED,
     SUBSCRIPTION_ENDING_DAYS_THRESHOLD,
     SUBSCRIPTION_ENDING_LESSONS_THRESHOLD,
+    get_org_setting,
 )
 
 # Полный zoneinfo.available_timezones() — это ~600 записей (включая
@@ -77,6 +80,15 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     # шаблон добавляет data-i18n поверх при выводе (см. organization_settings.html).
     name = forms.CharField(max_length=255, label="Название организации")
     timezone = forms.ChoiceField(choices=TIMEZONE_CHOICES, label="Часовой пояс")
+    website_domain = forms.CharField(
+        max_length=255,
+        required=False,
+        label="Домен сайта (для формы заявок)",
+        help_text=(
+            "Например https://trueballet.kz — форма на сайте сможет слать "
+            "заявки только с этого адреса"
+        ),
+    )
     subscription_ending_lessons_threshold = forms.IntegerField(
         min_value=0, max_value=100, label="Абонемент заканчивается при ≤ N занятий"
     )
@@ -88,6 +100,18 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     )
     group_underfilled_percent_threshold = forms.IntegerField(
         min_value=0, max_value=100, label="Группа недозаполнена при < X% вместимости"
+    )
+    risk_absence_change_pp_threshold = forms.IntegerField(
+        min_value=1,
+        max_value=100,
+        required=False,
+        label="Рост пропусков относительно личной нормы, п.п.",
+    )
+    risk_current_absences_min = forms.IntegerField(
+        min_value=1,
+        max_value=100,
+        required=False,
+        label="Минимум пропусков за период для риск-сигнала",
     )
     lead_stale_days_threshold = forms.IntegerField(
         min_value=0, max_value=90, required=False, label="Заявка без движения после N дней"
@@ -128,6 +152,7 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             initial={
                 "name": organization.name,
                 "timezone": organization.timezone,
+                "website_domain": organization.website_domain,
                 **{
                     key: organization.settings.get(key, default)
                     for key, default in DEFAULT_ORG_SETTINGS.items()
@@ -138,6 +163,7 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     def save(self, organization):
         organization.name = self.cleaned_data["name"]
         organization.timezone = self.cleaned_data["timezone"]
+        organization.website_domain = self.cleaned_data["website_domain"]
         organization.settings = {
             **organization.settings,
             SUBSCRIPTION_ENDING_LESSONS_THRESHOLD: self.cleaned_data[
@@ -150,6 +176,12 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             GROUP_UNDERFILLED_PERCENT_THRESHOLD: self.cleaned_data[
                 GROUP_UNDERFILLED_PERCENT_THRESHOLD
             ],
+            RISK_ABSENCE_CHANGE_PP_THRESHOLD: self.cleaned_data.get(
+                RISK_ABSENCE_CHANGE_PP_THRESHOLD
+            )
+            or get_org_setting(organization, RISK_ABSENCE_CHANGE_PP_THRESHOLD),
+            RISK_CURRENT_ABSENCES_MIN: self.cleaned_data.get(RISK_CURRENT_ABSENCES_MIN)
+            or get_org_setting(organization, RISK_CURRENT_ABSENCES_MIN),
             LEAD_STALE_DAYS_THRESHOLD: self.cleaned_data[LEAD_STALE_DAYS_THRESHOLD]
             if self.cleaned_data[LEAD_STALE_DAYS_THRESHOLD] is not None
             else organization.settings.get(
@@ -162,7 +194,9 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             RULE_TRIAL_NO_SHOW_ENABLED: self.cleaned_data[RULE_TRIAL_NO_SHOW_ENABLED],
             KASPI_PAYMENT_DETAILS: self.cleaned_data[KASPI_PAYMENT_DETAILS].strip(),
         }
-        organization.save(update_fields=["name", "timezone", "settings", "updated_at"])
+        organization.save(
+            update_fields=["name", "timezone", "settings", "website_domain", "updated_at"]
+        )
         return organization
 
 
