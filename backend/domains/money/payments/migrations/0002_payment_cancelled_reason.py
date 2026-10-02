@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('payments', '0001_initial'),
+        ("payments", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='payment',
-            name='cancelled_reason',
+            model_name="payment",
+            name="cancelled_reason",
             field=models.CharField(blank=True, max_length=255),
         ),
     ]

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Building2, Camera, Check, Eye, EyeOff, Info, Loader2, Lock, LogOut, MapPin, Shield, Trash2, User } from 'lucide-react'
 import api from '../api/axios'
 import { useSession } from '../session/SessionContext'
-import { Button, Field, Input, apiErrorMessage, cn, initials, useConfirm, useToast } from '../ui'
+import { Button, Field, Input, apiErrorMessage, cn, formatPhone, initials, useConfirm, useToast } from '../ui'
 import { t } from '../i18n'
 
 const TABS = [
@@ -201,11 +201,6 @@ function PersonalData() {
       </div>
     </form>
   )
-}
-
-function formatPhone(phone = '') {
-  const match = /^\+7(\d{3})(\d{3})(\d{2})(\d{2})$/.exec(phone)
-  return match ? `+7 ${match[1]} ${match[2]} ${match[3]} ${match[4]}` : phone
 }
 
 function InfoTile({ icon: Icon, tone, label, value }) {
