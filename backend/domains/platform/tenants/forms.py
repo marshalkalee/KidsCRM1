@@ -82,6 +82,15 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     # шаблон добавляет data-i18n поверх при выводе (см. organization_settings.html).
     name = forms.CharField(max_length=255, label="Название организации")
     timezone = forms.ChoiceField(choices=TIMEZONE_CHOICES, label="Часовой пояс")
+    website_domain = forms.CharField(
+        max_length=255,
+        required=False,
+        label="Домен сайта (для формы заявок)",
+        help_text=(
+            "Например https://trueballet.kz — форма на сайте сможет слать "
+            "заявки только с этого адреса"
+        ),
+    )
     subscription_ending_lessons_threshold = forms.IntegerField(
         min_value=0, max_value=100, label="Абонемент заканчивается при ≤ N занятий"
     )
@@ -154,6 +163,7 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             initial={
                 "name": organization.name,
                 "timezone": organization.timezone,
+                "website_domain": organization.website_domain,
                 **{
                     key: organization.settings.get(key, default)
                     for key, default in DEFAULT_ORG_SETTINGS.items()
@@ -164,6 +174,7 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     def save(self, organization):
         organization.name = self.cleaned_data["name"]
         organization.timezone = self.cleaned_data["timezone"]
+        organization.website_domain = self.cleaned_data["website_domain"]
         organization.settings = {
             **organization.settings,
             SUBSCRIPTION_ENDING_LESSONS_THRESHOLD: self.cleaned_data[
@@ -196,7 +207,9 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             PARENT_CANCEL_NOTICE_HOURS: self.cleaned_data[PARENT_CANCEL_NOTICE_HOURS],
             PARENT_CANCEL_CHARGE_ON_TIME: self.cleaned_data[PARENT_CANCEL_CHARGE_ON_TIME],
         }
-        organization.save(update_fields=["name", "timezone", "settings", "updated_at"])
+        organization.save(
+            update_fields=["name", "timezone", "settings", "website_domain", "updated_at"]
+        )
         return organization
 
 
