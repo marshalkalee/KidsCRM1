@@ -1,11 +1,12 @@
 import { Route, Routes } from 'react-router-dom'
-import { CalendarDays, CheckSquare, Home, Wallet } from 'lucide-react'
+import { CalendarDays, CheckSquare, Home } from 'lucide-react'
 import { t, useLang } from '../i18n'
 import ParentLayout from './ParentLayout'
 import ParentLogin from './ParentLogin'
 import { ParentSessionProvider, RequireParent } from './ParentSession'
 import ParentHome from './pages/ParentHome'
 import ParentProfile from './pages/ParentProfile'
+import ParentSubscription from './pages/ParentSubscription'
 import ParentSoon from './pages/ParentSoon'
 
 /*
@@ -24,7 +25,7 @@ export default function ParentApp() {
           <Route index element={<ParentHome />} />
           <Route path="schedule" element={<ParentSoon icon={CalendarDays} title={t('Расписание')} />} />
           <Route path="attendance" element={<ParentSoon icon={CheckSquare} title={t('Посещения')} />} />
-          <Route path="subscription" element={<ParentSoon icon={Wallet} title={t('Абонемент')} />} />
+          <Route path="subscription" element={<ParentSubscription />} />
           <Route path="profile" element={<ParentProfile />} />
           <Route path="*" element={<ParentSoon icon={Home} title={t('Страница не найдена')} />} />
         </Route>
