@@ -28,7 +28,9 @@ class ManualProvider(PaymentProvider):
     def __init__(self, method: str):
         self.method = method
 
-    def record(self, *, subscription, amount, actor, comment="", idempotency_key=None) -> Payment:
+    def record(
+        self, *, subscription, amount, actor, payer=None, comment="", idempotency_key=None
+    ) -> Payment:
         if to_tenge(amount) <= 0:
             raise ValueError("Сумма оплаты должна быть больше нуля.")
         now = timezone.now()
@@ -37,6 +39,7 @@ class ManualProvider(PaymentProvider):
             subscription=subscription,
             amount=to_tenge(amount),
             method=self.method,
+            payer=payer,
             status=Payment.Status.CONFIRMED,
             confirmed_at=now,
             received_by=actor,
@@ -64,5 +67,45 @@ class ManualProvider(PaymentProvider):
                 action=AuditLog.Action.CREATE,
                 entity=payment,
                 after={"amount": str(payment.amount), "method": self.method, "provider": "manual"},
+            )
+        return payment
+
+
+class KaspiPayProvider(PaymentProvider):
+    """Оплата по счёту Kaspi (PaymentRequest): деньги пришли удалённо.
+    Сразу CONFIRMED — оплату подтвердил шлюз Kaspi или администратор,
+    увидевший поступление. transaction_id — номер операции Kaspi (или
+    счёта): повторный вебхук вернёт ту же оплату, второй не будет."""
+
+    def record(
+        self, *, subscription, amount, actor, comment="", transaction_id, raw_response=None
+    ) -> Payment:
+        if to_tenge(amount) <= 0:
+            raise ValueError("Сумма оплаты должна быть больше нуля.")
+        payment, created = Payment.objects.get_or_create(
+            provider=Payment.Provider.KASPI_PAY,
+            provider_transaction_id=f"{subscription.organization_id}:{transaction_id}",
+            defaults=dict(
+                organization=subscription.organization,
+                subscription=subscription,
+                amount=to_tenge(amount),
+                method=Payment.Method.KASPI_TRANSFER,
+                status=Payment.Status.CONFIRMED,
+                confirmed_at=timezone.now(),
+                provider_raw_response=raw_response or {},
+                received_by=actor,
+                comment=comment,
+            ),
+        )
+        if created:
+            AuditLog.record(
+                actor=actor,
+                action=AuditLog.Action.CREATE,
+                entity=payment,
+                after={
+                    "amount": str(payment.amount),
+                    "method": payment.method,
+                    "provider": "kaspi_pay",
+                },
             )
         return payment

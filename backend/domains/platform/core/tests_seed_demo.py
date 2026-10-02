@@ -9,8 +9,10 @@ from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
 
 from domains.people.clients.models import Child
-from domains.platform.tenants.models import Organization
+from domains.platform.tenants.models import Organization, Room
 from domains.scheduling.groups.models import Group
+from domains.scheduling.schedule.conflicts import compute_conflict_map
+from domains.scheduling.schedule.models import Lesson
 
 User = get_user_model()
 
@@ -37,6 +39,9 @@ class SeedDemoTests(TestCase):
         self.assertGreaterEqual(children, 20)
         self.assertGreater(groups, 0)
         self.assertEqual(Child.objects.for_tenant(self.org).count(), children)
+        self.assertEqual(Room.objects.for_tenant(self.org).count(), 12)
+        lessons = list(Lesson.objects.for_tenant(self.org))
+        self.assertEqual(compute_conflict_map(lessons), {})
 
     @override_settings(DEBUG=False)
     def test_refuses_without_debug(self):

@@ -9,14 +9,13 @@ API зафиксированы в [ADR-002](backend/docs/adr-002-stack-repo-api)
 
 - Backend — Django-проект: Python 3.12, Django 5, DRF, PostgreSQL, Celery + Redis.
 - Веб — React-приложение `frontend2/` (Vite, Tailwind, react-router), ходит
-  только в REST API `/api/v1/` с JWT (ADR-004). Идёт переезд со старого
-  серверного веба (Django-шаблоны + jQuery, `backend/templates/`) — эпик
-  TRU-78: старые страницы работают параллельно до TRU-88.
+  только в REST API `/api/v1/` с JWT (ADR-004). Старый серверный веб
+  (Django-шаблоны + jQuery) удалён в TRU-88: в `backend/` только API и админка.
 - API: REST, версионирование через `/api/v1/`, JWT (вход `auth/login/`,
   продление `auth/refresh/` — фронт продлевает токен сам).
 - nginx (`infra/nginx/`) — единая точка входа, тот же путь запроса локально
   и в проде: отдаёт собранный `frontend2` на `/`, проксирует на Django
-  `/api/`, `/admin/`, `/static/`, `/media/` и старые страницы
+  `/api/`, `/admin/`, `/static/`, `/media/` и `/healthz/`
   (`infra/nginx/app.conf`). Образ nginx сам собирает фронт
   (`infra/nginx/Dockerfile`).
 - `worker` — Celery worker на той же кодовой базе, что и `backend`, слушает
@@ -43,11 +42,9 @@ venv, зависимости ставятся прямо в образ. Для �
    ```bash
    docker compose up -d --build
    ```
-4. Применить миграции и собрать i18n-бандл (нужно один раз и после правки
-   словарей в `backend/i18n_src/`).
+4. Применить миграции.
    ```bash
    docker compose exec backend python manage.py migrate
-   docker compose exec backend python scripts/build_i18n_bundle.py
    ```
 5. (По желанию) наполнить свою организацию демо-данными — чтобы экраны
    смотреть на «живом» центре: 3 филиала, 20 групп, ~150 детей с
@@ -60,10 +57,9 @@ venv, зависимости ставятся прямо в образ. Для �
 
    Основной вход — `http://localhost/` — React-приложение (через nginx, тот
    же путь запроса, что и в проде). API — `/api/v1/`, админка — `/admin/`.
-   Старые серверные страницы на время переезда — по своим адресам со слешем
-   на конце: `/clients/children/`, `/settings/organization/`, `/groups/`,
-   вход в них — `/login/`. `http://localhost:8000/` — backend напрямую, без
-   nginx, для отладки. Логи: `docker compose logs -f backend` / `worker` / `nginx`.
+   Старые адреса (`/clients/children/…`, `/settings/…`) открывают те же
+   экраны в React. `http://localhost:8000/` — backend напрямую, без nginx,
+   для отладки. Логи: `docker compose logs -f backend` / `worker` / `nginx`.
 6. Установить pre-commit хуки (один раз после клонирования; сам pre-commit
    ставится на хост, не в контейнер — он вызывается git-хуком при `git commit`).
    ```bash
@@ -78,11 +74,6 @@ venv, зависимости ставятся прямо в образ. Для �
 Postgres для другого проекта) — это не проблема: наш Postgres слушает хост
 на 5433 (`docker-compose.yml`), backend ходит к нему по внутренней
 docker-сети (`db:5432`), порт 5432 на хосте вообще не используется.
-
-Вендорные JS/CSS-библиотеки (jQuery, Bootstrap и т.д.) в репозиторий пока
-не положены — см. [`backend/static/site/js/vendor/README.md`](backend/static/site/js/vendor/README.md).
-Без них сервер и страницы всё равно поднимаются (шаги выше пройдут), но
-без стилей и интерактивности плагинов.
 
 ## Фронтенд (frontend2)
 
@@ -108,20 +99,19 @@ npm run build
 
 ## Линтер и форматтер
 
-Одна команда проверяет всё (Python-код и Django-шаблоны):
+Одна команда проверяет весь Python-код:
 
 ```bash
 pre-commit run --all-files
 ```
 
 Она же выполняется автоматически при `git commit` после шага 6 (сами
-`ruff`/`djlint` pre-commit ставит в собственный изолированный кэш — Docker
+`ruff` pre-commit ставит в собственный изолированный кэш — Docker
 и `backend/.venv` тут не нужны). Точечно, внутри контейнера:
 
 ```bash
 docker compose exec backend ruff check .
 docker compose exec backend ruff format --check .
-docker compose exec backend djlint templates --profile django --check
 ```
 
 ## CI
@@ -131,7 +121,7 @@ docker compose exec backend djlint templates --profile django --check
 
 | Job | Что делает |
 |---|---|
-| `lint` | `ruff check`/`ruff format --check`/`djlint` — аннотации ruff видны прямо на диффе PR (`--output-format=github`), не только в логе. |
+| `lint` | `ruff check`/`ruff format --check` — аннотации ruff видны прямо на диффе PR (`--output-format=github`), не только в логе. |
 | `test` | Поднимает Postgres+Redis (`services:` GitHub Actions, не наш `docker-compose.yml` — так же, как CI в других продуктах AEM Solutions: `pip install` прямо на раннере, без Docker), гоняет `migrate` на пустой БД + тесты + `coverage report`. Отчёт о покрытии — без порога, но виден в Summary прогона, не только в логе. |
 | `tenant-isolation` | Отдельный **блокирующий** job: `python manage.py test --tag=tenant_isolation`. Конвенция — любой тест на изоляцию тенантов помечается `@tag("tenant_isolation")` (`django.test.tag`). Пока в репозитории нет бизнес-моделей с `organization_id` — тестов с этим тегом нет, job проходит на 0 тестах. Это не подделка проверки: как только появится первая такая модель, тест на её изоляцию обязан получить тег — иначе он не покрыт этим job'ом. |
 | `frontend` | `frontend2`: `npm ci`, `npm run lint` (oxlint), `npm run build`. |

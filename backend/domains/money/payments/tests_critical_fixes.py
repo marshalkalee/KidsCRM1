@@ -120,51 +120,57 @@ class PaymentAmountTests(TestCase):
             )
 
 
-class QuickPaymentWebPermissionTests(TestCase):
+class QuickPaymentApiPermissionTests(TestCase):
+    """Права на приём оплаты — на API, которым пользуется frontend2
+    (раньше то же проверялось на серверной странице, удалённой в TRU-88)."""
+
     def setUp(self):
         self.org, self.child, self.users, self.sub = make_org("a", "7701000000")
-        self.tab = f"/payments/child/{self.child.id}/tab/"
-        self.record = f"/payments/child/{self.child.id}/record/"
+        self.url = "/api/v1/payments/"
+
+    def client_for(self, user=None):
+        client = APIClient()
+        if user is not None:
+            client.force_authenticate(user)
+        return client
 
     def post_payment(self, user, amount="700", key="11111111-1111-1111-1111-111111111111"):
-        self.client.force_login(user)
-        return self.client.post(
-            self.record,
+        return self.client_for(user).post(
+            self.url,
             {
-                "subscription_id": str(self.sub.id),
+                "subscription": str(self.sub.id),
                 "amount": amount,
                 "method": "cash",
                 "idempotency_key": key,
             },
+            format="json",
         )
 
-    def test_anonymous_redirected_to_login(self):
-        self.assertEqual(self.client.get(self.tab).status_code, 302)
-        self.assertEqual(self.client.post(self.record, {}).status_code, 302)
+    def test_anonymous_gets_401(self):
+        self.assertEqual(self.client_for().get(self.url).status_code, 401)
+        self.assertEqual(self.client_for().post(self.url, {}, format="json").status_code, 401)
 
     def test_teacher_cannot_record_or_see(self):
-        self.assertEqual(self.post_payment(self.users[User.Role.TEACHER]).status_code, 403)
-        self.assertEqual(self.client.get(self.tab).status_code, 403)
+        teacher = self.users[User.Role.TEACHER]
+        self.assertEqual(self.post_payment(teacher).status_code, 403)
+        self.assertEqual(self.client_for(teacher).get(self.url).status_code, 403)
         self.assertFalse(Payment.objects.exists())
 
     def test_accountant_sees_but_cannot_record(self):
-        self.client.force_login(self.users[User.Role.ACCOUNTANT])
-        self.assertEqual(self.client.get(self.tab).status_code, 200)
-        self.assertEqual(self.post_payment(self.users[User.Role.ACCOUNTANT]).status_code, 403)
-
-    def test_admin_records(self):
-        response = self.post_payment(self.users[User.Role.ADMIN])
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(Payment.objects.count(), 1)
-
-    def test_negative_amount_rejected(self):
-        response = self.post_payment(self.users[User.Role.ADMIN], amount="-500")
-        self.assertEqual(response.status_code, 400)
+        accountant = self.users[User.Role.ACCOUNTANT]
+        self.assertEqual(self.client_for(accountant).get(self.url).status_code, 200)
+        self.assertEqual(self.post_payment(accountant).status_code, 403)
         self.assertFalse(Payment.objects.exists())
 
-    def test_garbage_amount_rejected(self):
-        response = self.post_payment(self.users[User.Role.ADMIN], amount="abc")
-        self.assertEqual(response.status_code, 400)
+    def test_admin_records(self):
+        self.assertEqual(self.post_payment(self.users[User.Role.ADMIN]).status_code, 201)
+        self.assertEqual(Payment.objects.count(), 1)
+
+    def test_negative_and_garbage_amount_rejected(self):
+        admin = self.users[User.Role.ADMIN]
+        self.assertEqual(self.post_payment(admin, amount="-500").status_code, 400)
+        self.assertEqual(self.post_payment(admin, amount="abc", key=None).status_code, 400)
+        self.assertFalse(Payment.objects.exists())
 
 
 class NightlyStatusFreezeTests(TestCase):

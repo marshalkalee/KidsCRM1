@@ -66,8 +66,7 @@ class BranchSerializer(serializers.ModelSerializer):
         # is_active — намеренно НЕ read-only: архивирование филиала (веб-
         # экран "Настройки организации") — это PATCH is_active, а не DELETE
         # (тот делает soft-delete через deleted_at и убирает филиал из
-        # for_tenant() совсем — архивный филиал должен там оставаться,
-        # см. web_views.branch_archive).
+        # for_tenant() совсем — архивный филиал должен там оставаться).
         read_only_fields = ["id", "organization", "created_at", "updated_at"]
 
     def validate_working_hours(self, value):

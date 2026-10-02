@@ -25,6 +25,7 @@ class AuditLog(UUIDPrimaryKeyModel):
         UNENROLL = "unenroll", "Отмена записи поверх группы"
         IMPORT = "import", "Импорт"
         IMPORT_ROLLBACK = "import_rollback", "Откат импорта"
+        PARENT_LOGIN = "parent_login", "Вход родителя в кабинет"
 
     organization = models.ForeignKey(
         "tenants.Organization",
