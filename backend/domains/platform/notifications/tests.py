@@ -184,9 +184,23 @@ class NotificationKindsTests(NotificationFixtures):
         self.org.save()
         self.assertEqual(by_kind(client_for(self.owner).get(URL))["overdue_debts"]["count"], 0)
 
-    def test_overdue_tasks_is_placeholder(self):
+    def test_overdue_tasks_counts_real_open_overdue(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from domains.platform.tasks.models import Task
+        from domains.platform.tasks.services import create_task
+
+        create_task(
+            type=Task.Type.OTHER,
+            assignee=self.owner,
+            due_date=timezone.now() - timedelta(days=1),
+            subject="Просрочена",
+            organization=self.owner.organization,
+        )
         item = by_kind(client_for(self.owner).get(URL))["overdue_tasks"]
-        self.assertEqual((item["available"], item["count"], item["unread"]), (False, 0, False))
+        self.assertEqual((item["available"], item["count"]), (True, 1))
 
 
 class NotificationRolesAndBranchesTests(NotificationFixtures):

@@ -33,6 +33,10 @@ api_v1_patterns = [
     path("ai/", include("domains.platform.ai.urls")),
     path("audit/", include("domains.platform.core.audit_urls")),
     path("analytics/", include("domains.platform.analytics.urls")),
+    # Кабинет родителя (M4): свой вход по коду и свой токен, не JWT сотрудников.
+    path("portal/", include("domains.people.portal.urls")),
+    # Объявления для кабинета родителя — сторона сотрудников (TRU-140).
+    path("announcements/", include("domains.people.portal.staff_urls")),
 ]
 
 urlpatterns = [

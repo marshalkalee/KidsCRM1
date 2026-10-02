@@ -268,6 +268,20 @@ lead, created = create_renewal_lead(child, actor=None)               # авто�
   продление ребёнка уходит в `PURCHASED` с автором и названием абонемента.
   Отказ по продлению продажа не трогает.
 
+### Риск-лист (TRU-122): границы доменов
+
+`analytics.risk_list` не пересчитывает финансовые правила. Он объединяет три
+готовых сигнала: `attendance_trends.child_attendance_deviation(...)`,
+`subscriptions.renewals.renewal_risk_by_child(...)` и
+`subscriptions.debt.debt_by_child(...)`. Изменение формулы долга или окончания
+абонемента делается только в money-домене; риск-лист получает новый результат
+автоматически. Один сигнал означает `attention`, два или три — `urgent`.
+
+API: `GET /api/v1/analytics/risk-list/`; задача удержания:
+`POST /api/v1/analytics/risk-list/<child_id>/task/`; Excel:
+`GET /api/v1/analytics/export/?report=risk_list`. Пороги личного роста пропусков
+хранятся в `Organization.settings` и редактируются на общем экране настроек.
+
 Владелец: Анель. Потребители: Дарья, Bekzat.
 
 ## 8. Аналитика → все отчёты (TRU-118, ADR-0006)
@@ -314,3 +328,20 @@ compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, seri
   `GET /api/v1/analytics/export/?report=…` с теми же period/branch/фильтрами.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.
+
+## 9. Задачи → всем (TRU-104/106)
+
+TaskService.create(type, assignee, due_date, subject, source, organization=None, branch=None, lead=None, child=None, created_by=None, description="") -> Task
+TaskService.complete(task, actor, comment="") -> Task
+TaskService.cancel(task, actor, comment="") -> Task
+
+Единый вход для создания рабочих задач из любого домена (ТЗ п. 3.1).
+source: "manual" (человек, через API) или "auto" (правило/фоновая
+задача) — по нему отчёт отделяет «администратор сам решил» от «система
+напомнила». Для автозадач source_key делает создание идемпотентным
+(TRU-104: повторная отметка того же события не плодит вторую задачу).
+Права (ТЗ п. 2) — visible_tasks(user) в platform.tasks.services: тот же
+принцип, что у visible_leads в platform.leads.
+
+Владелец: Bekzat. Потребители: Анель (TRU-71 — нет абонемента), Дарья
+(TRU-108 — предложить продление, TRU-72 — центр уведомлений).

@@ -22,12 +22,15 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 
+from domains.people.clients.models import Child
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_view_analytics
+from domains.platform.tasks.services import create_retention_task
 from domains.platform.tenants.plans import has_feature
 from domains.scheduling.groups.queries import underfilled_threshold
 
 from . import metrics  # noqa: F401 — регистрирует базовые метрики
+from .attendance_trends import attendance_trends
 from .branches import branch_trends, compare_branches
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
 from .export import filename, workbook
@@ -38,8 +41,10 @@ from .period import PRESETS, PeriodError, parse_period
 from .registry import REGISTRY, compute
 from .rejections import RejectionError, rejection_comments, rejections, rejections_by
 from .reports import REPORTS, build
+from .risk_list import risk_list
 from .scope import ScopeError, allowed_branch_ids, scope_for
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
+from .teacher_load import teacher_workload
 
 # Больше метрик за запрос — это уже выгрузка, а не экран.
 MAX_METRICS = 12
@@ -127,12 +132,65 @@ def heatmap_api(request, version=None):
 
 @api_view(["GET"])
 @permission_classes([CanViewAnalytics])
+def attendance_trends_api(request, version=None):
+    """Недельная динамика, разрезы и личная норма ребёнка (TRU-121)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(attendance_trends(scope, period))
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def risk_list_api(request, version=None):
+    """Три междоменных сигнала удержания, сведённые в один список (TRU-122)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(risk_list(scope, period))
+
+
+@api_view(["POST"])
+@permission_classes([CanViewAnalytics])
+def risk_retention_task_api(request, child_id, version=None):
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    data = risk_list(scope, period)
+    item = next((row for row in data["items"] if row["id"] == str(child_id)), None)
+    if item is None:
+        return Response({"detail": "Ребёнок не входит в доступный риск-лист."}, status=404)
+    child = Child.objects.for_tenant(scope.organization).get(pk=child_id)
+    task, created = create_retention_task(child=child, actor=request.user, signals=item["signals"])
+    return Response(
+        {
+            "id": str(task.id),
+            "title": task.title,
+            "status": task.status,
+            "created": created,
+        },
+        status=201 if created else 200,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
 def group_occupancy_api(request, version=None):
     """Заполняемость групп, недобор, динамика и разрезы (TRU-119)."""
     period, scope, error = _period_and_scope(request)
     if error:
         return error
     return Response(group_occupancy(scope, period, request.query_params))
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def teacher_workload_api(request, version=None):
+    """Нагрузка преподавателей по данным расписания (TRU-120)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(teacher_workload(scope, period, request.query_params))
 
 
 def _funnel_filters(request):
@@ -223,6 +281,8 @@ def export_api(request, version=None):
     }
     if name == "group_occupancy":
         report_params["occupancy_filters"] = request.query_params
+    if name == "teacher_workload":
+        report_params["teacher_filters"] = request.query_params
     export = build(
         name,
         scope,

@@ -7,7 +7,7 @@ import {
   freezeSubscription, recomputeSubscription, sellSubscription, unfreezeSubscription,
 } from '../../api/subscriptions'
 import {
-  Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton,
+  Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton,
   apiErrorMessage, formatDate, formatDateTime, money, useConfirm, useToast,
 } from '../../ui'
 import { t } from '../../i18n'
@@ -103,57 +103,69 @@ export default function SubscriptionsTab({ child, onCountChange }) {
 
   const current = subscriptions.find(s => s.status === 'active' || s.status === 'frozen')
 
+  const history = subscriptions.filter(s => s.id !== current?.id)
+
   return (
     <div className="space-y-4">
-      {current && (
-        <Card className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="font-semibold text-ink">{current.subscription_type_name}</p>
-            <Badge tone={STATUS_TONE[current.display_status]}>{t(current.display_status_label)}</Badge>
-          </div>
-          <p className="text-[13px] text-ink-muted">
-            {t('Осталось занятий:')} {current.sessions_remaining_cache ?? t('безлимит')} · {t('до {date}', { date: formatDate(current.ends_on) })}
-          </p>
-          <FreezeHistory freezes={current.freezes} />
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Button variant="secondary" size="sm" icon={ListChecks} onClick={() => setLedgerFor(current)}>
-              {t('Журнал списаний')}
+      <Card>
+        <CardHeader
+          title={t('Текущий абонемент')}
+          actions={(
+            <Button variant="primary" size="sm" icon={PlusCircle} onClick={() => setSellOpen(true)}>
+              {t('Продать абонемент')}
             </Button>
-            {current.status === 'active' && (
-              <Button variant="secondary" size="sm" icon={Snowflake} onClick={() => setFreezeFor(current)}>
-                {t('Заморозить')}
+          )}
+        />
+        {current ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-base font-semibold text-ink">{current.subscription_type_name}</p>
+              <Badge tone={STATUS_TONE[current.display_status]}>{t(current.display_status_label)}</Badge>
+            </div>
+            <p className="text-[13px] text-ink-muted">
+              {t('Осталось занятий:')} {current.sessions_remaining_cache ?? t('безлимит')} · {t('до {date}', { date: formatDate(current.ends_on) })}
+            </p>
+            <FreezeHistory freezes={current.freezes} />
+            <div className="flex flex-wrap gap-2 border-t border-line pt-3">
+              <Button variant="secondary" size="sm" icon={ListChecks} onClick={() => setLedgerFor(current)}>
+                {t('Журнал списаний')}
               </Button>
-            )}
-            {current.status === 'frozen' && (
-              <Button variant="secondary" size="sm" onClick={() => unfreeze(current)}>{t('Разморозить')}</Button>
-            )}
+              {current.status === 'active' && (
+                <Button variant="secondary" size="sm" icon={Snowflake} onClick={() => setFreezeFor(current)}>
+                  {t('Заморозить')}
+                </Button>
+              )}
+              {current.status === 'frozen' && (
+                <Button variant="secondary" size="sm" onClick={() => unfreeze(current)}>{t('Разморозить')}</Button>
+              )}
+            </div>
           </div>
-        </Card>
-      )}
+        ) : (
+          <p className="rounded-lg bg-surface-muted px-4 py-3 text-sm text-ink-muted">{t('Действующего абонемента нет.')}</p>
+        )}
+      </Card>
 
-      <Button variant="primary" size="sm" icon={PlusCircle} onClick={() => setSellOpen(true)}>
-        {t('Продать абонемент')}
-      </Button>
-
-      <p className="font-semibold text-ink">{t('История абонементов')}</p>
-      {subscriptions.length === 0 ? (
-        <Card><EmptyState title={t('Абонементов ещё не было')} /></Card>
-      ) : (
-        <div className="space-y-2">
-          {subscriptions.map(s => (
-            <Card key={s.id} className="flex items-center justify-between">
-              <div className="min-w-0">
-                <p className="font-semibold text-ink">{s.subscription_type_name}</p>
-                <p className="text-[13px] text-ink-muted">
-                  {formatDate(s.starts_on)} — {formatDate(s.ends_on)} · {money(s.price)}
-                </p>
-                {s.id !== current?.id && <FreezeHistory freezes={s.freezes} compact />}
-              </div>
-              <Badge tone={STATUS_TONE[s.display_status]}>{t(s.display_status_label)}</Badge>
-            </Card>
-          ))}
-        </div>
-      )}
+      <Card>
+        <CardHeader title={t('История абонементов')} />
+        {history.length === 0 ? (
+          <p className="rounded-lg bg-surface-muted px-4 py-3 text-sm text-ink-muted">{t('Других абонементов не было.')}</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {history.map(s => (
+              <li key={s.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="font-semibold text-ink">{s.subscription_type_name}</p>
+                  <p className="text-[13px] text-ink-muted">
+                    {formatDate(s.starts_on)} — {formatDate(s.ends_on)} · {money(s.price)}
+                  </p>
+                  <FreezeHistory freezes={s.freezes} compact />
+                </div>
+                <Badge tone={STATUS_TONE[s.display_status]}>{t(s.display_status_label)}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       {ledgerFor && <LedgerModal subscription={ledgerFor} onClose={() => setLedgerFor(null)} onRecomputed={load} />}
       {freezeFor && (
@@ -296,7 +308,7 @@ function FreezeModal({ subscription, onClose, onDone }) {
   )
 }
 
-function SellModal({ child, onClose, onDone }) {
+export function SellModal({ child, onClose, onDone }) {
   const toast = useToast()
   const [loaded, setLoaded] = useState(false)
   const [branches, setBranches] = useState([])
