@@ -48,10 +48,20 @@ def new_leads(user, branch_ids):
 
 
 def overdue_tasks(user, branch_ids):
-    """Задачи появятся в M2 (TRU-106) — пока заглушка, чтобы место было."""
+    """Просроченные открытые задачи (ТЗ п. 5.2, TRU-109) — эскалация
+    управляющему. Админ видит свои и своего филиала (TRU-107), управляющий
+    и владелец — для перехода на экран эскалации."""
     if user.role not in (User.Role.OWNER, User.Role.MANAGER, User.Role.ADMIN):
         return None
-    return Item("overdue_tasks", available=False)
+    from domains.platform.tasks.models import Task
+    from domains.platform.tasks.services import visible_tasks
+
+    qs = visible_tasks(user).filter(status=Task.Status.OPEN, due_at__lt=timezone.now())
+    if branch_ids is not None:
+        qs = qs.filter(Q(branch_id__in=branch_ids) | Q(branch__isnull=True))
+    latest = qs.order_by("-due_at").values_list("due_at", flat=True).first()
+    link = "/tasks/escalation" if user.role in (User.Role.OWNER, User.Role.MANAGER) else "/tasks"
+    return Item("overdue_tasks", qs.count(), latest, link)
 
 
 def unmarked_lessons(user, branch_ids):

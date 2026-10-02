@@ -6,7 +6,9 @@ from . import lists_api, views
 app_name = "subscriptions"
 
 router = DefaultRouter()
+router.register("subscription-types", views.SubscriptionTypeViewSet, basename="subscription-type")
 router.register("", views.SubscriptionViewSet, basename="subscription")
+
 
 # Раньше роутера: иначе «debtors» примется за id абонемента.
 urlpatterns = [

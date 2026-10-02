@@ -284,38 +284,31 @@ export default function AttendanceTab({ child, onCountChange }) {
         </>
       )}
 
-      <section>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-[15px] font-bold text-ink">{t('Доступные отработки')}</h2>
-            <p className="mt-0.5 text-[13px] text-ink-muted">{t('Пропуски, которые ещё можно отработать.')}</p>
-          </div>
-          {makeups && <Badge tone={makeups.length ? 'warning' : 'neutral'}>{makeups.length}</Badge>}
-        </div>
-        {makeupsError && <Card><ErrorState onRetry={loadMakeups} /></Card>}
-        {!makeupsError && !makeups && <Skeleton className="h-32" />}
+      <Card>
+        <CardHeader
+          title={t('Доступные отработки')}
+          description={t('Пропуски, которые ещё можно отработать.')}
+          actions={makeups && <Badge tone={makeups.length ? 'warning' : 'neutral'}>{makeups.length}</Badge>}
+        />
+        {makeupsError && <ErrorState onRetry={loadMakeups} />}
+        {!makeupsError && !makeups && <Skeleton className="h-16" />}
         {!makeupsError && makeups && makeups.length === 0 && (
-          <Card>
-            <EmptyState
-              icon={CalendarClock}
-              title={t('Нет пропусков, доступных для отработки')}
-              description={t('Здесь появятся занятия, которые ребёнок пропустил и ещё может отработать.')}
-            />
-          </Card>
+          <p className="flex items-center gap-2 rounded-lg bg-surface-muted px-4 py-3 text-sm text-ink-muted">
+            <CalendarClock className="size-4 shrink-0" />
+            {t('Пропусков для отработки нет.')}
+          </p>
         )}
         {!makeupsError && makeups && makeups.length > 0 && (
-          <div className="space-y-3">
+          <ul className="divide-y divide-line">
             {makeups.map(row => (
-              <Card key={row.attendance_id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <li key={row.attendance_id} className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="font-semibold text-ink">{row.group_name || t('Индивидуальное занятие')}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-muted">
                     <span className="inline-flex items-center gap-1"><Clock className="size-3.5" />{formatDateTime(row.starts_at_local)}</span>
                     {row.room_name && <span className="inline-flex items-center gap-1"><MapPin className="size-3.5" />{row.room_name}</span>}
+                    {row.absence_reason_display && <span>{t('Причина:')} {t(row.absence_reason_display)}</span>}
                   </div>
-                  {row.absence_reason_display && (
-                    <p className="mt-1 text-[13px] text-ink-muted">{t('Причина:')} {t(row.absence_reason_display)}</p>
-                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:justify-end">
                   <Badge tone={row.days_left <= 3 ? 'warning' : 'neutral'}>
@@ -325,11 +318,11 @@ export default function AttendanceTab({ child, onCountChange }) {
                     {t('Отработать')}
                   </Button>
                 </div>
-              </Card>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
-      </section>
+      </Card>
 
       {pickingFor && (
         <MakeupCandidatesModal
