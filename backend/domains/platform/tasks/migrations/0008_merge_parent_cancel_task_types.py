@@ -1,0 +1,30 @@
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ("tasks", "0003_alter_task_type"),
+        ("tasks", "0005_alter_task_type"),
+    ]
+
+    operations = [
+        migrations.AlterField(
+            model_name="task",
+            name="type",
+            field=models.CharField(
+                choices=[
+                    ("trial_no_show", "Не пришёл на пробное"),
+                    ("missing_subscription", "Нет абонемента"),
+                    ("retention", "Удержание клиента"),
+                    ("parent_request", "Запрос родителя"),
+                    ("call_back", "Перезвонить"),
+                    ("payment_reminder", "Напомнить об оплате"),
+                    ("trial_signup", "Записать на пробное"),
+                    ("renewal_offer", "Предложить продление"),
+                    ("other", "Другое"),
+                ],
+                default="other",
+                max_length=32,
+            ),
+        ),
+    ]
