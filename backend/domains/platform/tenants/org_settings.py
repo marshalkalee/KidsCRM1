@@ -17,6 +17,8 @@ GROUP_UNDERFILLED_PERCENT_THRESHOLD = "group_underfilled_percent_threshold"
 RISK_ABSENCE_CHANGE_PP_THRESHOLD = "risk_absence_change_pp_threshold"
 RISK_CURRENT_ABSENCES_MIN = "risk_current_absences_min"
 KASPI_PAYMENT_DETAILS = "kaspi_payment_details"
+PARENT_CANCEL_NOTICE_HOURS = "parent_cancel_notice_hours"
+PARENT_CANCEL_CHARGE_ON_TIME = "parent_cancel_charge_on_time"
 
 DEFAULT_ORG_SETTINGS = {
     # Абонемент "заканчивается", когда остаётся <= N занятий ИЛИ <= N дней.
@@ -33,6 +35,11 @@ DEFAULT_ORG_SETTINGS = {
     # Куда родителю платить по счёту из CRM без шлюза Kaspi: ссылка Kaspi
     # Pay или номер для перевода (payments/remote.py). Пусто — не настроено.
     KASPI_PAYMENT_DETAILS: "",
+    # Родитель может предупредить и позже, но только своевременное
+    # предупреждение применяет льготное правило центра. Значение хранится
+    # здесь, чтобы кабинет, посещаемость и биллинг использовали один контракт.
+    PARENT_CANCEL_NOTICE_HOURS: 24,
+    PARENT_CANCEL_CHARGE_ON_TIME: False,
 }
 
 

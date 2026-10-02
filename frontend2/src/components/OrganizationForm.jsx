@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/axios'
-import { Button, Card, CardHeader, ErrorState, Field, Input, Select, Skeleton, apiErrorMessage, useToast } from '../ui'
+import { Button, Card, CardHeader, Checkbox, ErrorState, Field, Input, Select, Skeleton, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
 import { entityNameInputProps } from '../utils/formValidation'
 
@@ -75,6 +75,45 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
                   </Select>
                 )}
               </Field>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title={t('Отмена занятия родителем')}
+              description={t('Родитель сможет предупредить о пропуске и позже срока, но система заранее покажет правило списания.')}
+            />
+            <div className="space-y-4">
+              <Field
+                label={t('Срок своевременного предупреждения')}
+                hint={t('Не позднее чем за указанное число часов до начала занятия.')}
+                error={errors.parent_cancel_notice_hours}
+              >
+                {({ id, invalid }) => (
+                  <div className="flex max-w-xs items-center gap-2">
+                    <Input
+                      id={id}
+                      type="number"
+                      min={0}
+                      max={168}
+                      invalid={invalid}
+                      value={form.parent_cancel_notice_hours ?? 24}
+                      onChange={e => set('parent_cancel_notice_hours', e.target.value === '' ? '' : Number(e.target.value))}
+                    />
+                    <span className="text-sm text-ink-muted">{t('часов')}</span>
+                  </div>
+                )}
+              </Field>
+              <Checkbox
+                checked={Boolean(form.parent_cancel_charge_on_time)}
+                onChange={e => set('parent_cancel_charge_on_time', e.target.checked)}
+                label={t('Списывать занятие даже при своевременном предупреждении')}
+              />
+              <p className="text-[13px] text-ink-muted">
+                {form.parent_cancel_charge_on_time
+                  ? t('При любом предупреждении занятие списывается по правилам центра.')
+                  : t('Своевременное предупреждение не списывает занятие; позднее — списывает.')}
+              </p>
             </div>
           </Card>
 

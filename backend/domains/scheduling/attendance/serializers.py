@@ -213,6 +213,7 @@ class AttendanceRosterEntrySerializer(serializers.Serializer):
     marked_at = serializers.SerializerMethodField()
     enrollment_kind = serializers.SerializerMethodField()
     source_lead_id = serializers.SerializerMethodField()
+    parent_cancel_notice = serializers.SerializerMethodField()
 
     def get_enrollment_kind(self, obj):
         return obj.get("enrollment_kind")
@@ -220,6 +221,20 @@ class AttendanceRosterEntrySerializer(serializers.Serializer):
     def get_source_lead_id(self, obj):
         source_lead_id = obj.get("source_lead_id")
         return str(source_lead_id) if source_lead_id else None
+
+    def get_parent_cancel_notice(self, obj):
+        request = obj.get("parent_cancel_notice")
+        if request is None:
+            return None
+        return {
+            "request_id": str(request.id),
+            "reason": request.cancel_reason,
+            "reason_display": request.get_cancel_reason_display(),
+            "comment": request.comment,
+            "notice_is_timely": request.notice_is_timely,
+            "will_be_charged": request.will_be_charged,
+            "created_at": request.created_at,
+        }
 
     def get_attendance_id(self, obj):
         attendance = obj["attendance"]

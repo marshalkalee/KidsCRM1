@@ -408,6 +408,7 @@ class ChildLessonRequestsView(ParentView):
                 lesson_id=payload.validated_data["lesson_id"],
                 request_type=payload.validated_data["type"],
                 comment=payload.validated_data.get("comment", ""),
+                cancel_reason=payload.validated_data.get("cancel_reason", ""),
             )
         except ParentRequestError as exc:
             return Response({"detail": str(exc)}, status=exc.status_code)

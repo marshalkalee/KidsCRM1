@@ -14,6 +14,8 @@ from domains.platform.tenants.org_settings import (
     DEFAULT_ORG_SETTINGS,
     GROUP_UNDERFILLED_PERCENT_THRESHOLD,
     KASPI_PAYMENT_DETAILS,
+    PARENT_CANCEL_CHARGE_ON_TIME,
+    PARENT_CANCEL_NOTICE_HOURS,
     RISK_ABSENCE_CHANGE_PP_THRESHOLD,
     RISK_CURRENT_ABSENCES_MIN,
     SUBSCRIPTION_ENDING_DAYS_THRESHOLD,
@@ -101,6 +103,15 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     kaspi_payment_details = forms.CharField(
         max_length=255, required=False, label="Kaspi для удалённой оплаты"
     )
+    parent_cancel_notice_hours = forms.IntegerField(
+        min_value=0,
+        max_value=168,
+        label="Срок предупреждения об отмене, часов",
+    )
+    parent_cancel_charge_on_time = forms.BooleanField(
+        required=False,
+        label="Списывать занятие при своевременном предупреждении",
+    )
 
     def clean_timezone(self):
         tz_name = self.cleaned_data["timezone"]
@@ -148,6 +159,8 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             RISK_CURRENT_ABSENCES_MIN: self.cleaned_data.get(RISK_CURRENT_ABSENCES_MIN)
             or get_org_setting(organization, RISK_CURRENT_ABSENCES_MIN),
             KASPI_PAYMENT_DETAILS: self.cleaned_data[KASPI_PAYMENT_DETAILS].strip(),
+            PARENT_CANCEL_NOTICE_HOURS: self.cleaned_data[PARENT_CANCEL_NOTICE_HOURS],
+            PARENT_CANCEL_CHARGE_ON_TIME: self.cleaned_data[PARENT_CANCEL_CHARGE_ON_TIME],
         }
         organization.save(update_fields=["name", "timezone", "settings", "updated_at"])
         return organization

@@ -99,6 +99,11 @@ class ParentLessonRequest(TenantModel):
         APPROVED = "approved", "Одобрен"
         REJECTED = "rejected", "Отклонён"
 
+    class CancelReason(models.TextChoices):
+        ILLNESS = "illness", "Болезнь"
+        FAMILY = "family", "Семейные обстоятельства"
+        OTHER = "other", "Другое"
+
     requested_by = models.ForeignKey(
         ParentAccount, on_delete=models.PROTECT, related_name="lesson_requests"
     )
@@ -111,6 +116,12 @@ class ParentLessonRequest(TenantModel):
     type = models.CharField(max_length=10, choices=Type.choices)
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.REGULAR)
     comment = models.TextField(blank=True)
+    cancel_reason = models.CharField(
+        max_length=16, choices=CancelReason.choices, blank=True, default=""
+    )
+    notice_hours_required = models.PositiveSmallIntegerField(null=True, blank=True)
+    notice_is_timely = models.BooleanField(null=True, blank=True)
+    will_be_charged = models.BooleanField(null=True, blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.NEW)
     source_attendance = models.ForeignKey(
         "attendance.Attendance",

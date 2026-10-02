@@ -8,6 +8,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from domains.people.portal.models import ParentLessonRequest
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.leads.services import create_trial_no_show_follow_up, mark_trial_attended
 from domains.platform.tasks.services import cancel_trial_no_show_task
@@ -218,6 +219,20 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
             .filter(lesson=lesson, cancelled_at__isnull=True, child__in=participants)
             .select_related("source_lead")
         }
+        parent_cancellations = {
+            row.child_id: row
+            for row in ParentLessonRequest.objects.for_tenant(request.organization)
+            .filter(
+                lesson=lesson,
+                child__in=participants,
+                type=ParentLessonRequest.Type.CANCEL,
+                status__in=[
+                    ParentLessonRequest.Status.NEW,
+                    ParentLessonRequest.Status.APPROVED,
+                ],
+            )
+            .order_by("created_at")
+        }
         entries = [
             {
                 "child": child,
@@ -228,6 +243,7 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
                 "source_lead_id": (
                     enrollments[child.id].source_lead_id if child.id in enrollments else None
                 ),
+                "parent_cancel_notice": parent_cancellations.get(child.id),
             }
             for child in participants
         ]
