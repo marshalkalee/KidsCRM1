@@ -144,3 +144,15 @@ class PhoneChangeView(ParentView):
             return Response(result)
         except LoginError as exc:
             return _error(exc)
+
+
+class ChildSummaryView(ParentView):
+    """Главный экран кабинета (TRU-138): ближайшие занятия, абонемент, к оплате."""
+
+    def get(self, request, child_id, version=None):
+        from . import access, summary
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(summary.summary(child))

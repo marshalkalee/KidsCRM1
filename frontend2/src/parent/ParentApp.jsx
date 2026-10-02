@@ -4,6 +4,7 @@ import { t, useLang } from '../i18n'
 import ParentLayout from './ParentLayout'
 import ParentLogin from './ParentLogin'
 import { ParentSessionProvider, RequireParent } from './ParentSession'
+import ParentHome from './pages/ParentHome'
 import ParentProfile from './pages/ParentProfile'
 import ParentSoon from './pages/ParentSoon'
 
@@ -20,7 +21,7 @@ export default function ParentApp() {
       <Routes key={language}>
         <Route path="login" element={<ParentLogin />} />
         <Route element={<RequireParent><ParentLayout /></RequireParent>}>
-          <Route index element={<ParentSoon icon={Home} title={t('Главная')} />} />
+          <Route index element={<ParentHome />} />
           <Route path="schedule" element={<ParentSoon icon={CalendarDays} title={t('Расписание')} />} />
           <Route path="attendance" element={<ParentSoon icon={CheckSquare} title={t('Посещения')} />} />
           <Route path="subscription" element={<ParentSoon icon={Wallet} title={t('Абонемент')} />} />
