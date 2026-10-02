@@ -156,3 +156,15 @@ class ChildSummaryView(ParentView):
         if child is None:
             return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
         return Response(summary.summary(child))
+
+
+class ChildMoneyView(ParentView):
+    """Абонемент и оплаты (TRU-139): текущий, журнал списаний, история, как оплатить."""
+
+    def get(self, request, child_id, version=None):
+        from . import access, money
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(money.money(child))
