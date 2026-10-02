@@ -7,6 +7,11 @@ from django.utils import timezone
 
 from domains.people.clients.models import Child
 from domains.platform.tasks.models import Task
+from domains.platform.tenants.org_settings import (
+    PARENT_CANCEL_CHARGE_ON_TIME,
+    PARENT_CANCEL_NOTICE_HOURS,
+    get_org_setting,
+)
 from domains.platform.users.models import User
 from domains.scheduling.schedule.enrollment_service import (
     available_makeups_for_child,
@@ -99,6 +104,14 @@ def _create_task(parent_request):
     local_start = timezone.localtime(lesson.starts_at)
     action = "запись" if parent_request.type == ParentLessonRequest.Type.ENROLL else "отмена"
     kind = " на отработку" if parent_request.kind == ParentLessonRequest.Kind.MAKEUP else ""
+    cancel_details = ""
+    if parent_request.type == ParentLessonRequest.Type.CANCEL:
+        timing = "в срок" if parent_request.notice_is_timely else "позднее установленного срока"
+        charge = "занятие спишется" if parent_request.will_be_charged else "занятие не спишется"
+        cancel_details = (
+            f" Причина: {parent_request.get_cancel_reason_display()}. "
+            f"Предупреждение {timing}; {charge}."
+        )
     Task.objects.get_or_create(
         organization=parent_request.organization,
         type=Task.Type.PARENT_REQUEST,
@@ -109,7 +122,7 @@ def _create_task(parent_request):
             "title": f"Запрос родителя: {action}{kind}",
             "description": (
                 f"{parent_request.child.full_name}: {lesson} ({local_start:%d.%m.%Y %H:%M}). "
-                f"Комментарий: {parent_request.comment or 'нет'}."
+                f"Комментарий: {parent_request.comment or 'нет'}.{cancel_details}"
             ),
         },
     )
@@ -117,7 +130,14 @@ def _create_task(parent_request):
 
 @transaction.atomic
 def create_parent_request(
-    *, account, child, lesson_id, request_type, comment="", source_attendance_id=None
+    *,
+    account,
+    child,
+    lesson_id,
+    request_type,
+    comment="",
+    source_attendance_id=None,
+    cancel_reason="",
 ):
     # Serialise requests for one child so two simultaneous requests cannot
     # both pass an optional subscription makeup limit.
@@ -173,8 +193,20 @@ def create_parent_request(
     elif request_type == ParentLessonRequest.Type.CANCEL:
         if not lesson.participants().filter(pk=child.id).exists():
             raise ParentRequestError("Ребёнок не записан на это занятие.")
+        if cancel_reason not in ParentLessonRequest.CancelReason.values:
+            raise ParentRequestError("Укажите причину отмены занятия.")
     else:
         raise ParentRequestError("Неизвестный тип запроса.")
+
+    notice_hours_required = None
+    notice_is_timely = None
+    will_be_charged = None
+    if request_type == ParentLessonRequest.Type.CANCEL:
+        notice_hours_required = int(get_org_setting(child.organization, PARENT_CANCEL_NOTICE_HOURS))
+        notice_deadline = lesson.starts_at - datetime.timedelta(hours=notice_hours_required)
+        notice_is_timely = timezone.now() <= notice_deadline
+        charge_on_time = bool(get_org_setting(child.organization, PARENT_CANCEL_CHARGE_ON_TIME))
+        will_be_charged = not notice_is_timely or charge_on_time
 
     try:
         parent_request = ParentLessonRequest.objects.create(
@@ -185,6 +217,12 @@ def create_parent_request(
             type=request_type,
             kind=kind,
             comment=comment.strip(),
+            cancel_reason=(
+                cancel_reason if request_type == ParentLessonRequest.Type.CANCEL else ""
+            ),
+            notice_hours_required=notice_hours_required,
+            notice_is_timely=notice_is_timely,
+            will_be_charged=will_be_charged,
             source_attendance=source_attendance,
             spots_available_at_request=(
                 _spots_left(lesson) if request_type == ParentLessonRequest.Type.ENROLL else None

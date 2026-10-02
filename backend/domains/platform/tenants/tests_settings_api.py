@@ -40,6 +40,8 @@ class OrganizationSettingsApiTests(SettingsApiBase):
             "subscription_ending_days_threshold": 5,
             "debt_overdue_days_threshold": 10,
             "group_underfilled_percent_threshold": 40,
+            "parent_cancel_notice_hours": 24,
+            "parent_cancel_charge_on_time": False,
             **overrides,
         }
 
@@ -63,6 +65,8 @@ class OrganizationSettingsApiTests(SettingsApiBase):
         self.org.refresh_from_db()
         self.assertEqual(self.org.name, "True Ballet Studio")
         self.assertEqual(self.org.settings["debt_overdue_days_threshold"], 10)
+        self.assertEqual(self.org.settings["parent_cancel_notice_hours"], 24)
+        self.assertFalse(self.org.settings["parent_cancel_charge_on_time"])
         self.assertEqual(self.org.settings["onboarding"], {"done": True})
 
     def test_invalid_values_are_400_with_field_errors(self):

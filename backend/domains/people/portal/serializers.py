@@ -122,6 +122,14 @@ class ParentLessonRequestCreateSerializer(serializers.Serializer):
     lesson_id = serializers.UUIDField()
     type = serializers.ChoiceField(choices=ParentLessonRequest.Type.choices)
     comment = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+    cancel_reason = serializers.ChoiceField(
+        choices=ParentLessonRequest.CancelReason.choices, required=False, allow_blank=True
+    )
+
+    def validate(self, attrs):
+        if attrs["type"] == ParentLessonRequest.Type.CANCEL and not attrs.get("cancel_reason"):
+            raise serializers.ValidationError({"cancel_reason": "Укажите причину отмены занятия."})
+        return attrs
 
 
 class ParentLessonRequestSerializer(serializers.ModelSerializer):
@@ -129,6 +137,9 @@ class ParentLessonRequestSerializer(serializers.ModelSerializer):
     source_attendance_id = serializers.UUIDField(read_only=True, allow_null=True)
     processed_by_name = serializers.CharField(
         source="processed_by.full_name", read_only=True, default=None
+    )
+    cancel_reason_display = serializers.CharField(
+        source="get_cancel_reason_display", read_only=True
     )
 
     class Meta:
@@ -139,6 +150,11 @@ class ParentLessonRequestSerializer(serializers.ModelSerializer):
             "kind",
             "status",
             "comment",
+            "cancel_reason",
+            "cancel_reason_display",
+            "notice_hours_required",
+            "notice_is_timely",
+            "will_be_charged",
             "lesson",
             "source_attendance_id",
             "spots_available_at_request",

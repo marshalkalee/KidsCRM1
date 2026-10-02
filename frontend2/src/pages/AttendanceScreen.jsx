@@ -463,6 +463,24 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark, onRese
 
   const statusNote = (
     <>
+      {row.parent_cancel_notice && (
+        <div style={{ marginTop: 6, borderRadius: 8, background: '#FFF7ED', padding: '7px 9px', color: '#9A3412', fontSize: 11.5 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 750 }}>
+            <AlertTriangle size={13} /> {t('Предупредил, что не придёт')}
+          </div>
+          <div style={{ marginTop: 2 }}>
+            {t(row.parent_cancel_notice.reason_display)}
+            {' · '}
+            {row.parent_cancel_notice.notice_is_timely ? t('в срок') : t('позднее срока')}
+          </div>
+          <div style={{ marginTop: 1, fontWeight: 650 }}>
+            {row.parent_cancel_notice.will_be_charged ? t('Занятие спишется') : t('Занятие не спишется')}
+          </div>
+          {row.parent_cancel_notice.comment && (
+            <div style={{ marginTop: 3, color: '#7C2D12' }}>{row.parent_cancel_notice.comment}</div>
+          )}
+        </div>
+      )}
       {row._error && (
         <div style={{ fontSize: 11, color: '#DC2626', marginTop: 2 }}>
           {t('Не сохранилось — нажмите ещё раз')}

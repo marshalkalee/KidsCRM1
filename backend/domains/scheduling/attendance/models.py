@@ -117,6 +117,11 @@ class Attendance(TenantModel):
 
         if status == Attendance.Status.PRESENT:
             self._consume()
+        elif status == Attendance.Status.ABSENT and self._parent_cancel_requires_charge():
+            # TRU-144: позднее предупреждение (либо политика центра,
+            # которая списывает и своевременную отмену) не должно
+            # обходить биллинг только из-за статуса «не был».
+            self._consume()
         else:
             self._revert()
         self.absence_reason = new_absence_reason
@@ -140,6 +145,27 @@ class Attendance(TenantModel):
             },
         )
         return self
+
+    def _parent_cancel_requires_charge(self):
+        """Snapshot правила хранится в запросе — изменение настроек позже
+        не переписывает уже принятое родителем решение."""
+        from domains.people.portal.models import ParentLessonRequest
+
+        request = (
+            ParentLessonRequest.objects.for_tenant(self.organization)
+            .filter(
+                child_id=self.child_id,
+                lesson_id=self.lesson_id,
+                type=ParentLessonRequest.Type.CANCEL,
+                status__in=[
+                    ParentLessonRequest.Status.NEW,
+                    ParentLessonRequest.Status.APPROVED,
+                ],
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        return bool(request and request.will_be_charged)
 
     @transaction.atomic
     def clear_mark(self, *, actor):

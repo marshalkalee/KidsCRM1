@@ -176,18 +176,66 @@ class ParentScheduleTests(PortalAuthBase):
         return _parent, children
 
     def test_parent_can_request_cancellation_without_changing_schedule(self):
-        lesson = self.lesson(self.today + datetime.timedelta(days=1))
+        # Через 2 дня — больше 24 ч при любом времени запуска теста.
+        lesson = self.lesson(self.today + datetime.timedelta(days=2))
         token = self.login()
         response = self.as_parent(token).post(
             f"/api/v1/portal/children/{self.child.id}/lesson-requests/",
-            {"type": "cancel", "lesson_id": str(lesson.id), "comment": "Заболели"},
+            {
+                "type": "cancel",
+                "lesson_id": str(lesson.id),
+                "cancel_reason": "illness",
+                "comment": "Заболели",
+            },
             format="json",
         )
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data["status"], "new")
+        self.assertEqual(response.data["cancel_reason"], "illness")
+        self.assertEqual(response.data["notice_hours_required"], 24)
+        self.assertTrue(response.data["notice_is_timely"])
+        self.assertFalse(response.data["will_be_charged"])
         self.assertTrue(lesson.participants().filter(id=self.child.id).exists())
         lesson.refresh_from_db()
         self.assertEqual(lesson.status, Lesson.Status.SCHEDULED)
+
+    def test_cancellation_requires_reason(self):
+        lesson = self.lesson(self.today + datetime.timedelta(days=1))
+        response = self.as_parent(self.login()).post(
+            f"/api/v1/portal/children/{self.child.id}/lesson-requests/",
+            {"type": "cancel", "lesson_id": str(lesson.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("cancel_reason", response.data)
+
+    def test_late_cancellation_uses_organization_threshold_and_is_charged(self):
+        self.org.settings = {
+            **self.org.settings,
+            "parent_cancel_notice_hours": 48,
+            "parent_cancel_charge_on_time": False,
+        }
+        self.org.save(update_fields=["settings"])
+        lesson = self.lesson(self.today + datetime.timedelta(days=1))
+
+        response = self.as_parent(self.login()).post(
+            f"/api/v1/portal/children/{self.child.id}/lesson-requests/",
+            {
+                "type": "cancel",
+                "lesson_id": str(lesson.id),
+                "cancel_reason": "family",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["notice_hours_required"], 48)
+        self.assertFalse(response.data["notice_is_timely"])
+        self.assertTrue(response.data["will_be_charged"])
+        task = Task.objects.get(source_key=f"parent-request:{response.data['id']}")
+        self.assertIn("Семейные обстоятельства", task.description)
+        self.assertIn("занятие спишется", task.description)
 
     def test_regular_options_match_direction_age_and_capacity(self):
         suitable_group = Group.objects.create(

@@ -16,6 +16,12 @@ const KIND = {
   trial: { label: 'Пробное', tone: 'warning', icon: CalendarDays },
 }
 
+const CANCEL_REASONS = [
+  ['illness', 'Болезнь'],
+  ['family', 'Семейные обстоятельства'],
+  ['other', 'Другое'],
+]
+
 function scheduleUrl(childId) {
   return childId ? `children/${childId}/schedule/` : null
 }
@@ -301,7 +307,7 @@ function NextLesson({ row, onCancel }) {
             <LessonBadges row={row} />
           </div>
           <LessonMeta row={row} className="mt-5 grid gap-2 text-sm sm:grid-cols-2" />
-          {row.status === 'scheduled' && <Button className="mt-4" onClick={onCancel}>{t('Запросить отмену')}</Button>}
+          {row.status === 'scheduled' && <Button className="mt-4" onClick={onCancel}>{t('Не сможем прийти')}</Button>}
         </div>
       </div>
     </Card>
@@ -331,7 +337,7 @@ function DayCard({ date, rows, onCancel }) {
                   <LessonBadges row={row} />
                 </div>
                 <LessonMeta row={row} className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px]" />
-                {row.status === 'scheduled' && <Button className="mt-3" onClick={() => onCancel(row)}>{t('Запросить отмену')}</Button>}
+                {row.status === 'scheduled' && <Button className="mt-3" onClick={() => onCancel(row)}>{t('Не сможем прийти')}</Button>}
               </div>
             </div>
           </li>
@@ -370,6 +376,15 @@ function RequestHistory({ data, loading }) {
               {row.type === 'enroll' && row.spots_available_at_request != null && (
                 <p className="mt-1 text-xs text-ink-subtle">{t('На момент запроса свободно: {count}', { count: row.spots_available_at_request })}</p>
               )}
+              {row.type === 'cancel' && row.cancel_reason_display && (
+                <p className="mt-1 text-xs text-ink-muted">{t('Причина: {reason}', { reason: t(row.cancel_reason_display) })}</p>
+              )}
+              {row.type === 'cancel' && row.notice_is_timely != null && (
+                <p className={`mt-1 text-xs font-semibold ${row.will_be_charged ? 'text-warning-600' : 'text-success-600'}`}>
+                  {row.notice_is_timely ? t('Предупреждение отправлено в срок.') : t('Предупреждение отправлено позже срока.')}{' '}
+                  {row.will_be_charged ? t('Занятие спишется.') : t('Занятие не спишется.')}
+                </p>
+              )}
             </li>
           )
         })}
@@ -381,6 +396,7 @@ function RequestHistory({ data, loading }) {
 function LessonRequestModal({ child, request, options, onClose, onCreated }) {
   const [selected, setSelected] = useState(request.row || null)
   const [comment, setComment] = useState('')
+  const [cancelReason, setCancelReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const isCancel = request.type === 'cancel'
@@ -395,6 +411,7 @@ function LessonRequestModal({ child, request, options, onClose, onCreated }) {
         type: request.type,
         lesson_id: selected.id,
         comment,
+        ...(isCancel ? { cancel_reason: cancelReason } : {}),
       })
       onCreated()
     } catch (requestError) {
@@ -412,12 +429,14 @@ function LessonRequestModal({ child, request, options, onClose, onCreated }) {
       open
       onClose={onClose}
       size={isCancel ? 'md' : 'xl'}
-      title={isCancel ? t('Запросить отмену занятия') : t('Запросить запись на занятие')}
-      description={t('Это запрос администратору. Расписание и число свободных мест пока не изменятся.')}
+      title={isCancel ? t('Не сможем прийти') : t('Запросить запись на занятие')}
+      description={isCancel
+        ? t('Сообщите причину. Администратор и преподаватель увидят предупреждение до занятия.')
+        : t('Это запрос администратору. Расписание и число свободных мест пока не изменятся.')}
       footer={(
         <>
           <Button onClick={onClose}>{t('Закрыть')}</Button>
-          <Button variant="primary" onClick={submit} disabled={!selected} loading={submitting}>
+          <Button variant="primary" onClick={submit} disabled={!selected || (isCancel && !cancelReason)} loading={submitting}>
             <Send className="size-4" />{t('Отправить запрос')}
           </Button>
         </>
@@ -442,9 +461,30 @@ function LessonRequestModal({ child, request, options, onClose, onCreated }) {
         ) : <EmptyState icon={CalendarDays} title={t('Подходящих занятий пока нет')} description={t('Показываются только будущие занятия по направлению и возрасту ребёнка, где есть места.')} />
       )}
       {isCancel && selected && (
-        <div className="rounded-lg border border-line bg-canvas p-3">
-          <p className="font-semibold text-ink">{title(selected)}</p>
-          <p className="text-sm text-ink-muted">{dateLabel(selected.starts_at_local)} · {timeLabel(selected.starts_at_local)}–{timeLabel(selected.ends_at_local)}</p>
+        <div className="space-y-4">
+          <div className="rounded-lg border border-line bg-canvas p-3">
+            <p className="font-semibold text-ink">{title(selected)}</p>
+            <p className="text-sm text-ink-muted">{dateLabel(selected.starts_at_local)} · {timeLabel(selected.starts_at_local)}–{timeLabel(selected.ends_at_local)}</p>
+          </div>
+          <Field label={t('Причина пропуска')} required>
+            {() => (
+              <div className="grid gap-2 sm:grid-cols-3">
+                {CANCEL_REASONS.map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setCancelReason(value)}
+                    className={`min-h-12 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${cancelReason === value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-line bg-surface text-ink hover:border-brand-200'}`}
+                  >
+                    {t(label)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </Field>
+          <p className="rounded-lg bg-warning-50 px-3 py-2 text-[13px] text-warning-600">
+            {t('После отправки система покажет, было ли предупреждение своевременным и спишется ли занятие по правилам центра.')}
+          </p>
         </div>
       )}
       <Field label={t('Комментарий')} hint={t('Необязательно. Администратор увидит его вместе с запросом.')}>

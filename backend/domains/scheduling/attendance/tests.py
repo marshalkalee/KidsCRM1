@@ -14,6 +14,7 @@ from domains.money.subscriptions.subscription_service import ConsumeOutcome
 from domains.money.subscriptions.subscription_types import create_type
 from domains.money.subscriptions.subscriptions import add_ledger_entry
 from domains.people.clients.models import Child
+from domains.people.portal.models import ParentAccount, ParentLessonRequest
 from domains.platform.core.audit import AuditLog
 from domains.platform.leads.models import Lead, LeadStatusChange
 from domains.platform.leads.services import change_status, create_lead
@@ -158,6 +159,74 @@ class AttendanceMarkModelTest(AttendanceFixtureMixin, TestCase):
         self.assertFalse(attendance.consumed_from_subscription)
         self.assertIsNone(attendance.subscription_id)
         self.assertEqual(attendance.absence_reason, Attendance.AbsenceReason.ILLNESS)
+
+    def test_late_parent_cancellation_charges_absent_lesson(self):
+        self.lesson.starts_at = timezone.now() + datetime.timedelta(days=2)
+        self.lesson.ends_at = self.lesson.starts_at + datetime.timedelta(hours=1)
+        self.lesson.save(update_fields=["starts_at", "ends_at"])
+        sub = self._create_subscription(sessions=8)
+        account = ParentAccount.objects.create(phone="+77017770001")
+        ParentLessonRequest.objects.create(
+            organization=self.org,
+            requested_by=account,
+            child=self.child,
+            lesson=self.lesson,
+            type=ParentLessonRequest.Type.CANCEL,
+            cancel_reason=ParentLessonRequest.CancelReason.ILLNESS,
+            notice_hours_required=24,
+            notice_is_timely=False,
+            will_be_charged=True,
+        )
+        attendance = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        )
+
+        attendance.mark(
+            Attendance.Status.ABSENT,
+            actor=self.owner,
+            absence_reason=Attendance.AbsenceReason.ILLNESS,
+        )
+
+        sub.refresh_from_db()
+        self.assertEqual(sub.sessions_remaining_cache, 7)
+        self.assertTrue(attendance.consumed_from_subscription)
+
+    def test_timely_parent_cancellation_does_not_charge_absent_lesson(self):
+        self.lesson.starts_at = timezone.now() + datetime.timedelta(days=2)
+        self.lesson.ends_at = self.lesson.starts_at + datetime.timedelta(hours=1)
+        self.lesson.save(update_fields=["starts_at", "ends_at"])
+        sub = self._create_subscription(sessions=8)
+        account = ParentAccount.objects.create(phone="+77017770003")
+        ParentLessonRequest.objects.create(
+            organization=self.org,
+            requested_by=account,
+            child=self.child,
+            lesson=self.lesson,
+            type=ParentLessonRequest.Type.CANCEL,
+            cancel_reason=ParentLessonRequest.CancelReason.FAMILY,
+            notice_hours_required=24,
+            notice_is_timely=True,
+            will_be_charged=False,
+        )
+        attendance = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        )
+
+        attendance.mark(
+            Attendance.Status.ABSENT,
+            actor=self.owner,
+            absence_reason=Attendance.AbsenceReason.FAMILY,
+        )
+
+        sub.refresh_from_db()
+        self.assertEqual(sub.sessions_remaining_cache, 8)
+        self.assertFalse(attendance.consumed_from_subscription)
 
     def test_mark_makeup_does_not_consume(self):
         self._create_subscription(sessions=8)
@@ -656,6 +725,33 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
         self.assertEqual(first_row["child_status"], Child.Status.ACTIVE)
         self.assertEqual(first_row["child_photo_url"], "")
         self.assertEqual(first_row["child_birth_date"], self.children[0].birth_date.isoformat())
+
+    def test_roster_shows_parent_cancellation_notice_to_teacher(self):
+        account = ParentAccount.objects.create(phone="+77017770002")
+        parent_request = ParentLessonRequest.objects.create(
+            organization=self.org,
+            requested_by=account,
+            child=self.children[0],
+            lesson=self.lesson,
+            type=ParentLessonRequest.Type.CANCEL,
+            cancel_reason=ParentLessonRequest.CancelReason.FAMILY,
+            notice_hours_required=24,
+            notice_is_timely=True,
+            will_be_charged=False,
+            comment="Уезжаем",
+        )
+
+        response = _authenticated_client(self.teacher).get(
+            "/api/v1/attendance/roster/", {"lesson": str(self.lesson.id)}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = next(
+            item for item in response.data["results"] if item["child"] == str(self.children[0].id)
+        )
+        self.assertEqual(row["parent_cancel_notice"]["request_id"], str(parent_request.id))
+        self.assertEqual(row["parent_cancel_notice"]["reason"], "family")
+        self.assertFalse(row["parent_cancel_notice"]["will_be_charged"])
 
     def test_roster_reflects_already_marked_attendance_on_reopen(self):
         client = _authenticated_client(self.owner)
