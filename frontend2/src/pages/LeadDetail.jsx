@@ -148,7 +148,7 @@ export default function LeadDetail() {
     setConverting(true)
   }
 
-  const createCallBackTask = useCallback(async () => {
+  async function createCallBackTask() {
     setCreatingTask(true)
     try {
       const existing = await api.get('tasks/', {
@@ -172,7 +172,7 @@ export default function LeadDetail() {
     } finally {
       setCreatingTask(false)
     }
-  }, [lead, user, toast])
+  }
 
   const meta = LEAD_STATUS[lead.status]
   return (
