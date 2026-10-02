@@ -1,6 +1,24 @@
 import { useState } from 'react'
-import { LogOut, Monitor, Smartphone } from 'lucide-react'
-import { Button, Card, CardHeader, Field, Input, Modal, Skeleton, cn, formatDateTime, formatPhone, useToast } from '../../ui'
+import { Baby, Building2, LogOut, Monitor, Smartphone } from 'lucide-react'
+import {
+  Avatar,
+  Badge,
+  Button,
+  CHILD_STATUSES,
+  Card,
+  CardHeader,
+  Field,
+  Input,
+  Modal,
+  PageHeader,
+  Skeleton,
+  ageLabel,
+  cn,
+  formatDate,
+  formatDateTime,
+  formatPhone,
+  useToast,
+} from '../../ui'
 import { LANGUAGES, lang, setLang, t } from '../../i18n'
 import { phoneDigits, phoneInputProps } from '../../utils/formValidation'
 import portal, { portalError, usePortalData } from '../api'
@@ -19,7 +37,7 @@ const ERRORS = {
 const PORTAL_LANGUAGES = LANGUAGES.filter(l => l.code === 'ru' || l.code === 'kk')
 
 export default function ParentProfile() {
-  const { profile, me, signOut } = useParent()
+  const { profile, children, child, selectChild, me, signOut } = useParent()
   const toast = useToast()
   const [email, setEmail] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -52,40 +70,61 @@ export default function ParentProfile() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <p className="text-lg font-bold text-ink">{profile.full_name || t('Родитель')}</p>
-        <p className="mt-0.5 text-sm text-ink-muted">{formatPhone(profile.phone)}</p>
-        {profile.centers?.length > 0 && <p className="mt-1 text-[13px] text-ink-subtle">{profile.centers.join(' · ')}</p>}
-        <Button size="sm" className="mt-3" onClick={() => setChangingPhone(true)}>{t('Сменить номер')}</Button>
-      </Card>
+      <PageHeader
+        title={t('Профиль')}
+        description={t('Контактные данные родителя и информация о связанных детях.')}
+      />
 
-      <Card>
-        <CardHeader title={t('Почта')} description={t('Центр может присылать на неё документы.')} />
-        <form onSubmit={saveEmail} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <Field label={t('Email')} className="flex-1">
-            {({ id }) => <Input id={id} type="email" value={shownEmail} onChange={e => setEmail(e.target.value)} placeholder="name@mail.kz" autoComplete="email" />}
-          </Field>
-          <Button type="submit" variant="primary" loading={saving} disabled={shownEmail === profile.email}>{t('Сохранить')}</Button>
-        </form>
-      </Card>
+      <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)]">
+        <Card>
+          <CardHeader title={t('Профиль родителя')} />
+          <div className="flex items-center gap-3">
+            <Avatar name={profile.full_name || t('Родитель')} size="lg" />
+            <div className="min-w-0">
+              <p className="truncate text-lg font-bold text-ink">{profile.full_name || t('Родитель')}</p>
+              <p className="mt-0.5 text-sm text-ink-muted">{formatPhone(profile.phone)}</p>
+            </div>
+          </div>
+          {profile.centers?.length > 0 && (
+            <p className="mt-4 flex items-center gap-2 rounded-lg bg-surface-muted px-3 py-2.5 text-[13px] text-ink-muted">
+              <Building2 className="size-4 shrink-0" />{profile.centers.join(' · ')}
+            </p>
+          )}
+          <Button size="sm" className="mt-4" onClick={() => setChangingPhone(true)}>{t('Сменить номер')}</Button>
+        </Card>
 
-      <Card>
-        <CardHeader title={t('Язык кабинета')} />
-        <div role="radiogroup" aria-label={t('Язык кабинета')} className="grid grid-cols-2 gap-2">
-          {PORTAL_LANGUAGES.map(l => (
-            <button
-              key={l.code}
-              type="button"
-              role="radio"
-              aria-checked={lang === l.code}
-              onClick={() => changeLanguage(l.code)}
-              className={cn('h-11 rounded-md border-[1.5px] text-sm font-semibold', lang === l.code ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line-strong text-ink-muted')}
-            >
-              {l.label}
-            </button>
-          ))}
-        </div>
-      </Card>
+        <ChildrenCard childOptions={children} selected={child} onSelect={selectChild} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader title={t('Почта')} description={t('Центр может присылать на неё документы.')} />
+          <form onSubmit={saveEmail} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <Field label={t('Email')} className="flex-1">
+              {({ id }) => <Input id={id} type="email" value={shownEmail} onChange={e => setEmail(e.target.value)} placeholder="name@mail.kz" autoComplete="email" />}
+            </Field>
+            <Button type="submit" variant="primary" loading={saving} disabled={shownEmail === profile.email}>{t('Сохранить')}</Button>
+          </form>
+        </Card>
+
+        <Card>
+          <CardHeader title={t('Язык кабинета')} />
+          <div role="radiogroup" aria-label={t('Язык кабинета')} className="grid grid-cols-2 gap-2">
+            {PORTAL_LANGUAGES.map(l => (
+              <button
+                key={l.code}
+                type="button"
+                role="radio"
+                aria-checked={lang === l.code}
+                onClick={() => changeLanguage(l.code)}
+                className={cn('h-11 rounded-md border-[1.5px] text-sm font-semibold', lang === l.code ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line-strong text-ink-muted')}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
+        </Card>
+      </div>
 
       <Devices />
 
@@ -98,6 +137,61 @@ export default function ParentProfile() {
 
       {changingPhone && <PhoneChange onClose={() => setChangingPhone(false)} onDone={() => { setChangingPhone(false); me.reload() }} />}
     </div>
+  )
+}
+
+function ChildrenCard({ childOptions, selected, onSelect }) {
+  return (
+    <Card>
+      <CardHeader
+        title={t('Дети в кабинете')}
+        description={t('Данные загружаются из карточки ребёнка в центре.')}
+      />
+      {childOptions.length ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          {childOptions.map(item => {
+            const status = CHILD_STATUSES[item.status] || { label: item.status, tone: 'neutral' }
+            const isSelected = item.id === selected?.id
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onSelect(item.id)}
+                className={cn(
+                  'rounded-xl border p-4 text-left transition',
+                  isSelected ? 'border-brand-300 bg-brand-50/50' : 'border-line hover:border-brand-200 hover:bg-canvas',
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <Avatar name={item.full_name} src={item.photo_url} size="lg" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate font-bold text-ink">{item.full_name}</p>
+                      <Badge tone={status.tone}>{status.label}</Badge>
+                    </div>
+                    <p className="mt-1 text-[13px] text-ink-muted">
+                      {ageLabel(item.age)} · {t('дата рождения')} {formatDate(item.birth_date)}
+                    </p>
+                    <p className="mt-2 flex items-center gap-1.5 text-[13px] text-ink-muted">
+                      <Building2 className="size-3.5 shrink-0" />{item.organization.name}
+                    </p>
+                    <p className="mt-1 flex items-start gap-1.5 text-[13px] text-ink-muted">
+                      <Baby className="mt-0.5 size-3.5 shrink-0" />
+                      <span>{item.groups?.length
+                        ? item.groups.map(group => [group.name, group.direction, group.branch].filter(Boolean).join(' · ')).join('; ')
+                        : t('Группа пока не назначена')}</span>
+                    </p>
+                  </div>
+                </div>
+                {isSelected && <p className="mt-3 text-xs font-semibold text-brand-600">{t('Выбран для просмотра')}</p>}
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="rounded-lg bg-surface-muted px-4 py-5 text-sm text-ink-muted">{t('Связанных детей пока нет.')}</p>
+      )}
+    </Card>
   )
 }
 

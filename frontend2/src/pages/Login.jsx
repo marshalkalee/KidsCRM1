@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { ArrowRight, Eye, EyeOff } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
+import LoginRoleSwitch from '../components/LoginRoleSwitch'
 import { useSession } from '../session/SessionContext'
 import { Button, Field, Input } from '../ui'
 import { t } from '../i18n'
@@ -40,6 +41,7 @@ export default function Login() {
 
   return (
     <AuthLayout>
+      <LoginRoleSwitch value="staff" />
       <h2 className="text-2xl font-bold tracking-tight">{t('Вход')}</h2>
       <p className="mt-1.5 text-sm text-ink-muted">{t('Телефон и пароль сотрудника центра.')}</p>
 

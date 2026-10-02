@@ -1,11 +1,14 @@
-import { Route, Routes } from 'react-router-dom'
-import { CalendarDays, CheckSquare, Home, Wallet } from 'lucide-react'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { Megaphone, Wallet } from 'lucide-react'
 import { t, useLang } from '../i18n'
 import ParentLayout from './ParentLayout'
 import ParentLogin from './ParentLogin'
 import { ParentSessionProvider, RequireParent } from './ParentSession'
 import ParentProfile from './pages/ParentProfile'
+import ParentAttendance from './pages/ParentAttendance'
+import ParentHome from './pages/ParentHome'
 import ParentSoon from './pages/ParentSoon'
+import ParentSchedule from './pages/ParentSchedule'
 
 /*
  * Кабинет родителя — отдельное приложение внутри frontend2 по адресу
@@ -20,12 +23,13 @@ export default function ParentApp() {
       <Routes key={language}>
         <Route path="login" element={<ParentLogin />} />
         <Route element={<RequireParent><ParentLayout /></RequireParent>}>
-          <Route index element={<ParentSoon icon={Home} title={t('Главная')} />} />
-          <Route path="schedule" element={<ParentSoon icon={CalendarDays} title={t('Расписание')} />} />
-          <Route path="attendance" element={<ParentSoon icon={CheckSquare} title={t('Посещения')} />} />
+          <Route index element={<ParentHome />} />
+          <Route path="schedule" element={<ParentSchedule />} />
+          <Route path="attendance" element={<ParentAttendance />} />
           <Route path="subscription" element={<ParentSoon icon={Wallet} title={t('Абонемент')} />} />
+          <Route path="announcements" element={<ParentSoon icon={Megaphone} title={t('Объявления')} />} />
           <Route path="profile" element={<ParentProfile />} />
-          <Route path="*" element={<ParentSoon icon={Home} title={t('Страница не найдена')} />} />
+          <Route path="*" element={<Navigate to="." replace />} />
         </Route>
       </Routes>
     </ParentSessionProvider>
