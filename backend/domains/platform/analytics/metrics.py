@@ -195,6 +195,7 @@ register(
         queryset=visits,
         date_field="lesson__starts_at",
         aggregate=count("child_id", distinct=True),
+        breakdowns={"branch": "lesson__group__branch_id"},
     )
 )
 register(

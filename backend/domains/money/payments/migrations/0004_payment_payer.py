@@ -5,16 +5,21 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('clients', '0012_trial_children'),
-        ('payments', '0003_payment_confirmed_at_payment_provider_and_more'),
+        ("clients", "0012_trial_children"),
+        ("payments", "0003_payment_confirmed_at_payment_provider_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='payment',
-            name='payer',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='payments_made', to='clients.parentcontact'),
+            model_name="payment",
+            name="payer",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.PROTECT,
+                related_name="payments_made",
+                to="clients.parentcontact",
+            ),
         ),
     ]

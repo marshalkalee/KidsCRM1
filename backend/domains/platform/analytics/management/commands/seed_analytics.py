@@ -22,7 +22,13 @@ from domains.money.payments.models import Payment
 from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.subscription_types import create_type
 from domains.people.clients.models import Child
-from domains.platform.leads.models import Lead, LeadKind, LeadSource, LeadStatusChange
+from domains.platform.leads.models import (
+    Lead,
+    LeadKind,
+    LeadRejectionReason,
+    LeadSource,
+    LeadStatusChange,
+)
 from domains.platform.tenants.models import Branch, Direction, Organization
 from domains.scheduling.attendance.models import Attendance
 from domains.scheduling.groups.models import Group, GroupMembership
@@ -34,6 +40,14 @@ CHILDREN = 5000
 GROUP_SIZE = 20
 DAYS = 365
 BATCH = 5000
+REJECTION_COMMENTS = [
+    "Сказали, что дорого для двоих детей",
+    "Хотят только по выходным",
+    "Переезжают в другой район",
+    "Ребёнок не захотел после пробного",
+    "Нашли кружок рядом с домом",
+    "Не отвечают на звонки",
+]
 DIRECTIONS = ["Балет", "Хореография", "Гимнастика", "Акробатика", "Растяжка"]
 
 
@@ -319,6 +333,10 @@ class Command(BaseCommand):
         S = Lead.Status
         leads, changes = [], []
         sources = list(LeadSource.objects.for_tenant(organization)) or [None]
+        reasons = LeadRejectionReason.objects.for_tenant(organization).filter(kind=LeadKind.NEW)
+        lost = reasons.filter(is_lost_contact=True).first()
+        objections = list(reasons.filter(is_lost_contact=False)) or [None]
+        lost = lost or objections[0]
         managers = self.managers
 
         def path():
@@ -366,6 +384,18 @@ class Command(BaseCommand):
             moment = created
             previous = ""
             for status in steps:
+                reason, comment = None, ""
+                if status == S.REJECTED:
+                    # Не пришёл на пробное — чаще всего после записи (TRU-117).
+                    reason = (
+                        lost
+                        if previous == S.TRIAL_SCHEDULED and random.random() < 0.6
+                        else random.choice(objections)
+                    )
+                    lead.rejection_reason = reason
+                    if random.random() < 0.3:
+                        comment = random.choice(REJECTION_COMMENTS)
+                        lead.rejection_comment = comment
                 changes.append(
                     LeadStatusChange(
                         id=uuid.uuid4(),
@@ -375,10 +405,18 @@ class Command(BaseCommand):
                         to_status=status,
                         changed_by=owner,
                         changed_at=moment,
+                        rejection_reason=reason,
+                        comment=comment,
                     )
                 )
                 previous = status
                 moment += timedelta(days=random.randint(1, 6))
+        # Купившим — проданный абонемент, как при продаже из заявки (#104):
+        # по нему считается средний чек источника (TRU-116).
+        sold = list(Subscription.objects.for_tenant(organization).only("id", "price")[:2000])
+        for lead in leads:
+            if lead.status == S.PURCHASED and sold:
+                lead.sold_subscription = random.choice(sold)
         Lead.objects.bulk_create(leads, batch_size=BATCH)
         LeadStatusChange.objects.bulk_create(changes, batch_size=BATCH)
         self.stdout.write(f"  заявок {len(leads)}")

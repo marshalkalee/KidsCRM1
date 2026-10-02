@@ -7,7 +7,8 @@ def backfill_payer(apps, schema_editor):
 
     for payment in Payment.objects.filter(payer__isnull=True).select_related("subscription"):
         link = ChildContact.objects.filter(
-            child_id=payment.subscription.child_id, is_payer=True,
+            child_id=payment.subscription.child_id,
+            is_payer=True,
         ).first()
         if link:
             payment.payer_id = link.parent_contact_id

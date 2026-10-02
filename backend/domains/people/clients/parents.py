@@ -1,6 +1,5 @@
 """
-Карточка родителя — общая логика для старого веба (web_views.parent_card)
-и API frontend2 (views.ParentContactViewSet, TRU-83).
+Карточка родителя — логика для API frontend2 (views.ParentContactViewSet, TRU-83).
 """
 
 from decimal import Decimal

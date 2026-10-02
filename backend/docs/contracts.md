@@ -306,5 +306,11 @@ compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, seri
   `ChartCard` (загрузка, ошибка, «данных пока мало», пусто) с `TrendChart` /
   `BarsChart`, `FunnelChart`. Все состояния на примерах — `/analytics/kit`.
   Подпись и «хорошее направление» новой метрики — в `analytics/meta.js`.
+- Excel (TRU-114): отчёт описывает свои таблицы функцией `@report("имя", "Заголовок")`
+  в `analytics/reports.py` (секции из `metrics_section`, `series_section`,
+  `breakdown_section`… или свои `Section`/`Column`), на странице —
+  `<ExportButton report="имя" filters={filters} />`. Шапка листа, форматы
+  чисел/дат и «Итого» формулами — общие (`analytics/export.py`),
+  `GET /api/v1/analytics/export/?report=…` с теми же period/branch/фильтрами.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.

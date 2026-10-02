@@ -16,7 +16,7 @@ URL = "/api/v1/analytics/funnel/"
 S = Lead.Status
 
 
-class FunnelTests(APITestCase):
+class FunnelFixtures(APITestCase):
     def setUp(self):
         self.org = Organization.objects.create(name="True Ballet", slug="tb-funnel")
         self.abaya = Branch.objects.create(organization=self.org, name="Абая")
@@ -62,6 +62,8 @@ class FunnelTests(APITestCase):
             previous = status
         return lead
 
+
+class FunnelTests(FunnelFixtures):
     def stages(self, **params):
         data = self.client.get(URL, params).data["funnel"]
         return data, {stage["key"]: stage["count"] for stage in data["stages"]}
@@ -130,16 +132,21 @@ class FunnelTests(APITestCase):
         self.assertEqual(self.stages()[0]["total"], 1)
 
     def test_excel_export(self):
+        """Выгрузка — общим механизмом TRU-114, с фильтром в шапке."""
         self.lead(S.NEW, S.CONTACTED, S.PURCHASED, source=self.instagram)
-        response = self.client.get(f"{URL}export/")
+        self.lead(S.NEW)
+        response = self.client.get(
+            "/api/v1/analytics/export/", {"report": "funnel", "source": str(self.instagram.pk)}
+        )
         self.assertEqual(response.status_code, 200)
         book = openpyxl.load_workbook(io.BytesIO(response.content))
         self.assertEqual(
             book.sheetnames, ["Воронка", "Источник", "Направление", "Филиал", "Ответственный"]
         )
-        rows = list(book["Воронка"].iter_rows(values_only=True))
-        self.assertEqual(rows[1][:2], ("Новая", 1))
-        self.assertEqual(rows[5][:2], ("Купил абонемент", 1))
+        rows = [row for row in book["Воронка"].iter_rows(values_only=True) if any(row)]
+        self.assertIn("Фильтр — Источник: Instagram", [row[0] for row in rows])
+        stages = {row[0]: row[1] for row in rows if row[0] in ("Заявки", "Купили")}
+        self.assertEqual(stages, {"Заявки": 1, "Купили": 1})
 
     def test_leads_list_matches_funnel_click(self):
         """Клик «сейчас на этапе» открывает список заявок — те же заявки."""

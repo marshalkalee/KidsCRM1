@@ -164,30 +164,30 @@ export function NoteHelper({ text, onParsed }) {
 
 /* --- Перед звонком ----------------------------------------------------- */
 
-/** Короткая сводка о ребёнке: посещаемость, деньги, последние разговоры — и о чём заговорить. */
-export function ChildBrief({ childId }) {
+/**
+ * «Перед звонком» — кнопка в шапке карточки ребёнка (рядом с «Редактировать»);
+ * сводка (посещаемость, деньги, последние разговоры и о чём заговорить)
+ * открывается под шапкой — ChildBriefCard.
+ */
+export function ChildBriefButton({ childId, onLoaded }) {
   const ai = useAI()
-  const [brief, setBrief] = useState(null)
   const [busy, call] = useAICall()
   if (!ai.enabled) return null
 
   async function load() {
     const data = await call(() => api.post(`ai/children/${childId}/brief/`))
-    if (data) setBrief(data)
+    if (data) onLoaded(data)
   }
 
-  if (!brief) {
-    return (
-      <div className="-mt-2 mb-4 flex justify-end">
-        <AIButton icon={PhoneCall} busy={busy} onClick={load}>{t('Перед звонком')}</AIButton>
-      </div>
-    )
-  }
+  return <AIButton icon={PhoneCall} busy={busy} onClick={load}>{t('Перед звонком')}</AIButton>
+}
+
+export function ChildBriefCard({ brief, onHide }) {
   return (
     <Card className="mb-6 border-[#ddd6fe] bg-[#fdfbff]">
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="flex items-center gap-2 text-[15px] font-bold text-ink"><PhoneCall className="size-4 text-[#7c3aed]" /> {t('Перед звонком')} <AIBadge /></p>
-        <button type="button" onClick={() => setBrief(null)} className="text-[13px] font-semibold text-ink-muted hover:text-ink">{t('Скрыть')}</button>
+        <button type="button" onClick={onHide} className="text-[13px] font-semibold text-ink-muted hover:text-ink">{t('Скрыть')}</button>
       </div>
       <ul className="list-disc space-y-1 pl-5 text-sm text-ink">
         {brief.points.map(point => <li key={point}>{point}</li>)}

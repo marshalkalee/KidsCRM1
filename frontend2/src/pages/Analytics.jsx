@@ -1,7 +1,7 @@
 import { Card, ErrorState, PageHeader } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, BarsChart, ChartCard, ComboChart, DonutChart, GaugeChart, HeatmapChart,
+  AnalyticsNav, AnalyticsToolbar, ExportButton, BarsChart, ChartCard, ComboChart, DonutChart, GaugeChart, HeatmapChart,
   MetricTile, PALETTE, RankBars, TrendChart,
   useAnalyticsCatalog, useAnalyticsFilters, useBreakdown, useHeatmap, useMetrics,
 } from '../components/analytics'
@@ -43,7 +43,7 @@ export default function Analytics() {
 
   return (
     <>
-      <PageHeader title={t('Аналитика')} description={branchNote} />
+      <PageHeader title={t('Аналитика')} description={branchNote} actions={<ExportButton report="overview" filters={filters} />} />
       <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} previous={data?.previous_period} />
 

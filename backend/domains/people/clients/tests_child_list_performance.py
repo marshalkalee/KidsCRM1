@@ -127,21 +127,21 @@ class ChildListPerformanceTests(TestCase):
         )
 
     def setUp(self):
-        self.client.force_login(self.owner)
+        # Таблица frontend2 — API на JWT (серверный список удалён в TRU-88).
+        self.client = APIClient()
+        self.client.force_authenticate(self.owner)
 
     def test_first_page_responds_within_budget(self):
         start = time.perf_counter()
-        response = self.client.get(
-            reverse("clients_web:child-list-data"), {"page": 1, "page_size": 50}
-        )
+        response = self.client.get(reverse("clients:child-table"), {"page": 1, "page_size": 50})
         elapsed = time.perf_counter() - start
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["total"], CHILD_COUNT)
+        self.assertEqual(response.json()["count"], CHILD_COUNT)
         self.assertLess(
             elapsed,
             RESPONSE_BUDGET_SECONDS,
-            f"child-list-data ответил за {elapsed:.3f}с на {CHILD_COUNT} детей "
+            f"таблица детей ответила за {elapsed:.3f}с на {CHILD_COUNT} детей "
             f"(бюджет теста {RESPONSE_BUDGET_SECONDS}с, целевой бюджет ТЗ п. 10.2 — 1с)",
         )
 
@@ -151,7 +151,7 @@ class ChildListPerformanceTests(TestCase):
         last_page = CHILD_COUNT // 50
         start = time.perf_counter()
         response = self.client.get(
-            reverse("clients_web:child-list-data"),
+            reverse("clients:child-table"),
             {"page": last_page, "page_size": 50, "sort": "full_name", "dir": "desc"},
         )
         elapsed = time.perf_counter() - start
@@ -168,8 +168,8 @@ class ChildListPerformanceTests(TestCase):
         # Критерий приёмки "нет запроса на строку" — тот же самый эндпоинт,
         # что и в tests_child_list.py, здесь просто на реалистичном объёме
         # (5000), чтобы явно связать это утверждение с самим ТЗ п. 10.2.
-        with self.assertNumQueries(10):
-            self.client.get(reverse("clients_web:child-list-data"), {"page_size": 50})
+        with self.assertNumQueries(7):
+            self.client.get(reverse("clients:child-table"), {"page_size": 50})
 
     def test_filter_combination_responds_within_budget(self):
         # Критерий приёмки тикета "Фильтры списка детей": "филиал +
@@ -177,7 +177,7 @@ class ChildListPerformanceTests(TestCase):
         # у остальных проверок этого файла, дев-контейнер не прод-железо).
         start = time.perf_counter()
         response = self.client.get(
-            reverse("clients_web:child-list-data"),
+            reverse("clients:child-table"),
             {"branch": str(self.branch.id), "direction": str(self.direction.id), "has_debt": "1"},
         )
         elapsed = time.perf_counter() - start
