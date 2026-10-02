@@ -252,6 +252,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "domains.money.subscriptions.tasks.update_subscription_statuses_task",
         "schedule": crontab(hour=0, minute=5),  # сразу после полуночи — "утром уже истёк"
     },
+    "create-lead-stale-tasks": {
+        "task": "domains.platform.tasks.tasks.create_lead_stale_tasks_task",
+        "schedule": crontab(hour=2, minute=0),
+    },
+    "create-debt-reminder-tasks": {
+        "task": "domains.platform.tasks.tasks.create_debt_reminder_tasks_task",
+        "schedule": crontab(hour=2, minute=15),
+    },
 }
 
 # ИИ-помощник (эксперимент): без ключа функции выключены, экраны их не показывают.

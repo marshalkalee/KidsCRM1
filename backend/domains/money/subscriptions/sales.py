@@ -63,11 +63,15 @@ def sell_subscription(
 
     payment = None
     if paid_amount and paid_amount > 0:
+        from domains.people.clients.models import ChildContact
+
+        current_payer_link = ChildContact.objects.filter(child=child, is_payer=True).first()
         payment = record_payment(
             actor=actor,
             subscription=subscription,
             amount=paid_amount,
             method=payment_method,
+            payer=current_payer_link.parent_contact if current_payer_link else None,
             comment=comment,
         )
 

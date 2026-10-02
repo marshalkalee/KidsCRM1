@@ -7,33 +7,67 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('subscriptions', '0002_subscription_subscriptionfreeze_and_more'),
-        ('tenants', '0003_direction'),
+        ("subscriptions", "0002_subscription_subscriptionfreeze_and_more"),
+        ("tenants", "0003_direction"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Payment',
+            name="Payment",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('deleted_at', models.DateTimeField(blank=True, null=True)),
-                ('amount', models.DecimalField(decimal_places=0, max_digits=12)),
-                ('method', models.CharField(choices=[('kaspi_transfer', 'Kaspi-перевод'), ('cash', 'Наличные'), ('card', 'Карта'), ('other', 'Другое')], max_length=20)),
-                ('comment', models.CharField(blank=True, max_length=255)),
-                ('paid_at', models.DateTimeField(auto_now_add=True)),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='tenants.organization')),
-                ('received_by', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='payments_received', to=settings.AUTH_USER_MODEL)),
-                ('subscription', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='payments', to='subscriptions.subscription')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("deleted_at", models.DateTimeField(blank=True, null=True)),
+                ("amount", models.DecimalField(decimal_places=0, max_digits=12)),
+                (
+                    "method",
+                    models.CharField(
+                        choices=[
+                            ("kaspi_transfer", "Kaspi-перевод"),
+                            ("cash", "Наличные"),
+                            ("card", "Карта"),
+                            ("other", "Другое"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                ("comment", models.CharField(blank=True, max_length=255)),
+                ("paid_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "organization",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT, to="tenants.organization"
+                    ),
+                ),
+                (
+                    "received_by",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="payments_received",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "subscription",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="payments",
+                        to="subscriptions.subscription",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-paid_at'],
+                "ordering": ["-paid_at"],
             },
         ),
     ]

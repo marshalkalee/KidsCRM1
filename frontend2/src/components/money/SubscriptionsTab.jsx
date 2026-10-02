@@ -308,7 +308,7 @@ function FreezeModal({ subscription, onClose, onDone }) {
   )
 }
 
-function SellModal({ child, onClose, onDone }) {
+export function SellModal({ child, onClose, onDone }) {
   const toast = useToast()
   const [loaded, setLoaded] = useState(false)
   const [branches, setBranches] = useState([])

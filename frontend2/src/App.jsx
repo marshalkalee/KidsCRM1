@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/shell/Layout'
 import { useLang } from './i18n'
-import { RequireAuth, RequirePermission, SessionProvider } from './session/SessionContext'
+import { RequireAuth, RequirePermission, SessionProvider, useSession } from './session/SessionContext'
 import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Assistant from './pages/Assistant'
@@ -23,6 +23,7 @@ import GroupDetail from './pages/GroupDetail'
 import Branches from './pages/Branches'
 import BranchRooms from './pages/BranchRooms'
 import Directions from './pages/Directions'
+import SubscriptionTypes from './pages/SubscriptionTypes'
 import OrganizationSettings from './pages/OrganizationSettings'
 import LeadDictionaries from './pages/LeadDictionaries'
 import Leads from './pages/Leads'
@@ -33,6 +34,7 @@ import Staff from './pages/Staff'
 import LeadDetail from './pages/LeadDetail'
 import Debts from './pages/Debts'
 import Renewals from './pages/Renewals'
+import MyTasks from './pages/MyTasks'
 import Analytics from './pages/Analytics'
 import Announcements from './pages/Announcements'
 import AnalyticsKit from './pages/AnalyticsKit'
@@ -45,7 +47,12 @@ import AnalyticsTeachers from './pages/AnalyticsTeachers'
 import AnalyticsRejections from './pages/AnalyticsRejections'
 import AnalyticsBranches from './pages/AnalyticsBranches'
 import AnalyticsRisk from './pages/AnalyticsRisk'
+import TaskEscalation from './pages/TaskEscalation'
 
+function RoleLandingRedirect() {
+  const { user } = useSession()
+  return <Navigate to={user?.role === 'admin' ? '/tasks' : '/dashboard'} replace />
+}
 function App() {
   // Кабинет родителя (/parent) — отдельное приложение со своим входом и
   // сессией, CRM сотрудников (SessionProvider) для него не поднимается.
@@ -74,8 +81,10 @@ function StaffApp() {
               <Route path="/signup" element={<Signup />} />
               <Route path="/pay/test/:id" element={<TestPay />} />
               <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
-                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route index element={<RoleLandingRedirect />} />
                 <Route path="dashboard" element={<Dashboard />} />
+                <Route path="tasks" element={<MyTasks />} />
+                <Route path="tasks/escalation" element={<RequirePermission permission="can_manage_staff"><TaskEscalation /></RequirePermission>} />
                 <Route path="onboarding" element={<RequirePermission permission="can_manage_org_settings"><Onboarding /></RequirePermission>} />
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
@@ -110,6 +119,7 @@ function StaffApp() {
                 <Route path="branches" element={<RequirePermission permission="can_manage_branches"><Branches /></RequirePermission>} />
                 <Route path="branches/:id/rooms" element={<BranchRooms />} />
                 <Route path="directions" element={<RequirePermission permission="can_manage_directions"><Directions /></RequirePermission>} />
+                <Route path="subscription-types" element={<RequirePermission permission="can_manage_subscription_types"><SubscriptionTypes /></RequirePermission>} />
                 <Route path="settings/sales" element={<RequirePermission permission="can_manage_lead_dictionaries"><LeadDictionaries /></RequirePermission>} />
                 <Route path="settings/staff" element={<RequirePermission permission="can_manage_staff"><Staff /></RequirePermission>} />
                 <Route path="settings/organization" element={<RequirePermission permission="can_manage_org_settings"><OrganizationSettings /></RequirePermission>} />
