@@ -20,6 +20,7 @@ RULE_RENEWAL_OFFER_ENABLED = "rule_renewal_offer_enabled"
 RULE_DEBT_REMINDER_ENABLED = "rule_debt_reminder_enabled"
 RULE_MISSING_SUBSCRIPTION_ENABLED = "rule_missing_subscription_enabled"
 RULE_TRIAL_NO_SHOW_ENABLED = "rule_trial_no_show_enabled"
+KASPI_PAYMENT_DETAILS = "kaspi_payment_details"
 
 DEFAULT_ORG_SETTINGS = {
     # Абонемент "заканчивается", когда остаётся <= N занятий ИЛИ <= N дней.
@@ -37,6 +38,9 @@ DEFAULT_ORG_SETTINGS = {
     RULE_DEBT_REMINDER_ENABLED: True,
     RULE_MISSING_SUBSCRIPTION_ENABLED: True,
     RULE_TRIAL_NO_SHOW_ENABLED: True,
+    # Куда родителю платить по счёту из CRM без шлюза Kaspi: ссылка Kaspi
+    # Pay или номер для перевода (payments/remote.py). Пусто — не настроено.
+    KASPI_PAYMENT_DETAILS: "",
 }
 
 

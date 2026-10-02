@@ -607,12 +607,22 @@ const navBtnStyle = {
 // variant 'filter' — компактный чип для панели фильтров (подсвечивается,
 // когда выбрано не значение по умолчанию); 'field' — обычное поле формы
 // в модалках (тот же вид, что inputStyle/select у соседних инпутов).
-function Dropdown({ value, onChange, options, width = 160, variant = 'filter', placeholder }) {
+function Dropdown({
+  value, onChange, options, width = 160, variant = 'filter', placeholder,
+  searchable = false, searchPlaceholder,
+}) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const ref = useRef()
+  const inputRef = useRef()
 
   useEffect(() => {
-    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    function handler(e) {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
@@ -620,36 +630,122 @@ function Dropdown({ value, onChange, options, width = 160, variant = 'filter', p
   const selected = options.find(([v]) => v === value)
   const active = variant === 'filter' && value !== ''
   const displayText = selected ? selected[1] : (placeholder ?? options[0][1])
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const visibleOptions = searchable && normalizedQuery
+    ? options.filter(([optionValue, label]) => {
+        if (optionValue === '') return false
+        const normalizedLabel = String(label).toLocaleLowerCase()
+        return normalizedLabel.startsWith(normalizedQuery)
+          || normalizedLabel.split(/\s+/).some(word => word.startsWith(normalizedQuery))
+      })
+    : options
+
+  function close() {
+    setOpen(false)
+    setQuery('')
+  }
 
   return (
     <div ref={ref} className={variant === 'filter' ? 'kc-schedule-filter' : undefined} style={{ width, flexShrink: 0, position: 'relative' }}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          width: '100%', boxSizing: 'border-box',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: variant === 'field' ? '9px 12px' : '8px 12px',
-          border: `1.5px solid ${open || active ? ACCENT : '#EBEBF0'}`,
-          borderRadius: 8,
-          background: active ? '#FDF0EE' : (variant === 'field' ? '#fff' : '#FAFAFA'),
-          fontSize: variant === 'field' ? 13 : 12,
-          fontFamily: 'Manrope', fontWeight: active ? 600 : 400,
-          color: active ? ACCENT : (variant === 'field' ? '#1A1A2E' : '#6B7280'),
-          cursor: 'pointer', outline: 'none',
-          transition: 'border-color 0.15s, background 0.15s',
-          boxShadow: open ? `0 0 0 3px ${ACCENT}1F` : 'none',
-        }}
-      >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {displayText}
-        </span>
-        <ChevronDown
-          size={13}
-          style={{ flexShrink: 0, marginLeft: 6, color: active ? ACCENT : '#9CA3AF',
-            transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
-        />
-      </button>
+      {searchable ? (
+        <div
+          style={{
+            width: '100%', boxSizing: 'border-box', position: 'relative',
+            border: `1.5px solid ${open ? ACCENT : '#EBEBF0'}`,
+            borderRadius: 8, background: 'transparent',
+            boxShadow: open ? `0 0 0 3px ${ACCENT}1F` : 'none',
+            transition: 'border-color 0.15s, box-shadow 0.15s',
+          }}
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            role="combobox"
+            aria-expanded={open}
+            autoComplete="off"
+            value={open ? query : (selected && selected[0] !== '' ? selected[1] : '')}
+            placeholder={placeholder ?? searchPlaceholder ?? t('Начните вводить...')}
+            onFocus={() => {
+              setQuery('')
+              setOpen(true)
+            }}
+            onChange={event => {
+              setQuery(event.target.value)
+              setOpen(true)
+            }}
+            onKeyDown={event => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                close()
+                inputRef.current?.blur()
+              }
+              if (event.key === 'Enter' && visibleOptions.length > 0) {
+                event.preventDefault()
+                const firstChoice = visibleOptions.find(([optionValue]) => optionValue !== '') ?? visibleOptions[0]
+                onChange(firstChoice[0])
+                close()
+              }
+            }}
+            style={{
+              width: '100%', height: 38, boxSizing: 'border-box',
+              border: 'none', outline: 'none', borderRadius: 8,
+              background: 'transparent', padding: '9px 34px 9px 12px',
+              fontSize: 13, fontFamily: 'Manrope', color: '#1A1A2E',
+            }}
+          />
+          <button
+            type="button"
+            aria-label={t('Открыть список')}
+            onMouseDown={event => event.preventDefault()}
+            onClick={() => {
+              if (open) close()
+              else {
+                setQuery('')
+                setOpen(true)
+                inputRef.current?.focus()
+              }
+            }}
+            style={{
+              position: 'absolute', top: 0, right: 0, width: 34, height: 38,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', background: 'transparent', color: '#9CA3AF', cursor: 'pointer',
+            }}
+          >
+            <ChevronDown
+              size={13}
+              style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+            />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: variant === 'field' ? '9px 12px' : '8px 12px',
+            border: `1.5px solid ${open || active ? ACCENT : '#EBEBF0'}`,
+            borderRadius: 8,
+            background: active ? '#FDF0EE' : (variant === 'field' ? '#fff' : '#FAFAFA'),
+            fontSize: variant === 'field' ? 13 : 12,
+            fontFamily: 'Manrope', fontWeight: active ? 600 : 400,
+            color: active ? ACCENT : (variant === 'field' ? '#1A1A2E' : '#6B7280'),
+            cursor: 'pointer', outline: 'none',
+            transition: 'border-color 0.15s, background 0.15s',
+            boxShadow: open ? `0 0 0 3px ${ACCENT}1F` : 'none',
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {displayText}
+          </span>
+          <ChevronDown
+            size={13}
+            style={{ flexShrink: 0, marginLeft: 6, color: active ? ACCENT : '#9CA3AF',
+              transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
+          />
+        </button>
+      )}
 
       {open && (
         <div style={{
@@ -661,12 +757,17 @@ function Dropdown({ value, onChange, options, width = 160, variant = 'filter', p
           overflow: 'hidden',
           maxHeight: 260, overflowY: 'auto',
         }}>
-          {options.map(([v, l]) => {
+          {visibleOptions.length === 0 && (
+            <div style={{ padding: '10px 12px', color: '#9CA3AF', fontSize: 12, fontFamily: 'Manrope' }}>
+              {t('Ничего не найдено')}
+            </div>
+          )}
+          {visibleOptions.map(([v, l]) => {
             const isSelected = value === v
             return (
               <div
                 key={v}
-                onClick={() => { onChange(v); setOpen(false) }}
+                onClick={() => { onChange(v); close() }}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '9px 12px',
@@ -1921,6 +2022,8 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
                 value={groupId}
                 onChange={setGroupId}
                 placeholder={t('Выберите группу')}
+                searchable
+                searchPlaceholder={t('Введите название группы')}
                 options={[['', t('Выберите группу')], ...groups.map(g => [String(g.id), g.name])]}
               />
             </div>
@@ -1952,7 +2055,10 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
                 width="100%"
                 value={roomId}
                 onChange={setRoomId}
-                options={[['', '—'], ...rooms.map(r => [String(r.id), r.name])]}
+                placeholder={t('Выберите зал')}
+                searchable
+                searchPlaceholder={t('Введите название зала')}
+                options={[['', t('Выберите зал')], ...rooms.map(r => [String(r.id), r.name])]}
               />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -1962,7 +2068,10 @@ function CreateLessonModal({ slot, groups, rooms, teachers, onClose, onDone }) {
                 width="100%"
                 value={teacherId}
                 onChange={setTeacherId}
-                options={[['', '—'], ...teachers.map(t => [String(t.id), t.full_name])]}
+                placeholder={t('Выберите преподавателя')}
+                searchable
+                searchPlaceholder={t('Введите имя преподавателя')}
+                options={[['', t('Выберите преподавателя')], ...teachers.map(t => [String(t.id), t.full_name])]}
               />
             </div>
           </div>
