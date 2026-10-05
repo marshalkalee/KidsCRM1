@@ -122,11 +122,8 @@ class ParentMoneyTests(PortalAuthBase):
         self.assertEqual(data["payments"], [])
         self.assertEqual(data["to_pay"], str(self.subscription.price))
 
-    def test_how_to_pay_contacts_and_kaspi(self):
-        self.org.settings = {"kaspi_payment_details": "https://pay.kaspi.kz/pay/tb"}
-        self.org.save()
+    def test_how_to_pay_contacts(self):
         how = self.money().data["how_to_pay"]
-        self.assertEqual(how["kaspi"], "https://pay.kaspi.kz/pay/tb")
         self.assertEqual(
             how["contacts"],
             [
