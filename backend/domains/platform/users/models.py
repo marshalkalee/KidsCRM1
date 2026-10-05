@@ -4,7 +4,7 @@
 числом).
 
 Не наследует django.contrib.auth.models.AbstractUser: согласованная схема
-(backend/docs/db-schema-v1) описывает сотрудника как `full_name` + `phone`,
+(backend/docs/db-schema-v1.md) описывает сотрудника как `full_name` + `phone`,
 без `username`/`email`/`first_name`/`last_name` — поэтому база здесь
 AbstractBaseUser + PermissionsMixin (низкоуровневые классы Django для
 кастомной схемы полей), а не AbstractUser.

@@ -1,8 +1,8 @@
 # KidsCRM
 
 SaaS CRM для детских образовательных и спортивных центров. Стек и формат
-API зафиксированы в [ADR-002](backend/docs/adr-002-stack-repo-api), фронтенд —
-в [ADR-004](backend/docs/adr-004-frontend-spa.md); доменное деление кода описано в
+API зафиксированы в [ADR-002](docs/adr/0002-stack-repo-api.md), фронтенд —
+в [ADR-004](docs/adr/0004-frontend-spa.md); доменное деление кода описано в
 [`backend/domains/README.md`](backend/domains/README.md).
 
 ## Стек
@@ -221,7 +221,7 @@ Baseline (`domains/platform/core/migrations/0001_baseline.py`) не создаё
 к регистру поиск, ТЗ п. 4.1). Общие типы для бизнес-моделей — абстрактные
 классы `TenantModel`/`TimestampedSoftDeleteModel`/`UUIDPrimaryKeyModel` в
 `domains/platform/core/models.py`: UUID PK, `organization_id` обязателен,
-soft delete, timestamps — по согласованной схеме (`db-schema-v1`).
+soft delete, timestamps — по согласованной схеме (`backend/docs/db-schema-v1.md`).
 
 Команды (внутри контейнера, `docker compose exec backend ...`):
 

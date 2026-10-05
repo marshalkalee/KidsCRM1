@@ -7,7 +7,7 @@ from domains.platform.core.models import SoftDeleteManager, TenantModel, Timesta
 class Organization(TimestampedSoftDeleteModel):
     """
     Корень модели данных — тенант (ТЗ п. 1.2.3, п. 3.1; см. согласованную
-    схему backend/docs/db-schema-v1 на ветке feature/db-schema-v1).
+    схему backend/docs/db-schema-v1.md).
 
     `timezone` и `settings` — из формулировки этой задачи, в db-schema-v1
     их пока нет явно; если схема не должна их содержать — снять здесь,
