@@ -189,7 +189,6 @@ class AccessSettingsTests(APITestCase):
             "/api/v1/subscriptions/renewals/",
             f"/api/v1/subscriptions/?child_id={self.child.id}",
             f"/api/v1/payments/?child_id={self.child.id}",
-            f"/api/v1/payments/requests/?child_id={self.child.id}",
         ):
             self.assertEqual(client.get(url).status_code, 403, url)
 

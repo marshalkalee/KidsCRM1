@@ -279,13 +279,6 @@ OPENAI_VISION_MODEL = env("OPENAI_VISION_MODEL", default="gpt-4o")
 # цепочках вызовов, поэтому модель сильнее, чем для коротких задач.
 OPENAI_CHAT_MODEL = env("OPENAI_CHAT_MODEL", default="gpt-4o")
 
-# Удалённая оплата через Kaspi (payments/kaspi.py). Без шлюза счета идут
-# сообщением с реквизитами центра, оплату подтверждает администратор.
-# "fake" — тестовый шлюз для стенда, на проде не включать.
-KASPI_PAY_GATEWAY = env("KASPI_PAY_GATEWAY", default="")
-KASPI_PAY_WEBHOOK_SECRET = env("KASPI_PAY_WEBHOOK_SECRET", default="")
-KASPI_PAY_INVOICE_TTL_HOURS = env.int("KASPI_PAY_INVOICE_TTL_HOURS", default=24)
-
 # Код входа родителя (ADR-0007, otp/senders.py): каналы по порядку, через
 # запятую — первый не доставил, пробуем следующий. console — код в лог.
 OTP_CHANNELS = env("OTP_CHANNELS", default="console")
