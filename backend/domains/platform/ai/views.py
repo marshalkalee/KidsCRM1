@@ -9,6 +9,11 @@ from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOf
 from domains.platform.core.role_permissions import can_use_ai_chat
 from domains.platform.leads.services import visible_leads
 from domains.platform.leads.views import CanManageLeads
+from domains.platform.tenants.org_settings import (
+    AI_ATTENDANCE_PHOTO_ENABLED,
+    AI_IMPORT_CLEAN_ENABLED,
+    get_org_setting,
+)
 
 from . import assist, chat, services
 
@@ -35,11 +40,31 @@ class AIThrottle(UserRateThrottle):
     rate = "30/min"
 
 
+def _org_allows(request, key) -> bool:
+    return bool(get_org_setting(request.user.organization, key))
+
+
+# Центр не включил — функция отправила бы во внешнюю модель фото или файл
+# как есть (ADR-0008); включает владелец в «Настройки → Доступ сотрудников».
+OPT_IN_REQUIRED = (
+    "Центр не включил эту функцию: владелец включает её в «Настройки → Доступ сотрудников»."
+)
+
+
 @api_view(["GET"])
 @permission_classes([IsStaffOfOrganization])
 def ai_status(request, version=None):
-    """Показывать ли ИИ-кнопки: без ключа их нет."""
-    return Response({"enabled": services.is_enabled(), "goals": list(services.GOALS)})
+    """Показывать ли ИИ-кнопки: без ключа их нет; фото журнала и чистка
+    импорта — ещё и только у центров, которые их включили."""
+    enabled = services.is_enabled()
+    return Response(
+        {
+            "enabled": enabled,
+            "goals": list(services.GOALS),
+            "attendance_photo": enabled and _org_allows(request, AI_ATTENDANCE_PHOTO_ENABLED),
+            "import_clean": enabled and _org_allows(request, AI_IMPORT_CLEAN_ENABLED),
+        }
+    )
 
 
 @api_view(["POST"])
@@ -97,6 +122,8 @@ def attendance_from_photo(request, version=None):
     from domains.platform.users.models import User
     from domains.scheduling.schedule.models import Lesson
 
+    if not _org_allows(request, AI_ATTENDANCE_PHOTO_ENABLED):
+        return Response({"detail": OPT_IN_REQUIRED}, status=status.HTTP_403_FORBIDDEN)
     lesson_ids = _uuid_list(request.data.get("lesson"))
     lesson = (
         Lesson.objects.for_tenant(request.user.organization).filter(pk__in=lesson_ids).first()
@@ -123,6 +150,8 @@ def attendance_from_photo(request, version=None):
 def import_clean(request, version=None):
     """«Грязный» файл → файл в формате шаблона (base64) и строки для просмотра.
     Дальше — обычный импорт: маппинг, сухой прогон, решения по дублям."""
+    if not _org_allows(request, AI_IMPORT_CLEAN_ENABLED):
+        return Response({"detail": OPT_IN_REQUIRED}, status=status.HTTP_403_FORBIDDEN)
     try:
         result = services.clean_import_file(request.user.organization, request.FILES.get("file"))
     except services.AIError as exc:

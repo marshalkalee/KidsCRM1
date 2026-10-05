@@ -105,9 +105,16 @@ class SearchTests(AIFixtures):
         self.assertEqual(schema["properties"]["screen"]["enum"], ["children"])
 
 
+def allow(org, *keys):
+    """Центр включил функции, которые отправляют фото или файл как есть."""
+    org.settings = {**org.settings, **{key: True for key in keys}}
+    org.save(update_fields=["settings"])
+
+
 class AttendancePhotoTests(AIFixtures):
     def setUp(self):
         super().setUp()
+        allow(self.org, "ai_attendance_photo_enabled")
         branch = Branch.objects.create(organization=self.org, name="Центр")
         group = Group.objects.create(
             organization=self.org,
@@ -213,6 +220,10 @@ class AttendancePhotoTests(AIFixtures):
 class ImportCleanTests(AIFixtures):
     CSV = "Ученик;Контакты\nИванова Алия 12.03.2019;мама Айгерим 8 707 111 22 33\nИтого;1\n"
 
+    def setUp(self):
+        super().setUp()
+        allow(self.org, "ai_import_clean_enabled")
+
     def upload(self, text):
         file = SimpleUploadedFile("kids.csv", text.encode("utf-8"), content_type="text/csv")
         return self.client_api.post("/api/v1/ai/import-clean/", {"file": file})
@@ -314,3 +325,28 @@ class DisabledTests(AIFixtures):
         response = self.client_api.post("/api/v1/ai/search/", {"query": "должники"}, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("не настроен", response.data["detail"])
+
+
+class OptInTests(AIFixtures):
+    """Фото журнала и чистка импорта отправляют загруженное как есть —
+    работают, только если центр их включил (ADR-0008, решение 05.10.2026)."""
+
+    def test_off_by_default_and_status_says_so(self):
+        status = self.client_api.get("/api/v1/ai/status/").data
+        self.assertTrue(status["enabled"])
+        self.assertEqual((status["attendance_photo"], status["import_clean"]), (False, False))
+        patch, create = patched_client(fake_response({}))
+        with patch:
+            photo = self.client_api.post("/api/v1/ai/attendance-photo/", {"lesson": "x"})
+            file = SimpleUploadedFile(
+                "kids.csv", "Ученик\nИванова Алия\n".encode(), content_type="text/csv"
+            )
+            clean = self.client_api.post("/api/v1/ai/import-clean/", {"file": file})
+        self.assertEqual((photo.status_code, clean.status_code), (403, 403))
+        self.assertIn("Доступ сотрудников", photo.data["detail"])
+        create.assert_not_called()
+
+    def test_status_after_owner_enables(self):
+        allow(self.org, "ai_attendance_photo_enabled")
+        status = self.client_api.get("/api/v1/ai/status/").data
+        self.assertEqual((status["attendance_photo"], status["import_clean"]), (True, False))

@@ -104,6 +104,8 @@ class AccessSettingsTests(APITestCase):
                 "teacher_sees_parent_phones": False,
                 "teacher_sees_finances": False,
                 "admin_sees_org_summary": False,
+                "ai_attendance_photo_enabled": False,
+                "ai_import_clean_enabled": False,
             },
         )
         teacher = self.permissions(self.teacher)
