@@ -25,6 +25,13 @@ RULE_TRIAL_NO_SHOW_ENABLED = "rule_trial_no_show_enabled"
 KASPI_PAYMENT_DETAILS = "kaspi_payment_details"
 PARENT_CANCEL_NOTICE_HOURS = "parent_cancel_notice_hours"
 PARENT_CANCEL_CHARGE_ON_TIME = "parent_cancel_charge_on_time"
+# Доступ сотрудников внутри роли (TRU-153, ТЗ разд. 2 [V2]): владелец
+# открывает роли то, что по умолчанию скрыто. Читаются только через
+# core/role_permissions.py — там же API, выгрузки и флаги для фронтенда.
+TEACHER_SEES_PARENT_PHONES = "teacher_sees_parent_phones"
+TEACHER_SEES_FINANCES = "teacher_sees_finances"
+ADMIN_SEES_ORG_SUMMARY = "admin_sees_org_summary"
+ACCESS_SETTINGS = (TEACHER_SEES_PARENT_PHONES, TEACHER_SEES_FINANCES, ADMIN_SEES_ORG_SUMMARY)
 
 DEFAULT_ORG_SETTINGS = {
     # Абонемент "заканчивается", когда остаётся <= N занятий ИЛИ <= N дней.
@@ -54,6 +61,11 @@ DEFAULT_ORG_SETTINGS = {
     # здесь, чтобы кабинет, посещаемость и биллинг использовали один контракт.
     PARENT_CANCEL_NOTICE_HOURS: 24,
     PARENT_CANCEL_CHARGE_ON_TIME: False,
+    # По умолчанию — поведение до TRU-153: преподаватель не видит телефоны
+    # и деньги, администратор — аналитику.
+    TEACHER_SEES_PARENT_PHONES: False,
+    TEACHER_SEES_FINANCES: False,
+    ADMIN_SEES_ORG_SUMMARY: False,
 }
 
 

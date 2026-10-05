@@ -4,6 +4,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.response import Response
 
+from domains.platform.core.audit import AuditLog
 from domains.platform.core.permissions import (
     BranchScopedPermission,
     IsNotAccountant,
@@ -14,6 +15,7 @@ from domains.platform.core.permissions import (
 
 from .forms import TIMEZONE_CHOICES, OrganizationSettingsForm
 from .models import Branch, Direction, Room
+from .org_settings import ACCESS_SETTINGS, get_org_setting
 from .serializers import (
     BranchSerializer,
     DirectionSerializer,
@@ -62,6 +64,48 @@ def organization_settings(request):
     return Response(
         _settings_payload(OrganizationSettingsForm.for_organization(organization), organization)
     )
+
+
+def _access_payload(organization):
+    return {key: bool(get_org_setting(organization, key)) for key in ACCESS_SETTINGS}
+
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsOwner])
+def organization_access(request):
+    """Доступ сотрудников внутри роли (TRU-153): три переключателя
+    org_settings.ACCESS_SETTINGS. PUT принимает любое подмножество ключей —
+    не переданные не меняются. Изменение пишется в аудит-лог (кто, когда,
+    было/стало), без изменений — не пишется."""
+    organization = request.user.organization
+    if request.method == "PUT":
+        errors = {
+            key: ["Ожидается true или false."]
+            for key in ACCESS_SETTINGS
+            if key in request.data and not isinstance(request.data[key], bool)
+        }
+        unknown = sorted(set(request.data) - set(ACCESS_SETTINGS))
+        if unknown:
+            errors["non_field_errors"] = [f"Неизвестные настройки: {', '.join(unknown)}."]
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+        before = _access_payload(organization)
+        changes = {
+            key: request.data[key]
+            for key in ACCESS_SETTINGS
+            if key in request.data and request.data[key] != before[key]
+        }
+        if changes:
+            organization.settings = {**organization.settings, **changes}
+            organization.save(update_fields=["settings", "updated_at"])
+            AuditLog.record(
+                actor=request.user,
+                action=AuditLog.Action.UPDATE,
+                entity=organization,
+                before={key: before[key] for key in changes},
+                after=changes,
+            )
+    return Response(_access_payload(organization))
 
 
 class BranchViewSet(viewsets.ModelViewSet):

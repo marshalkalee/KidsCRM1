@@ -17,7 +17,7 @@ from rest_framework.response import Response
 
 from domains.people.clients.models import ChildContact
 from domains.platform.core.active_branch import get_active_branch
-from domains.platform.core.permissions import IsNotTeacher
+from domains.platform.core.permissions import CanViewClientMoney, IsNotTeacher
 from domains.platform.core.role_permissions import can_view_phone
 from domains.platform.core.utils import today_for_org
 from domains.platform.leads.models import Lead, LeadKind
@@ -146,7 +146,7 @@ def debtor_rows(organization, subscriptions, *, show_phones, threshold):
 
 
 @api_view(["GET"])
-@permission_classes([IsNotTeacher])
+@permission_classes([CanViewClientMoney])
 def debtors_api(request):
     """Список долгов по абонементам: фильтры, сортировка, итог по выборке."""
     organization = request.user.organization
@@ -177,7 +177,7 @@ def debtors_api(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsNotTeacher])
+@permission_classes([CanViewClientMoney])
 def debtors_export_api(request):
     """Та же выборка файлом .xlsx — бухгалтерии для сверки."""
     organization = request.user.organization
@@ -310,7 +310,7 @@ def renewal_rows(organization, subscriptions, *, show_phones):
 
 
 @api_view(["GET"])
-@permission_classes([IsNotTeacher])
+@permission_classes([CanViewClientMoney])
 def renewals_api(request):
     """Абонементы «заканчивается» — сначала те, что кончаются раньше."""
     qs = _renewals_queryset(request).order_by("ends_on", "sessions_remaining_cache", "pk")

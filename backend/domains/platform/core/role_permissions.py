@@ -1,10 +1,24 @@
 """
 Гранулярные права по ролям.
-Используется для настраиваемых ограничений — например, скрыть телефоны
-от преподавателей (V2). Базовые права ролей — в permissions.py.
+Базовые права ролей — в permissions.py. Часть прав владелец открывает
+роли в настройках центра (TRU-153, org_settings.ACCESS_SETTINGS): проверки
+ниже — единственное место, где это учитывается, поэтому API, выгрузки и
+флаги фронтенда (get_user_permissions) не расходятся.
 """
 
+from domains.platform.tenants.org_settings import (
+    ADMIN_SEES_ORG_SUMMARY,
+    TEACHER_SEES_FINANCES,
+    TEACHER_SEES_PARENT_PHONES,
+    get_org_setting,
+)
 from domains.platform.users.models import User
+
+
+def _org_allows(user, role, key) -> bool:
+    """Роль `role` получила право `key` в настройках своего центра."""
+    return user.role == role and bool(get_org_setting(user.organization, key))
+
 
 FINANCE_ROLES = {
     User.Role.OWNER,
@@ -120,7 +134,9 @@ def can_manage_staff(user) -> bool:
 
 
 def can_view_org_summary(user) -> bool:
-    return user.role in ORG_SUMMARY_ROLES
+    return user.role in ORG_SUMMARY_ROLES or _org_allows(
+        user, User.Role.ADMIN, ADMIN_SEES_ORG_SUMMARY
+    )
 
 
 def can_manage_org_settings(user) -> bool:
@@ -140,7 +156,9 @@ def can_manage_groups(user) -> bool:
 
 
 def can_view_phone(user) -> bool:
-    return user.role in PHONE_VIEW_ROLES
+    return user.role in PHONE_VIEW_ROLES or _org_allows(
+        user, User.Role.TEACHER, TEACHER_SEES_PARENT_PHONES
+    )
 
 
 def can_manage_subscription_types(user) -> bool:
@@ -152,6 +170,15 @@ def can_view_child_sensitive_fields(user) -> bool:
 
 
 def can_view_client_money(user) -> bool:
+    return user.role in CLIENT_MONEY_VIEW_ROLES or _org_allows(
+        user, User.Role.TEACHER, TEACHER_SEES_FINANCES
+    )
+
+
+def can_change_client_money(user) -> bool:
+    """Продать, заморозить, пересчитать абонемент, отметить звонок по продлению —
+    как IsNotTeacher на этих эндпоинтах. Не зависит от TEACHER_SEES_FINANCES:
+    настройка открывает преподавателю деньги только на чтение."""
     return user.role in CLIENT_MONEY_VIEW_ROLES
 
 
@@ -182,7 +209,11 @@ ANALYTICS_VIEW_ROLES = {
 
 
 def can_view_analytics(user) -> bool:
-    return user.role in ANALYTICS_VIEW_ROLES
+    # Сводка организации для администратора (TRU-153) — та же аналитика,
+    # ограниченная его филиалами (analytics.scope).
+    return user.role in ANALYTICS_VIEW_ROLES or _org_allows(
+        user, User.Role.ADMIN, ADMIN_SEES_ORG_SUMMARY
+    )
 
 
 # Чат с ИИ на главной (ai/chat.py) — руководители и администратор: он
@@ -217,6 +248,7 @@ def get_user_permissions(user) -> dict:
         "can_view_child_sensitive_fields": can_view_child_sensitive_fields(user),
         "can_manage_groups": can_manage_groups(user),
         "can_view_client_money": can_view_client_money(user),
+        "can_change_client_money": can_change_client_money(user),
         "can_manage_children": can_manage_children(user),
         "can_accept_payments": can_accept_payments(user),
         "can_manage_leads": can_manage_leads(user),

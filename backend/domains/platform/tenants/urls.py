@@ -25,5 +25,6 @@ urlpatterns = [
         views.organization_settings,
         name="organization-settings",
     ),
+    path("organization/access/", views.organization_access, name="organization-access"),
     *router.urls,
 ]

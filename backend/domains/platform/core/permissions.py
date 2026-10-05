@@ -1,4 +1,4 @@
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from domains.platform.users.models import User
 
@@ -43,6 +43,24 @@ class IsOwnerOrManagerOrAdmin(IsStaffOfOrganization):
 class IsNotTeacher(IsStaffOfOrganization):
     def has_permission(self, request, view):
         return super().has_permission(request, view) and request.user.role != User.Role.TEACHER
+
+
+class CanViewClientMoney(IsStaffOfOrganization):
+    """Деньги по детям и родителям — абонементы, оплаты, долги, продления.
+    Чтение — can_view_client_money (преподавателю, если центр открыл ему
+    финансы, TRU-153); запись — как раньше, все, кроме преподавателя."""
+
+    def has_permission(self, request, view):
+        from domains.platform.core.role_permissions import (
+            can_change_client_money,
+            can_view_client_money,
+        )
+
+        if not super().has_permission(request, view):
+            return False
+        if request.method in SAFE_METHODS:
+            return can_view_client_money(request.user)
+        return can_change_client_money(request.user)
 
 
 class IsNotAccountant(IsStaffOfOrganization):
