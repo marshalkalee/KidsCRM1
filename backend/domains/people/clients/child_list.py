@@ -6,6 +6,8 @@
 
 from decimal import Decimal
 
+from django.db.models import Exists, OuterRef, Q
+
 from domains.money.subscriptions.debt import debt_by_child, debtor_child_ids, debtor_subscriptions
 from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.renewals import expiring_child_ids
@@ -101,8 +103,6 @@ def filter_children(qs, organization, params):
     абонемент — через domains.money.subscriptions (debtor_child_ids/
     expiring_child_ids), не своей копией арифметики: иначе этот список и
     будущие экраны Bekzat'а («Задолженности»/«Продления») разойдутся."""
-    needs_distinct = False
-
     # Поиск по имени прямо в списке (frontend2) — телефон родителя ищется
     # глобальным поиском в шапке, здесь только ФИО ребёнка.
     query = (params.get("q") or "").strip()
@@ -112,39 +112,50 @@ def filter_children(qs, organization, params):
     branch_id = params.get("branch")
     if branch_id:
         # Как branch_names: ребёнок в группе этого филиала — или с
-        # направлением, доступным в нём. Один подзапрос с UNION: OR двух
-        # join'ов или двух IN на 5000 детях не укладывается в бюджет.
-        in_branch_group = GroupMembership.objects.filter(
-            group__branch_id=branch_id, left_at__isnull=True
-        ).values("child_id")
-        # Направления — только для детей без текущей группы, как в branch_names.
-        with_branch_direction = (
-            Child.directions.through.objects.filter(direction__branches__id=branch_id)
-            .exclude(
-                child_id__in=GroupMembership.objects.filter(left_at__isnull=True).values("child_id")
-            )
-            .values("child_id")
+        # направлением, доступным в нём. Коррелированные EXISTS сохраняют
+        # эту логику без размножения строк Child и последующего DISTINCT.
+        active_memberships = GroupMembership.objects.for_tenant(organization).filter(
+            child_id=OuterRef("pk"), left_at__isnull=True
         )
-        qs = qs.filter(id__in=in_branch_group.union(with_branch_direction))
+        in_branch_group = active_memberships.filter(group__branch_id=branch_id)
+        # Направления — только для детей без текущей группы, как в branch_names.
+        with_branch_direction = Child.directions.through.objects.filter(
+            child_id=OuterRef("pk"),
+            direction__organization=organization,
+            direction__branches__id=branch_id,
+        )
+        # EXISTS не размножает строки Child и позволяет PostgreSQL использовать индексы
+        # внешних ключей. Это заметно быстрее UNION + DISTINCT на больших списках.
+        qs = qs.filter(
+            Q(Exists(in_branch_group))
+            | Q(~Exists(active_memberships), Exists(with_branch_direction))
+        )
 
     direction_id = params.get("direction")
     if direction_id:
-        qs = qs.filter(directions__id=direction_id)
-        needs_distinct = True
+        in_direction = Child.directions.through.objects.filter(
+            child_id=OuterRef("pk"), direction_id=direction_id
+        )
+        qs = qs.filter(Exists(in_direction))
 
     group_id = params.get("group")
     if group_id:
-        qs = qs.filter(
-            group_memberships__group_id=group_id, group_memberships__left_at__isnull=True
+        in_group = GroupMembership.objects.for_tenant(organization).filter(
+            child_id=OuterRef("pk"), group_id=group_id, left_at__isnull=True
         )
-        needs_distinct = True
+        qs = qs.filter(Exists(in_group))
 
     status = params.get("status")
     if status in Child.Status.values:
         qs = qs.filter(status=status)
 
     if params.get("has_debt") == "1":
-        qs = qs.filter(id__in=debtor_child_ids(organization))
+        # Этот набор используется дальше дважды: в COUNT(*) и в запросе страницы.
+        # Если оставить агрегат по платежам подзапросом, PostgreSQL повторно считает
+        # его для обоих запросов. Материализуем только UUID должников один раз;
+        # сама формула долга по-прежнему остаётся в общем сервисе subscriptions.
+        debtors = list(debtor_child_ids(organization).values_list("child_id", flat=True).distinct())
+        qs = qs.filter(id__in=debtors)
 
     if params.get("expiring") == "1":
         qs = qs.filter(id__in=expiring_child_ids(organization))
@@ -158,7 +169,7 @@ def filter_children(qs, organization, params):
         ).values("child_id")
         qs = qs.filter(id__in=overdue)
 
-    return qs.distinct() if needs_distinct else qs
+    return qs
 
 
 def batch_child_extras(organization, child_ids):
