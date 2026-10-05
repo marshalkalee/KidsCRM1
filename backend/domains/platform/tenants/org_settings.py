@@ -22,7 +22,6 @@ RULE_RENEWAL_OFFER_ENABLED = "rule_renewal_offer_enabled"
 RULE_DEBT_REMINDER_ENABLED = "rule_debt_reminder_enabled"
 RULE_MISSING_SUBSCRIPTION_ENABLED = "rule_missing_subscription_enabled"
 RULE_TRIAL_NO_SHOW_ENABLED = "rule_trial_no_show_enabled"
-KASPI_PAYMENT_DETAILS = "kaspi_payment_details"
 PARENT_CANCEL_NOTICE_HOURS = "parent_cancel_notice_hours"
 PARENT_CANCEL_CHARGE_ON_TIME = "parent_cancel_charge_on_time"
 # Доступ сотрудников внутри роли (TRU-153, ТЗ разд. 2 [V2]): владелец
@@ -31,7 +30,18 @@ PARENT_CANCEL_CHARGE_ON_TIME = "parent_cancel_charge_on_time"
 TEACHER_SEES_PARENT_PHONES = "teacher_sees_parent_phones"
 TEACHER_SEES_FINANCES = "teacher_sees_finances"
 ADMIN_SEES_ORG_SUMMARY = "admin_sees_org_summary"
-ACCESS_SETTINGS = (TEACHER_SEES_PARENT_PHONES, TEACHER_SEES_FINANCES, ADMIN_SEES_ORG_SUMMARY)
+# ИИ-функции, которые отправляют во внешнюю модель то, что загрузил
+# сотрудник, как есть (ADR-0008): фото журнала с рукописными именами детей
+# и файл клиентов нового центра. Метками их не закрыть — центр включает сам.
+AI_ATTENDANCE_PHOTO_ENABLED = "ai_attendance_photo_enabled"
+AI_IMPORT_CLEAN_ENABLED = "ai_import_clean_enabled"
+ACCESS_SETTINGS = (
+    TEACHER_SEES_PARENT_PHONES,
+    TEACHER_SEES_FINANCES,
+    ADMIN_SEES_ORG_SUMMARY,
+    AI_ATTENDANCE_PHOTO_ENABLED,
+    AI_IMPORT_CLEAN_ENABLED,
+)
 
 DEFAULT_ORG_SETTINGS = {
     # Абонемент "заканчивается", когда остаётся <= N занятий ИЛИ <= N дней.
@@ -53,9 +63,6 @@ DEFAULT_ORG_SETTINGS = {
     RULE_DEBT_REMINDER_ENABLED: True,
     RULE_MISSING_SUBSCRIPTION_ENABLED: True,
     RULE_TRIAL_NO_SHOW_ENABLED: True,
-    # Куда родителю платить по счёту из CRM без шлюза Kaspi: ссылка Kaspi
-    # Pay или номер для перевода (payments/remote.py). Пусто — не настроено.
-    KASPI_PAYMENT_DETAILS: "",
     # Родитель может предупредить и позже, но только своевременное
     # предупреждение применяет льготное правило центра. Значение хранится
     # здесь, чтобы кабинет, посещаемость и биллинг использовали один контракт.
@@ -66,6 +73,9 @@ DEFAULT_ORG_SETTINGS = {
     TEACHER_SEES_PARENT_PHONES: False,
     TEACHER_SEES_FINANCES: False,
     ADMIN_SEES_ORG_SUMMARY: False,
+    # Выключено, пока центр сам не согласится (решение 05.10.2026, TRU-156).
+    AI_ATTENDANCE_PHOTO_ENABLED: False,
+    AI_IMPORT_CLEAN_ENABLED: False,
 }
 
 

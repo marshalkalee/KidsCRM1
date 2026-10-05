@@ -61,7 +61,10 @@ def change_status(
     rejection_reason=None,
     comment="",
     is_automatic=False,
+    to_stage=None,
 ) -> Lead:
+    """to_stage — свой этап центра внутри to_status (TRU-154); без него
+    заявка встаёт на системный этап роли."""
     # Блокировка строки: два администратора одновременно тянут карточку на
     # доске — второй увидит уже новый статус, а не перезапишет его.
     lead = Lead.objects.select_for_update().get(pk=lead.pk)
@@ -86,12 +89,18 @@ def change_status(
     elif rejection_reason is not None:
         raise LeadTransitionError("Причина нужна только при отказе.")
 
+    if to_stage is not None and (
+        to_stage.role != to_status or to_stage.organization_id != lead.organization_id
+    ):
+        raise LeadTransitionError("Этап не относится к этому статусу.")
+    custom_stage = to_stage if to_stage is not None and not to_stage.is_system else None
     now = timezone.now()
     LeadStatusChange.objects.create(
         organization=lead.organization,
         lead=lead,
         from_status=lead.status,
         to_status=to_status,
+        to_stage=custom_stage,
         changed_by=actor,
         changed_at=now,
         is_automatic=is_automatic,
@@ -99,6 +108,7 @@ def change_status(
         comment=comment,
     )
     lead.status = to_status
+    lead.stage = custom_stage
     lead.status_changed_at = now
     # Причина живёт на заявке, пока та в отказе; вернули в работу — причина
     # остаётся только в истории.
@@ -107,6 +117,7 @@ def change_status(
     lead.save(
         update_fields=[
             "status",
+            "stage",
             "status_changed_at",
             "rejection_reason",
             "rejection_comment",
@@ -114,6 +125,79 @@ def change_status(
         ]
     )
     return lead
+
+
+def _check_stage(lead, stage):
+    if stage.organization_id != lead.organization_id:
+        raise LeadTransitionError("Такого этапа нет.")
+    if stage.is_hidden:
+        raise LeadTransitionError(f"Этап «{stage.name}» скрыт — выберите другой.")
+    if stage.role not in Lead.statuses_for(lead.kind):
+        raise LeadTransitionError(f"Этап «{stage.name}» не для этого вида заявок.")
+
+
+@transaction.atomic
+def move_to_stage(lead, *, stage, actor, rejection_reason=None, comment="") -> Lead:
+    """Перенос на этап центра (доска, кнопки в заявке; TRU-154). Другая
+    роль — обычная смена статуса со всеми её правилами; та же роль —
+    смена этапа: статус не меняется, в истории отдельное событие, чтобы
+    конверсия по ролям его не считала."""
+    _check_stage(lead, stage)
+    lead = Lead.objects.select_for_update().get(pk=lead.pk)
+    if stage.role != lead.status:
+        return change_status(
+            lead,
+            to_status=stage.role,
+            to_stage=stage,
+            actor=actor,
+            rejection_reason=rejection_reason,
+            comment=comment,
+        )
+    current = lead.stage_id if lead.stage_id and not lead.stage.is_hidden else None
+    target = None if stage.is_system else stage.pk
+    if current == target:
+        raise LeadTransitionError("Заявка уже на этом этапе.")
+    if rejection_reason is not None:
+        raise LeadTransitionError("Причина нужна только при отказе.")
+    now = timezone.now()
+    LeadStatusChange.objects.create(
+        organization=lead.organization,
+        lead=lead,
+        from_status=lead.status,
+        to_status=lead.status,
+        to_stage=None if stage.is_system else stage,
+        changed_by=actor,
+        changed_at=now,
+        event_type=LeadStatusChange.EventType.STAGE_CHANGE,
+        comment=comment,
+    )
+    lead.stage = None if stage.is_system else stage
+    lead.status_changed_at = now
+    lead.save(update_fields=["stage", "status_changed_at", "updated_at"])
+    return lead
+
+
+def leave_hidden_stage(stage, *, actor) -> int:
+    """Скрытый этап (TRU-154): его заявки переходят на системный этап
+    той же роли — статус не меняется, переход виден в истории."""
+    moved = 0
+    for lead in Lead.objects.filter(organization=stage.organization, stage=stage):
+        now = timezone.now()
+        LeadStatusChange.objects.create(
+            organization=lead.organization,
+            lead=lead,
+            from_status=lead.status,
+            to_status=lead.status,
+            changed_by=actor,
+            changed_at=now,
+            event_type=LeadStatusChange.EventType.STAGE_CHANGE,
+            is_automatic=True,
+            comment=f"Этап «{stage.name}» скрыт — заявка перенесена на основной этап.",
+        )
+        lead.stage = None
+        lead.save(update_fields=["stage", "updated_at"])
+        moved += 1
+    return moved
 
 
 @transaction.atomic

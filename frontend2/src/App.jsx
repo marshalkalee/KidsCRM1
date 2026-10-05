@@ -8,7 +8,6 @@ import Assistant from './pages/Assistant'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LegacyRedirect from './pages/LegacyRedirect'
-import TestPay from './pages/TestPay'
 import ParentApp from './parent/ParentApp'
 import ChildImport from './pages/ChildImport'
 import Onboarding from './pages/Onboarding'
@@ -80,7 +79,6 @@ function StaffApp() {
             <Routes key={lang}>
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
-              <Route path="/pay/test/:id" element={<TestPay />} />
               <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
                 <Route index element={<RoleLandingRedirect />} />
                 <Route path="dashboard" element={<Dashboard />} />

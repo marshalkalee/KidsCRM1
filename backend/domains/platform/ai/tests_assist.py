@@ -86,7 +86,7 @@ class RemindersTests(AssistFixtures):
     def test_debt_reminders_with_payer_phone_not_sent_to_model(self):
         answer = {
             "messages": [
-                {"number": 1, "text": "Айгерим, здравствуйте! Напоминаем об оплате 15 000 ₸."}
+                {"number": 1, "text": "[N1], здравствуйте! Напоминаем об оплате 15 000 ₸."}
             ]
         }
         response, prompt = self.call(
@@ -99,7 +99,11 @@ class RemindersTests(AssistFixtures):
         self.assertEqual((item["phone"], item["parent_name"]), ("+77071112233", "Сейтова Айгерим"))
         self.assertIn("15 000", item["text"])
         self.assertIn('"долг": "15 000 ₸"', prompt)
-        self.assertIn('"родитель": "Айгерим"', prompt)
+        # Имена — метками (ADR-0008), в готовом сообщении — снова имя.
+        self.assertIn('"родитель": "[N1]"', prompt)
+        self.assertNotIn("Айгерим", prompt)
+        self.assertNotIn("Сейтова", prompt)
+        self.assertTrue(item["text"].startswith("Айгерим, здравствуйте!"), item["text"])
         self.assertNotIn("7071112233", prompt)
 
     def test_teacher_forbidden_and_bad_kind(self):

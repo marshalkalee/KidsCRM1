@@ -3,6 +3,8 @@ import { Archive, ArchiveRestore, ListChecks, Pencil, Plus } from 'lucide-react'
 import api from '../api/axios'
 import { Badge, Button, DataTable, EmptyState, Field, Input, Modal, PageHeader, Tabs, apiErrorMessage, plural, useToast } from '../ui'
 import { t } from '../i18n'
+import Campaigns from '../components/leads/Campaigns'
+import FunnelStages from '../components/leads/FunnelStages'
 
 // Два справочника воронки (TRU-93). usage — во что складывается число
 // рядом с названием: заявки для источника, отказы для причины.
@@ -44,11 +46,15 @@ const DICTIONARIES = {
   },
 }
 
-/** Справочники продаж: источники заявок и причины отказа. Удаления нет —
- * архив: в старых заявках значение остаётся, в новых не предлагается. */
+/** Справочники продаж: этапы воронки (TRU-154), источники заявок и причины
+ * отказа. Удаления нет — архив: в старых заявках значение остаётся, в новых
+ * не предлагается. */
 export default function LeadDictionaries() {
   const toast = useToast()
-  const [kind, setKind] = useState('sources')
+  const [kind, setKind] = useState('stages')
+  const stagesTab = kind === 'stages'
+  const campaignsTab = kind === 'campaigns'
+  const customTab = stagesTab || campaignsTab
   const [data, setData] = useState({ sources: null, reasons: null, renewalReasons: null })
   const [error, setError] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -75,7 +81,7 @@ export default function LeadDictionaries() {
     }
   }
 
-  const rows = data[kind]
+  const rows = customTab ? [] : data[kind]
   const activeCount = count => (data[count] || []).filter(item => item.is_active).length
 
   const columns = [
@@ -101,16 +107,20 @@ export default function LeadDictionaries() {
     <div>
       <PageHeader
         title={t('Справочники продаж')}
-        description={dict.hint}
-        actions={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>{t('Добавить')}</Button>}
+        description={customTab ? t('Этапы воронки, источники заявок и причины отказа — общие для всех филиалов.') : dict.hint}
+        actions={!customTab && <Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>{t('Добавить')}</Button>}
       />
       <Tabs
         className="mb-4"
         value={kind}
         onChange={setKind}
-        tabs={Object.entries(DICTIONARIES).map(([key, d]) => ({ key, label: d.tab, count: data[key] ? activeCount(key) : null }))}
+        tabs={[
+          { key: 'stages', label: t('Этапы воронки') },
+          { key: 'campaigns', label: t('Публикации') },
+          ...Object.entries(DICTIONARIES).map(([key, d]) => ({ key, label: d.tab, count: data[key] ? activeCount(key) : null })),
+        ]}
       />
-      <DataTable
+      {stagesTab ? <FunnelStages /> : campaignsTab ? <Campaigns /> : <DataTable
         columns={columns}
         rows={rows || []}
         loading={!rows && !error}
@@ -118,7 +128,7 @@ export default function LeadDictionaries() {
         onRetry={load}
         onRowClick={item => setEditing(item)}
         empty={<EmptyState icon={ListChecks} title={t('Список пуст')} description={dict.hint} action={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>{t('Добавить')}</Button>} />}
-      />
+      />}
       {editing && (
         <DictionaryItemModal
           dict={dict}

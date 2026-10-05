@@ -5,7 +5,7 @@ import api from '../../api/axios'
 import { Avatar, Badge, Button, Checkbox, DataTable, Dropdown, EmptyState, apiErrorMessage, cn, formatDateTime, plural, useToast } from '../../ui'
 import { t } from '../../i18n'
 import RejectModal from './RejectModal'
-import { LEAD_STATUS, LEAD_STATUSES } from './format'
+import { LEAD_STATUSES, stageBadge } from './format'
 
 const PAGE_SIZE = 50
 
@@ -22,6 +22,11 @@ export default function LeadTable({ query, params, update, reloadKey, staff, onC
   const [rejecting, setRejecting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [refresh, setRefresh] = useState(0)
+  const [stages, setStages] = useState([])
+
+  useEffect(() => {
+    api.get('leads/stages/').then(res => setStages(res.data)).catch(() => {})
+  }, [])
 
   const page = Math.max(1, Number(params.get('page')) || 1)
   const ordering = params.get('ordering') || '-created_at'
@@ -102,7 +107,7 @@ export default function LeadTable({ query, params, update, reloadKey, staff, onC
     { key: 'phone', header: t('Телефон'), sortable: true, render: row => <a href={`tel:${row.phone}`} onClick={e => e.stopPropagation()} className="whitespace-nowrap hover:text-brand-700">{row.phone}</a> },
     { key: 'direction', header: t('Направление'), sortable: true, render: row => row.direction_name || '—', mobileRender: row => row.direction_name || null },
     { key: 'source', header: t('Источник'), sortable: true, render: row => (row.source_name ? t(row.source_name) : '—'), mobileRender: row => (row.source_name ? t(row.source_name) : null) },
-    { key: 'status', header: t('Статус'), sortable: true, mobileAside: true, render: row => <Badge tone={LEAD_STATUS[row.status].tone}>{LEAD_STATUS[row.status].label}</Badge> },
+    { key: 'status', header: t('Статус'), sortable: true, mobileAside: true, render: row => <Badge tone={stageBadge(row).tone}>{stageBadge(row).label}</Badge> },
     {
       key: 'assigned_to',
       header: t('Ответственный'),
@@ -120,7 +125,8 @@ export default function LeadTable({ query, params, update, reloadKey, staff, onC
     },
   ]
 
-  const statusOptions = LEAD_STATUSES.map(s => ({ value: s.value, label: s.label }))
+  // Массовая смена — по основным этапам (ролям), названия — центра (TRU-154).
+  const statusOptions = LEAD_STATUSES.map(s => ({ value: s.value, label: stages.find(st => st.is_system && st.role === s.value)?.name || s.label }))
   const staffOptions = [{ value: '', label: t('Не назначен') }, ...staff.map(u => ({ value: u.id, label: u.full_name }))]
 
   return (

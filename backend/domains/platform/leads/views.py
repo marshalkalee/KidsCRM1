@@ -19,11 +19,21 @@ from domains.platform.core.utils import day_bounds_for_org
 from domains.platform.core.viewsets import TenantModelViewSet
 
 from .conversion import LeadConversionError, conversion_preview, convert_lead
-from .models import Lead, LeadComment, LeadKind, LeadRejectionReason, LeadSource
+from .models import (
+    Lead,
+    LeadCampaign,
+    LeadComment,
+    LeadKind,
+    LeadRejectionReason,
+    LeadSource,
+    LeadStage,
+    LeadStatusChange,
+)
 from .reporting import leads_workbook
 from .sale import LeadSaleError, sale_options, sell_from_lead
 from .serializers import (
     LeadBulkSerializer,
+    LeadCampaignSerializer,
     LeadCommentSerializer,
     LeadConversionQuerySerializer,
     LeadConversionSerializer,
@@ -31,6 +41,7 @@ from .serializers import (
     LeadSaleSerializer,
     LeadSerializer,
     LeadSourceSerializer,
+    LeadStageSerializer,
     LeadStatusChangeSerializer,
     LeadStatusSerializer,
     TrialBookingCancelSerializer,
@@ -44,8 +55,11 @@ from .services import (
     create_lead,
     create_renewal_lead,
     find_phone_matches,
+    leave_hidden_stage,
+    move_to_stage,
     visible_leads,
 )
+from .stages import Funnel, org_stages
 from .trial_booking import (
     TrialBookingError,
     book_trial,
@@ -112,6 +126,20 @@ def _uuids(values):
     return result
 
 
+def _filter_stages(qs, funnel, stage_ids):
+    """Заявки на этапах: свой — по ссылке, системный — роль без своего этапа."""
+    condition = Q(pk__in=[])
+    for stage_id in stage_ids:
+        stage = funnel.by_id.get(stage_id)
+        if stage is None:
+            continue
+        if stage.is_system:
+            condition |= Q(status=stage.role, stage__isnull=True)
+        else:
+            condition |= Q(stage=stage)
+    return qs.filter(condition)
+
+
 class LeadViewSet(TenantModelViewSet):
     """
     Заявки воронки продаж (TRU-99).
@@ -148,7 +176,9 @@ class LeadViewSet(TenantModelViewSet):
             qs = qs.filter(branch=branch)
         if statuses := _values(params.get("status")):
             qs = qs.filter(status__in=statuses)
-        for field in ("source", "direction", "branch", "assigned_to"):
+        if stages := _uuids(_values(params.get("stage"))):
+            qs = _filter_stages(qs, Funnel(self.request.user.organization), stages)
+        for field in ("source", "campaign", "direction", "branch", "assigned_to"):
             values = _values(params.get(field))
             if field == "assigned_to":
                 values = [str(self.request.user.pk) if value == "me" else value for value in values]
@@ -222,7 +252,7 @@ class LeadViewSet(TenantModelViewSet):
     def export(self, request, version=None):
         """Выгрузка отфильтрованных заявок в Excel — те же фильтры, что у таблицы."""
         response = HttpResponse(
-            leads_workbook(self.get_queryset()),
+            leads_workbook(self.get_queryset(), Funnel(request.user.organization)),
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
         response["Content-Disposition"] = (
@@ -284,36 +314,57 @@ class LeadViewSet(TenantModelViewSet):
             since = timezone.now() - timedelta(days=CLOSED_DAYS)
             qs = qs.exclude(status__in=CLOSED_STATUSES, status_changed_at__lt=since)
         kind = _kind(params)
-        statuses = Lead.statuses_for(kind)
-        if (column := params.get("column")) in statuses:
-            statuses = [column]
-        counts = dict(
-            qs.order_by().values_list("status").annotate(n=Count("id")).values_list("status", "n")
-        )
-        context = self.get_serializer_context()
+        funnel = Funnel(request.user.organization)
+        stages = funnel.visible(kind)
+        # ?column — id этапа; по-старому роль — её системный этап.
+        if column := params.get("column"):
+            stages = [s for s in stages if column in (str(s.pk), s.role if s.is_system else None)]
+        counts = {
+            (role, stage_id): n
+            for role, stage_id, n in qs.order_by()
+            .values_list("status", "stage")
+            .annotate(n=Count("id"))
+            .values_list("status", "stage", "n")
+        }
+        context = {**self.get_serializer_context(), "funnel": funnel}
         columns = []
-        for value in statuses:
+        for stage in stages:
+            if stage.is_system:
+                # Заявки скрытых этапов уже переведены на системный
+                # (leave_hidden_stage), поэтому здесь — роль без своего этапа.
+                count = counts.get((stage.role, None), 0)
+                items_qs = qs.filter(status=stage.role, stage__isnull=True)
+            else:
+                count = counts.get((stage.role, stage.pk), 0)
+                items_qs = qs.filter(stage=stage)
             items = list(
-                qs.filter(status=value).order_by("-status_changed_at", "-created_at")[
-                    offset : offset + limit
-                ]
+                items_qs.order_by("-status_changed_at", "-created_at")[offset : offset + limit]
             )
             columns.append(
                 {
-                    "status": value,
-                    "label": Lead.Status(value).label,
-                    "count": counts.get(value, 0),
-                    "has_more": offset + len(items) < counts.get(value, 0),
+                    "stage": str(stage.pk),
+                    "status": stage.role,
+                    "label": stage.name,
+                    "color": stage.color,
+                    "is_system": stage.is_system,
+                    "count": count,
+                    "has_more": offset + len(items) < count,
                     "results": LeadSerializer(items, many=True, context=context).data,
                 }
             )
-        # Куда можно перетащить карточку из каждой колонки — доска подсвечивает
-        # только допустимые (сервер всё равно проверит переход).
+        # Куда можно перетащить карточку — доска подсвечивает только
+        # допустимые (сервер всё равно проверит переход). transitions — по
+        # ролям, как до TRU-154; stage_transitions — по этапам центра.
         transitions = {
             status: sorted(targets) for status, targets in Lead.transitions_for(kind).items()
         }
         return Response(
-            {"columns": columns, "closed_days": CLOSED_DAYS, "transitions": transitions}
+            {
+                "columns": columns,
+                "closed_days": CLOSED_DAYS,
+                "transitions": transitions,
+                "stage_transitions": funnel.transitions(kind),
+            }
         )
 
     def perform_create(self, serializer):
@@ -333,14 +384,24 @@ class LeadViewSet(TenantModelViewSet):
         lead = self.get_object()
         serializer = LeadStatusSerializer(data=request.data, context=self.get_serializer_context())
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         try:
-            lead = change_status(
-                lead,
-                to_status=serializer.validated_data["status"],
-                actor=request.user,
-                rejection_reason=serializer.validated_data.get("rejection_reason"),
-                comment=serializer.validated_data.get("comment", ""),
-            )
+            if stage := data.get("stage"):
+                lead = move_to_stage(
+                    lead,
+                    stage=stage,
+                    actor=request.user,
+                    rejection_reason=data.get("rejection_reason"),
+                    comment=data.get("comment", ""),
+                )
+            else:
+                lead = change_status(
+                    lead,
+                    to_status=data["status"],
+                    actor=request.user,
+                    rejection_reason=data.get("rejection_reason"),
+                    comment=data.get("comment", ""),
+                )
         except LeadTransitionError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(LeadSerializer(lead, context=self.get_serializer_context()).data)
@@ -452,7 +513,16 @@ class LeadViewSet(TenantModelViewSet):
     def history(self, request, pk=None, version=None):
         lead = self.get_object()
         changes = lead.status_changes.select_related("changed_by", "rejection_reason")
-        return Response(LeadStatusChangeSerializer(changes, many=True).data)
+        rows = LeadStatusChangeSerializer(
+            changes, many=True, context={"funnel": Funnel(lead.organization)}
+        ).data
+        # «Откуда» — тем же этапом, куда пришла предыдущая запись: переход
+        # между своими этапами одной роли иначе читался бы «Связались →
+        # Связались».
+        for previous, row in zip(rows, rows[1:], strict=False):
+            if row["from_status"] and row["from_status"] == previous["to_status"]:
+                row["from_status_label"] = previous["to_status_label"]
+        return Response(rows)
 
     @action(detail=True, methods=["get", "post"])
     def comments(self, request, pk=None, version=None):
@@ -503,9 +573,107 @@ class LeadSourceViewSet(LeadDictionaryViewSet):
     usage = Count("leads", filter=Q(leads__deleted_at__isnull=True))
 
 
+class LeadCampaignViewSet(LeadDictionaryViewSet):
+    """Публикации и кампании (TRU-165). ?source=<id> — публикации источника."""
+
+    serializer_class = LeadCampaignSerializer
+    model = LeadCampaign
+    usage = Count("leads", filter=Q(leads__deleted_at__isnull=True))
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("source", "organization")
+        if source := self.request.query_params.get("source"):
+            qs = qs.filter(source_id__in=_uuids([source]))
+        return qs
+
+
 class LeadRejectionReasonViewSet(LeadDictionaryViewSet):
     serializer_class = LeadRejectionReasonSerializer
     model = LeadRejectionReason
     # По событиям отказа, а не по текущим заявкам: вернули заявку в работу —
     # отказ всё равно был и в отчёт по причинам попадает.
     usage = Count("status_changes", filter=Q(status_changes__to_status=Lead.Status.REJECTED))
+
+
+class LeadStageViewSet(TenantModelViewSet):
+    """
+    Этапы воронки центра (TRU-154). Читать — всем, кто работает с
+    заявками; менять — владельцу и управляющему (как справочники).
+    Удалить можно только этап, на котором заявок не было, — иначе скрыть;
+    скрытый этап отдаёт свои заявки системному этапу той же роли.
+    """
+
+    serializer_class = LeadStageSerializer
+    permission_classes = [IsAuthenticated, CanManageLeadDictionaries]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    pagination_class = None
+
+    def get_queryset(self):
+        org_stages(self.request.user.organization)  # системные этапы есть всегда
+        return LeadStage.objects.for_tenant(self.request.user.organization).order_by(
+            "order", "created_at"
+        )
+
+    def get_serializer_context(self):
+        # Сколько заявок на этапе сейчас: у основного — роль без своего
+        # этапа (там заявки хранятся без ссылки), у своего — по ссылке.
+        counts = {
+            (role, stage_id): n
+            for role, stage_id, n in Lead.objects.filter(
+                organization=self.request.user.organization
+            )
+            .order_by()
+            .values_list("status", "stage")
+            .annotate(n=Count("id"))
+            .values_list("status", "stage", "n")
+        }
+        return {**super().get_serializer_context(), "lead_counts": counts}
+
+    def perform_create(self, serializer):
+        last = (
+            LeadStage.objects.for_tenant(self.request.user.organization)
+            .order_by("-order")
+            .values_list("order", flat=True)
+            .first()
+        )
+        serializer.save(organization=self.request.user.organization, order=(last or 0) + 10)
+
+    def perform_update(self, serializer):
+        was_hidden = serializer.instance.is_hidden
+        stage = serializer.save()
+        if stage.is_hidden and not was_hidden:
+            leave_hidden_stage(stage, actor=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        stage = self.get_object()
+        used = (
+            stage.is_system
+            or Lead.objects.all_with_deleted().filter(stage=stage).exists()
+            or LeadStatusChange.objects.filter(to_stage=stage).exists()
+        )
+        if used:
+            return Response(
+                {"detail": "На этом этапе уже были заявки — его можно только скрыть."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        stage.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=["post"])
+    def reorder(self, request, version=None):
+        """{ids: [...]} — новый порядок всех этапов центра."""
+        stages = {str(stage.pk): stage for stage in self.get_queryset()}
+        ids = [str(value) for value in request.data.get("ids") or []]
+        if sorted(ids) != sorted(stages):
+            return Response(
+                {"detail": "Передайте все этапы воронки в новом порядке."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        for index, stage_id in enumerate(ids, start=1):
+            stages[stage_id].order = index * 10
+        LeadStage.objects.bulk_update(stages.values(), ["order"])
+        return Response(
+            LeadStageSerializer(
+                self.get_queryset(), many=True, context=self.get_serializer_context()
+            ).data
+        )

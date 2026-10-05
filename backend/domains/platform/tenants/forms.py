@@ -13,7 +13,6 @@ from domains.platform.tenants.org_settings import (
     DEBT_OVERDUE_DAYS_THRESHOLD,
     DEFAULT_ORG_SETTINGS,
     GROUP_UNDERFILLED_PERCENT_THRESHOLD,
-    KASPI_PAYMENT_DETAILS,
     LEAD_STALE_DAYS_THRESHOLD,
     PARENT_CANCEL_CHARGE_ON_TIME,
     PARENT_CANCEL_NOTICE_HOURS,
@@ -133,9 +132,6 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     rule_trial_no_show_enabled = forms.BooleanField(
         required=False, label="Напоминать перезвонить после пропуска пробного"
     )
-    kaspi_payment_details = forms.CharField(
-        max_length=255, required=False, label="Kaspi для удалённой оплаты"
-    )
     parent_cancel_notice_hours = forms.IntegerField(
         min_value=0,
         max_value=168,
@@ -204,7 +200,6 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             RULE_DEBT_REMINDER_ENABLED: self.cleaned_data[RULE_DEBT_REMINDER_ENABLED],
             RULE_MISSING_SUBSCRIPTION_ENABLED: self.cleaned_data[RULE_MISSING_SUBSCRIPTION_ENABLED],
             RULE_TRIAL_NO_SHOW_ENABLED: self.cleaned_data[RULE_TRIAL_NO_SHOW_ENABLED],
-            KASPI_PAYMENT_DETAILS: self.cleaned_data[KASPI_PAYMENT_DETAILS].strip(),
             PARENT_CANCEL_NOTICE_HOURS: (
                 self.cleaned_data.get(PARENT_CANCEL_NOTICE_HOURS)
                 if self.cleaned_data.get(PARENT_CANCEL_NOTICE_HOURS) is not None

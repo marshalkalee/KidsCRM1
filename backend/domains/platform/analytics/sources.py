@@ -15,13 +15,14 @@
 владелец закроет канал по трём заявкам.
 """
 
+import uuid
 from collections import defaultdict
 from decimal import Decimal
 
 import pytz
 from django.db.models.functions import TruncMonth
 
-from domains.platform.leads.models import Lead
+from domains.platform.leads.models import Lead, LeadCampaign
 
 from .breakdowns import DIMENSIONS
 from .funnel import _history, _stage_counts, cohort
@@ -38,18 +39,39 @@ def _pct(part, whole):
 def sources_quality(scope, period, filters=None):
     """[{key, label, leads, trial, purchased, trial_rate, conversion,
     avg_check, revenue, small_sample}] — по убыванию покупок."""
+    return _quality(scope, period, filters, "source_id", DIMENSIONS["source"], "sq")
 
+
+def _campaign_labels(organization, keys):
+    rows = LeadCampaign.objects.for_tenant(organization).filter(pk__in=[k for k in keys if k])
+    return {c.pk: f"{c.name} · {c.code}" for c in rows.select_related("source")}
+
+
+def campaigns_quality(scope, period, filters=None):
+    """То же по публикациям (TRU-165): какой ролик приводит клиентов. Только
+    заявки с публикацией — без неё строки «не указано» нет, это видно в
+    отчёте по источникам."""
+    items = _quality(scope, period, filters, "campaign_id", _campaign_labels, "cq")
+    sources = dict(
+        LeadCampaign.objects.for_tenant(scope.organization).values_list("pk", "source__name")
+    )
+    return [
+        {**item, "source": sources.get(uuid.UUID(item["key"]))} for item in items if item["key"]
+    ]
+
+
+def _quality(scope, period, filters, field, labels_of, cache_prefix):
     def run():
         rows = list(
             cohort(scope, period, filters).values_list(
-                "id", "status", "source_id", "sold_subscription__price"
+                "id", "status", field, "sold_subscription__price"
             )
         )
         history = _history([row[0] for row in rows])
         groups = defaultdict(list)
         for lead_id, status, source_id, price in rows:
             groups[source_id].append((lead_id, status, price))
-        labels = DIMENSIONS["source"](scope.organization, list(groups))
+        labels = labels_of(scope.organization, list(groups))
         items = []
         for source_id, group in groups.items():
             counts, _ = _stage_counts([(lead_id, status) for lead_id, status, _ in group], history)
@@ -80,7 +102,10 @@ def sources_quality(scope, period, filters=None):
             ),
         )
 
-    key = f"sq:{scope.cache_key}:{period.start}:{period.end}:{sorted((filters or {}).items())}"
+    key = (
+        f"{cache_prefix}:{scope.cache_key}:{period.start}:{period.end}:"
+        f"{sorted((filters or {}).items())}"
+    )
     return cached(key, period, scope, run)
 
 
