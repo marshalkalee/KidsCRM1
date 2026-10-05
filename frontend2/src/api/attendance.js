@@ -30,3 +30,19 @@ export function resetAttendance({ lesson, child }) {
 export function resetAllAttendance(lessonId) {
   return api.post('attendance/reset-all/', { lesson: lessonId }).then(res => res.data)
 }
+
+export function fetchParentNotes(lessonId) {
+  return api.get('attendance/parent-notes/', { params: { lesson: lessonId } }).then(res => res.data)
+}
+
+export function createParentNote({ lesson, scope, child, body }) {
+  return api.post('attendance/parent-notes/', { lesson, scope, child: child || null, body }).then(res => res.data)
+}
+
+export function updateParentNote(noteId, body) {
+  return api.patch(`attendance/parent-notes/${noteId}/`, { body }).then(res => res.data)
+}
+
+export function deleteParentNote(noteId) {
+  return api.delete(`attendance/parent-notes/${noteId}/`)
+}

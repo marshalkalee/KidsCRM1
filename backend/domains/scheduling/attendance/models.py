@@ -1,3 +1,5 @@
+import datetime
+
 from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -269,3 +271,60 @@ class Attendance(TenantModel):
         from domains.platform.tasks.services import create_admin_task_for_missing_subscription
 
         create_admin_task_for_missing_subscription(attendance=self)
+
+
+class ParentNote(TenantModel):
+    """A lesson note intentionally addressed to parents (TRU-147).
+
+    This is deliberately separate from ``Child.medical_notes`` and other
+    internal staff notes.  Portal APIs may expose this model, but must never
+    fall back to fields on Child.
+    """
+
+    EDIT_WINDOW_HOURS = 24
+
+    class Scope(models.TextChoices):
+        GROUP = "group", "По группе"
+        CHILD = "child", "По ребёнку"
+
+    lesson = models.ForeignKey(
+        "schedule.Lesson", on_delete=models.CASCADE, related_name="parent_notes"
+    )
+    scope = models.CharField(max_length=16, choices=Scope.choices)
+    child = models.ForeignKey(
+        "clients.Child",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="parent_notes",
+    )
+    author = models.ForeignKey("users.User", on_delete=models.PROTECT, related_name="parent_notes")
+    body = models.TextField(max_length=1000)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(scope="group", child__isnull=True)
+                    | models.Q(scope="child", child__isnull=False)
+                ),
+                name="parent_note_scope_matches_child",
+            )
+        ]
+        indexes = [models.Index(fields=["organization", "lesson", "created_at"])]
+
+    def save(self, *args, **kwargs):
+        if not self.organization_id:
+            self.organization_id = self.lesson.organization_id
+        super().save(*args, **kwargs)
+
+    def can_edit(self, user, *, at=None):
+        at = at or timezone.now()
+        return self.author_id == user.id and at <= self.created_at + datetime.timedelta(
+            hours=self.EDIT_WINDOW_HOURS
+        )
+
+    def __str__(self):
+        recipient = self.child if self.child_id else self.lesson.group
+        return f"{recipient}: {self.body[:40]}"

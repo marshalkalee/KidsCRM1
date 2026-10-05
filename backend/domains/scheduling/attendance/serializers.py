@@ -4,7 +4,7 @@ from rest_framework import serializers
 from domains.people.clients.models import Child
 from domains.scheduling.schedule.models import Lesson
 
-from .models import Attendance
+from .models import Attendance, ParentNote
 
 
 class AttendanceSerializer(serializers.ModelSerializer):
@@ -267,3 +267,75 @@ class AttendanceRosterEntrySerializer(serializers.Serializer):
     def get_marked_at(self, obj):
         attendance = obj["attendance"]
         return attendance.marked_at if attendance else None
+
+
+class ParentNoteSerializer(serializers.ModelSerializer):
+    child_name = serializers.CharField(source="child.full_name", read_only=True, default=None)
+    author_name = serializers.CharField(source="author.full_name", read_only=True)
+    scope_display = serializers.CharField(source="get_scope_display", read_only=True)
+    can_edit = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ParentNote
+        fields = [
+            "id",
+            "lesson",
+            "scope",
+            "scope_display",
+            "child",
+            "child_name",
+            "author",
+            "author_name",
+            "body",
+            "can_edit",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["lesson", "author"]
+
+    def get_can_edit(self, obj):
+        request = self.context.get("request")
+        return bool(request and obj.can_edit(request.user))
+
+
+class ParentNoteCreateSerializer(serializers.Serializer):
+    scope = serializers.ChoiceField(choices=ParentNote.Scope.choices)
+    child = serializers.PrimaryKeyRelatedField(
+        queryset=Child.objects.none(), required=False, allow_null=True
+    )
+    body = serializers.CharField(max_length=1000, trim_whitespace=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            self.fields["child"].queryset = Child.objects.for_tenant(request.organization)
+
+    def validate_body(self, value):
+        if len(value) < 3:
+            raise serializers.ValidationError("Минимум 3 символа.")
+        return value
+
+    def validate(self, attrs):
+        lesson = self.context["lesson"]
+        child = attrs.get("child")
+        if attrs["scope"] == ParentNote.Scope.GROUP:
+            if not lesson.group_id:
+                raise serializers.ValidationError(
+                    {"scope": "У индивидуального занятия нет всей группы."}
+                )
+            attrs["child"] = None
+        elif child is None:
+            raise serializers.ValidationError({"child": "Выберите ребёнка."})
+        elif not lesson.participants().filter(pk=child.pk).exists():
+            raise serializers.ValidationError({"child": "Ребёнок не участвует в этом занятии."})
+        return attrs
+
+
+class ParentNoteUpdateSerializer(serializers.Serializer):
+    body = serializers.CharField(max_length=1000, trim_whitespace=True)
+
+    def validate_body(self, value):
+        if len(value) < 3:
+            raise serializers.ValidationError("Минимум 3 символа.")
+        return value
