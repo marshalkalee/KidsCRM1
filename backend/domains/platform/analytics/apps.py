@@ -5,3 +5,6 @@ class AnalyticsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "domains.platform.analytics"
     label = "analytics"
+
+    def ready(self):
+        from . import signals  # noqa: F401

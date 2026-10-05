@@ -2006,5 +2006,10 @@
  "Имена детей и родителей уходят во внешний ИИ-сервис только метками. Две функции ниже отправляют фото или файл как есть — включайте, если центр согласен.": "Children's and parents' names reach the external AI service only as labels. The two features below send a photo or a file as is — turn them on if the centre agrees.",
  "Отметка посещаемости по фото журнала": "Attendance from a photo of the register",
  "Приведение файла клиентов в порядок при импорте": "Tidying up the client file on import",
- "Фото бумажного журнала с именами детей уходит во внешний ИИ-сервис, чтобы распознать отметки.": "A photo of the paper register with children's names is sent to an external AI service to read the marks."
+ "Фото бумажного журнала с именами детей уходит во внешний ИИ-сервис, чтобы распознать отметки.": "A photo of the paper register with children's names is sent to an external AI service to read the marks.",
+ "Авто": "Auto",
+ "Дни": "Days",
+ "Недели": "Weeks",
+ "Месяцы": "Months",
+ "Шаг графика": "Chart step"
 }
