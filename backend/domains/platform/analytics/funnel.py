@@ -17,6 +17,7 @@
 from collections import Counter, defaultdict
 
 from domains.platform.leads.models import Lead, LeadKind, LeadStatusChange
+from domains.platform.leads.stages import Funnel
 from domains.platform.users.models import User
 
 from .breakdowns import DIMENSIONS
@@ -124,7 +125,22 @@ def funnel(scope, period, filters=None, compare=True):
         return result
 
     key = f"f:{_key(scope, period, filters)}:{compare}"
-    return cached(key, period, scope, run)
+    return _with_stage_names(cached(key, period, scope, run), scope.organization)
+
+
+def _with_stage_names(result, organization):
+    """Подписи этапов — названия центра (TRU-154). Считается по ролям, а
+    подписывается после кэша: переименование видно сразу, без пересчёта."""
+    names = Funnel(organization).system
+
+    def relabel(summary):
+        stages = [{**stage, "label": names[stage["key"]].name} for stage in summary["stages"]]
+        return {**summary, "stages": stages}
+
+    result = relabel(result)
+    if result.get("previous"):
+        result["previous"] = relabel(result["previous"])
+    return result
 
 
 def _labels(organization, dimension, keys):

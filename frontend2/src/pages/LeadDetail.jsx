@@ -12,7 +12,7 @@ import RejectModal from '../components/leads/RejectModal'
 import LeadSaleModal from '../components/leads/LeadSaleModal'
 import TrialBookingModal from '../components/leads/TrialBookingModal'
 import TrialCancelModal from '../components/leads/TrialCancelModal'
-import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/format'
+import { STAGE_DOT, leadTitle, stageBadge } from '../components/leads/format'
 import { getLeadsViewPreference } from '../components/leads/viewPreference'
 import { useSession } from '../session/SessionContext'
 import {
@@ -45,6 +45,8 @@ export default function LeadDetail() {
   const [lead, setLead] = useState(null)
   const [state, setState] = useState('loading')
   const [history, setHistory] = useState([])
+  // Этапы центра (TRU-154) — подписи и цвета кнопок «Решение по заявке».
+  const [stages, setStages] = useState([])
   const [comments, setComments] = useState([])
   const [editing, setEditing] = useState(false)
   const [rejecting, setRejecting] = useState(false)
@@ -61,6 +63,7 @@ export default function LeadDetail() {
 
   const loadExtras = useCallback(() => {
     api.get(`leads/${id}/history/`).then(res => setHistory(res.data)).catch(() => {})
+    api.get('leads/stages/').then(res => setStages(res.data)).catch(() => {})
     api.get(`leads/${id}/comments/`).then(res => setComments(res.data)).catch(() => {})
   }, [id])
 
@@ -105,13 +108,13 @@ export default function LeadDetail() {
   }
   if (state === 'error') return <Card><ErrorState onRetry={load} /></Card>
 
-  async function changeStatus(to, extra = {}) {
+  async function changeStatus(stageId, extra = {}) {
     try {
-      const res = await api.post(`leads/${lead.id}/status/`, { status: to, ...extra })
+      const res = await api.post(`leads/${lead.id}/status/`, { stage: stageId, ...extra })
       setLead(res.data)
-      if (to === 'trial_attended' && !res.data.converted_child) setConverting(true)
+      if (res.data.status === 'trial_attended' && !res.data.converted_child) setConverting(true)
       loadExtras()
-      toast.success(t('Статус: {status}', { status: LEAD_STATUS[to].label }))
+      toast.success(t('Статус: {status}', { status: res.data.stage_name }))
     } catch (err) {
       toast.error(apiErrorMessage(err))
     }
@@ -174,7 +177,7 @@ export default function LeadDetail() {
     }
   }
 
-  const meta = LEAD_STATUS[lead.status]
+  const meta = stageBadge(lead)
   return (
     <div>
       <PageHeader
@@ -296,7 +299,8 @@ export default function LeadDetail() {
             lead={lead}
             onBookTrial={() => setBookingTrial('book')}
             onStartSale={startSale}
-            onChange={to => (to === 'rejected' ? setRejecting(true) : changeStatus(to))}
+            stages={stages}
+            onChange={stage => (stage.role === 'rejected' ? setRejecting(stage.id) : changeStatus(stage.id))}
             onCreateTask={createCallBackTask}
             creatingTask={creatingTask}
           />
@@ -398,7 +402,7 @@ export default function LeadDetail() {
         <RejectModal
           lead={lead}
           onCancel={() => setRejecting(false)}
-          onConfirm={async extra => { setRejecting(false); await changeStatus('rejected', extra) }}
+          onConfirm={async extra => { const stageId = rejecting; setRejecting(false); await changeStatus(stageId, extra) }}
         />
       )}
     </div>
@@ -450,9 +454,10 @@ function TrialBookingCard({ booking, canModify, onReschedule, onCancel }) {
   )
 }
 
-function StatusCard({ lead, onChange, onBookTrial, onStartSale, onCreateTask, creatingTask }) {
-  const targets = LEAD_STATUSES.filter(
-    s => s.value !== 'trial_scheduled' && lead.allowed_transitions.includes(s.value),
+function StatusCard({ lead, stages, onChange, onBookTrial, onStartSale, onCreateTask, creatingTask }) {
+  // Запись на пробное — отдельной кнопкой с выбором занятия, не этапом.
+  const targets = stages.filter(
+    s => !(s.is_system && s.role === 'trial_scheduled') && lead.allowed_stages.includes(s.id),
   )
   const canSell = !lead.sold_subscription && (
     lead.allowed_transitions.includes('purchased') || lead.status === 'purchased'
@@ -471,9 +476,9 @@ function StatusCard({ lead, onChange, onBookTrial, onStartSale, onCreateTask, cr
       {targets.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-2">
           {targets.map(s => (
-            <Button key={s.value} size="sm" variant={s.value === 'rejected' ? 'danger-ghost' : 'secondary'} onClick={() => onChange(s.value)}>
-              <span className={cn('size-2 rounded-full', s.dot)} />
-              {s.label}
+            <Button key={s.id} size="sm" variant={s.role === 'rejected' ? 'danger-ghost' : 'secondary'} onClick={() => onChange(s)}>
+              <span className={cn('size-2 rounded-full', STAGE_DOT[s.color])} />
+              {s.name}
             </Button>
           ))}
         </div>
@@ -555,17 +560,16 @@ function HistoryCard({ history }) {
       <p className="text-[15px] font-bold text-ink">{t('История статусов')}</p>
       <ol className="mt-3 space-y-0">
         {[...history].reverse().map((change, index) => {
-          const to = LEAD_STATUS[change.to_status]
           return (
             <li key={change.id} className="relative flex gap-3 pb-4 last:pb-0">
               {index < history.length - 1 && <span className="absolute left-[5px] top-4 h-full w-px bg-line" />}
-              <span className={cn('relative mt-1.5 size-[11px] shrink-0 rounded-full ring-4 ring-surface', to.dot)} />
+              <span className={cn('relative mt-1.5 size-[11px] shrink-0 rounded-full ring-4 ring-surface', STAGE_DOT[change.to_stage_color])} />
               <div className="min-w-0 text-sm">
                 <p className="text-ink">
                   {change.event_type === 'trial_rescheduled' ? (
                     <span className="font-semibold">{t('Пробное занятие перенесено')}</span>
                   ) : change.from_status ? (
-                    <><span className="text-ink-muted">{LEAD_STATUS[change.from_status].label}</span> → <span className="font-semibold">{to.label}</span></>
+                    <><span className="text-ink-muted">{change.from_status_label}</span> → <span className="font-semibold">{change.to_status_label}</span></>
                   ) : (
                     <span className="font-semibold">{t('Заявка создана')}</span>
                   )}

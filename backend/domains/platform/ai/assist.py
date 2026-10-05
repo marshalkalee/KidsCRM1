@@ -123,6 +123,7 @@ def reminders(user, child_ids, *, kind: str, language: str) -> list[dict]:
 
     def write(batch):
         data = _ask_json(
+            organization=organization,
             system=f"Ты пишешь сообщения родителям от имени администратора детского центра {organization.name} в Казахстане. Каждое сообщение уйдёт отдельно в WhatsApp, администратор проверит и отправит сам.\n{TONE}",
             user=(
                 f"Цель каждого сообщения: {REMINDER_GOALS[kind]}.\nЯзык: {LANG[language]}.\n"
@@ -173,13 +174,14 @@ NOTE_SYSTEM = """Администратор детского центра нас
 - next_step — все действия, которые из этого следуют, с датой, если она есть. Ждём оплату, справку или ответ — «Проверить …»; не дозвонились — «Перезвонить …» («Проверить оплату в пятницу; ответить про перевод в субботнюю группу»). Пусто, если действий нет."""
 
 
-def communication_note(text: str) -> dict:
+def communication_note(organization, text: str) -> dict:
     text = (text or "").strip()
     if not text:
         raise AIError("Напишите, как прошёл разговор.")
     if len(text) > 3000:
         raise AIError("Слишком длинная заметка.")
     data = _ask_json(
+        organization=organization,
         system=NOTE_SYSTEM,
         user=f"Сегодня: {timezone.localdate():%d.%m.%Y}\nЗаметка:\n<note>\n{text}\n</note>",
         schema=_schema(
@@ -258,7 +260,8 @@ def child_brief(child, user) -> dict:
             .order_by("-created_at")[:5]
         ]
         or None,
-        "медицинские заметки": child.medical_notes or None,
+        # Медицинские заметки в модель не уходят (TRU-156, ADR-0008): данные о
+        # здоровье ребёнка, а для звонка родителю они не нужны.
     }
     if can_view_client_money(user):
         subscription = (
@@ -280,6 +283,7 @@ def child_brief(child, user) -> dict:
         )
         facts["долг"] = _money(debt_by_child(organization, [child.id]).get(child.id)) or "нет"
     data = _ask_json(
+        organization=organization,
         system=BRIEF_SYSTEM,
         user=f"Сегодня: {timezone.localdate():%d.%m.%Y}\nДанные:\n{json.dumps(facts, ensure_ascii=False, indent=1)}",
         schema=_schema(
@@ -364,6 +368,7 @@ def lead_groups(lead) -> dict:
         "пожелания и комментарии": comments or None,
     }
     data = _ask_json(
+        organization=lead.organization,
         system=GROUPS_SYSTEM,
         user=f"Заявка: {json.dumps(request, ensure_ascii=False)}\nГруппы: {json.dumps(listing, ensure_ascii=False, indent=1)}",
         schema=_schema(
@@ -449,6 +454,7 @@ def daily_plan(request) -> dict:
             ]
         }
     data = _ask_json(
+        organization=organization,
         system=PLAN_SYSTEM,
         user=json.dumps(
             {
@@ -492,6 +498,7 @@ def rejection_reason(organization, *, text: str, kind: str) -> dict:
     if not reasons:
         raise AIError("Справочник причин пуст.")
     data = _ask_json(
+        organization=organization,
         system="Подбери причину отказа из справочника центра по комментарию администратора. Только значение из списка. Выбирай по смыслу самую конкретную причину (ребёнку не понравилось или хочет другое занятие — это про направление, а не «Другое»). «Другое» — только если по смыслу не подходит ни одна, а если нет и его — пустая строка.",
         user=f"Справочник: {json.dumps(list(reasons), ensure_ascii=False)}\nКомментарий: {text[:1000]}",
         schema=_schema({"reason": {"type": "string", "enum": [*reasons, ""]}}),

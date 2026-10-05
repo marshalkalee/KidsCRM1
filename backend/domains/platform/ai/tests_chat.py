@@ -143,7 +143,9 @@ class ChatToolsTests(ChatFixtures):
         ):
             with self.subTest(tool=name):
                 out = chat.run_tool(self.viewer, name, args)
-                self.assertIn("Касымова", out)
+                # Имя — меткой (ADR-0008), контактов нет совсем.
+                self.assertIn("[N", out)
+                self.assertNotIn("Касымова", out)
                 self.assertNotIn("5554433", out)
                 self.assertNotIn("example.kz", out)
 
@@ -205,23 +207,31 @@ def final_text(text):
 
 class ChatAnthropicLoopTests(ChatFixtures):
     def test_tool_result_goes_back_and_answer_returns(self):
+        # Вопрос с именем уходит меткой [N1]; модель ищет по метке — наш API
+        # получает настоящее имя; ответ с меткой возвращается с именем.
         create = mock.Mock(
             side_effect=[
-                tool_use("search", {"q": "Касымова"}),
-                final_text("Нашла: Касымова Айлин."),
+                tool_use("search", {"q": "[N1]"}),
+                final_text("Нашла: [N1]."),
             ]
         )
         client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=create)))
         with mock.patch.object(services, "_client", return_value=client):
-            response = ask_as(self.owner, "Найди Касымову")
+            response = ask_as(self.owner, "Найди Касымова Айлин")
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["answer"], "Нашла: Касымова Айлин.")
+        first = create.call_args_list[0].kwargs
+        self.assertEqual(first["messages"][0]["content"], "Найди [N1]")
+        self.assertIn("[N12]", first["system"])  # инструкция про метки
         self.assertEqual(response.data["sources"], ["поиск"])
         second = create.call_args_list[1].kwargs
         self.assertIn("True Ballet", second["system"])
         result = second["messages"][-1]["content"][0]
         self.assertEqual((result["type"], result["tool_use_id"]), ("tool_result", "tu_1"))
-        self.assertIn("Касымова Айлин", result["content"])
+        self.assertIn('"title": "[N1]"', result["content"])
+        self.assertNotIn(
+            "Касымова", json.dumps(create.call_args_list[1].kwargs, ensure_ascii=False, default=str)
+        )
         self.assertEqual({t["name"] for t in second["tools"]}, set(chat.TOOLS_BY_NAME))
 
     def test_endless_tool_calls_stop(self):
@@ -284,5 +294,33 @@ class ChatOpenAILoopTests(ChatFixtures):
         )
         tool_message = second["messages"][-1]
         self.assertEqual((tool_message["role"], tool_message["tool_call_id"]), ("tool", "call_1"))
-        self.assertIn("Касымова Айлин", tool_message["content"])
+        self.assertIn("[N", tool_message["content"])
+        self.assertNotIn("Касымова", tool_message["content"])
         self.assertNotIn("5554433", tool_message["content"])
+
+
+class ChatPseudonymTests(ChatFixtures):
+    def test_labels_are_kept_with_conversation(self):
+        """Метка человека не меняется от вопроса к вопросу: сопоставление
+        хранится с чатом, у нас, а не у модели."""
+        patch, create = anthropic_answers("У [N1] долга нет.", "[N1] ходит в группу.")
+        with patch:
+            first = ask_as(self.owner, "Есть долг у Касымова Айлин?")
+            conversation = first.data["conversation"]["id"]
+            second = ask_as(self.owner, "А где занимается Айлин?", conversation)
+        self.assertEqual(first.data["answer"], "У Касымова Айлин долга нет.")
+        self.assertEqual(second.data["answer"], "Касымова Айлин ходит в группу.")
+        saved = AIConversation.objects.get(pk=conversation).pseudonyms
+        self.assertEqual(saved["[N1]"], "Касымова Айлин")
+        # Во втором запросе история и вопрос — метками, имён нет.
+        sent = json.dumps(create.call_args_list[1].kwargs, ensure_ascii=False, default=str)
+        self.assertNotIn("Касымова", sent)
+        self.assertNotIn("Айлин", sent)
+        # История у нас — с именами, как видел сотрудник.
+        self.assertEqual(
+            AIMessage.objects.filter(conversation_id=conversation, role="assistant")
+            .order_by("created_at")
+            .first()
+            .content,
+            "У Касымова Айлин долга нет.",
+        )
