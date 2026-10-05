@@ -30,6 +30,9 @@ from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone
 from domains.platform.leads.models import Lead, LeadSource
 from domains.platform.tenants.models import Direction
 
+from .pseudonyms import INSTRUCTION as PSEUDONYM_INSTRUCTION
+from .pseudonyms import Pseudonymizer
+
 logger = logging.getLogger(__name__)
 
 MAX_INPUT_CHARS = 4000
@@ -64,20 +67,35 @@ def _openai_client():
 
 def _ask_json(
     *,
+    organization,
     system: str,
     user: str,
     schema: dict,
     max_tokens: int = 4000,
     image: tuple[str, str] | None = None,
+    names: Pseudonymizer | None = None,
 ) -> dict:
     """Один запрос, ответ строго по JSON-схеме — у обоих провайдеров.
-    image — (media_type, base64) для задач по фото."""
+    image — (media_type, base64) для задач по фото.
+
+    Имена клиентов organization уходят метками и возвращаются в ответе
+    (pseudonyms.py, ADR-0008): поэтому организация обязательна — мимо
+    подмены запрос не отправить. names — готовые метки, если запросов
+    несколько параллельно (чистка импорта): список имён читается из базы
+    один раз, а не в каждом потоке."""
     if not is_enabled():
         raise AIError("ИИ-помощник не настроен.")
+    names = names or Pseudonymizer(organization)
     ask = _ask_openai if provider() == "openai" else _ask_anthropic
-    text = ask(system=system, user=user, schema=schema, max_tokens=max_tokens, image=image)
+    text = ask(
+        system=f"{names.mask(system)}\n\n{PSEUDONYM_INSTRUCTION}",
+        user=names.mask(user),
+        schema=schema,
+        max_tokens=max_tokens,
+        image=image,
+    )
     try:
-        return json.loads(text)
+        return names.unmask(json.loads(text))
     except json.JSONDecodeError as exc:
         logger.error("AI returned non-JSON (%s)", provider())
         raise AIError("ИИ ответил неразборчиво — попробуйте ещё раз.") from exc
@@ -239,6 +257,7 @@ def lead_from_text(organization, text: str) -> dict:
         f"Источники заявок: {json.dumps(list(sources), ensure_ascii=False)}"
     )
     data = _ask_json(
+        organization=organization,
         system=LEAD_SYSTEM,
         # Сегодняшняя дата — иначе «2017 г.р.» превращается в неверный возраст.
         user=f"Сегодня: {timezone.localdate():%d.%m.%Y}\n{lists}\n\nТекст:\n<message>\n{text}\n</message>",
@@ -313,6 +332,7 @@ def lead_message(lead: Lead, *, goal: str, language: str, note: str = "") -> str
         + (f"Пожелание администратора: {note.strip()[:500]}\n" if note.strip() else "")
     )
     data = _ask_json(
+        organization=lead.organization,
         system=MESSAGE_SYSTEM,
         user=user,
         schema={
@@ -428,6 +448,7 @@ def search_to_filters(user, query: str) -> dict:
         "источники заявок": list(sources),
     }
     data = _ask_json(
+        organization=user.organization,
         system=SEARCH_SYSTEM,
         user=f"{json.dumps(lists, ensure_ascii=False)}\n\nЗапрос: {query}",
         schema=schema,
@@ -567,6 +588,7 @@ def attendance_from_photo(lesson, participants, uploaded) -> dict:
         raise AIError("На занятии нет детей.")
     image = (uploaded.content_type, base64.b64encode(uploaded.read()).decode())
     data = _ask_json(
+        organization=lesson.organization,
         system=PHOTO_SYSTEM,
         user="Перепиши таблицу с фото.",
         schema={
@@ -751,7 +773,7 @@ def _import_problems(row) -> str:
     return "; ".join(problems)
 
 
-def clean_import_file(uploaded) -> dict:
+def clean_import_file(organization, uploaded) -> dict:
     """Файл центра → строки шаблона импорта + .xlsx в формате шаблона.
     Дальше файл идёт обычным путём импорта (маппинг, сухой прогон, дубли) —
     запись в базу делает не ИИ."""
@@ -776,9 +798,13 @@ def clean_import_file(uploaded) -> dict:
             f"В пробной версии — до {IMPORT_MAX_ROWS} строк за раз. Разбейте файл на части."
         )
 
+    names = Pseudonymizer(organization)
+
     def ask(chunk):
         table = [{"row": number, "cells": [_cell(v) for v in values]} for number, values in chunk]
         data = _ask_json(
+            organization=organization,
+            names=names,
             system=IMPORT_SYSTEM,
             user=f"Заголовки: {json.dumps(headers, ensure_ascii=False)}\nСтроки: {json.dumps(table, ensure_ascii=False)}",
             schema=_import_schema(),
