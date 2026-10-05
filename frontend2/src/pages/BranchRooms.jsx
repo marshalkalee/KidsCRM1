@@ -57,7 +57,7 @@ export default function BranchRooms() {
     }
   }
 
-  const back = { to: '/branches', label: t('Филиалы') }
+  const back = { to: '/settings/structure?tab=branches', label: t('Филиалы') }
   if (error) return <><PageHeader title={t('Залы')} back={back} /><Card><ErrorState onRetry={load} /></Card></>
   if (!rooms) return <><PageHeader title={<Skeleton className="h-8 w-56" />} back={back} /><Skeleton className="h-48 max-w-2xl" /></>
 
