@@ -5,7 +5,7 @@ import api from '../api/axios'
 import { LEAD_CREATED_EVENT, openQuickLead } from '../components/leads/QuickLead'
 import LeadTable from '../components/leads/LeadTable'
 import RejectModal from '../components/leads/RejectModal'
-import { LEAD_STATUS, LEAD_STATUSES, leadTitle } from '../components/leads/format'
+import { STAGE_DOT, leadTitle } from '../components/leads/format'
 import { getLeadsViewPreference, setLeadsViewPreference } from '../components/leads/viewPreference'
 import { useSession } from '../session/SessionContext'
 import {
@@ -20,10 +20,12 @@ const FILTER_KEYS = ['source', 'direction', 'branch', 'assigned_to', 'created_fr
 const LIMIT = 20
 
 /**
- * Воронка продаж — kanban (TRU-94). Колонки по статусам, перетаскивание
- * меняет статус (в «Отказ» — только с причиной), «висит N дней» — прямо на
- * карточке. Фильтры в адресе: ими можно поделиться, их же возьмёт таблица
- * (TRU-95). На телефоне — одна колонка с переключателем статуса.
+ * Воронка продаж — kanban (TRU-94). Колонки — этапы центра (TRU-154): их
+ * названия, цвета и порядок приходят с сервера, переходы между ними тоже
+ * (stage_transitions). Перетаскивание меняет этап (в «Отказ» — только с
+ * причиной), «висит N дней» — прямо на карточке. Фильтры в адресе: ими можно
+ * поделиться, их же возьмёт таблица (TRU-95). На телефоне — одна колонка с
+ * переключателем этапа.
  */
 export default function Leads() {
   const toast = useToast()
@@ -37,7 +39,7 @@ export default function Leads() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [lists, setLists] = useState({ sources: [], directions: [], staff: [] })
   const [rejecting, setRejecting] = useState(null)
-  const [mobileStatus, setMobileStatus] = useState('new')
+  const [mobileStage, setMobileStage] = useState(null)
   const [tableCount, setTableCount] = useState(null)
   // URL сохраняет конкретный возврат с фильтрами, localStorage — ручной
   // выбор пользователя при обычном переходе на /leads без параметров.
@@ -109,15 +111,19 @@ export default function Leads() {
   const total = board ? board.columns.reduce((sum, c) => sum + c.count, 0) : 0
   const activeFilters = FILTER_KEYS.filter(key => params.get(key)).length
 
+  const stageOf = id => board?.columns.find(c => c.stage === id)
+  const mobileColumn = stageOf(mobileStage) ? mobileStage : board?.columns[0]?.stage
+
   // Перенос карточки: сразу на доске, откат при ошибке сервера.
   async function move(lead, to, extra = {}) {
     const snapshot = board
-    setBoard(current => moveCard(current, lead, to))
+    const target = stageOf(to)
+    setBoard(current => moveCard(current, lead, target))
     try {
-      const res = await api.post(`leads/${lead.id}/status/`, { status: to, ...extra })
+      const res = await api.post(`leads/${lead.id}/status/`, { stage: to, ...extra })
       setBoard(current => replaceCard(current, res.data))
-      toast.success(t('«{name}» → {status}', { name: leadTitle(lead), status: LEAD_STATUS[to].label }))
-      if (to === 'trial_attended' && !res.data.converted_child) {
+      toast.success(t('«{name}» → {status}', { name: leadTitle(lead), status: target.label }))
+      if (target.status === 'trial_attended' && !res.data.converted_child) {
         navigate(`/leads/${lead.id}`, { state: { leadsReturnTo: returnTo } })
       }
     } catch (err) {
@@ -127,23 +133,24 @@ export default function Leads() {
   }
 
   function requestMove(lead, to) {
-    if (lead.status === to) return
-    if (!board.transitions[lead.status]?.includes(to)) {
-      toast.error(t('Из статуса «{from}» нельзя перейти в «{to}».', { from: LEAD_STATUS[lead.status].label, to: LEAD_STATUS[to].label }))
+    if (lead.stage === to) return
+    const target = stageOf(to)
+    if (!target || !board.stage_transitions[lead.stage]?.includes(to)) {
+      toast.error(t('Из статуса «{from}» нельзя перейти в «{to}».', { from: lead.stage_name, to: target?.label ?? '' }))
       return
     }
-    if (to === 'rejected') setRejecting(lead)
+    if (target.status === 'rejected') setRejecting({ lead, stage: to })
     else move(lead, to)
   }
 
-  async function loadMore(status) {
-    const column = board.columns.find(c => c.status === status)
+  async function loadMore(stage) {
+    const column = stageOf(stage)
     try {
-      const res = await api.get('leads/board/', { params: { ...query, limit: LIMIT, column: status, offset: column.results.length } })
+      const res = await api.get('leads/board/', { params: { ...query, limit: LIMIT, column: stage, offset: column.results.length } })
       const more = res.data.columns[0]
       setBoard(current => ({
         ...current,
-        columns: current.columns.map(c => (c.status === status ? { ...c, has_more: more.has_more, results: [...c.results, ...more.results] } : c)),
+        columns: current.columns.map(c => (c.stage === stage ? { ...c, has_more: more.has_more, results: [...c.results, ...more.results] } : c)),
       }))
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -213,7 +220,7 @@ export default function Leads() {
         </div>
       ) : (
         <>
-          <MobileColumn board={board} status={mobileStatus} onStatusChange={setMobileStatus} onMove={requestMove} onLoadMore={loadMore} returnTo={returnTo} />
+          <MobileColumn board={board} stage={mobileColumn} onStageChange={setMobileStage} onMove={requestMove} onLoadMore={loadMore} returnTo={returnTo} />
           <Board board={board} onMove={requestMove} onLoadMore={loadMore} returnTo={returnTo} />
           <p className="mt-3 text-xs text-ink-subtle">
             {t('«Купил абонемент» и «Отказ» — за последние {n} дней. Задайте период в фильтрах, чтобы увидеть старые.', { n: board.closed_days })}
@@ -223,9 +230,9 @@ export default function Leads() {
 
       {rejecting && (
         <RejectModal
-          lead={rejecting}
+          lead={rejecting.lead}
           onCancel={() => setRejecting(null)}
-          onConfirm={async extra => { const lead = rejecting; setRejecting(null); await move(lead, 'rejected', extra) }}
+          onConfirm={async extra => { const { lead, stage } = rejecting; setRejecting(null); await move(lead, stage, extra) }}
         />
       )}
     </div>
@@ -260,12 +267,15 @@ function ViewToggle({ view, onChange }) {
   )
 }
 
-function moveCard(board, lead, to) {
+function moveCard(board, lead, target) {
   return {
     ...board,
     columns: board.columns.map(column => {
-      if (column.status === lead.status) return { ...column, count: column.count - 1, results: column.results.filter(r => r.id !== lead.id) }
-      if (column.status === to) return { ...column, count: column.count + 1, results: [{ ...lead, status: to, days_in_status: 0, is_stale: false }, ...column.results] }
+      if (column.stage === lead.stage) return { ...column, count: column.count - 1, results: column.results.filter(r => r.id !== lead.id) }
+      if (column.stage === target.stage) {
+        const moved = { ...lead, stage: target.stage, stage_name: target.label, stage_color: target.color, status: target.status, days_in_status: 0, is_stale: false }
+        return { ...column, count: column.count + 1, results: [moved, ...column.results] }
+      }
       return column
     }),
   }
@@ -279,33 +289,32 @@ function replaceCard(board, lead) {
 function Board({ board, onMove, onLoadMore, returnTo }) {
   const [dragging, setDragging] = useState(null)
   const [over, setOver] = useState(null)
-  const allowed = dragging ? board.transitions[dragging.status] || [] : []
+  const allowed = dragging ? board.stage_transitions[dragging.stage] || [] : []
 
   return (
     <div className="hidden overflow-x-auto pb-2 md:block">
       <div className="flex min-w-max gap-3">
         {board.columns.map(column => {
-          const meta = LEAD_STATUS[column.status]
-          const canDrop = dragging && allowed.includes(column.status)
+          const canDrop = dragging && allowed.includes(column.stage)
           return (
             <section
-              key={column.status}
-              aria-label={meta.label}
-              onDragOver={e => { if (canDrop) { e.preventDefault(); setOver(column.status) } }}
-              onDragLeave={() => setOver(o => (o === column.status ? null : o))}
+              key={column.stage}
+              aria-label={column.label}
+              onDragOver={e => { if (canDrop) { e.preventDefault(); setOver(column.stage) } }}
+              onDragLeave={() => setOver(o => (o === column.stage ? null : o))}
               onDrop={e => {
                 e.preventDefault()
                 setOver(null)
-                if (canDrop) onMove(dragging, column.status)
+                if (canDrop) onMove(dragging, column.stage)
                 setDragging(null)
               }}
               className={cn(
                 'flex w-[264px] shrink-0 flex-col rounded-xl border bg-surface-muted/60 transition-colors',
-                over === column.status ? 'border-brand-400 bg-brand-50' : canDrop ? 'border-dashed border-brand-300' : 'border-line',
-                dragging && !canDrop && column.status !== dragging.status && 'opacity-50',
+                over === column.stage ? 'border-brand-400 bg-brand-50' : canDrop ? 'border-dashed border-brand-300' : 'border-line',
+                dragging && !canDrop && column.stage !== dragging.stage && 'opacity-50',
               )}
             >
-              <ColumnHeader column={column} meta={meta} />
+              <ColumnHeader column={column} />
               <div className="flex min-h-24 flex-col gap-2 p-2">
                 {column.results.map(lead => (
                   <LeadCard
@@ -316,11 +325,11 @@ function Board({ board, onMove, onLoadMore, returnTo }) {
                     onDragStart={() => setDragging(lead)}
                     onDragEnd={() => { setDragging(null); setOver(null) }}
                     onMove={onMove}
-                    transitions={board.transitions}
+                    board={board}
                     returnTo={returnTo}
                   />
                 ))}
-                {column.has_more && <Button size="sm" variant="ghost" onClick={() => onLoadMore(column.status)}>{t('Показать ещё')}</Button>}
+                {column.has_more && <Button size="sm" variant="ghost" onClick={() => onLoadMore(column.stage)}>{t('Показать ещё')}</Button>}
               </div>
             </section>
           )
@@ -328,10 +337,11 @@ function Board({ board, onMove, onLoadMore, returnTo }) {
       </div>
       {dragging && (
         <OutcomeBar
+          columns={board.columns}
           allowed={allowed}
           over={over}
           setOver={setOver}
-          onDrop={status => { setOver(null); onMove(dragging, status); setDragging(null) }}
+          onDrop={stage => { setOver(null); onMove(dragging, stage); setDragging(null) }}
         />
       )}
     </div>
@@ -344,20 +354,22 @@ const OUTCOMES = ['purchased', 'thinking', 'rejected']
  * Итоги воронки — всегда под рукой, пока тянут карточку: на обычном
  * экране все семь колонок не помещаются, и «Отказ» оказался бы за краем.
  */
-function OutcomeBar({ allowed, over, setOver, onDrop }) {
+function OutcomeBar({ columns, allowed, over, setOver, onDrop }) {
+  // Основные этапы исходов — у центра они могут называться по-своему.
+  const outcomes = OUTCOMES.map(status => columns.find(c => c.is_system && c.status === status)).filter(Boolean)
   return (
     <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
       <div className="flex gap-2 rounded-2xl border border-line bg-surface/95 p-2 shadow-pop backdrop-blur">
-        {OUTCOMES.map(status => {
-          const meta = LEAD_STATUS[status]
-          const enabled = allowed.includes(status)
-          const key = `outcome:${status}`
+        {outcomes.map(column => {
+          const { status } = column
+          const enabled = allowed.includes(column.stage)
+          const key = `outcome:${column.stage}`
           return (
             <div
-              key={status}
+              key={column.stage}
               onDragOver={e => { if (enabled) { e.preventDefault(); setOver(key) } }}
               onDragLeave={() => setOver(o => (o === key ? null : o))}
-              onDrop={e => { e.preventDefault(); if (enabled) onDrop(status) }}
+              onDrop={e => { e.preventDefault(); if (enabled) onDrop(column.stage) }}
               className={cn(
                 'flex w-44 items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-4 text-sm font-semibold transition-colors',
                 !enabled && 'border-line text-ink-subtle opacity-40',
@@ -365,8 +377,8 @@ function OutcomeBar({ allowed, over, setOver, onDrop }) {
                 enabled && over === key && (status === 'rejected' ? 'border-danger-600 bg-danger-50 text-danger-600' : status === 'purchased' ? 'border-success-600 bg-success-50 text-success-600' : 'border-brand-400 bg-brand-50 text-brand-600'),
               )}
             >
-              <span className={cn('size-2 rounded-full', meta.dot)} />
-              {meta.label}
+              <span className={cn('size-2 rounded-full', STAGE_DOT[column.color])} />
+              {column.label}
             </div>
           )
         })}
@@ -375,35 +387,36 @@ function OutcomeBar({ allowed, over, setOver, onDrop }) {
   )
 }
 
-/** Телефон: одна колонка и переключатель статуса — без горизонтального скролла. */
-function MobileColumn({ board, status, onStatusChange, onMove, onLoadMore, returnTo }) {
-  const column = board.columns.find(c => c.status === status)
-  const options = board.columns.map(c => ({ value: c.status, label: `${LEAD_STATUS[c.status].label} · ${c.count}` }))
+/** Телефон: одна колонка и переключатель этапа — без горизонтального скролла. */
+function MobileColumn({ board, stage, onStageChange, onMove, onLoadMore, returnTo }) {
+  const column = board.columns.find(c => c.stage === stage)
+  const options = board.columns.map(c => ({ value: c.stage, label: `${c.label} · ${c.count}` }))
+  if (!column) return null
   return (
     <div className="md:hidden">
-      <Dropdown value={status} onChange={onStatusChange} options={options} ariaLabel={t('Колонка воронки')} className="mb-3" />
+      <Dropdown value={stage} onChange={onStageChange} options={options} ariaLabel={t('Колонка воронки')} className="mb-3" />
       <div className="flex flex-col gap-2">
         {column.results.length === 0 && <p className="rounded-xl border border-dashed border-line bg-surface px-4 py-6 text-center text-sm text-ink-muted">{t('В этой колонке пусто')}</p>}
-        {column.results.map(lead => <LeadCard key={lead.id} lead={lead} onMove={onMove} transitions={board.transitions} returnTo={returnTo} />)}
-        {column.has_more && <Button size="sm" onClick={() => onLoadMore(column.status)}>{t('Показать ещё')}</Button>}
+        {column.results.map(lead => <LeadCard key={lead.id} lead={lead} onMove={onMove} board={board} returnTo={returnTo} />)}
+        {column.has_more && <Button size="sm" onClick={() => onLoadMore(column.stage)}>{t('Показать ещё')}</Button>}
       </div>
     </div>
   )
 }
 
-function ColumnHeader({ column, meta }) {
+function ColumnHeader({ column }) {
   return (
     <header className="flex items-center gap-2 px-3 pb-1 pt-3">
-      <span className={cn('size-2 shrink-0 rounded-full', meta.dot)} />
-      <h2 className="truncate text-[13px] font-bold text-ink">{meta.label}</h2>
+      <span className={cn('size-2 shrink-0 rounded-full', STAGE_DOT[column.color])} />
+      <h2 className="truncate text-[13px] font-bold text-ink">{column.label}</h2>
       <span className="ml-auto rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink-muted">{column.count}</span>
     </header>
   )
 }
 
-function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDragEnd, onMove, transitions, returnTo }) {
+function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDragEnd, onMove, board, returnTo }) {
   const navigate = useNavigate()
-  const targets = transitions[lead.status] || []
+  const targets = board.stage_transitions[lead.stage] || []
   const details = [lead.child_age != null && ageLabel(lead.child_age), lead.direction_name].filter(Boolean).join(' · ')
   return (
     <article
@@ -426,7 +439,7 @@ function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDr
           <p className="truncate text-sm font-semibold text-ink">{leadTitle(lead)}</p>
           {lead.child_name && <p className="truncate text-xs text-ink-muted">{lead.parent_name}</p>}
         </div>
-        {targets.length > 0 && <MoveMenu lead={lead} targets={targets} onMove={onMove} />}
+        {targets.length > 0 && <MoveMenu lead={lead} columns={board.columns} targets={targets} onMove={onMove} />}
       </div>
       {details && <p className="mt-1.5 truncate text-xs text-ink-muted">{details}</p>}
       {lead.status === 'trial_attended' && !lead.converted_child && (
@@ -444,9 +457,9 @@ function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDr
   )
 }
 
-/** Сменить статус без перетаскивания: телефон, клавиатура. */
-function MoveMenu({ lead, targets, onMove }) {
-  const options = LEAD_STATUSES.filter(s => targets.includes(s.value)).map(s => ({ value: s.value, label: s.label }))
+/** Сменить этап без перетаскивания: телефон, клавиатура. */
+function MoveMenu({ lead, columns, targets, onMove }) {
+  const options = columns.filter(c => targets.includes(c.stage)).map(c => ({ value: c.stage, label: c.label }))
   return (
     <span className="shrink-0" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
       <Dropdown

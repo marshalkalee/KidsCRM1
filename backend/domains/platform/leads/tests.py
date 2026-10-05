@@ -661,8 +661,9 @@ class LeadBoardTests(LeadFixtures):
                 direction=self.direction,
                 branch=self.branch,
             )
-        # Счётчики одним запросом + по запросу на колонку, связи — select_related.
-        with self.assertNumQueries(12):
+        # Счётчики одним запросом + по запросу на колонку, связи — select_related;
+        # этапы центра (TRU-154) — два запроса на всю доску.
+        with self.assertNumQueries(14):
             response = self.client_owner.get(BOARD_URL)
         self.assertEqual(self.column(response.data, "new")["count"], 60)
 

@@ -12,8 +12,17 @@ from domains.platform.core.text_validation import normalize_entity_name, normali
 from domains.platform.tenants.models import Branch, Direction
 from domains.platform.users.models import User
 
-from .models import Lead, LeadComment, LeadRejectionReason, LeadSource, LeadStatusChange
+from .models import Lead, LeadComment, LeadRejectionReason, LeadSource, LeadStage, LeadStatusChange
 from .services import STALE_AFTER_DAYS
+from .stages import Funnel
+
+
+def _funnel(context, obj) -> Funnel:
+    """Этапы центра один раз на сериализацию (список, доска — сотни карточек)."""
+    funnel = context.get("funnel")
+    if funnel is None:
+        funnel = context["funnel"] = Funnel(obj.organization)
+    return funnel
 
 
 def _active_or_current(queryset, current):
@@ -26,7 +35,13 @@ def _active_or_current(queryset, current):
 
 
 class LeadSerializer(serializers.ModelSerializer):
-    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    # Названия — этапов центра (TRU-154): переименованный «Связались»
+    # подписывается по-новому везде, где показан статус.
+    status_label = serializers.SerializerMethodField()
+    stage = serializers.SerializerMethodField()
+    stage_name = serializers.SerializerMethodField()
+    stage_color = serializers.SerializerMethodField()
+    allowed_stages = serializers.SerializerMethodField()
     branch_name = serializers.CharField(source="branch.name", read_only=True, default=None)
     direction_name = serializers.CharField(source="direction.name", read_only=True, default=None)
     source_name = serializers.CharField(source="source.name", read_only=True, default=None)
@@ -72,10 +87,14 @@ class LeadSerializer(serializers.ModelSerializer):
             "assigned_to_name",
             "status",
             "status_label",
+            "stage",
+            "stage_name",
+            "stage_color",
             "status_changed_at",
             "days_in_status",
             "is_stale",
             "allowed_transitions",
+            "allowed_stages",
             "trial_booking",
             "rejection_reason",
             "rejection_reason_name",
@@ -123,6 +142,26 @@ class LeadSerializer(serializers.ModelSerializer):
         self.fields["assigned_to"].queryset = User.objects.filter(
             organization=organization, is_active=True
         )
+
+    def _stage(self, lead) -> LeadStage:
+        return _funnel(self.context, lead).of(lead)
+
+    def get_status_label(self, lead) -> str:
+        return _funnel(self.context, lead).label(lead.status)
+
+    def get_stage(self, lead) -> str:
+        return str(self._stage(lead).pk)
+
+    def get_stage_name(self, lead) -> str:
+        return self._stage(lead).name
+
+    def get_stage_color(self, lead) -> str:
+        return self._stage(lead).color
+
+    def get_allowed_stages(self, lead) -> list[str]:
+        """Этапы, на которые можно перенести, — кнопки в карточке заявки."""
+        funnel = _funnel(self.context, lead)
+        return funnel.transitions(lead.kind).get(str(funnel.of(lead).pk), [])
 
     def get_days_in_status(self, lead) -> int:
         # Не меньше нуля: доли секунды расхождения часов не должны давать «−1 день».
@@ -202,7 +241,9 @@ class LeadSerializer(serializers.ModelSerializer):
 
 
 class LeadStatusSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(choices=Lead.Status.choices)
+    # Этап центра (TRU-154) или, как раньше, роль — тогда системный этап.
+    status = serializers.ChoiceField(choices=Lead.Status.choices, required=False)
+    stage = serializers.PrimaryKeyRelatedField(queryset=LeadStage.objects.none(), required=False)
     rejection_reason = serializers.PrimaryKeyRelatedField(
         queryset=LeadRejectionReason.objects.none(), required=False, allow_null=True
     )
@@ -215,6 +256,12 @@ class LeadStatusSerializer(serializers.Serializer):
             self.fields["rejection_reason"].queryset = LeadRejectionReason.objects.for_tenant(
                 request.user.organization
             ).filter(is_active=True)
+            self.fields["stage"].queryset = LeadStage.objects.for_tenant(request.user.organization)
+
+    def validate(self, attrs):
+        if not attrs.get("status") and not attrs.get("stage"):
+            raise serializers.ValidationError({"status": "Выберите этап."})
+        return attrs
 
 
 class TrialBookingSerializer(serializers.Serializer):
@@ -343,7 +390,10 @@ class TrialLessonSerializer(serializers.Serializer):
 
 class LeadStatusChangeSerializer(serializers.ModelSerializer):
     from_status_label = serializers.SerializerMethodField()
-    to_status_label = serializers.CharField(source="get_to_status_display", read_only=True)
+    # По ссылке на этап (TRU-154): после переименования история читается
+    # новым названием, а свой этап виден своим, а не названием роли.
+    to_status_label = serializers.SerializerMethodField()
+    to_stage_color = serializers.SerializerMethodField()
     changed_by_name = serializers.CharField(
         source="changed_by.full_name", read_only=True, default=None
     )
@@ -360,6 +410,7 @@ class LeadStatusChangeSerializer(serializers.ModelSerializer):
             "from_status_label",
             "to_status",
             "to_status_label",
+            "to_stage_color",
             "changed_by",
             "changed_by_name",
             "changed_at",
@@ -370,7 +421,77 @@ class LeadStatusChangeSerializer(serializers.ModelSerializer):
         ]
 
     def get_from_status_label(self, change) -> str:
-        return change.get_from_status_display() if change.from_status else ""
+        if not change.from_status:
+            return ""
+        return _funnel(self.context, change).label(change.from_status)
+
+    def get_to_status_label(self, change) -> str:
+        return _funnel(self.context, change).for_change(change).name
+
+    def get_to_stage_color(self, change) -> str:
+        return _funnel(self.context, change).for_change(change).color
+
+
+class LeadStageSerializer(serializers.ModelSerializer):
+    """Этап воронки центра (TRU-154). Системный этап: роль не меняется и
+    не скрывается; свой — только внутри ролей «в работе»."""
+
+    role_label = serializers.CharField(source="get_role_display", read_only=True)
+    lead_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LeadStage
+        fields = [
+            "id",
+            "name",
+            "role",
+            "role_label",
+            "is_system",
+            "order",
+            "color",
+            "is_hidden",
+            "lead_count",
+        ]
+        read_only_fields = ["is_system", "order"]
+
+    def get_lead_count(self, stage) -> int:
+        counts = self.context.get("lead_counts", {})
+        return counts.get((stage.role, None if stage.is_system else stage.pk), 0)
+
+    def validate_name(self, value):
+        name = " ".join(value.split())
+        if not name:
+            raise serializers.ValidationError("Введите название этапа.")
+        request = self.context["request"]
+        clash = LeadStage.objects.for_tenant(request.user.organization).filter(name__iexact=name)
+        if self.instance is not None:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError("Этап с таким названием уже есть.")
+        return name
+
+    def validate(self, attrs):
+        stage = self.instance
+        if stage is not None and stage.is_system:
+            if "role" in attrs and attrs["role"] != stage.role:
+                raise serializers.ValidationError(
+                    {"role": "У основного этапа роль не меняется — на ней держится воронка."}
+                )
+            if attrs.get("is_hidden"):
+                raise serializers.ValidationError(
+                    {"is_hidden": "Основной этап нельзя скрыть — его можно переименовать."}
+                )
+        elif "role" in attrs or stage is None:
+            role = attrs.get("role", stage.role if stage else None)
+            if role not in LeadStage.CUSTOM_ROLES:
+                raise serializers.ValidationError(
+                    {"role": "Свой этап можно добавить только в работу с заявкой, не в исход."}
+                )
+            if stage is not None and role != stage.role and stage.leads.exists():
+                raise serializers.ValidationError(
+                    {"role": "На этапе есть заявки — сначала перенесите их."}
+                )
+        return attrs
 
 
 class LeadCommentSerializer(serializers.ModelSerializer):
