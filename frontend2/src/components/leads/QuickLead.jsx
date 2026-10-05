@@ -53,7 +53,7 @@ export function QuickLeadLauncher() {
   return <QuickLeadModal onClose={() => setOpen(false)} />
 }
 
-const EMPTY = { phone: '', parent_name: '', child_name: '', child_age: '', direction: '', source: '' }
+const EMPTY = { phone: '', parent_name: '', child_name: '', child_age: '', direction: '', source: '', campaign: '' }
 
 function QuickLeadModal({ onClose }) {
   const toast = useToast()
@@ -62,6 +62,7 @@ function QuickLeadModal({ onClose }) {
   const [form, setForm] = useState(EMPTY)
   const [branch, setBranch] = useState(activeBranchId ? String(activeBranchId) : '')
   const [sources, setSources] = useState([])
+  const [campaigns, setCampaigns] = useState([])
   const [directions, setDirections] = useState([])
   const [matches, setMatches] = useState(null)
   const [errors, setErrors] = useState({})
@@ -72,6 +73,13 @@ function QuickLeadModal({ onClose }) {
   const ai = useAI()
   const phoneRef = useRef(null)
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
+  // Публикация — внутри источника (TRU-165): сменили источник — публикация сбрасывается.
+  const pickSource = value => setForm(f => ({
+    ...f,
+    source: value,
+    campaign: campaigns.some(c => String(c.id) === f.campaign && String(c.source) === value) ? f.campaign : '',
+  }))
+  const sourceCampaigns = campaigns.filter(c => String(c.source) === form.source)
 
   // Модалка при открытии фокусирует себя — телефон забираем кадром позже:
   // печатать номер можно сразу, без клика (бюджет — 30 секунд).
@@ -87,6 +95,7 @@ function QuickLeadModal({ onClose }) {
       setForm(f => (f.source ? f : { ...f, source: res.data[0] ? String(res.data[0].id) : '' }))
     }).catch(() => {})
     api.get('directions/').then(res => setDirections((res.data.results || res.data).filter(d => d.is_active))).catch(() => {})
+    api.get('leads/campaigns/', { params: { active: 1 } }).then(res => setCampaigns(res.data)).catch(() => {})
   }, [])
 
   // Дубли по телефону — пока вводят, с паузой, чтобы не дёргать сервер на каждую цифру.
@@ -110,6 +119,7 @@ function QuickLeadModal({ onClose }) {
       child_age: form.child_age === '' ? null : Number(form.child_age),
       direction: form.direction || null,
       source: form.source || null,
+      campaign: form.campaign || null,
       branch: branch || null,
     }
     try {
@@ -166,6 +176,8 @@ function QuickLeadModal({ onClose }) {
                 child_age: fields.child_age ?? f.child_age,
                 direction: fields.direction || f.direction,
                 source: fields.source || f.source,
+                // Код публикации из ссылки под роликом (K12) — сервер нашёл его в сообщении.
+                campaign: fields.campaign || (fields.source && fields.source !== f.source ? '' : f.campaign),
               }))
               if (fields.summary) setSummary(fields.summary)
               if (fields.child_name || fields.child_age || fields.direction) setMore(true)
@@ -201,16 +213,27 @@ function QuickLeadModal({ onClose }) {
             <p className="font-btn mb-1.5 text-[10px] font-bold uppercase tracking-[0.07em] text-ink-subtle">{t('Источник')}</p>
             <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t('Источник')}>
               {topSources.map(source => (
-                <SourceChip key={source.id} source={source} active={form.source === String(source.id)} onPick={() => set('source', String(source.id))} />
+                <SourceChip key={source.id} source={source} active={form.source === String(source.id)} onPick={() => pickSource(String(source.id))} />
               ))}
               {otherSources.length > 0 && (
-                <Select aria-label={t('Другой источник')} value={otherSources.some(s => String(s.id) === form.source) ? form.source : ''} onChange={e => e.target.value && set('source', e.target.value)} className="!h-8 !w-auto">
+                <Select aria-label={t('Другой источник')} value={otherSources.some(s => String(s.id) === form.source) ? form.source : ''} onChange={e => e.target.value && pickSource(e.target.value)} className="!h-8 !w-auto">
                   <option value="">{t('Ещё…')}</option>
                   {otherSources.map(s => <option key={s.id} value={s.id}>{t(s.name)}</option>)}
                 </Select>
               )}
             </div>
           </div>
+        )}
+
+        {sourceCampaigns.length > 0 && (
+          <Field label={t('Публикация')} hint={t('С какого ролика или поста пришли — если родитель сказал')} error={fieldError('campaign')}>
+            {({ id, invalid }) => (
+              <Select id={id} invalid={invalid} value={form.campaign} onChange={e => set('campaign', e.target.value)}>
+                <option value="">{t('Не знаем')}</option>
+                {sourceCampaigns.map(c => <option key={c.id} value={c.id}>{c.name} · {c.code}</option>)}
+              </Select>
+            )}
+          </Field>
         )}
 
         {summary && (

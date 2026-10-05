@@ -43,7 +43,7 @@ from .rejections import RejectionError, rejection_comments, rejections, rejectio
 from .reports import REPORTS, build
 from .risk_list import risk_list
 from .scope import ScopeError, allowed_branch_ids, scope_for
-from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
+from .sources import SMALL_SAMPLE, campaigns_quality, sources_by_month, sources_quality
 from .teacher_load import teacher_workload
 
 # Больше метрик за запрос — это уже выгрузка, а не экран.
@@ -311,6 +311,7 @@ def sources_api(request, version=None):
             "period": period.as_dict(),
             "small_sample": SMALL_SAMPLE,
             "items": sources_quality(scope, period, filters),
+            "campaigns": campaigns_quality(scope, period, filters),
             "by_month": sources_by_month(scope, period, filters),
         }
     )

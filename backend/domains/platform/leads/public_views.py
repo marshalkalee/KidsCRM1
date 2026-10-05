@@ -19,6 +19,7 @@ from rest_framework.views import APIView
 
 from domains.platform.tenants.models import Branch, Organization
 
+from .campaigns import find_campaign
 from .models import Lead, LeadComment, LeadSource
 from .public_serializers import PublicLeadSerializer
 
@@ -120,9 +121,15 @@ class PublicLeadCreateView(APIView):
         if is_duplicate:
             return Response(_GENERIC_OK, status=status.HTTP_201_CREATED)
 
-        source, _created = LeadSource.objects.get_or_create(
-            organization=organization, name="Сайт", defaults={"is_active": True}
-        )
+        # Пришли по ссылке из-под ролика — источник публикации (Instagram),
+        # а не «Сайт»: сайт тут только форма (TRU-165).
+        campaign = find_campaign(organization, data["campaign"], data["utm_content"])
+        if campaign is not None:
+            source = campaign.source
+        else:
+            source, _created = LeadSource.objects.get_or_create(
+                organization=organization, name="Сайт", defaults={"is_active": True}
+            )
 
         lead = Lead.objects.create(
             organization=organization,
@@ -135,6 +142,7 @@ class PublicLeadCreateView(APIView):
             child_age=data["child_age"],
             direction=direction,
             source=source,
+            campaign=campaign,
         )
         if data["comment"]:
             LeadComment.objects.create(
