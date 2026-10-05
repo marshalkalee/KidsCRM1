@@ -29,7 +29,7 @@
 | --- | -------- | -------- | -------------- | --- |
 | 1   | Расписание → Деньги: `SubscriptionService.consume` | Bekzat | Дарья (посещаемость) | [`backend/domains/money/subscriptions/subscription_service.py`](../domains/money/subscriptions/subscription_service.py) |
 | 2   | Люди → Деньги и Продажи: `ChildService.find_duplicates` / `create_with_parent` / `link_parent` | Анель | импорт Excel, конвертация заявки | [`backend/domains/people/clients/services.py`](../domains/people/clients/services.py) |
-| 3   | Расписание → всем: `LessonService.enroll` | Дарья | отработки (M1), пробные (M2) | `backend/apps/schedule/services.py` (путь уточнит Дарья) |
+| 3   | Расписание → всем: `LessonService.enroll` | Дарья | отработки (M1), пробные (M2) | `backend/domains/scheduling/schedule/enrollment_service.py` |
 | 4   | Деньги → всем: `AuditLog.record` | Bekzat | все домены | [`backend/domains/platform/core/audit.py`](../domains/platform/core/audit.py) |
 | 5   | Деньги → всем: `debt_by_child` / `debt_for_child` / `debt_for_parent` / `debtor_subscriptions` | Bekzat | Анель (список детей, карточка родителя), экраны «Задолженности», вкладка «Оплаты» | [`backend/domains/money/subscriptions/debt.py`](../domains/money/subscriptions/debt.py) |
 | 6   | Люди → всем: вкладки карточки ребёнка (frontend2) | Анель | Bekzat («Абонементы», «Оплаты»), Дарья («Посещения») | [`frontend2/src/components/child-card/tabs.js`](../../frontend2/src/components/child-card/tabs.js) |
@@ -344,3 +344,20 @@ compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, seri
   `GET /api/v1/analytics/export/?report=…` с теми же period/branch/фильтрами.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.
+
+## 9. Задачи → всем (TRU-104/106)
+
+TaskService.create(type, assignee, due_date, subject, source, organization=None, branch=None, lead=None, child=None, created_by=None, description="") -> Task
+TaskService.complete(task, actor, comment="") -> Task
+TaskService.cancel(task, actor, comment="") -> Task
+
+Единый вход для создания рабочих задач из любого домена (ТЗ п. 3.1).
+source: "manual" (человек, через API) или "auto" (правило/фоновая
+задача) — по нему отчёт отделяет «администратор сам решил» от «система
+напомнила». Для автозадач source_key делает создание идемпотентным
+(TRU-104: повторная отметка того же события не плодит вторую задачу).
+Права (ТЗ п. 2) — visible_tasks(user) в platform.tasks.services: тот же
+принцип, что у visible_leads в platform.leads.
+
+Владелец: Bekzat. Потребители: Анель (TRU-71 — нет абонемента), Дарья
+(TRU-108 — предложить продление, TRU-72 — центр уведомлений).

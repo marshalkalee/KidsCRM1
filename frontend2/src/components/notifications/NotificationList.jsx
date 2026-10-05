@@ -40,9 +40,9 @@ const KINDS = {
   },
   overdue_tasks: {
     icon: ListTodo,
-    tone: 'bg-surface-muted text-ink-subtle',
+    tone: 'bg-danger-50 text-danger-600',
     get title() { return t('Просроченные задачи') },
-    text: () => t('Появятся вместе с модулем задач'),
+    text: item => `${item.count} ${plural(item.count, ['просроченная задача', 'просроченные задачи', 'просроченных задач'])}`,
   },
 }
 

@@ -1,3 +1,8 @@
-app_name = "tasks"
+from rest_framework.routers import DefaultRouter
 
-urlpatterns = []
+from . import views
+
+app_name = "tasks"
+router = DefaultRouter()
+router.register("", views.TaskViewSet, basename="task")
+urlpatterns = router.urls

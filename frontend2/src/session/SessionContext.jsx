@@ -50,6 +50,7 @@ export function SessionProvider({ children }) {
       // Сохранённый филиал мог быть архивирован — тогда «все филиалы».
       setActiveBranchIdState(current => (active.some(b => String(b.id) === String(current)) ? current : null))
       setStatus('ready')
+      return me.data
     } catch {
       // 401 с протухшим refresh уже увёл на /login (api/axios.js).
       setStatus('anonymous')

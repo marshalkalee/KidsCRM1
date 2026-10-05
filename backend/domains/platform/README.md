@@ -10,7 +10,7 @@
 
 - `tenants` — корень модели данных: `Organization`, `Branch`, `Room`.
   Мультифилиальность — с первого дня, N филиалов на организацию. Поля — по
-  согласованной схеме `docs/db-schema-v1`, кроме `Organization.timezone`/
+  согласованной схеме `backend/docs/db-schema-v1.md`, кроме `Organization.timezone`/
   `settings` (добавлены по формулировке задачи, в схеме их пока нет —
   сверить с командой).
 - `users` — кастомная модель `User` (`AUTH_USER_MODEL`): `phone`+`full_name`

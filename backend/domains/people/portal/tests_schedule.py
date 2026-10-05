@@ -265,7 +265,8 @@ class ParentScheduleTests(PortalAuthBase):
         return _parent, children
 
     def test_parent_can_request_cancellation_without_changing_schedule(self):
-        lesson = self.lesson(self.today + datetime.timedelta(days=1))
+        # Через 2 дня — больше 24 ч при любом времени запуска теста.
+        lesson = self.lesson(self.today + datetime.timedelta(days=2))
         token = self.login()
         response = self.as_parent(token).post(
             f"/api/v1/portal/children/{self.child.id}/lesson-requests/",
