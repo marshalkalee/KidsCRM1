@@ -22,7 +22,8 @@ COLUMNS = [
 ]
 
 
-def leads_workbook(leads) -> bytes:
+def leads_workbook(leads, funnel) -> bytes:
+    """funnel — этапы центра (stages.Funnel): в колонке «Статус» — его названия."""
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "Заявки"
@@ -42,7 +43,7 @@ def leads_workbook(leads) -> bytes:
                 lead.phone,
                 lead.direction.name if lead.direction else "",
                 lead.source.name if lead.source else "",
-                lead.get_status_display(),
+                funnel.of(lead).name,
                 lead.rejection_reason.name if lead.rejection_reason else "",
                 lead.assigned_to.full_name if lead.assigned_to else "",
                 lead.branch.name if lead.branch else "",

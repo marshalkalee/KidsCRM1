@@ -81,8 +81,13 @@ class Funnel:
 
     def visible(self, kind=LeadKind.NEW):
         """Колонки доски: видимые этапы ролей, которые есть у вида заявки."""
-        roles = set(Lead.statuses_for(kind))
-        return [s for s in self.stages if not s.is_hidden and s.role in roles]
+        roles = Lead.statuses_for(kind)
+        visible = [s for s in self.stages if not s.is_hidden and s.role in roles]
+        if kind == LeadKind.RENEWAL:
+            # У продлений свой порядок ролей (Lead.RENEWAL_STATUSES: «Думает»
+            # перед «Продлил»); свои этапы — внутри роли в порядке центра.
+            visible.sort(key=lambda s: roles.index(s.role))
+        return visible
 
     def transitions(self, kind=LeadKind.NEW):
         """{id этапа: [id этапов]} — куда можно перенести с каждого этапа.

@@ -271,7 +271,6 @@ class LeadStage(TenantModel):
         return self.name
 
 
-
 class LeadStatusChange(UUIDPrimaryKeyModel):
     """
     Одна смена статуса. Только добавляется — ни правки, ни удаления: это
