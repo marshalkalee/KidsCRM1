@@ -35,6 +35,8 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from . import services
 from .models import AIConversation, AIMessage
+from .pseudonyms import INSTRUCTION as PSEUDONYM_INSTRUCTION
+from .pseudonyms import Pseudonymizer
 from .services import AIError
 
 logger = logging.getLogger(__name__)
@@ -45,9 +47,12 @@ MAX_TOOL_ROUNDS = 8
 MAX_TOOL_CHARS = 16000
 MAX_LIST_ITEMS = 40
 
-# Телефоны, почта, фото, медицинские заметки — не в модель (ADR-0008). Ключ
-# ответа API совпал — поле убрано.
-HIDDEN_KEYS = re.compile(r"phone|whatsapp|email|photo|avatar|password|token|medical", re.IGNORECASE)
+# Телефоны, почта, фото, медицинские заметки, даты рождения — не в модель
+# (ADR-0008; возраст есть отдельным полем). Ключ ответа API совпал — поле убрано.
+# Имена не убираются, а заменяются метками (pseudonyms.py).
+HIDDEN_KEYS = re.compile(
+    r"phone|whatsapp|email|photo|avatar|password|token|medical|birth_date", re.IGNORECASE
+)
 # Служебное для экранов, модели только мешает и съедает место.
 NOISE_KEYS = re.compile(
     r"^(organization|updated_at|deleted_at|next|previous|permissions|allowed_transitions|show_money"
@@ -60,12 +65,13 @@ _factory = APIRequestFactory()
 
 
 class Viewer:
-    """Кто смотрит данные: сотрудник и хост, с которого он пришёл (для
-    ссылок пагинации во вьюхах)."""
+    """Кто смотрит данные: сотрудник, хост, с которого он пришёл (для
+    ссылок пагинации во вьюхах), и метки имён этого разговора."""
 
-    def __init__(self, user, host="localhost"):
+    def __init__(self, user, host="localhost", names=None):
         self.user = user
         self.host = host
+        self.names = names or Pseudonymizer(user.organization)
 
 
 def _keep(key, value, siblings) -> bool:
@@ -231,6 +237,14 @@ def _tool(name, description, properties=None, required=None, run=None):
     }
 
 
+def _child_card(viewer, child_id):
+    card = api_get(viewer, f"clients/children/{child_id}/card/")
+    if "ошибка" in card:
+        return card
+    # Шапка карточки родителей не отдаёт — они в контактах ребёнка.
+    return {**card, "родители": api_get(viewer, "clients/child-contacts/", {"child": child_id})}
+
+
 def _flags(args, *names):
     return {n: "1" for n in names if args.get(n)}
 
@@ -301,7 +315,7 @@ TOOLS = [
         "Карточка ребёнка: родители, группы, абонементы, долг, последние события.",
         {"child_id": {"type": "string"}},
         ["child_id"],
-        run=lambda user, a: api_get(user, f"clients/children/{_id(a['child_id'])}/card/"),
+        run=lambda user, a: _child_card(user, _id(a["child_id"])),
     ),
     _tool(
         "child_payments",
@@ -584,8 +598,9 @@ def run_tool(viewer: Viewer, name: str, args: dict) -> str:
         result = {"ошибка": f"нет инструмента {name}"}
     else:
         try:
-            args = _resolve_refs(viewer.user.organization, args or {})
-            result = tool["run"](viewer, args)
+            # Модель ищет по меткам — наш API получает настоящие имена.
+            args = _resolve_refs(viewer.user.organization, viewer.names.unmask(args or {}))
+            result = viewer.names.mask(tool["run"](viewer, args))
         except (ValueError, KeyError, TypeError) as exc:
             result = {"ошибка": str(exc) or "неверные параметры"}
         except Exception:  # noqa: BLE001 — сбой одного инструмента не роняет ответ
@@ -618,7 +633,8 @@ ROLES = {
 }
 
 
-def _system(user) -> str:
+def _system(viewer) -> str:
+    user = viewer.user
     org = user.organization
     tz_name = org.timezone or "Asia/Almaty"
     now = timezone.now().astimezone(timezone.zoneinfo.ZoneInfo(tz_name))
@@ -627,7 +643,7 @@ def _system(user) -> str:
     month_start = today.replace(day=1)
     next_month = (month_start + datetime.timedelta(days=32)).replace(day=1)
     prev_end = month_start - datetime.timedelta(days=1)
-    return SYSTEM.format(
+    text = SYSTEM.format(
         week_start=week_start.isoformat(),
         week_end=(week_start + datetime.timedelta(days=6)).isoformat(),
         month_start=month_start.isoformat(),
@@ -641,6 +657,7 @@ def _system(user) -> str:
         weekday=WEEKDAYS[now.weekday()],
         tz=tz_name,
     )
+    return f"{viewer.names.mask(text)}\n\n{PSEUDONYM_INSTRUCTION}"
 
 
 def _clean_history(messages) -> list[dict]:
@@ -658,18 +675,20 @@ def _clean_history(messages) -> list[dict]:
     return history
 
 
-def ask(user, messages, *, host="localhost") -> dict:
+def ask(user, messages, *, host="localhost", pseudonyms=None) -> dict:
     """Ответ на последний вопрос переписки: {"answer", "sources"}."""
     if not services.is_enabled():
         raise AIError("ИИ-помощник не настроен.")
     history = _clean_history(messages)
+    names = Pseudonymizer(user.organization, pseudonyms)
     used: list[str] = []
     run = _ask_openai if services.provider() == "openai" else _ask_anthropic
-    answer = run(Viewer(user, host), history, used)
+    answer = names.unmask(run(Viewer(user, host, names), names.mask(history), used))
     sources = list(dict.fromkeys(TOOL_LABELS.get(n, n) for n in used))
     return {
         "answer": answer.strip() or "Не получилось ответить — переформулируйте вопрос.",
         "sources": sources,
+        "pseudonyms": names.mapping,
     }
 
 
@@ -692,7 +711,7 @@ def _ask_anthropic(viewer, history, used) -> str:
                 max_tokens=4000,
                 betas=[services.FALLBACK_BETA],
                 fallbacks="default",
-                system=_system(viewer.user),
+                system=_system(viewer),
                 tools=tools,
                 messages=messages,
                 output_config={"effort": "low"},
@@ -747,7 +766,7 @@ def _ask_openai(viewer, history, used) -> str:
         }
         for t in TOOLS
     ]
-    messages = [{"role": "system", "content": _system(viewer.user)}, *history]
+    messages = [{"role": "system", "content": _system(viewer)}, *history]
     for _ in range(MAX_TOOL_ROUNDS):
         try:
             response = services._openai_client().chat.completions.create(
@@ -827,12 +846,19 @@ def reply(user, *, question: str, conversation=None, host="localhost") -> dict:
     if conversation is not None:
         last = conversation.messages.order_by("-created_at", "-id")[: MAX_HISTORY - 1]
         history = [{"role": m.role, "content": m.content} for m in reversed(list(last))]
-    result = ask(user, [*history, {"role": "user", "content": question}], host=host)
+    result = ask(
+        user,
+        [*history, {"role": "user", "content": question}],
+        host=host,
+        pseudonyms=conversation.pseudonyms if conversation is not None else None,
+    )
+    pseudonyms = result.pop("pseudonyms")
     with transaction.atomic():
         if conversation is None:
             conversation = AIConversation.objects.create(
                 organization=user.organization, user=user, title=_title(question)
             )
+        conversation.pseudonyms = pseudonyms
         AIMessage.objects.create(
             conversation=conversation, role=AIMessage.Role.USER, content=question
         )
@@ -842,5 +868,5 @@ def reply(user, *, question: str, conversation=None, host="localhost") -> dict:
             content=result["answer"],
             sources=result["sources"],
         )
-        conversation.save(update_fields=["updated_at"])
+        conversation.save(update_fields=["pseudonyms", "updated_at"])
     return {"conversation": {"id": str(conversation.id), "title": conversation.title}, **result}

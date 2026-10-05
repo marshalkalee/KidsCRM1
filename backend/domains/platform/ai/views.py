@@ -124,7 +124,7 @@ def import_clean(request, version=None):
     """«Грязный» файл → файл в формате шаблона (base64) и строки для просмотра.
     Дальше — обычный импорт: маппинг, сухой прогон, решения по дублям."""
     try:
-        result = services.clean_import_file(request.FILES.get("file"))
+        result = services.clean_import_file(request.user.organization, request.FILES.get("file"))
     except services.AIError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     return Response(
@@ -174,7 +174,9 @@ def reminders(request, version=None):
 @permission_classes([IsStaffOfOrganization])
 @throttle_classes([AIThrottle])
 def communication_note(request, version=None):
-    return _ai(lambda: assist.communication_note(request.data.get("text", "")))
+    return _ai(
+        lambda: assist.communication_note(request.user.organization, request.data.get("text", ""))
+    )
 
 
 @api_view(["POST"])
