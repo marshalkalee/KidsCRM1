@@ -1436,6 +1436,17 @@ class RescheduleWhoToCallTest(APITestCase):
         self.assertEqual({c["full_name"] for c in father["children"]}, {"Бекзат Иванов"})
         self.assertEqual(father["phones"], ["+77029876543"])
 
+    def test_who_to_call_hides_phones_from_teacher_unless_allowed(self):
+        """TRU-153: обзвон — это телефоны родителей; преподавателю — только
+        если центр открыл ему телефоны."""
+        self._reschedule()
+        teacher = _authenticated_client(self.teacher)
+        url = f"/api/v1/schedule/{self.lesson.id}/who-to-call/"
+        self.assertEqual(teacher.get(url).status_code, status.HTTP_403_FORBIDDEN)
+        self.org.settings = {**self.org.settings, "teacher_sees_parent_phones": True}
+        self.org.save(update_fields=["settings"])
+        self.assertEqual(teacher.get(url).status_code, status.HTTP_200_OK)
+
     def test_cancelled_lesson_includes_trial_lead_in_call_list(self):
         lead = create_lead(
             organization=self.org,
