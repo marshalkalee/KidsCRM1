@@ -47,30 +47,13 @@ def _cancel_reason_from_request(request):
     return category, comment
 
 
-def _is_confirmed(request):
-    # Фронт шлёт confirm_conflict: true вторым запросом после того, как
-    # администратор увидел предупреждение и подтвердил сохранение (ТЗ п.
-    # 4.2: предупреждение, не запрет). Строка "true"/"1" — на случай
-    # multipart/form-data, где всё приходит строками.
-    value = request.data.get("confirm_conflict")
-    return value in (True, "true", "1", 1)
-
-
-def _cancel_reason_from_request(request):
-    """TRU-48: отмена без причины из справочника невозможна на уровне API
-    (критерий приёмки). category — обязателен всегда; comment — обязателен
-    только для category=OTHER (для остальных категорий сама категория уже
-    достаточно информативна)."""
-    category = request.data.get("reason_category", "")
-    comment = request.data.get("comment", "")
-    valid = {value for value, _ in Lesson.CancelReasonCategory.choices}
-    if category not in valid:
-        raise DRFValidationError(
-            {"reason_category": f"Укажите причину отмены — одну из: {', '.join(sorted(valid))}."}
-        )
-    if category == Lesson.CancelReasonCategory.OTHER and not comment.strip():
-        raise DRFValidationError({"comment": "Для причины «Другое» нужен комментарий."})
-    return category, comment
+def _reschedule_reason_from_request(request):
+    """Новые клиенты передают причину явно. Для старых интеграций и
+    исторических сценариев оставляем совместимый общий текст, чтобы
+    перенос не стал внезапно недоступен после TRU-145."""
+    if request.data.get("reason_category"):
+        return _cancel_reason_from_request(request)
+    return Lesson.CancelReasonCategory.OTHER, "Перенос по решению центра"
 
 
 class CanViewPhones(IsStaffOfOrganization):
@@ -327,6 +310,10 @@ class LessonViewSet(TenantModelViewSet):
         Перенос занятия — создаёт новое занятие и связывает с текущим.
         """
         lesson = self.get_object()
+        try:
+            reason_category, reason_comment = _reschedule_reason_from_request(request)
+        except DRFValidationError as exc:
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
         serializer = LessonSerializer(
             data=request.data,
             context={"request": request},
@@ -350,6 +337,9 @@ class LessonViewSet(TenantModelViewSet):
         )
         try:
             lesson.reschedule_to(new_lesson, actor=request.user)
+            lesson.cancel_reason_category = reason_category
+            lesson.cancel_reason = reason_comment
+            lesson.save(update_fields=["cancel_reason_category", "cancel_reason", "updated_at"])
         except Exception as e:
             new_lesson.delete()
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)

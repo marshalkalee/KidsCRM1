@@ -205,10 +205,16 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             RULE_MISSING_SUBSCRIPTION_ENABLED: self.cleaned_data[RULE_MISSING_SUBSCRIPTION_ENABLED],
             RULE_TRIAL_NO_SHOW_ENABLED: self.cleaned_data[RULE_TRIAL_NO_SHOW_ENABLED],
             KASPI_PAYMENT_DETAILS: self.cleaned_data[KASPI_PAYMENT_DETAILS].strip(),
-            PARENT_CANCEL_NOTICE_HOURS: self.cleaned_data[PARENT_CANCEL_NOTICE_HOURS]
-            if self.cleaned_data[PARENT_CANCEL_NOTICE_HOURS] is not None
-            else get_org_setting(organization, PARENT_CANCEL_NOTICE_HOURS),
-            PARENT_CANCEL_CHARGE_ON_TIME: self.cleaned_data[PARENT_CANCEL_CHARGE_ON_TIME],
+            PARENT_CANCEL_NOTICE_HOURS: (
+                self.cleaned_data.get(PARENT_CANCEL_NOTICE_HOURS)
+                if self.cleaned_data.get(PARENT_CANCEL_NOTICE_HOURS) is not None
+                else get_org_setting(organization, PARENT_CANCEL_NOTICE_HOURS)
+            ),
+            PARENT_CANCEL_CHARGE_ON_TIME: (
+                self.cleaned_data[PARENT_CANCEL_CHARGE_ON_TIME]
+                if PARENT_CANCEL_CHARGE_ON_TIME in self.data
+                else get_org_setting(organization, PARENT_CANCEL_CHARGE_ON_TIME)
+            ),
         }
         organization.save(
             update_fields=["name", "timezone", "settings", "website_domain", "updated_at"]
