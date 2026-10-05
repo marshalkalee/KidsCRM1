@@ -207,6 +207,7 @@ class ParentLessonRequestSerializer(serializers.ModelSerializer):
             "spots_available_at_request",
             "processed_by_name",
             "processed_at",
+            "rejection_reason",
             "created_at",
         ]
 

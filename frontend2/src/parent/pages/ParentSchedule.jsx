@@ -485,6 +485,11 @@ function RequestHistory({ data, loading }) {
                   {row.will_be_charged ? t('Занятие спишется.') : t('Занятие не спишется.')}
                 </p>
               )}
+              {row.status === 'rejected' && row.rejection_reason && (
+                <p className="mt-2 rounded-md bg-danger-50 px-2.5 py-2 text-xs text-danger-700">
+                  <span className="font-semibold">{t('Причина отказа')}:</span> {row.rejection_reason}
+                </p>
+              )}
             </li>
           )
         })}
