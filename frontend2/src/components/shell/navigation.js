@@ -1,5 +1,5 @@
 import {
-  Building2, CalendarClock, ChartColumn, CalendarDays, CheckSquare, Contact, Home, Inbox, ListChecks, Megaphone, Settings, Sparkles, Tag, UserRoundCog, Users, UsersRound, Wallet,
+  AlertTriangle, Building2, CalendarClock, ChartColumn, CalendarDays, CheckSquare, Contact, Home, Inbox, ListChecks, Megaphone, Settings, Sparkles, Tag, UserRoundCog, Users, UsersRound, Wallet,
 } from 'lucide-react'
 import { t } from '../../i18n'
 
