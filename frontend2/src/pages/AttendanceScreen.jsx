@@ -393,7 +393,7 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
         ].filter(Boolean).join(' · ')}
         actions={(
           <>
-            {ai.enabled && <Button icon={Camera} onClick={() => setPhotoOpen(true)}>По фото</Button>}
+            {ai.attendance_photo && <Button icon={Camera} onClick={() => setPhotoOpen(true)}>По фото</Button>}
             <Button icon={Undo2} loading={bulkSaving} disabled={markedCount === 0} onClick={handleResetAll}>
               {t('Сбросить')}
             </Button>

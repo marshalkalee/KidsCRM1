@@ -24,7 +24,8 @@ export default function ImportClean({ onUse }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
 
-  if (!ai.enabled) return null
+  // Файл уходит во внешний ИИ как есть — только у центров, которые это включили (ADR-0008).
+  if (!ai.import_clean) return null
 
   async function clean(file) {
     if (!file) return

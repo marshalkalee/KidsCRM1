@@ -16,6 +16,10 @@ class AIConversation(TenantModel):
     )
     # Первый вопрос, обрезанный, — так чат узнают в истории.
     title = models.CharField(max_length=120)
+    # Метки имён этого чата ({"[N1]": "Бекова Алия"}, ai/pseudonyms.py):
+    # модель видит метки, имена — только здесь, у нас. Хранятся с чатом,
+    # чтобы метка человека не менялась от вопроса к вопросу.
+    pseudonyms = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["-updated_at"]
