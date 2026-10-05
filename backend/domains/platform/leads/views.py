@@ -594,11 +594,24 @@ class LeadStageViewSet(TenantModelViewSet):
 
     def get_queryset(self):
         org_stages(self.request.user.organization)  # системные этапы есть всегда
-        return (
-            LeadStage.objects.for_tenant(self.request.user.organization)
-            .annotate(lead_count=Count("leads", filter=Q(leads__deleted_at__isnull=True)))
-            .order_by("order", "created_at")
+        return LeadStage.objects.for_tenant(self.request.user.organization).order_by(
+            "order", "created_at"
         )
+
+    def get_serializer_context(self):
+        # Сколько заявок на этапе сейчас: у основного — роль без своего
+        # этапа (там заявки хранятся без ссылки), у своего — по ссылке.
+        counts = {
+            (role, stage_id): n
+            for role, stage_id, n in Lead.objects.filter(
+                organization=self.request.user.organization
+            )
+            .order_by()
+            .values_list("status", "stage")
+            .annotate(n=Count("id"))
+            .values_list("status", "stage", "n")
+        }
+        return {**super().get_serializer_context(), "lead_counts": counts}
 
     def perform_create(self, serializer):
         last = (
@@ -643,4 +656,8 @@ class LeadStageViewSet(TenantModelViewSet):
         for index, stage_id in enumerate(ids, start=1):
             stages[stage_id].order = index * 10
         LeadStage.objects.bulk_update(stages.values(), ["order"])
-        return Response(LeadStageSerializer(self.get_queryset(), many=True).data)
+        return Response(
+            LeadStageSerializer(
+                self.get_queryset(), many=True, context=self.get_serializer_context()
+            ).data
+        )

@@ -393,6 +393,7 @@ class LeadStatusChangeSerializer(serializers.ModelSerializer):
     # По ссылке на этап (TRU-154): после переименования история читается
     # новым названием, а свой этап виден своим, а не названием роли.
     to_status_label = serializers.SerializerMethodField()
+    to_stage_color = serializers.SerializerMethodField()
     changed_by_name = serializers.CharField(
         source="changed_by.full_name", read_only=True, default=None
     )
@@ -409,6 +410,7 @@ class LeadStatusChangeSerializer(serializers.ModelSerializer):
             "from_status_label",
             "to_status",
             "to_status_label",
+            "to_stage_color",
             "changed_by",
             "changed_by_name",
             "changed_at",
@@ -426,13 +428,16 @@ class LeadStatusChangeSerializer(serializers.ModelSerializer):
     def get_to_status_label(self, change) -> str:
         return _funnel(self.context, change).for_change(change).name
 
+    def get_to_stage_color(self, change) -> str:
+        return _funnel(self.context, change).for_change(change).color
+
 
 class LeadStageSerializer(serializers.ModelSerializer):
     """Этап воронки центра (TRU-154). Системный этап: роль не меняется и
     не скрывается; свой — только внутри ролей «в работе»."""
 
     role_label = serializers.CharField(source="get_role_display", read_only=True)
-    lead_count = serializers.IntegerField(read_only=True, default=0)
+    lead_count = serializers.SerializerMethodField()
 
     class Meta:
         model = LeadStage
@@ -448,6 +453,10 @@ class LeadStageSerializer(serializers.ModelSerializer):
             "lead_count",
         ]
         read_only_fields = ["is_system", "order"]
+
+    def get_lead_count(self, stage) -> int:
+        counts = self.context.get("lead_counts", {})
+        return counts.get((stage.role, None if stage.is_system else stage.pk), 0)
 
     def validate_name(self, value):
         name = " ".join(value.split())

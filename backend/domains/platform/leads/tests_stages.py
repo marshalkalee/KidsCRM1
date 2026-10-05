@@ -56,6 +56,14 @@ class DefaultStagesTests(StageFixtures):
             Lead.RENEWAL_STATUSES,
         )
 
+    def test_stage_counts_include_leads_on_main_stage(self):
+        self.make_lead()
+        testing = self.add_stage()
+        move_to_stage(self.make_lead(phone="+77072223344"), stage=testing, actor=self.owner)
+        counts = {s["name"]: s["lead_count"] for s in self.client_owner.get(STAGES_URL).data}
+        self.assertEqual((counts["Новая"], counts["Тестирование уровня"]), (1, 1))
+        self.assertEqual(counts["Связались"], 0)
+
     def test_lead_without_stage_shows_system_stage(self):
         lead = self.make_lead()
         data = self.client_owner.get(f"{URL}{lead.id}/").data
