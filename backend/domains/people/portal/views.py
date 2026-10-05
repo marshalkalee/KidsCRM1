@@ -14,6 +14,7 @@ from domains.scheduling.attendance.history import (
     attendance_history_summary,
 )
 from domains.scheduling.attendance.models import Attendance
+from domains.scheduling.groups.models import GroupMembership
 from domains.scheduling.schedule.enrollment_service import available_makeups_for_child
 from domains.scheduling.schedule.models import Lesson, LessonEnrollment
 
@@ -238,8 +239,14 @@ class ChildScheduleView(ParentView):
                 starts_at__lt=ends_at,
             )
             .filter(participation)
-            .exclude(status=Lesson.Status.RESCHEDULED)
-            .select_related("group__direction", "group__branch", "room", "teacher")
+            .select_related(
+                "group__direction",
+                "group__branch",
+                "room__branch",
+                "teacher",
+                "rescheduled_from",
+                "rescheduled_to",
+            )
             .prefetch_related(
                 Prefetch(
                     "enrollments",
@@ -247,11 +254,34 @@ class ChildScheduleView(ParentView):
                         child=child, cancelled_at__isnull=True
                     ),
                     to_attr="parent_enrollments",
-                )
+                ),
+                Prefetch(
+                    "group__memberships",
+                    queryset=GroupMembership.objects.filter(child=child, deleted_at__isnull=True),
+                    to_attr="parent_memberships",
+                ),
             )
             .distinct()
             .order_by("starts_at")
         )
+        # Период может пересекать дату вступления/выхода из группы. SQL
+        # выше быстро выбирает пересекающиеся группы, а здесь проверяем
+        # участие именно на дату каждого занятия — иначе родитель увидит
+        # урок до вступления ребёнка или после выхода.
+        lessons = [
+            lesson
+            for lesson in lessons
+            if lesson.parent_enrollments
+            or not lesson.group_id
+            or any(
+                membership.joined_at <= lesson.starts_at.astimezone(tz).date()
+                and (
+                    membership.left_at is None
+                    or membership.left_at >= lesson.starts_at.astimezone(tz).date()
+                )
+                for membership in lesson.group.parent_memberships
+            )
+        ]
         return Response(
             {
                 "period": {"date_from": date_from, "date_to": date_to},

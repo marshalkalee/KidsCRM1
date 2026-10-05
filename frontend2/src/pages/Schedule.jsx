@@ -1741,6 +1741,8 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
         teacher: lesson.teacher,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
+        reason_category: reasonCategory,
+        comment,
         ...extra,
       })
       onDone()
@@ -1753,7 +1755,11 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
     } finally { setSaving(false) }
   }
 
-  function handleReschedule() { submitReschedule() }
+  function handleReschedule() {
+    if (!reasonCategory) { setError(t('Выберите причину переноса')); return }
+    if (reasonCategory === 'other' && !comment.trim()) { setError(t('Для причины «Другое» нужен комментарий')); return }
+    submitReschedule()
+  }
 
   return (
     <div style={modalOverlay} onClick={onClose}>
@@ -1894,6 +1900,19 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
                 <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} style={inputStyle} />
               </div>
             </div>
+            <label style={labelStyle}>{t('Причина переноса')} *</label>
+            <div style={{ marginBottom: 14 }}>
+              <Dropdown
+                variant="field"
+                width="100%"
+                value={reasonCategory}
+                onChange={setReasonCategory}
+                placeholder={t('Выберите причину')}
+                options={[['', t('Выберите причину')], ...CANCEL_REASON_OPTIONS.map(([value, label]) => [value, t(label)])]}
+              />
+            </div>
+            <label style={labelStyle}>{t('Комментарий')}{reasonCategory === 'other' ? ' *' : ''}</label>
+            <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} style={{ ...inputStyle, marginBottom: 14, resize: 'vertical' }} placeholder={reasonCategory === 'other' ? t('Обязательно для причины «Другое»') : t('Необязательно')} />
             {conflicts && (
               <ConflictWarning
                 conflicts={conflicts}
