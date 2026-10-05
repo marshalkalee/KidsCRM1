@@ -18,7 +18,6 @@ from domains.money.subscriptions.debt import debt_by_child
 from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.renewals import is_ending_soon
 from domains.platform.core.utils import today_for_org
-from domains.platform.tenants.org_settings import KASPI_PAYMENT_DETAILS, get_org_setting
 from domains.scheduling.schedule.models import Lesson
 
 
@@ -118,5 +117,4 @@ def summary(child):
         "next_lessons": upcoming_lessons(child),
         "subscription": subscription_row(current_subscription(child)),
         "to_pay": str(debt),
-        "payment": {"kaspi": get_org_setting(organization, KASPI_PAYMENT_DETAILS)},
     }

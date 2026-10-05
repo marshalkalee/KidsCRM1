@@ -47,6 +47,24 @@ class LeadSource(LeadDictionary):
     """Откуда пришла заявка: Instagram, WhatsApp, сайт, звонок, рекомендация…"""
 
 
+class LeadCampaign(LeadDictionary):
+    """
+    Публикация или кампания внутри источника (TRU-165): «Instagram → Reel
+    про пробное, сентябрь». Instagram не сообщает, после какого ролика
+    написал родитель, поэтому у каждой публикации свой код (K12): он стоит
+    в ссылке WhatsApp под роликом и в метке ссылки на сайт, и заявка с
+    кодом получает публикацию сама (leads/campaigns.py).
+    """
+
+    source = models.ForeignKey(LeadSource, on_delete=models.PROTECT, related_name="campaigns")
+    code = models.CharField(max_length=10)
+
+    class Meta(LeadDictionary.Meta):
+        constraints = [
+            models.UniqueConstraint(fields=["organization", "code"], name="unique_campaign_code")
+        ]
+
+
 class LeadKind(models.TextChoices):
     """
     Два вида продаж (TRU-98). Новая — контакт с улицы, проходит воронку с
@@ -153,6 +171,10 @@ class Lead(TenantModel):
     )
     source = models.ForeignKey(
         LeadSource, on_delete=models.PROTECT, null=True, blank=True, related_name="leads"
+    )
+    # Публикация внутри источника (TRU-165) — по коду из ссылки или вручную.
+    campaign = models.ForeignKey(
+        "LeadCampaign", on_delete=models.PROTECT, null=True, blank=True, related_name="leads"
     )
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL,
