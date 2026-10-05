@@ -3,6 +3,7 @@ import { Archive, ArchiveRestore, ListChecks, Pencil, Plus } from 'lucide-react'
 import api from '../api/axios'
 import { Badge, Button, DataTable, EmptyState, Field, Input, Modal, PageHeader, Tabs, apiErrorMessage, plural, useToast } from '../ui'
 import { t } from '../i18n'
+import Campaigns from '../components/leads/Campaigns'
 import FunnelStages from '../components/leads/FunnelStages'
 
 // Два справочника воронки (TRU-93). usage — во что складывается число
@@ -52,6 +53,8 @@ export default function LeadDictionaries() {
   const toast = useToast()
   const [kind, setKind] = useState('stages')
   const stagesTab = kind === 'stages'
+  const campaignsTab = kind === 'campaigns'
+  const customTab = stagesTab || campaignsTab
   const [data, setData] = useState({ sources: null, reasons: null, renewalReasons: null })
   const [error, setError] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -78,7 +81,7 @@ export default function LeadDictionaries() {
     }
   }
 
-  const rows = stagesTab ? [] : data[kind]
+  const rows = customTab ? [] : data[kind]
   const activeCount = count => (data[count] || []).filter(item => item.is_active).length
 
   const columns = [
@@ -104,8 +107,8 @@ export default function LeadDictionaries() {
     <div>
       <PageHeader
         title={t('Справочники продаж')}
-        description={stagesTab ? t('Этапы воронки, источники заявок и причины отказа — общие для всех филиалов.') : dict.hint}
-        actions={!stagesTab && <Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>{t('Добавить')}</Button>}
+        description={customTab ? t('Этапы воронки, источники заявок и причины отказа — общие для всех филиалов.') : dict.hint}
+        actions={!customTab && <Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>{t('Добавить')}</Button>}
       />
       <Tabs
         className="mb-4"
@@ -113,10 +116,11 @@ export default function LeadDictionaries() {
         onChange={setKind}
         tabs={[
           { key: 'stages', label: t('Этапы воронки') },
+          { key: 'campaigns', label: t('Публикации') },
           ...Object.entries(DICTIONARIES).map(([key, d]) => ({ key, label: d.tab, count: data[key] ? activeCount(key) : null })),
         ]}
       />
-      {stagesTab ? <FunnelStages /> : <DataTable
+      {stagesTab ? <FunnelStages /> : campaignsTab ? <Campaigns /> : <DataTable
         columns={columns}
         rows={rows || []}
         loading={!rows && !error}

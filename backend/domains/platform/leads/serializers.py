@@ -12,7 +12,16 @@ from domains.platform.core.text_validation import normalize_entity_name, normali
 from domains.platform.tenants.models import Branch, Direction
 from domains.platform.users.models import User
 
-from .models import Lead, LeadComment, LeadRejectionReason, LeadSource, LeadStage, LeadStatusChange
+from .campaigns import next_code, site_link, whatsapp_links
+from .models import (
+    Lead,
+    LeadCampaign,
+    LeadComment,
+    LeadRejectionReason,
+    LeadSource,
+    LeadStage,
+    LeadStatusChange,
+)
 from .services import STALE_AFTER_DAYS
 from .stages import Funnel
 
@@ -45,6 +54,7 @@ class LeadSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source="branch.name", read_only=True, default=None)
     direction_name = serializers.CharField(source="direction.name", read_only=True, default=None)
     source_name = serializers.CharField(source="source.name", read_only=True, default=None)
+    campaign_name = serializers.CharField(source="campaign.name", read_only=True, default=None)
     assigned_to_name = serializers.CharField(
         source="assigned_to.full_name", read_only=True, default=None
     )
@@ -83,6 +93,8 @@ class LeadSerializer(serializers.ModelSerializer):
             "direction_name",
             "source",
             "source_name",
+            "campaign",
+            "campaign_name",
             "assigned_to",
             "assigned_to_name",
             "status",
@@ -139,9 +151,27 @@ class LeadSerializer(serializers.ModelSerializer):
         self.fields["source"].queryset = _active_or_current(
             LeadSource.objects.for_tenant(organization), instance and instance.source
         )
+        self.fields["campaign"].queryset = _active_or_current(
+            LeadCampaign.objects.for_tenant(organization), instance and instance.campaign
+        )
         self.fields["assigned_to"].queryset = User.objects.filter(
             organization=organization, is_active=True
         )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Публикация живёт внутри источника (TRU-165): без источника он
+        # берётся из публикации, другой источник — ошибка, а не тихая правка.
+        campaign = attrs.get("campaign", getattr(self.instance, "campaign", None))
+        if campaign is not None:
+            source = attrs.get("source", getattr(self.instance, "source", None))
+            if source is None:
+                attrs["source"] = campaign.source
+            elif source.pk != campaign.source_id:
+                raise serializers.ValidationError(
+                    {"campaign": f"Публикация из источника «{campaign.source.name}»."}
+                )
+        return attrs
 
     def _stage(self, lead) -> LeadStage:
         return _funnel(self.context, lead).of(lead)
@@ -529,6 +559,45 @@ class LeadDictionarySerializer(serializers.ModelSerializer):  # noqa: D101
         if duplicates.exists():
             raise serializers.ValidationError("Такое значение уже есть.")
         return name
+
+
+class LeadCampaignSerializer(LeadDictionarySerializer):
+    """Публикация (TRU-165): код выдаётся при создании и не меняется — он
+    уже стоит в ссылках под роликами."""
+
+    source_name = serializers.CharField(source="source.name", read_only=True)
+    whatsapp_links = serializers.SerializerMethodField()
+    site_link = serializers.SerializerMethodField()
+
+    class Meta(LeadDictionarySerializer.Meta):
+        model = LeadCampaign
+        fields = [
+            *LeadDictionarySerializer.Meta.fields,
+            "source",
+            "source_name",
+            "code",
+            "whatsapp_links",
+            "site_link",
+        ]
+        read_only_fields = ["code"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            self.fields["source"].queryset = LeadSource.objects.for_tenant(
+                request.user.organization
+            )
+
+    def get_whatsapp_links(self, campaign) -> list[dict]:
+        return whatsapp_links(campaign)
+
+    def get_site_link(self, campaign) -> str | None:
+        return site_link(campaign)
+
+    def create(self, validated_data):
+        validated_data["code"] = next_code(validated_data["organization"])
+        return super().create(validated_data)
 
 
 class LeadSourceSerializer(LeadDictionarySerializer):

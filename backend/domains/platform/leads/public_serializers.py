@@ -18,6 +18,11 @@ class PublicLeadSerializer(serializers.Serializer):
     direction_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     branch_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     comment = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
+    # Публикация (TRU-165): код K12 явно или метка из ссылки на сайт.
+    campaign = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
+    utm_content = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, default=""
+    )
     # Honeypot — скрытое на сайте поле. Человек его не видит и не заполняет;
     # простые боты, заполняющие форму подряд, часто заполняют любое найденное
     # поле. Непустое значение здесь не считается ошибкой ввода (бот не должен

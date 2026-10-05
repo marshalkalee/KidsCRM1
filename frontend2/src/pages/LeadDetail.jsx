@@ -237,6 +237,7 @@ export default function LeadDetail() {
               <Row label={t('Направление')}>{lead.direction_name || '—'}</Row>
               <Row label={t('Филиал')}>{lead.branch_name || '—'}</Row>
               {lead.kind !== 'renewal' && <Row label={t('Источник')}>{lead.source_name ? t(lead.source_name) : '—'}</Row>}
+              {lead.campaign_name && <Row label={t('Публикация')}>{lead.campaign_name}</Row>}
               <div className="flex items-center justify-between gap-3 py-2.5">
                 <dt className="text-ink-subtle">{t('Ответственный')}</dt>
                 <dd className="w-44">
