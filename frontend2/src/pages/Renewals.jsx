@@ -30,6 +30,8 @@ export default function Renewals() {
   const toast = useToast()
   const { can, activeBranch, activeBranchId, branches } = useSession()
   const canLeads = can('can_manage_leads')
+  // Преподаватель с открытыми финансами (TRU-153) список видит, но не меняет.
+  const canChange = can('can_change_client_money')
   const [params, setParams] = useSearchParams()
   const [loaded, setLoaded] = useState({ key: null, data: { results: [], count: 0 }, error: false })
   const [reloadKey, setReloadKey] = useState(0)
@@ -178,15 +180,17 @@ export default function Renewals() {
               <MessageCircle className="size-4" />
             </a>
           )}
-          <Button size="sm" variant="ghost" icon={Check} loading={busy === `contact:${row.subscription_id}`} onClick={() => markContacted(row)} title={t('Отметить, что связались')}>
-            <span className="hidden 2xl:inline">{t('Связались')}</span>
-          </Button>
+          {canChange && (
+            <Button size="sm" variant="ghost" icon={Check} loading={busy === `contact:${row.subscription_id}`} onClick={() => markContacted(row)} title={t('Отметить, что связались')}>
+              <span className="hidden 2xl:inline">{t('Связались')}</span>
+            </Button>
+          )}
           {canLeads && (
             <Button size="sm" variant="ghost" icon={Inbox} loading={busy === `lead:${row.subscription_id}`} onClick={() => openRenewalLead(row)} title={row.renewal_lead_id ? t('Открыть заявку на продление') : t('Завести заявку на продление')}>
               <span className="hidden 2xl:inline">{row.renewal_lead_id ? t('Заявка') : t('В заявки')}</span>
             </Button>
           )}
-          <Button size="sm" variant="primary" icon={RefreshCw} onClick={() => setRenewing(row)}>{t('Продлить')}</Button>
+          {canChange && <Button size="sm" variant="primary" icon={RefreshCw} onClick={() => setRenewing(row)}>{t('Продлить')}</Button>}
         </div>
       ),
     },

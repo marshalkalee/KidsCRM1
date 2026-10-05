@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from domains.people.clients.models import ChildContact, CommunicationLog, ParentContact
 from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
+from domains.platform.core.role_permissions import can_view_phone
 from domains.platform.core.viewsets import TenantModelViewSet
 from domains.platform.leads.models import Lead, LeadComment
 from domains.scheduling.groups.models import Group
@@ -55,6 +56,11 @@ def _reschedule_reason_from_request(request):
     return Lesson.CancelReasonCategory.OTHER, "Перенос по решению центра"
 
 
+class CanViewPhones(IsStaffOfOrganization):
+    def has_permission(self, request, view):
+        return super().has_permission(request, view) and can_view_phone(request.user)
+
+
 class LessonViewSet(TenantModelViewSet):
     serializer_class = LessonSerializer
     filter_backends = [filters.OrderingFilter]
@@ -68,6 +74,10 @@ class LessonViewSet(TenantModelViewSet):
     def get_permissions(self):
         if self.action in ["create", "update", "partial_update", "destroy", "bulk_cancel"]:
             return [IsOwnerOrManager()]
+        if self.action in ["who_to_call", "mark_called"]:
+            # Обзвон — это телефоны родителей: без can_view_phone (TRU-153,
+            # преподаватель по умолчанию) список отдавать нельзя.
+            return [CanViewPhones()]
         return [IsStaffOfOrganization()]
 
     def get_queryset(self):

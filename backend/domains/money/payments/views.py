@@ -8,7 +8,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from domains.platform.core.permissions import IsNotTeacher, IsOwnerOrManagerOrAdmin
+from domains.platform.core.permissions import CanViewClientMoney, IsOwnerOrManagerOrAdmin
 from domains.platform.tenants.org_settings import KASPI_PAYMENT_DETAILS, get_org_setting
 
 from . import remote
@@ -41,7 +41,7 @@ class PaymentViewSet(
     def get_permissions(self):
         if self.action in ("create", "cancel"):
             return [IsOwnerOrManagerOrAdmin()]
-        return [IsNotTeacher()]
+        return [CanViewClientMoney()]
 
     def get_queryset(self):
         # all_with_deleted() намеренно — отменённые оплаты обязаны быть видны в истории
@@ -122,7 +122,7 @@ class PaymentRequestViewSet(
     def get_permissions(self):
         if self.action in ("create", "confirm", "cancel"):
             return [IsOwnerOrManagerOrAdmin()]
-        return [IsNotTeacher()]
+        return [CanViewClientMoney()]
 
     def get_queryset(self):
         qs = PaymentRequest.objects.for_tenant(self.request.user.organization)

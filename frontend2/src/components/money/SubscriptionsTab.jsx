@@ -11,6 +11,7 @@ import {
   apiErrorMessage, formatDate, formatDateTime, money, useConfirm, useToast,
 } from '../../ui'
 import { t } from '../../i18n'
+import { useSession } from '../../session/SessionContext'
 
 // display_status: статус или «заканчивается» (TRU-62) — тот же расчёт, что у списка детей и продлений.
 const STATUS_TONE = { active: 'success', ending_soon: 'warning', frozen: 'info', expired: 'neutral', exhausted: 'danger' }
@@ -58,6 +59,8 @@ function FreezeHistory({ freezes, compact = false }) {
 }
 
 export default function SubscriptionsTab({ child, onCountChange }) {
+  // Преподаватель с открытыми финансами (TRU-153) — только просмотр.
+  const canChange = useSession().can('can_change_client_money')
   const toast = useToast()
   const confirm = useConfirm()
   const [subscriptions, setSubscriptions] = useState(null)
@@ -110,7 +113,7 @@ export default function SubscriptionsTab({ child, onCountChange }) {
       <Card>
         <CardHeader
           title={t('Текущий абонемент')}
-          actions={(
+          actions={canChange && (
             <Button variant="primary" size="sm" icon={PlusCircle} onClick={() => setSellOpen(true)}>
               {t('Продать абонемент')}
             </Button>
@@ -130,12 +133,12 @@ export default function SubscriptionsTab({ child, onCountChange }) {
               <Button variant="secondary" size="sm" icon={ListChecks} onClick={() => setLedgerFor(current)}>
                 {t('Журнал списаний')}
               </Button>
-              {current.status === 'active' && (
+              {canChange && current.status === 'active' && (
                 <Button variant="secondary" size="sm" icon={Snowflake} onClick={() => setFreezeFor(current)}>
                   {t('Заморозить')}
                 </Button>
               )}
-              {current.status === 'frozen' && (
+              {canChange && current.status === 'frozen' && (
                 <Button variant="secondary" size="sm" onClick={() => unfreeze(current)}>{t('Разморозить')}</Button>
               )}
             </div>
@@ -167,7 +170,7 @@ export default function SubscriptionsTab({ child, onCountChange }) {
         )}
       </Card>
 
-      {ledgerFor && <LedgerModal subscription={ledgerFor} onClose={() => setLedgerFor(null)} onRecomputed={load} />}
+      {ledgerFor && <LedgerModal subscription={ledgerFor} canRecompute={canChange} onClose={() => setLedgerFor(null)} onRecomputed={load} />}
       {freezeFor && (
         <FreezeModal
           subscription={freezeFor}
@@ -182,7 +185,7 @@ export default function SubscriptionsTab({ child, onCountChange }) {
   )
 }
 
-function LedgerModal({ subscription, onClose, onRecomputed }) {
+function LedgerModal({ subscription, canRecompute, onClose, onRecomputed }) {
   const toast = useToast()
   const [entries, setEntries] = useState(null)
   const [error, setError] = useState(false)
@@ -218,7 +221,7 @@ function LedgerModal({ subscription, onClose, onRecomputed }) {
       description={subscription.subscription_type_name}
       footer={
         <>
-          <Button icon={RefreshCw} loading={recomputing} onClick={recompute}>{t('Пересчитать остаток')}</Button>
+          {canRecompute && <Button icon={RefreshCw} loading={recomputing} onClick={recompute}>{t('Пересчитать остаток')}</Button>}
           <Button variant="primary" onClick={onClose}>{t('Готово')}</Button>
         </>
       }

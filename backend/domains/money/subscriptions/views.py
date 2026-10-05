@@ -6,7 +6,11 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from domains.people.clients.models import Child
-from domains.platform.core.permissions import IsNotTeacher, IsOwnerOrManager, IsStaffOfOrganization
+from domains.platform.core.permissions import (
+    CanViewClientMoney,
+    IsOwnerOrManager,
+    IsStaffOfOrganization,
+)
 from domains.platform.core.utils import today_for_org
 from domains.platform.tenants.models import Branch, Direction
 
@@ -38,7 +42,9 @@ class SubscriptionViewSet(
     mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
 ):
     serializer_class = SubscriptionSerializer
-    permission_classes = [IsNotTeacher]
+    # Чтение — и преподавателю с открытыми финансами (TRU-153), действия
+    # (продажа, заморозка, пересчёт) — как раньше, не преподавателю.
+    permission_classes = [CanViewClientMoney]
 
     def get_queryset(self):
         qs = (

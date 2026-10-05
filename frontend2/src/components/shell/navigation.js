@@ -1,5 +1,5 @@
 import {
-  AlertTriangle, Building2, CalendarClock, ChartColumn, CalendarDays, CheckSquare, Contact, Home, Inbox, ListChecks, Megaphone, Settings, Sparkles, Tag, UserRoundCog, Users, UsersRound, Wallet,
+  AlertTriangle, Building2, CalendarClock, ChartColumn, CalendarDays, CheckSquare, Contact, Home, Inbox, ListChecks, Megaphone, Settings, ShieldCheck, Sparkles, Tag, UserRoundCog, Users, UsersRound, Wallet,
 } from 'lucide-react'
 import { t } from '../../i18n'
 
@@ -38,6 +38,7 @@ export const NAV_SECTIONS = [
       { to: '/settings/staff', get label() { return t('Сотрудники') }, icon: UserRoundCog, permission: 'can_manage_staff' },
       { to: '/settings/sales', get label() { return t('Справочники продаж') }, icon: ListChecks, permission: 'can_manage_lead_dictionaries' },
       { to: '/settings/organization', get label() { return t('Организация') }, icon: Settings, permission: 'can_manage_org_settings' },
+      { to: '/settings/access', get label() { return t('Доступ сотрудников') }, icon: ShieldCheck, permission: 'can_manage_org_settings' },
     ],
   },
 ]
