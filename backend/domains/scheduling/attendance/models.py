@@ -287,10 +287,15 @@ class ParentNote(TenantModel):
         GROUP = "group", "По группе"
         CHILD = "child", "По ребёнку"
 
+    class Kind(models.TextChoices):
+        NOTE = "note", "Заметка"
+        HOMEWORK = "homework", "Домашнее задание"
+
     lesson = models.ForeignKey(
         "schedule.Lesson", on_delete=models.CASCADE, related_name="parent_notes"
     )
     scope = models.CharField(max_length=16, choices=Scope.choices)
+    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.NOTE)
     child = models.ForeignKey(
         "clients.Child",
         on_delete=models.CASCADE,
@@ -300,6 +305,7 @@ class ParentNote(TenantModel):
     )
     author = models.ForeignKey("users.User", on_delete=models.PROTECT, related_name="parent_notes")
     body = models.TextField(max_length=1000)
+    valid_until = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]

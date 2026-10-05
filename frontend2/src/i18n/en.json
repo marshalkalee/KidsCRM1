@@ -1994,5 +1994,16 @@
  "Принести форму на следующее занятие": "Bring the uniform to the next lesson",
  "Принести чешки на следующее занятие": "Bring ballet slippers to the next lesson",
  "Подготовиться к выступлению": "Prepare for the performance",
- "Свою заметку можно изменить или удалить в течение {n} ч.": "You can edit or delete your note within {n} hours."
+ "Свою заметку можно изменить или удалить в течение {n} ч.": "You can edit or delete your note within {n} hours.",
+ "Заметки": "Notes",
+ "Тип записи": "Entry type",
+ "Домашнее задание": "Homework",
+ "Рекомендации преподавателя после занятий — общие для группы и лично для ребёнка.": "Teacher recommendations after lessons — for the whole group or personally for the child.",
+ "Ответить здесь нельзя. Если нужно уточнение, напишите администратору центра в WhatsApp.": "Replies are not available here. If you need clarification, message the centre administrator on WhatsApp.",
+ "Заметок пока нет": "No notes yet",
+ "Когда преподаватель оставит рекомендацию или домашнее задание, оно появится здесь.": "When the teacher leaves a recommendation or homework, it will appear here.",
+ "Лично для ребёнка": "Personal for the child",
+ "Для всей группы": "For the whole group",
+ "Добавлено {date}": "Added {date}",
+ "Актуальное домашнее задание": "Current homework"
 }

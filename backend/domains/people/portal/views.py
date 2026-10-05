@@ -512,6 +512,29 @@ class ChildMoneyView(ParentView):
         return Response(money.money(child))
 
 
+class ChildParentNotesView(ParentView):
+    """Teacher notes and homework visible to one child and their parents (TRU-148)."""
+
+    def get(self, request, child_id, version=None):
+        from . import access, parent_notes
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(parent_notes.feed(request.user, child))
+
+
+class ChildParentNoteReadView(ParentView):
+    def post(self, request, child_id, note_id, version=None):
+        from . import access, parent_notes
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None or not parent_notes.visible_to(child, note_id):
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        parent_notes.mark_read(request.user, note_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class AnnouncementsView(ParentView):
     """Лента объявлений родителя: активные или ?archive=1, и сколько непрочитанных."""
 

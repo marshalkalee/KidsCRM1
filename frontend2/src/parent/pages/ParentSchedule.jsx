@@ -101,9 +101,15 @@ export default function ParentSchedule() {
   const [anchor, setAnchor] = useState(() => new Date())
   const makeupId = searchParams.get('makeup')
   const period = periodFor(view, anchor)
-  const schedule = usePortalData(scheduleUrl(child?.id, period))
+  const schedule = usePortalData(scheduleUrl(child?.id, period), {
+    refreshInterval: 10_000,
+    refreshOnFocus: true,
+  })
   const makeup = usePortalData(makeupUrl(child?.id, makeupId))
-  const requests = usePortalData(requestsUrl(child?.id))
+  const requests = usePortalData(requestsUrl(child?.id), {
+    refreshInterval: 10_000,
+    refreshOnFocus: true,
+  })
   const options = usePortalData(requestOptionsUrl(child?.id))
   const [requestDialog, setRequestDialog] = useState(null)
 

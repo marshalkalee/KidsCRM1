@@ -45,6 +45,17 @@ export default function ParentLayout() {
   const [picking, setPicking] = useState(false)
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const online = useOnline()
+  const { data: noteData, reload: reloadNotes } = usePortalData(
+    child && `children/${child.id}/notes/`,
+    { refreshInterval: 10_000, refreshOnFocus: true },
+  )
+  const noteUnread = noteData?.unread || 0
+
+  useEffect(() => {
+    const refreshNotes = () => reloadNotes()
+    window.addEventListener('kc-parent-notes-read', refreshNotes)
+    return () => window.removeEventListener('kc-parent-notes-read', refreshNotes)
+  }, [reloadNotes])
 
   useEffect(() => { installPwa() }, [])
 
@@ -64,7 +75,7 @@ export default function ParentLayout() {
         'fixed inset-y-0 left-0 z-30 hidden border-r border-line bg-surface transition-[width] duration-200 lg:flex lg:flex-col',
         collapsed ? 'w-[76px]' : 'w-64',
       )}>
-        <ParentSidebar collapsed={collapsed} />
+        <ParentSidebar collapsed={collapsed} noteUnread={noteUnread} />
       </aside>
 
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
@@ -102,19 +113,22 @@ export default function ParentLayout() {
       </main>
 
       <nav aria-label={t('Разделы кабинета')} className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        <div className="mx-auto grid max-w-2xl grid-cols-5">
+        <div className="mx-auto grid max-w-2xl grid-cols-6">
           {PARENT_NAV.filter(item => item.mobile !== false).map(item => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
               className={({ isActive }) => cn(
-                'flex h-16 min-w-0 flex-col items-center justify-center gap-1 text-[10px] font-semibold sm:text-[11px]',
+                'relative flex h-16 min-w-0 flex-col items-center justify-center gap-1 text-[10px] font-semibold sm:text-[11px]',
                 isActive ? 'text-brand-600' : 'text-ink-muted',
               )}
             >
               <item.icon className="size-5 shrink-0" />
               <span className="max-w-full truncate px-1">{item.label}</span>
+              {item.to === '/parent/notes' && noteUnread > 0 && (
+                <span className="absolute ml-5 -mt-8 flex min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[9px] font-bold text-white">{noteUnread}</span>
+              )}
             </NavLink>
           ))}
         </div>
@@ -157,7 +171,7 @@ function ChildButton({ child, childOptions, onPick }) {
   )
 }
 
-function ParentSidebar({ collapsed }) {
+function ParentSidebar({ collapsed, noteUnread }) {
   const { profile, child, signOut } = useParent()
   return (
     <>
@@ -187,6 +201,9 @@ function ParentSidebar({ collapsed }) {
               >
                 <item.icon className="size-[18px] shrink-0" />
                 {!collapsed && item.label}
+                {item.to === '/parent/notes' && noteUnread > 0 && (
+                  <span className={cn('flex min-w-5 items-center justify-center rounded-full bg-brand-600 px-1.5 text-[10px] font-bold text-white', !collapsed && 'ml-auto')}>{noteUnread}</span>
+                )}
               </NavLink>
             </li>
           ))}

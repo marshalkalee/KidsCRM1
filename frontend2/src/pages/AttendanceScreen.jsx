@@ -519,6 +519,9 @@ function ParentNotesPanel({ lessonId, lesson, rows, notesData, onChange }) {
                         <ScopeIcon className="mr-1 inline size-3.5" />
                         {note.scope === 'group' ? t('Всем родителям группы') : note.child_name}
                       </Badge>
+                      <Badge tone={note.kind === 'homework' ? 'brand' : 'neutral'}>
+                        {note.kind === 'homework' ? t('Домашнее задание') : t('Заметка')}
+                      </Badge>
                       <span className="text-xs text-ink-subtle">{formatDateTime(note.created_at)}</span>
                     </div>
                     <p className="mt-2 whitespace-pre-line text-sm font-medium text-ink">{note.body}</p>
@@ -544,6 +547,7 @@ function ParentNotesPanel({ lessonId, lesson, rows, notesData, onChange }) {
           hasGroup={Boolean(lesson.group)}
           rows={rows}
           templates={notesData.templates || []}
+          lessonStartsAt={lesson.starts_at}
           initial={editor}
           onClose={() => setEditor(null)}
           onSaved={async () => {
@@ -556,12 +560,16 @@ function ParentNotesPanel({ lessonId, lesson, rows, notesData, onChange }) {
   )
 }
 
-function ParentNoteModal({ lessonId, hasGroup, rows, templates, initial, onClose, onSaved }) {
+function ParentNoteModal({ lessonId, hasGroup, rows, templates, lessonStartsAt, initial, onClose, onSaved }) {
   const toast = useToast()
   const note = initial.note
   const [scope, setScope] = useState(note?.scope || initial.scope || (hasGroup ? 'group' : 'child'))
   const [child, setChild] = useState(note?.child || '')
+  const [kind, setKind] = useState(note?.kind || 'note')
   const [body, setBody] = useState(note?.body || '')
+  const [validUntil, setValidUntil] = useState(
+    note?.valid_until || (lessonStartsAt ? toISODate(addDays(new Date(lessonStartsAt), 7)) : ''),
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -577,8 +585,9 @@ function ParentNoteModal({ lessonId, hasGroup, rows, templates, initial, onClose
     setSaving(true)
     setError('')
     try {
-      if (note) await updateParentNote(note.id, body.trim())
-      else await createParentNote({ lesson: lessonId, scope, child, body: body.trim() })
+      const payload = { kind, body: body.trim(), validUntil: kind === 'homework' ? validUntil : '' }
+      if (note) await updateParentNote(note.id, payload)
+      else await createParentNote({ lesson: lessonId, scope, child, ...payload })
       toast.success(note ? t('Заметка обновлена') : t('Заметка отправлена родителям'))
       await onSaved()
     } catch (requestError) {
@@ -632,6 +641,22 @@ function ParentNoteModal({ lessonId, hasGroup, rows, templates, initial, onClose
           )}
         </Field>
       )}
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <Field label={t('Тип записи')} required>
+          {({ id }) => (
+            <Select id={id} value={kind} onChange={event => setKind(event.target.value)}>
+              <option value="note">{t('Заметка')}</option>
+              <option value="homework">{t('Домашнее задание')}</option>
+            </Select>
+          )}
+        </Field>
+        {kind === 'homework' && (
+          <Field label={t('Актуально до')}>
+            {({ id }) => <DateInput id={id} value={validUntil} onChange={setValidUntil} />}
+          </Field>
+        )}
+      </div>
 
       <div className="mt-4">
         <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-subtle">{t('Частые шаблоны')}</p>

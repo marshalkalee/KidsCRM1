@@ -52,6 +52,8 @@ CASES = {
     "child-lesson-requests": ("child", "get"),
     "child-summary": ("child", "get"),
     "child-money": ("child", "get"),
+    "child-parent-notes": ("child", "get"),
+    "child-parent-note-read": ("child-note", "post"),
     "session-detail": ("session", "delete"),
     "announcement-read": ("announcement", "post"),
 }
@@ -144,7 +146,7 @@ class PortalIsolationTests(PortalAuthBase):
                 self.assertIn(getattr(staff, method)(url).status_code, (401, 403))
 
     def foreign_kwargs(self, kind, which="stranger"):
-        if kind in ("child", "makeup"):
+        if kind in ("child", "makeup", "child-note"):
             kwargs = {
                 "child_id": {
                     "stranger": self.stranger_child.id,
@@ -154,6 +156,8 @@ class PortalIsolationTests(PortalAuthBase):
             }
             if kind == "makeup":
                 kwargs["attendance_id"] = uuid.uuid4()
+            if kind == "child-note":
+                kwargs["note_id"] = uuid.uuid4()
             return kwargs
         if kind == "session":
             return {"session_id": self.stranger_session.id if which != "missing" else uuid.uuid4()}
