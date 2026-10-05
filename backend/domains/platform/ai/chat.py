@@ -45,8 +45,9 @@ MAX_TOOL_ROUNDS = 8
 MAX_TOOL_CHARS = 16000
 MAX_LIST_ITEMS = 40
 
-# Телефоны, почта, фото — не в модель. Ключ ответа API совпал — поле убрано.
-HIDDEN_KEYS = re.compile(r"phone|whatsapp|email|photo|avatar|password|token", re.IGNORECASE)
+# Телефоны, почта, фото, медицинские заметки — не в модель (ADR-0008). Ключ
+# ответа API совпал — поле убрано.
+HIDDEN_KEYS = re.compile(r"phone|whatsapp|email|photo|avatar|password|token|medical", re.IGNORECASE)
 # Служебное для экранов, модели только мешает и съедает место.
 NOISE_KEYS = re.compile(
     r"^(organization|updated_at|deleted_at|next|previous|permissions|allowed_transitions|show_money"
@@ -297,7 +298,7 @@ TOOLS = [
     ),
     _tool(
         "child_card",
-        "Карточка ребёнка: родители, группы, абонементы, долг, медицинские заметки, последние события.",
+        "Карточка ребёнка: родители, группы, абонементы, долг, последние события.",
         {"child_id": {"type": "string"}},
         ["child_id"],
         run=lambda user, a: api_get(user, f"clients/children/{_id(a['child_id'])}/card/"),

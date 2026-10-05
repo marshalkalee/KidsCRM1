@@ -258,7 +258,8 @@ def child_brief(child, user) -> dict:
             .order_by("-created_at")[:5]
         ]
         or None,
-        "медицинские заметки": child.medical_notes or None,
+        # Медицинские заметки в модель не уходят (TRU-156, ADR-0008): данные о
+        # здоровье ребёнка, а для звонка родителю они не нужны.
     }
     if can_view_client_money(user):
         subscription = (
