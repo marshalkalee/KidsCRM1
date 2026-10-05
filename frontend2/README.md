@@ -1,7 +1,7 @@
 # frontend2 — веб KidsCRM (React)
 
 React 19 + Vite + Tailwind v4 + react-router. Ходит только в REST API
-`/api/v1/` с JWT — см. [ADR-004](../backend/docs/adr-004-frontend-spa.md).
+`/api/v1/` с JWT — см. [ADR-004](../docs/adr/0004-frontend-spa.md).
 Запуск и сборка — в корневом [README](../README.md#фронтенд-frontend2).
 
 ## Как устроено

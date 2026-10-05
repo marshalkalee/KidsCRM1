@@ -8,15 +8,14 @@
 
 | № | Название | Статус |
 |---|---|---|
-| 0001 | Модель мультитенантности | на ветке `feature/ADR-001-multitenancy` — перенести сюда при мерже |
-| 0002 | Стек, структура репозитория и формат API | `backend/docs/adr-002-stack-repo-api`; раздел «Frontend» заменён ADR-004 |
-| 0003 | Абстракция провайдера оплаты | `backend/docs/adr-003-payment-provider-abstraction.md` |
-| 0004 | Фронтенд — React SPA (frontend2) поверх REST API | `backend/docs/adr-004-frontend-spa.md` — принято |
-| 0005 | Ребёнок-кандидат для пробного занятия | предложено в TRU-100, требуется ревью Анель |
+| 0001 | Модель мультитенантности | [`0001-multitenancy.md`](0001-multitenancy.md) |
+| 0002 | Стек, структура репозитория и формат API | [`0002-stack-repo-api.md`](0002-stack-repo-api.md); раздел «Frontend» заменён ADR-004 |
+| 0003 | Абстракция провайдера оплаты | [`0003-payment-provider-abstraction.md`](0003-payment-provider-abstraction.md) |
+| 0004 | Фронтенд — React SPA (frontend2) поверх REST API | [`0004-frontend-spa.md`](0004-frontend-spa.md) — принято |
+| 0005 | Ребёнок-кандидат для пробного занятия | [`0005-trial-candidate-child.md`](0005-trial-candidate-child.md) — предложено в TRU-100, требуется ревью Анель |
 | 0006 | Аналитика: считать на лету с кэшем, снимки для истории | [`0006-analytics-aggregates.md`](0006-analytics-aggregates.md) — TRU-118 |
 | 0007 | Код входа родителя: каналы и провайдеры для Казахстана | [`0007-otp-provider.md`](0007-otp-provider.md) — предложено, TRU-134 |
 
-ADR-001 и ADR-002 пока лежат в `backend/docs/` на своих ветках (это было
-до появления соглашения о единой папке `docs/adr/` в корне). При мерже
-этих веток в `main` — переместить оба файла сюда и добавить расширение
-`.md`, без изменения содержания.
+ADR-001…004 до 05.10.2026 лежали в `backend/docs/` (до соглашения о единой
+папке); перенесены сюда в TRU-151 без изменения содержания. Новые ADR — только
+в `docs/adr/`.

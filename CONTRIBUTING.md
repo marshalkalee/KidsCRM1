@@ -6,7 +6,7 @@
 
 - `feature/...` — новая функциональность (`feature/attendance-checkin`)
 - `fix/...` — исправление бага (`fix/subscription-remaining-count`)
-- `docs/...` — документация, ADR (`docs/adr-003-...`)
+- `docs/...` — документация, ADR (`docs/adr/NNNN-slug.md`, реестр — `docs/adr/README.md`)
 - `chore/...` — инфраструктура, зависимости, конфиги без изменения поведения
 
 Для задач, привязанных к ADR или тикету, слаг включает номер:
