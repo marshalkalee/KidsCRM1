@@ -2001,5 +2001,10 @@
  "Перенесено с {date}, {time}": "Moved from {date}, {time}",
  "Причина переноса: {reason}": "Reason for rescheduling: {reason}",
  "Выберите причину переноса": "Choose a reason for rescheduling",
- "Причина переноса": "Reason for rescheduling"
+ "Причина переноса": "Reason for rescheduling",
+ "Загруженный файл с ФИО, датами рождения и телефонами уходит во внешний ИИ-сервис целиком.": "The uploaded file with names, birth dates and phone numbers is sent to an external AI service in full.",
+ "Имена детей и родителей уходят во внешний ИИ-сервис только метками. Две функции ниже отправляют фото или файл как есть — включайте, если центр согласен.": "Children's and parents' names reach the external AI service only as labels. The two features below send a photo or a file as is — turn them on if the centre agrees.",
+ "Отметка посещаемости по фото журнала": "Attendance from a photo of the register",
+ "Приведение файла клиентов в порядок при импорте": "Tidying up the client file on import",
+ "Фото бумажного журнала с именами детей уходит во внешний ИИ-сервис, чтобы распознать отметки.": "A photo of the paper register with children's names is sent to an external AI service to read the marks."
 }
