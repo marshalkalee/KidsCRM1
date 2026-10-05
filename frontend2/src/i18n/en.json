@@ -1955,7 +1955,7 @@
  "Перенесено с {date}, {time}": "Moved from {date}, {time}",
  "Причина переноса: {reason}": "Reason for rescheduling: {reason}",
  "Выберите причину переноса": "Choose a reason for rescheduling",
- "Причина переноса": "Reason for rescheduling"
+ "Причина переноса": "Reason for rescheduling",
  "Администраторы": "Administrators",
  "Видят абонементы, оплаты и долги": "See subscriptions, payments and debts",
  "Видят аналитику": "See analytics",
