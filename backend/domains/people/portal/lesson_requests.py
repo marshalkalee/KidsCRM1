@@ -101,6 +101,7 @@ def _assignee(organization):
 
 def _create_task(parent_request):
     lesson = parent_request.lesson
+    branch = lesson.group.branch if lesson.group_id else getattr(lesson.room, "branch", None)
     local_start = timezone.localtime(lesson.starts_at)
     action = "запись" if parent_request.type == ParentLessonRequest.Type.ENROLL else "отмена"
     kind = " на отработку" if parent_request.kind == ParentLessonRequest.Kind.MAKEUP else ""
@@ -118,6 +119,9 @@ def _create_task(parent_request):
         source_key=f"parent-request:{parent_request.id}",
         defaults={
             "assigned_to": _assignee(parent_request.organization),
+            "child": parent_request.child,
+            "branch": branch,
+            "source": Task.Source.AUTO,
             "due_at": timezone.now() + datetime.timedelta(hours=4),
             "title": f"Запрос родителя: {action}{kind}",
             "description": (

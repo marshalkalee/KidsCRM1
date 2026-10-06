@@ -37,6 +37,7 @@ api_v1_patterns = [
     path("portal/", include("domains.people.portal.urls")),
     # Объявления для кабинета родителя — сторона сотрудников (TRU-140).
     path("announcements/", include("domains.people.portal.staff_urls")),
+    path("parent-requests/", include("domains.people.portal.staff_requests_urls")),
 ]
 
 urlpatterns = [

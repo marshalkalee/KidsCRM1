@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { BellRing, Building2, CalendarX2, Gauge, Globe } from 'lucide-react'
 import api from '../api/axios'
-import { Button, Card, CardHeader, Checkbox, ErrorState, Field, Input, Select, Skeleton, apiErrorMessage, useToast } from '../ui'
+import { Button, Card, CardHeader, Checkbox, ErrorState, Field, Input, Select, Skeleton, apiErrorMessage, cn, useToast } from '../ui'
 import { t } from '../i18n'
 import { entityNameInputProps } from '../utils/formValidation'
 
@@ -29,11 +30,14 @@ const RULES = [
  * Форма настроек организации — одна на экран «Организация» и шаг мастера
  * онбординга (TRU-86). Сохранение тем же путём, что у старого веба:
  * organization/settings/ → OrganizationSettingsForm.
+ * wide — экран «Организация»: карточки в две колонки на всю ширину и
+ * панель «Сохранить» всегда внизу экрана; в мастере — одна колонка.
  * secondaryAction — дополнительная кнопка слева от «Сохранить» (в мастере — «Пропустить»).
  */
-export default function OrganizationForm({ onSaved, submitLabel = t('Сохранить'), secondaryAction }) {
+export default function OrganizationForm({ onSaved, submitLabel = t('Сохранить'), secondaryAction, wide = false }) {
   const toast = useToast()
   const [form, setForm] = useState(null)
+  const [saved, setSaved] = useState(null)
   const [timezones, setTimezones] = useState([])
   const [errors, setErrors] = useState({})
   const [status, setStatus] = useState('loading')
@@ -41,12 +45,13 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
 
   const load = () => {
     api.get('organization/settings/')
-      .then(({ data: { timezones: list, ...values } }) => { setForm(values); setTimezones(list); setStatus('ready') })
+      .then(({ data: { timezones: list, ...values } }) => { setForm(values); setSaved(values); setTimezones(list); setStatus('ready') })
       .catch(() => setStatus('error'))
   }
   useEffect(load, [])
 
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
+  const dirty = form && saved && JSON.stringify(form) !== JSON.stringify(saved)
 
   async function submit(e) {
     e.preventDefault()
@@ -55,6 +60,7 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
     try {
       const { data: { timezones: _list, ...values } } = await api.put('organization/settings/', form)
       setForm(values)
+      setSaved(values)
       toast.success(t('Настройки сохранены'))
       onSaved?.(values)
     } catch (err) {
@@ -66,154 +72,211 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
     }
   }
 
-  return (
-    <>
-      {status === 'loading' && <Skeleton className="h-96 max-w-3xl" />}
-      {status === 'error' && <Card><ErrorState onRetry={() => { setStatus('loading'); load() }} /></Card>}
-      {status === 'ready' && (
-        <form onSubmit={submit} className="max-w-3xl space-y-4">
-          <Card>
-            <CardHeader title={t('Основное')} />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={t('Название')} required error={errors.name}>
-                {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name || ''} onChange={e => set('name', e.target.value)} required {...entityNameInputProps} />}
-              </Field>
-              <Field label={t('Часовой пояс')} hint={t('От него зависят время занятий и «сегодня» в отчётах')} error={errors.timezone}>
-                {({ id, invalid }) => (
-                  <Select id={id} invalid={invalid} value={form.timezone || ''} onChange={e => set('timezone', e.target.value)}>
-                    {timezones.map(tz => <option key={tz} value={tz}>{tz.replace('_', ' ')}</option>)}
-                  </Select>
-                )}
-              </Field>
-            </div>
-          </Card>
+  async function copyKey() {
+    try {
+      await navigator.clipboard.writeText(form.public_api_key)
+      toast.success(t('Ключ скопирован'))
+    } catch {
+      toast.error(t('Не удалось скопировать — выделите и скопируйте вручную'))
+    }
+  }
 
-          <Card>
-            <CardHeader
-              title={t('Отмена занятия родителем')}
-              description={t('Родитель сможет предупредить о пропуске и позже срока, но система заранее покажет правило списания.')}
-            />
-            <div className="space-y-4">
-              <Field
-                label={t('Срок своевременного предупреждения')}
-                hint={t('Не позднее чем за указанное число часов до начала занятия.')}
-                error={errors.parent_cancel_notice_hours}
-              >
-                {({ id, invalid }) => (
-                  <div className="flex max-w-xs items-center gap-2">
-                    <Input
-                      id={id}
-                      type="number"
-                      min={0}
-                      max={168}
-                      invalid={invalid}
-                      value={form.parent_cancel_notice_hours ?? 24}
-                      onChange={e => set('parent_cancel_notice_hours', e.target.value === '' ? '' : Number(e.target.value))}
-                    />
-                    <span className="text-sm text-ink-muted">{t('часов')}</span>
-                  </div>
-                )}
-              </Field>
-              <Checkbox
-                checked={Boolean(form.parent_cancel_charge_on_time)}
-                onChange={e => set('parent_cancel_charge_on_time', e.target.checked)}
-                label={t('Списывать занятие даже при своевременном предупреждении')}
+  if (status === 'loading') return <Skeleton className={cn('h-96', !wide && 'max-w-3xl')} />
+  if (status === 'error') return <Card><ErrorState onRetry={() => { setStatus('loading'); load() }} /></Card>
+
+  const main = (
+    <Section icon={Building2} title={t('Основное')} wide={wide}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t('Название')} required error={errors.name}>
+          {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name || ''} onChange={e => set('name', e.target.value)} required {...entityNameInputProps} />}
+        </Field>
+        <Field label={t('Часовой пояс')} hint={t('От него зависят время занятий и «сегодня» в отчётах')} error={errors.timezone}>
+          {({ id, invalid }) => (
+            <Select id={id} invalid={invalid} value={form.timezone || ''} onChange={e => set('timezone', e.target.value)}>
+              {timezones.map(tz => <option key={tz} value={tz}>{tz.replace('_', ' ')}</option>)}
+            </Select>
+          )}
+        </Field>
+      </div>
+    </Section>
+  )
+
+  const cancel = (
+    <Section
+      icon={CalendarX2}
+      title={t('Отмена занятия родителем')}
+      description={t('Родитель сможет предупредить о пропуске и позже срока, но система заранее покажет правило списания.')}
+      wide={wide}
+    >
+      <div className="space-y-4">
+        <Field
+          label={t('Срок своевременного предупреждения')}
+          hint={t('Не позднее чем за указанное число часов до начала занятия.')}
+          error={errors.parent_cancel_notice_hours}
+        >
+          {({ id, invalid }) => (
+            <div className="flex max-w-[12rem] items-center gap-2">
+              <Input
+                id={id}
+                type="number"
+                min={0}
+                max={168}
+                className="text-right"
+                invalid={invalid}
+                value={form.parent_cancel_notice_hours ?? 24}
+                onChange={e => set('parent_cancel_notice_hours', e.target.value === '' ? '' : Number(e.target.value))}
               />
-              <p className="text-[13px] text-ink-muted">
-                {form.parent_cancel_charge_on_time
-                  ? t('При любом предупреждении занятие списывается по правилам центра.')
-                  : t('Своевременное предупреждение не списывает занятие; позднее — списывает.')}
-              </p>
+              <span className="text-sm text-ink-muted">{t('часов')}</span>
             </div>
-          </Card>
+          )}
+        </Field>
+        <div className="rounded-lg bg-surface-muted px-3 py-2.5">
+          <Checkbox
+            checked={Boolean(form.parent_cancel_charge_on_time)}
+            onChange={e => set('parent_cancel_charge_on_time', e.target.checked)}
+            label={<span className="text-ink">{t('Списывать занятие даже при своевременном предупреждении')}</span>}
+          />
+          <p className="mt-1.5 pl-7 text-[13px] text-ink-muted">
+            {form.parent_cancel_charge_on_time
+              ? t('При любом предупреждении занятие списывается по правилам центра.')
+              : t('Своевременное предупреждение не списывает занятие; позднее — списывает.')}
+          </p>
+        </div>
+      </div>
+    </Section>
+  )
 
-          <Card>
-            <CardHeader title={t('Приём заявок с сайта')} description={t('Для формы на сайте центра, которая отправляет заявки напрямую в CRM.')} />
-            <div className="space-y-4">
-              <Field label={t('Домен сайта')} hint={t('Форма сможет слать заявки только с этого адреса')} error={errors.website_domain}>
-                {({ id, invalid }) => (
-                  <Input id={id} invalid={invalid} placeholder="https://trueballet.kz" value={form.website_domain || ''} onChange={e => set('website_domain', e.target.value)} />
-                )}
-              </Field>
-              <div>
-                <span className="block text-sm font-semibold text-ink">{t('Ключ для формы')}</span>
-                <div className="mt-1 flex items-center gap-2">
-                  <code className="min-w-0 flex-1 truncate rounded-md bg-surface-muted px-2 py-1.5 text-[13px]">{form.public_api_key}</code>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(form.public_api_key)
-                        toast.success(t('Ключ скопирован'))
-                      } catch {
-                        toast.error(t('Не удалось скопировать — выделите и скопируйте вручную'))
-                      }
-                    }}
-                  >
-                    {t('Копировать')}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader title={t('Пороги автостатусов')} description={t('Когда система сама помечает ребёнка или группу.')} />
-            <div className="divide-y divide-line">
-              {THRESHOLDS.map(th => (
-                <div key={th.key} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-                  <label htmlFor={th.key} className="min-w-0">
-                    <span className="block text-sm font-semibold text-ink">{th.label}</span>
-                    <span className="block text-[13px] text-ink-muted">{th.hint}</span>
-                  </label>
-                  <div className="shrink-0">
-                    <div className="flex items-center gap-2 sm:w-64">
-                      <div className="w-20 shrink-0">
-                        <Input
-                          id={th.key}
-                          type="number"
-                          min={th.min ?? 0}
-                          max={th.max}
-                          className="text-right"
-                          invalid={Boolean(errors[th.key])}
-                          value={form[th.key] ?? ''}
-                          onChange={e => set(th.key, e.target.value === '' ? '' : Number(e.target.value))}
-                        />
-                      </div>
-                      <span className="whitespace-nowrap text-sm text-ink-muted">{th.suffix}</span>
-                    </div>
-                    {errors[th.key] && <p className="mt-1 text-xs text-danger-600">{errors[th.key][0]}</p>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card>
-          <CardHeader title={t('Автоправила')} description={t('Какие напоминания создаёт система сама — без них список задач останется пустым.')} />
-            <div className="divide-y divide-line">
-              {RULES.map(rule => (
-                <label key={rule.key} htmlFor={rule.key} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                  <span className="text-sm text-ink">{rule.label}</span>
-                  <input
-                    id={rule.key}
-                    type="checkbox"
-                    checked={Boolean(form[rule.key])}
-                    onChange={e => set(rule.key, e.target.checked)}
-                  />
-                </label>
-              ))}
-            </div>
-          </Card>
-
-          <div className="flex flex-wrap justify-end gap-2">
-            {secondaryAction}
-            <Button variant="primary" type="submit" loading={saving}>{submitLabel}</Button>
+  const site = (
+    <Section icon={Globe} title={t('Приём заявок с сайта')} description={t('Для формы на сайте центра, которая отправляет заявки напрямую в CRM.')} wide={wide}>
+      <div className="space-y-4">
+        <Field label={t('Домен сайта')} hint={t('Форма сможет слать заявки только с этого адреса')} error={errors.website_domain}>
+          {({ id, invalid }) => (
+            <Input id={id} invalid={invalid} placeholder="https://trueballet.kz" value={form.website_domain || ''} onChange={e => set('website_domain', e.target.value)} />
+          )}
+        </Field>
+        <div>
+          <p className="font-btn mb-1.5 text-[10px] font-bold uppercase tracking-[0.07em] text-ink-subtle">{t('Ключ для формы')}</p>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-surface-muted px-3 py-2 text-[13px] text-ink">{form.public_api_key}</code>
+            <Button type="button" size="sm" variant="secondary" onClick={copyKey}>{t('Копировать')}</Button>
           </div>
-        </form>
-      )}
-    </>
+        </div>
+      </div>
+    </Section>
+  )
+
+  const thresholds = (
+    <Section icon={Gauge} title={t('Пороги автостатусов')} description={t('Когда система сама помечает ребёнка или группу.')} wide={wide}>
+      <div className={cn('grid grid-cols-1 gap-3', wide && 'lg:grid-cols-2')}>
+        {THRESHOLDS.map(th => (
+          <div key={th.key} className="flex flex-col gap-2 rounded-lg border border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <label htmlFor={th.key} className="min-w-0">
+              <span className="block text-sm font-semibold text-ink">{th.label}</span>
+              <span className="block text-[13px] text-ink-muted">{th.hint}</span>
+            </label>
+            <div className="shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-20 shrink-0">
+                  <Input
+                    id={th.key}
+                    type="number"
+                    min={th.min ?? 0}
+                    max={th.max}
+                    className="text-right"
+                    invalid={Boolean(errors[th.key])}
+                    value={form[th.key] ?? ''}
+                    onChange={e => set(th.key, e.target.value === '' ? '' : Number(e.target.value))}
+                  />
+                </div>
+                <span className="w-32 text-sm text-ink-muted sm:whitespace-nowrap">{th.suffix}</span>
+              </div>
+              {errors[th.key] && <p className="mt-1 text-xs text-danger-600">{errors[th.key][0]}</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Section>
+  )
+
+  const rules = (
+    <Section icon={BellRing} title={t('Автоправила')} description={t('Какие напоминания создаёт система сама — без них список задач останется пустым.')} wide={wide}>
+      <div className="divide-y divide-line">
+        {RULES.map(rule => (
+          <div key={rule.key} className="py-2.5 first:pt-0 last:pb-0">
+            <Checkbox
+              id={rule.key}
+              checked={Boolean(form[rule.key])}
+              onChange={e => set(rule.key, e.target.checked)}
+              label={<span className="text-sm text-ink">{rule.label}</span>}
+            />
+          </div>
+        ))}
+      </div>
+    </Section>
+  )
+
+  if (!wide) {
+    return (
+      <form onSubmit={submit} className="max-w-3xl space-y-4">
+        {main}
+        {cancel}
+        {site}
+        {thresholds}
+        {rules}
+        <div className="flex flex-wrap justify-end gap-2">
+          {secondaryAction}
+          <Button variant="primary" type="submit" loading={saving}>{submitLabel}</Button>
+        </div>
+      </form>
+    )
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+        {main}
+        {cancel}
+      </div>
+      {thresholds}
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+        {rules}
+        {site}
+      </div>
+      {/* «Сохранить» всегда под рукой: форма длинная, кнопка внизу терялась. */}
+      <div className="sticky bottom-3 z-10 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-pop backdrop-blur">
+        <p className={cn('mr-auto text-[13px]', dirty ? 'font-semibold text-warning-600' : 'text-ink-subtle')}>
+          {dirty ? t('Есть несохранённые изменения') : t('Все изменения сохранены')}
+        </p>
+        {dirty && <Button type="button" variant="ghost" onClick={() => { setForm(saved); setErrors({}) }}>{t('Отменить')}</Button>}
+        {secondaryAction}
+        <Button variant="primary" type="submit" loading={saving} disabled={!dirty}>{submitLabel}</Button>
+      </div>
+    </form>
+  )
+}
+
+/** Раздел настроек: на экране «Организация» — с иконкой, как «Доступ сотрудников». */
+function Section({ icon: Icon, title, description, wide, children }) {
+  if (!wide) {
+    return (
+      <Card>
+        <CardHeader title={title} description={description} />
+        {children}
+      </Card>
+    )
+  }
+  return (
+    <Card>
+      <div className="mb-4 flex items-start gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+          <Icon className="size-[18px]" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-bold text-ink">{title}</h2>
+          {description && <p className="mt-0.5 text-[13px] text-ink-muted">{description}</p>}
+        </div>
+      </div>
+      {children}
+    </Card>
   )
 }

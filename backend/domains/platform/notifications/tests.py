@@ -207,7 +207,14 @@ class NotificationRolesAndBranchesTests(NotificationFixtures):
     def test_kinds_by_role(self):
         self.assertEqual(
             set(by_kind(client_for(self.owner).get(URL))),
-            {"new_leads", "unmarked_lessons", "overdue_debts", "no_subscription", "overdue_tasks"},
+            {
+                "new_leads",
+                "parent_requests",
+                "unmarked_lessons",
+                "overdue_debts",
+                "no_subscription",
+                "overdue_tasks",
+            },
         )
         self.assertEqual(set(by_kind(client_for(self.teacher).get(URL))), {"unmarked_lessons"})
         self.assertEqual(

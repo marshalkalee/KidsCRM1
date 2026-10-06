@@ -223,7 +223,10 @@ class Attendance(TenantModel):
         enrollment = LessonEnrollment.objects.filter(
             lesson_id=self.lesson_id, child_id=self.child_id, cancelled_at__isnull=True
         ).first()
-        if enrollment is not None:
+        if enrollment is not None and enrollment.kind in (
+            LessonEnrollment.Kind.MAKEUP,
+            LessonEnrollment.Kind.TRIAL,
+        ):
             self.consumed_from_subscription = False
             self.subscription_id = None
             self.consume_outcome = f"{enrollment.kind}_no_charge"

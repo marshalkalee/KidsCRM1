@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ClipboardCheck, Inbox, ListTodo, Wallet, WalletCards } from 'lucide-react'
+import { ChevronRight, ClipboardCheck, Inbox, ListTodo, MessageSquareText, Wallet, WalletCards } from 'lucide-react'
 import api from '../../api/axios'
 import { cn, money, plural } from '../../ui'
 import { t } from '../../i18n'
@@ -10,6 +10,12 @@ const POLL_MS = 10_000
 
 // Вид уведомления → иконка, заголовок, строка с числом (TRU-72).
 const KINDS = {
+  parent_requests: {
+    icon: MessageSquareText,
+    tone: 'bg-warning-50 text-warning-600',
+    get title() { return t('Запросы родителей') },
+    text: item => t('Ожидают решения: {n}', { n: item.count }),
+  },
   new_leads: {
     icon: Inbox,
     tone: 'bg-info-50 text-info-600',
