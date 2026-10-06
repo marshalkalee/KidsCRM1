@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ClipboardCheck, Inbox, ListTodo, Wallet, WalletCards } from 'lucide-react'
+import { ChevronRight, ClipboardCheck, Inbox, ListTodo, MessageSquareText, Wallet, WalletCards } from 'lucide-react'
 import api from '../../api/axios'
 import { cn, money, plural } from '../../ui'
 import { t } from '../../i18n'
 
 export const NOTIFICATIONS_EVENT = 'kc:notifications-changed'
-const POLL_MS = 60_000
+const POLL_MS = 10_000
 
 // Вид уведомления → иконка, заголовок, строка с числом (TRU-72).
 const KINDS = {
+  parent_requests: {
+    icon: MessageSquareText,
+    tone: 'bg-warning-50 text-warning-600',
+    get title() { return t('Запросы родителей') },
+    text: item => t('Ожидают решения: {n}', { n: item.count }),
+  },
   new_leads: {
     icon: Inbox,
     tone: 'bg-info-50 text-info-600',
@@ -54,16 +60,23 @@ export function useNotifications() {
   }, [])
   useEffect(() => {
     load()
-    const timer = setInterval(load, POLL_MS)
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') load()
+    }
+    const timer = setInterval(refreshVisible, POLL_MS)
     const onEvent = () => load()
     window.addEventListener(NOTIFICATIONS_EVENT, onEvent)
     window.addEventListener('kc:branch-changed', onEvent)
     window.addEventListener('kc:lead-created', onEvent)
+    window.addEventListener('focus', refreshVisible)
+    document.addEventListener('visibilitychange', refreshVisible)
     return () => {
       clearInterval(timer)
       window.removeEventListener(NOTIFICATIONS_EVENT, onEvent)
       window.removeEventListener('kc:branch-changed', onEvent)
       window.removeEventListener('kc:lead-created', onEvent)
+      window.removeEventListener('focus', refreshVisible)
+      document.removeEventListener('visibilitychange', refreshVisible)
     }
   }, [load])
 

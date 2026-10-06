@@ -22,7 +22,7 @@ function QuickActions() {
   return (
     <div className="flex flex-wrap gap-2">
       {can('can_manage_leads') && <Button icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>}
-      {can('can_accept_payments') && <Button to="/debts" variant="primary" icon={Wallet}>{t('Принять оплату')}</Button>}
+      {can('can_accept_payments') && <Button to="/money?tab=debts" variant="primary" icon={Wallet}>{t('Принять оплату')}</Button>}
     </div>
   )
 }

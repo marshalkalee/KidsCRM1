@@ -67,6 +67,13 @@ class PDFlowFixtures(AIFixtures):
         super().setUp()
         self.owner.full_name = "Жумабекова Сауле"
         self.owner.save(update_fields=["full_name"])
+        # Опись — про то, что уходит, когда функция включена.
+        self.org.settings = {
+            **self.org.settings,
+            "ai_attendance_photo_enabled": True,
+            "ai_import_clean_enabled": True,
+        }
+        self.org.save(update_fields=["settings"])
         self.api = APIClient(raise_request_exception=False)
         self.api.force_authenticate(user=self.owner)
         branch = Branch.objects.create(organization=self.org, name="Центр")

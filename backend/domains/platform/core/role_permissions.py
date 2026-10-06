@@ -235,6 +235,11 @@ def can_manage_announcements(user) -> bool:
     return user.role in CHILD_MANAGE_ROLES
 
 
+def can_manage_parent_requests(user) -> bool:
+    """Родительские запросы разбирают те же роли, которые ведут карточки детей."""
+    return user.role in CHILD_MANAGE_ROLES
+
+
 def get_user_permissions(user) -> dict:
     return {
         "can_view_financials": can_view_financials(user),
@@ -257,4 +262,5 @@ def get_user_permissions(user) -> dict:
         "can_view_analytics": can_view_analytics(user),
         "can_use_ai_chat": can_use_ai_chat(user),
         "can_manage_announcements": can_manage_announcements(user),
+        "can_manage_parent_requests": can_manage_parent_requests(user),
     }

@@ -21,7 +21,6 @@ from domains.money.subscriptions.models import (
     Subscription,
     SubscriptionLedgerEntry,
 )
-from domains.platform.tenants.org_settings import KASPI_PAYMENT_DETAILS, get_org_setting
 from domains.scheduling.groups.models import GroupMembership
 from domains.scheduling.schedule.models import Lesson
 
@@ -153,8 +152,5 @@ def money(child):
         "history": [_history_row(s) for s in history if not current or s.pk != current.pk],
         "payments": payments(child),
         "to_pay": str(debt),
-        "how_to_pay": {
-            "kaspi": get_org_setting(organization, KASPI_PAYMENT_DETAILS),
-            "contacts": contacts(child),
-        },
+        "how_to_pay": {"contacts": contacts(child)},
     }

@@ -101,9 +101,15 @@ export default function ParentSchedule() {
   const [anchor, setAnchor] = useState(() => new Date())
   const makeupId = searchParams.get('makeup')
   const period = periodFor(view, anchor)
-  const schedule = usePortalData(scheduleUrl(child?.id, period))
+  const schedule = usePortalData(scheduleUrl(child?.id, period), {
+    refreshInterval: 10_000,
+    refreshOnFocus: true,
+  })
   const makeup = usePortalData(makeupUrl(child?.id, makeupId))
-  const requests = usePortalData(requestsUrl(child?.id))
+  const requests = usePortalData(requestsUrl(child?.id), {
+    refreshInterval: 10_000,
+    refreshOnFocus: true,
+  })
   const options = usePortalData(requestOptionsUrl(child?.id))
   const [requestDialog, setRequestDialog] = useState(null)
 
@@ -187,7 +193,7 @@ export default function ParentSchedule() {
                 <h2 id="upcoming-lessons-title" className="text-base font-bold text-ink">{next ? t('Дальше по расписанию') : t('Занятия за период')}</h2>
                 <p className="mt-0.5 text-[13px] text-ink-muted">{t('Прошедшие отметки и списания находятся в истории посещений.')}</p>
               </div>
-              <div className="grid items-start gap-3 xl:grid-cols-2">
+              <div className="grid items-stretch gap-3 xl:grid-cols-2">
                 {Object.entries(grouped).map(([date, rows]) => (
                   <DayCard key={date} date={date} rows={rows} onCancel={row => setRequestDialog({ type: 'cancel', row })} />
                 ))}
@@ -416,7 +422,7 @@ function NextLesson({ row, onCancel }) {
 
 function DayCard({ date, rows, onCancel }) {
   return (
-    <Card className="p-0" padded={false}>
+    <Card className="h-full p-0" padded={false}>
       <div className="border-b border-line px-4 py-3 sm:px-5">
         <h3 className="font-bold capitalize text-ink">{dateLabel(`${date}T12:00:00`)}</h3>
       </div>
@@ -437,7 +443,9 @@ function DayCard({ date, rows, onCancel }) {
                   <LessonBadges row={row} />
                 </div>
                 <LessonMeta row={row} className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px]" />
-                {row.can_request_cancel && <Button className="mt-3" onClick={() => onCancel(row)}>{t('Не сможем прийти')}</Button>}
+                <div className="mt-3 min-h-10">
+                  {row.can_request_cancel && <Button onClick={() => onCancel(row)}>{t('Не сможем прийти')}</Button>}
+                </div>
               </div>
             </div>
           </li>
@@ -483,6 +491,11 @@ function RequestHistory({ data, loading }) {
                 <p className={`mt-1 text-xs font-semibold ${row.will_be_charged ? 'text-warning-600' : 'text-success-600'}`}>
                   {row.notice_is_timely ? t('Предупреждение отправлено в срок.') : t('Предупреждение отправлено позже срока.')}{' '}
                   {row.will_be_charged ? t('Занятие спишется.') : t('Занятие не спишется.')}
+                </p>
+              )}
+              {row.status === 'rejected' && row.rejection_reason && (
+                <p className="mt-2 rounded-md bg-danger-50 px-2.5 py-2 text-xs text-danger-700">
+                  <span className="font-semibold">{t('Причина отказа')}:</span> {row.rejection_reason}
                 </p>
               )}
             </li>

@@ -1,6 +1,8 @@
+import { useContext } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronLeft, Inbox, Loader2 } from 'lucide-react'
 import { cn } from './cn'
+import { PageGroupContext } from './pageGroup'
 import { t } from '../i18n'
 
 export function Card({ className, children, padded = true, ...rest }) {
@@ -48,6 +50,22 @@ export function Badge({ tone = 'neutral', dot = false, className, children }) {
  * В шапке приложения название раздела не повторяется.
  */
 export function PageHeader({ title, description, actions, back }) {
+  const group = useContext(PageGroupContext)
+  if (group) {
+    // Вкладка раздела: заголовок — раздела, описание и кнопки — вкладки.
+    return (
+      <div className="mb-5 rounded-xl border border-line bg-surface px-5 pt-5 sm:px-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-[22px] font-bold leading-tight tracking-tight text-ink">{group.title}</h1>
+            {description && <p className="mt-1 text-[13px] text-ink-subtle">{description}</p>}
+          </div>
+          {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+        </div>
+        <div className="mt-4 pb-4 sm:pb-0">{group.tabs}</div>
+      </div>
+    )
+  }
   return (
     <div className="mb-5 flex flex-col gap-4 rounded-xl border border-line bg-surface px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
       <div className="min-w-0">

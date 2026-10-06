@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, CalendarDays, Clock, MapPin, Megaphone, Snowflake, UserRound, Wallet } from 'lucide-react'
+import { ArrowRight, BookOpen, CalendarDays, Clock, MapPin, Megaphone, Snowflake, UserRound, Wallet } from 'lucide-react'
 import { Card, ErrorState, Skeleton, cn, money, plural } from '../../ui'
 import { locale, t } from '../../i18n'
 import { usePortalData } from '../api'
@@ -51,10 +51,40 @@ export default function ParentHome() {
   return (
     <div className="space-y-3">
       <NextLesson lessons={data.next_lessons} today={data.today} left={child.status === 'left'} />
+      <CurrentHomework childId={child.id} />
       <SubscriptionCard subscription={data.subscription} />
-      <ToPay amount={Number(data.to_pay)} kaspi={data.payment?.kaspi} />
+      <ToPay amount={Number(data.to_pay)} />
       <News />
     </div>
+  )
+}
+
+function CurrentHomework({ childId }) {
+  const { data } = usePortalData(`children/${childId}/notes/`, {
+    refreshInterval: 10_000,
+    refreshOnFocus: true,
+  })
+  const homework = data?.current_homework
+  if (!homework) return null
+  return (
+    <Link to="/parent/notes" className="block">
+      <Card className="border-brand-200 bg-gradient-to-br from-white to-brand-50 transition-shadow hover:shadow-pop">
+        <div className="flex items-start gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700"><BookOpen className="size-5" /></span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-semibold text-ink">{t('Актуальное домашнее задание')}</p>
+              {!homework.read && <span className="rounded-full bg-brand-600 px-2 py-0.5 text-[10px] font-bold text-white">{t('новое')}</span>}
+            </div>
+            <p className="mt-1 line-clamp-2 text-sm text-ink">{homework.body}</p>
+            <p className="mt-1 text-xs text-ink-muted">
+              {[homework.lesson.name, homework.valid_until && t('до {date}', { date: shortDate(homework.valid_until) })].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+          <ArrowRight className="mt-1 size-4 shrink-0 text-ink-subtle" />
+        </div>
+      </Card>
+    </Link>
   )
 }
 
@@ -160,7 +190,7 @@ function SubscriptionCard({ subscription: s }) {
   )
 }
 
-function ToPay({ amount, kaspi }) {
+function ToPay({ amount }) {
   if (!(amount > 0)) {
     return (
       <Card className="flex items-center gap-3 py-4">
@@ -169,22 +199,15 @@ function ToPay({ amount, kaspi }) {
       </Card>
     )
   }
-  const isLink = /^https?:\/\//.test(kaspi || '')
   return (
     <Card>
       <p className="font-btn text-[11px] font-bold uppercase tracking-[0.07em] text-ink-subtle">{t('К оплате')}</p>
       <p className="mt-1 text-[22px] font-bold text-ink">{money(amount)}</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        {isLink && (
-          <a href={kaspi} target="_blank" rel="noreferrer" className={cn('inline-flex h-10 items-center rounded-md bg-[#f14635] px-4 text-sm font-semibold text-white hover:brightness-95')}>
-            {t('Оплатить через Kaspi')}
-          </a>
-        )}
         <Link to="/parent/subscription" className="inline-flex h-10 items-center rounded-md border border-line-strong px-4 text-sm font-semibold text-ink">
           {t('Подробнее')}
         </Link>
       </div>
-      {kaspi && !isLink && <p className="mt-2 text-[13px] text-ink-muted">{t('Перевод через Kaspi: {details}', { details: kaspi })}</p>}
     </Card>
   )
 }

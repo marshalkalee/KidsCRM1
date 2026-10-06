@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { GraduationCap, UserCog } from 'lucide-react'
+import { GraduationCap, Sparkles, UserCog } from 'lucide-react'
 import api from '../api/axios'
 import { Card, CardHeader, Checkbox, ErrorState, PageHeader, Skeleton, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
@@ -37,6 +37,25 @@ const SECTIONS = [
       },
     ],
   },
+  {
+    // ADR-0008: эти функции отправляют внешнему ИИ то, что загрузил сотрудник,
+    // как есть — имена в них метками не заменить, поэтому включает центр.
+    icon: Sparkles,
+    get title() { return t('ИИ-помощник') },
+    get description() { return t('Имена детей и родителей уходят во внешний ИИ-сервис только метками. Две функции ниже отправляют фото или файл как есть — включайте, если центр согласен.') },
+    items: [
+      {
+        key: 'ai_attendance_photo_enabled',
+        get label() { return t('Отметка посещаемости по фото журнала') },
+        get hint() { return t('Фото бумажного журнала с именами детей уходит во внешний ИИ-сервис, чтобы распознать отметки.') },
+      },
+      {
+        key: 'ai_import_clean_enabled',
+        get label() { return t('Приведение файла клиентов в порядок при импорте') },
+        get hint() { return t('Загруженный файл с ФИО, датами рождения и телефонами уходит во внешний ИИ-сервис целиком.') },
+      },
+    ],
+  },
 ]
 
 /** Доступ сотрудников (TRU-153) — только владелец. Каждое переключение
@@ -69,7 +88,7 @@ export default function AccessSettings() {
 
   return (
     <div>
-      <PageHeader title={t('Доступ сотрудников')} description={t('Что видят роли сверх обычного. Изменения действуют сразу и записываются в журнал действий.')} />
+      <PageHeader back={{ to: '/settings/staff', label: t('Сотрудники') }} title={t('Доступ сотрудников')} description={t('Что видят роли сверх обычного. Изменения действуют сразу и записываются в журнал действий.')} />
       {error ? (
         <Card><ErrorState onRetry={load} /></Card>
       ) : values === null ? (

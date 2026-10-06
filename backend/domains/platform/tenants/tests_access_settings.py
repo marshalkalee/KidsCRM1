@@ -104,6 +104,8 @@ class AccessSettingsTests(APITestCase):
                 "teacher_sees_parent_phones": False,
                 "teacher_sees_finances": False,
                 "admin_sees_org_summary": False,
+                "ai_attendance_photo_enabled": False,
+                "ai_import_clean_enabled": False,
             },
         )
         teacher = self.permissions(self.teacher)
@@ -187,7 +189,6 @@ class AccessSettingsTests(APITestCase):
             "/api/v1/subscriptions/renewals/",
             f"/api/v1/subscriptions/?child_id={self.child.id}",
             f"/api/v1/payments/?child_id={self.child.id}",
-            f"/api/v1/payments/requests/?child_id={self.child.id}",
         ):
             self.assertEqual(client.get(url).status_code, 403, url)
 
