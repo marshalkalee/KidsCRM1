@@ -15,7 +15,8 @@ from domains.platform.tenants.org_settings import (
     get_org_setting,
 )
 
-from . import assist, chat, services
+from . import assist, chat, generations, recommendations, services
+from .models import AIGeneration, AIRecommendationState
 
 
 def _uuid_list(value):
@@ -65,6 +66,43 @@ def ai_status(request, version=None):
             "import_clean": enabled and _org_allows(request, AI_IMPORT_CLEAN_ENABLED),
         }
     )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([CanUseAIChat])
+def group_recommendations(request, version=None):
+    """Запуск не ждёт LLM; GET возвращает последнюю журнальную запись."""
+    if request.method == "POST":
+        generation = generations.enqueue(request.user.organization, "group_promotion")
+        return Response({"id": str(generation.id), "status": generation.status}, status=202)
+    generation = (
+        AIGeneration.objects.for_tenant(request.user.organization)
+        .filter(function="group_promotion")
+        .first()
+    )
+    if generation is None:
+        return Response({"generation": None, "recommendations": []})
+    return Response(
+        {
+            "generation": {
+                "id": str(generation.id),
+                "status": generation.status,
+                "created_at": generation.created_at,
+                "error": generation.error_detail,
+            },
+            "recommendations": generation.result.get("recommendations", []),
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([CanUseAIChat])
+def dismiss_recommendation(request, recommendation_id, version=None):
+    try:
+        state = recommendations.dismiss(request.user.organization, recommendation_id)
+    except AIRecommendationState.DoesNotExist:
+        return Response({"detail": "Рекомендация не найдена."}, status=404)
+    return Response({"id": str(state.id), "status": state.status})
 
 
 @api_view(["POST"])

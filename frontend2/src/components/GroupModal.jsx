@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/axios'
-import { Button, Field, Input, Modal, MultiSelect, Select, apiErrorMessage, useToast } from '../ui'
+import { Button, Checkbox, Field, Input, Modal, MultiSelect, Select, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
 import { entityNameInputProps } from '../utils/formValidation'
 
@@ -23,6 +23,7 @@ export default function GroupModal({ group, onClose, onSaved }) {
     age_min: group?.age_min ?? '',
     age_max: group?.age_max ?? '',
     status: group?.status || 'active',
+    exclude_from_ai_recommendations: group?.exclude_from_ai_recommendations || false,
   })
   const [options, setOptions] = useState({ branches: [], directions: [], teachers: [] })
   const [errors, setErrors] = useState({})
@@ -134,6 +135,16 @@ export default function GroupModal({ group, onClose, onSaved }) {
             </Select>
           )}
         </Field>
+        <div className="rounded-lg border border-line bg-surface-muted p-3 sm:col-span-2">
+          <Checkbox
+            checked={form.exclude_from_ai_recommendations}
+            onChange={e => set('exclude_from_ai_recommendations', e.target.checked)}
+            label={t('Не предлагать продвижение этой группы')}
+          />
+          <p className="mt-1 pl-6 text-xs text-ink-subtle">
+            {t('Для индивидуальных, конкурсных и других намеренно малых групп.')}
+          </p>
+        </div>
       </form>
     </Modal>
   )

@@ -6,6 +6,12 @@ app_name = "ai"
 
 urlpatterns = [
     path("status/", views.ai_status, name="status"),
+    path("recommendations/groups/", views.group_recommendations, name="group-recommendations"),
+    path(
+        "recommendations/<uuid:recommendation_id>/dismiss/",
+        views.dismiss_recommendation,
+        name="dismiss-recommendation",
+    ),
     path("chat/", views.chat_view, name="chat"),
     path("conversations/", views.conversations, name="conversations"),
     path(

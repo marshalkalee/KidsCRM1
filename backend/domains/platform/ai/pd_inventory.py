@@ -111,6 +111,20 @@ INVENTORY = {
         "sends": {INPUT},
         "what": "Текст объяснения отказа и список причин центра.",
     },
+    "group_recommendations": {
+        "route": "group-recommendations",
+        "who": LEADS,
+        "calls": "1 в фоновой задаче",
+        "sends": set(),
+        "what": "Обезличенные агрегаты: названия групп, филиалов и направлений, заполняемость, возрастные диапазоны, количество заявок, конверсия, источники и сезонность. Имен, контактов и идентификаторов людей нет.",
+    },
+    "dismiss_recommendation": {
+        "route": "dismiss-recommendation",
+        "who": LEADS,
+        "calls": "0",
+        "sends": set(),
+        "what": "Локально скрывает рекомендацию; внешняя модель не вызывается.",
+    },
     "chat": {
         "route": "chat",
         "who": CHAT,
