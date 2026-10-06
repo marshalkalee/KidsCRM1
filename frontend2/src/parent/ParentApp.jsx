@@ -6,6 +6,7 @@ import { ParentSessionProvider, RequireParent } from './ParentSession'
 import ParentAttendance from './pages/ParentAttendance'
 import ParentHome from './pages/ParentHome'
 import ParentNews from './pages/ParentNews'
+import ParentNotes from './pages/ParentNotes'
 import ParentProfile from './pages/ParentProfile'
 import ParentSchedule from './pages/ParentSchedule'
 import ParentSubscription from './pages/ParentSubscription'
@@ -26,6 +27,7 @@ export default function ParentApp() {
           <Route index element={<ParentHome />} />
           <Route path="schedule" element={<ParentSchedule />} />
           <Route path="attendance" element={<ParentAttendance />} />
+          <Route path="notes" element={<ParentNotes />} />
           <Route path="subscription" element={<ParentSubscription />} />
           <Route path="announcements" element={<ParentNews />} />
           <Route path="news" element={<Navigate to="/parent/announcements" replace />} />

@@ -144,7 +144,10 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
         payload = ParentNoteUpdateSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         note.body = payload.validated_data["body"]
-        note.save(update_fields=["body", "updated_at"])
+        note.kind = payload.validated_data.get("kind", note.kind)
+        if "valid_until" in payload.validated_data or note.kind == ParentNote.Kind.NOTE:
+            note.valid_until = payload.validated_data.get("valid_until")
+        note.save(update_fields=["body", "kind", "valid_until", "updated_at"])
         return Response(ParentNoteSerializer(note, context={"request": request}).data)
 
     @action(detail=False, methods=["get"])

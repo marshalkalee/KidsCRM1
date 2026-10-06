@@ -86,9 +86,11 @@ function writeCache(url, data) {
  * - сети нет — остаётся сохранённое, stale=true, savedAt — когда получено;
  * - url=null — ничего не грузить (например, ребёнок ещё не выбран).
  */
-export function usePortalData(url) {
+export function usePortalData(url, options = {}) {
+  const { refreshInterval = 0, refreshOnFocus = false } = options
   const [state, setState] = useState(() => initial(url))
   const alive = useRef(true)
+  const inFlight = useRef(false)
   // Сменился адрес (появился или сменился ребёнок): в этот же рендер отдать
   // состояние нового адреса (loading или его сохранённое), а не прежнее —
   // иначе экран на миг видит «не грузится и данных нет».
@@ -96,7 +98,8 @@ export function usePortalData(url) {
   if (state.url !== url) setState(current)
 
   const fetchData = useCallback(() => {
-    if (!url) return
+    if (!url || inFlight.current) return
+    inFlight.current = true
     portal.get(url)
       .then(({ data }) => {
         writeCache(url, data)
@@ -115,14 +118,42 @@ export function usePortalData(url) {
           savedAt: cached?.savedAt ?? null,
         })
       })
+      .finally(() => { inFlight.current = false })
   }, [url])
 
   // Первая загрузка: loading уже true из initial().
   useEffect(() => {
     alive.current = true
     fetchData()
-    return () => { alive.current = false }
+    return () => {
+      alive.current = false
+      inFlight.current = false
+    }
   }, [fetchData])
+
+  // Данные, которые могут измениться на другом устройстве (например, запрос
+  // родителя, обработанный администратором), обновляем без перезагрузки страницы.
+  useEffect(() => {
+    if (!url || (!refreshInterval && !refreshOnFocus)) return undefined
+
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') fetchData()
+    }
+    const timer = refreshInterval
+      ? window.setInterval(refreshVisible, refreshInterval)
+      : null
+
+    if (refreshOnFocus) {
+      window.addEventListener('focus', refreshVisible)
+      document.addEventListener('visibilitychange', refreshVisible)
+    }
+
+    return () => {
+      if (timer) window.clearInterval(timer)
+      window.removeEventListener('focus', refreshVisible)
+      document.removeEventListener('visibilitychange', refreshVisible)
+    }
+  }, [fetchData, refreshInterval, refreshOnFocus, url])
 
   const reload = useCallback(() => {
     setState(s => ({ ...s, loading: true, error: null }))

@@ -20,6 +20,12 @@ def parent_notes_for_child(child):
                 lesson__group__memberships__left_at__isnull=True,
                 lesson__group__memberships__deleted_at__isnull=True,
             )
+            | Q(
+                scope=ParentNote.Scope.GROUP,
+                lesson__enrollments__child=child,
+                lesson__enrollments__cancelled_at__isnull=True,
+                lesson__enrollments__deleted_at__isnull=True,
+            )
         )
         .select_related("lesson", "lesson__group", "child", "author")
         .distinct()

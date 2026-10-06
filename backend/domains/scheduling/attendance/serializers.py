@@ -1,3 +1,5 @@
+import datetime
+
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -273,6 +275,7 @@ class ParentNoteSerializer(serializers.ModelSerializer):
     child_name = serializers.CharField(source="child.full_name", read_only=True, default=None)
     author_name = serializers.CharField(source="author.full_name", read_only=True)
     scope_display = serializers.CharField(source="get_scope_display", read_only=True)
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     can_edit = serializers.SerializerMethodField()
 
     class Meta:
@@ -282,11 +285,14 @@ class ParentNoteSerializer(serializers.ModelSerializer):
             "lesson",
             "scope",
             "scope_display",
+            "kind",
+            "kind_display",
             "child",
             "child_name",
             "author",
             "author_name",
             "body",
+            "valid_until",
             "can_edit",
             "created_at",
             "updated_at",
@@ -300,10 +306,12 @@ class ParentNoteSerializer(serializers.ModelSerializer):
 
 class ParentNoteCreateSerializer(serializers.Serializer):
     scope = serializers.ChoiceField(choices=ParentNote.Scope.choices)
+    kind = serializers.ChoiceField(choices=ParentNote.Kind.choices, default=ParentNote.Kind.NOTE)
     child = serializers.PrimaryKeyRelatedField(
         queryset=Child.objects.none(), required=False, allow_null=True
     )
     body = serializers.CharField(max_length=1000, trim_whitespace=True)
+    valid_until = serializers.DateField(required=False, allow_null=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -329,13 +337,26 @@ class ParentNoteCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({"child": "Выберите ребёнка."})
         elif not lesson.participants().filter(pk=child.pk).exists():
             raise serializers.ValidationError({"child": "Ребёнок не участвует в этом занятии."})
+        if attrs["kind"] == ParentNote.Kind.HOMEWORK and not attrs.get("valid_until"):
+            attrs["valid_until"] = timezone.localtime(lesson.starts_at).date() + datetime.timedelta(
+                days=7
+            )
+        if attrs["kind"] == ParentNote.Kind.NOTE:
+            attrs["valid_until"] = None
         return attrs
 
 
 class ParentNoteUpdateSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=ParentNote.Kind.choices, required=False)
     body = serializers.CharField(max_length=1000, trim_whitespace=True)
+    valid_until = serializers.DateField(required=False, allow_null=True)
 
     def validate_body(self, value):
         if len(value) < 3:
             raise serializers.ValidationError("Минимум 3 символа.")
         return value
+
+    def validate(self, attrs):
+        if attrs.get("kind") == ParentNote.Kind.NOTE:
+            attrs["valid_until"] = None
+        return attrs

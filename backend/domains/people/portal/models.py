@@ -271,3 +271,21 @@ class AnnouncementRead(models.Model):
 
     def __str__(self) -> str:
         return f"{self.account} — {self.announcement}"
+
+
+class ParentNoteRead(models.Model):
+    """A parent account has opened a teacher note addressed to its child."""
+
+    account = models.ForeignKey(ParentAccount, on_delete=models.CASCADE, related_name="note_reads")
+    note = models.ForeignKey(
+        "attendance.ParentNote", on_delete=models.CASCADE, related_name="parent_reads"
+    )
+    read_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["account", "note"], name="unique_parent_note_read")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.account} — {self.note}"
