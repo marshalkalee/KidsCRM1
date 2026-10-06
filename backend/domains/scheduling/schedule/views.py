@@ -1,3 +1,5 @@
+import datetime
+
 from django.db.models import Count, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -113,10 +115,29 @@ class LessonViewSet(TenantModelViewSet):
         # Фильтр по периоду
         date_from = self.request.query_params.get("date_from")
         date_to = self.request.query_params.get("date_to")
-        if date_from:
-            qs = qs.filter(starts_at__date__gte=date_from)
-        if date_to:
-            qs = qs.filter(starts_at__date__lte=date_to)
+        # Не используем starts_at__date: PostgreSQL тогда оборачивает столбец
+        # timezone/cast-функцией и не может применить индекс
+        # (organization, starts_at). На целевых 26k занятий это уже заметно.
+        org_tz = timezone.zoneinfo.ZoneInfo(self.request.organization.timezone or "Asia/Almaty")
+        try:
+            if date_from:
+                first_day = datetime.date.fromisoformat(date_from)
+                qs = qs.filter(
+                    starts_at__gte=datetime.datetime.combine(
+                        first_day, datetime.time.min, tzinfo=org_tz
+                    )
+                )
+            if date_to:
+                day_after = datetime.date.fromisoformat(date_to) + datetime.timedelta(days=1)
+                qs = qs.filter(
+                    starts_at__lt=datetime.datetime.combine(
+                        day_after, datetime.time.min, tzinfo=org_tz
+                    )
+                )
+        except ValueError as exc:
+            raise DRFValidationError(
+                {"date": "date_from и date_to должны быть в формате YYYY-MM-DD."}
+            ) from exc
 
         # Фильтр по группе
         group_id = self.request.query_params.get("group")

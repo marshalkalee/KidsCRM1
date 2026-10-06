@@ -5,11 +5,13 @@
 
     python manage.py seed_analytics            # ≈ 0,5 млн отметок, пара минут
     python manage.py seed_analytics --reset    # старую в архив, насидить заново
+    python manage.py seed_analytics --reset --system-organizations 500
 
 Замер — `python manage.py analytics_benchmark`.
 """
 
 import random
+import secrets
 import uuid
 from datetime import datetime, time, timedelta
 
@@ -37,8 +39,12 @@ from domains.scheduling.schedule.models import Lesson
 SLUG = "analytics-volume"
 BRANCHES = 10
 CHILDREN = 5000
+STAFF = 100
+TEACHERS = 75
+MANAGERS = STAFF - TEACHERS - 1
 GROUP_SIZE = 20
 DAYS = 365
+LEADS = 4000
 BATCH = 5000
 REJECTION_COMMENTS = [
     "Сказали, что дорого для двоих детей",
@@ -57,15 +63,39 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--reset", action="store_true")
         parser.add_argument("--seed", type=int, default=118)
+        parser.add_argument(
+            "--system-organizations",
+            type=int,
+            default=1,
+            help="Всего организаций в БД: основная целевая + небольшие тенанты.",
+        )
 
-    def handle(self, *args, reset, seed, **options):
+    def handle(self, *args, reset, seed, system_organizations, **options):
+        if system_organizations < 1:
+            raise ValueError("--system-organizations должен быть не меньше 1")
         random.seed(seed)
         organization = Organization.objects.filter(slug=SLUG).first()
+        expected_small = system_organizations - 1
+        existing_small = (
+            Organization.objects.all_with_deleted()
+            .filter(slug__startswith="load-scale-", deleted_at__isnull=True)
+            .count()
+        )
         if organization and not reset:
+            if existing_small != expected_small:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"Основная организация уже есть, но малых тенантов {existing_small}, "
+                        f"ожидалось {expected_small}. Запустите с --reset."
+                    )
+                )
+                return
             self.stdout.write("Уже насижено. --reset, чтобы пересоздать.")
             return
         if organization:
             self._wipe(organization)
+        if reset:
+            self._wipe_scale_organizations()
         organization = Organization.objects.create(
             slug=SLUG, name="Аналитика — целевой объём", timezone="Asia/Almaty"
         )
@@ -84,9 +114,24 @@ class Command(BaseCommand):
             self._lessons_and_attendance(organization, groups)
             self._subscriptions_and_payments(organization, owner, version, groups)
             self._leads(organization, branches, directions, owner)
+            self._system_scale(system_organizations - 1)
         with connection.cursor() as cursor:
             cursor.execute("ANALYZE")
         self.stdout.write(self.style.SUCCESS(f"Готово: organization={organization.pk}"))
+
+    def _wipe_scale_organizations(self):
+        """Архивировать только тенанты нагрузочного сида, не трогая демо-данные."""
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        organizations = list(
+            Organization.objects.all_with_deleted()
+            .filter(slug__startswith="load-scale-", deleted_at__isnull=True)
+            .only("id")
+        )
+        for index, organization in enumerate(organizations):
+            Organization.objects.all_with_deleted().filter(pk=organization.pk).update(
+                slug=f"load-archive-{stamp}-{index:04d}",
+                deleted_at=datetime.now(pytz.utc),
+            )
 
     def _wipe(self, organization):
         # Удалять год истории по всем таблицам с PROTECT долго и хрупко —
@@ -120,7 +165,7 @@ class Command(BaseCommand):
                 organization=organization,
                 role=User.Role.TEACHER,
             )
-            for i in range(25)
+            for i in range(TEACHERS)
         ]
         # Менеджеры по продажам — для воронки «по ответственному» (TRU-115).
         self.managers = [
@@ -131,9 +176,107 @@ class Command(BaseCommand):
                 organization=organization,
                 role=User.Role.MANAGER,
             )
-            for i in range(4)
+            for i in range(MANAGERS)
         ]
+        assert 1 + len(self.teachers) + len(self.managers) == STAFF
         return owner
+
+    def _system_scale(self, count):
+        """Добавить небольшие тенанты для проверки общей величины таблиц.
+
+        В каждом есть филиал, направление, группа, 10 детей и два занятия.
+        Это достаточно, чтобы tenant-id индексы работали на реальном
+        распределении, но генерация 499 организаций не затмевала основной
+        сценарий на 5000 детей и год истории.
+        """
+        if count <= 0:
+            return
+        organizations = Organization.objects.bulk_create(
+            [
+                Organization(
+                    id=uuid.uuid4(),
+                    slug=f"load-scale-{index:04d}",
+                    name=f"Нагрузочный малый центр {index:04d}",
+                    timezone="Asia/Almaty",
+                    public_api_key=secrets.token_urlsafe(32),
+                )
+                for index in range(1, count + 1)
+            ],
+            batch_size=BATCH,
+        )
+        branches = Branch.objects.bulk_create(
+            [
+                Branch(id=uuid.uuid4(), organization=org, name="Основной филиал")
+                for org in organizations
+            ],
+            batch_size=BATCH,
+        )
+        directions = Direction.objects.bulk_create(
+            [Direction(id=uuid.uuid4(), organization=org, name="Балет") for org in organizations],
+            batch_size=BATCH,
+        )
+        groups = Group.objects.bulk_create(
+            [
+                Group(
+                    id=uuid.uuid4(),
+                    organization=org,
+                    branch=branch,
+                    direction=direction,
+                    name="Малая группа",
+                    capacity=15,
+                )
+                for org, branch, direction in zip(organizations, branches, directions, strict=True)
+            ],
+            batch_size=BATCH,
+        )
+        children = Child.objects.bulk_create(
+            [
+                Child(
+                    id=uuid.uuid4(),
+                    organization=org,
+                    full_name=f"Ребёнок {child_index:02d}",
+                    birth_date=self.today - timedelta(days=(7 + child_index % 5) * 365),
+                    gender="female" if child_index % 2 else "male",
+                )
+                for org in organizations
+                for child_index in range(10)
+            ],
+            batch_size=BATCH,
+        )
+        group_by_org = {group.organization_id: group for group in groups}
+        GroupMembership.objects.bulk_create(
+            [
+                GroupMembership(
+                    id=uuid.uuid4(),
+                    organization=child.organization,
+                    group=group_by_org[child.organization_id],
+                    child=child,
+                    joined_at=self.first_day,
+                )
+                for child in children
+            ],
+            batch_size=BATCH,
+        )
+        lessons = []
+        for group in groups:
+            for days_ahead in (1, 4):
+                starts = self.tz.localize(
+                    datetime.combine(self.today + timedelta(days=days_ahead), time(18))
+                )
+                lessons.append(
+                    Lesson(
+                        id=uuid.uuid4(),
+                        organization=group.organization,
+                        group=group,
+                        starts_at=starts,
+                        ends_at=starts + timedelta(hours=1),
+                    )
+                )
+        Lesson.objects.bulk_create(lessons, batch_size=BATCH)
+        self.stdout.write(
+            f"  малых организаций {len(organizations)}, детей {len(children)}, "
+            f"занятий {len(lessons)}"
+        )
 
     def _catalog(self, organization):
         branches = [
@@ -369,7 +512,7 @@ class Command(BaseCommand):
                 return steps + [S.PURCHASED]
             return steps + [random.choice([S.THINKING, S.REJECTED])]
 
-        for i in range(4000):
+        for i in range(LEADS):
             created = self.tz.localize(
                 datetime.combine(
                     self.first_day + timedelta(days=random.randint(0, DAYS - 1)), time(11)
