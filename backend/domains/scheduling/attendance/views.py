@@ -2,7 +2,7 @@ import datetime
 
 from django.db import transaction
 from django.utils import timezone
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -23,14 +23,25 @@ from domains.scheduling.schedule.serializers import (
 )
 
 from .history import attendance_history_queryset, attendance_history_summary
-from .models import Attendance
+from .models import Attendance, ParentNote
 from .serializers import (
     AttendanceHistoryQuerySerializer,
     AttendanceHistorySerializer,
     AttendanceMarkSerializer,
     AttendanceRosterEntrySerializer,
     AttendanceSerializer,
+    ParentNoteCreateSerializer,
+    ParentNoteSerializer,
+    ParentNoteUpdateSerializer,
 )
+
+PARENT_NOTE_TEMPLATES = [
+    "Растяжка каждый день по 10 минут",
+    "Повторить материал занятия дома",
+    "Принести форму на следующее занятие",
+    "Принести чешки на следующее занятие",
+    "Подготовиться к выступлению",
+]
 
 
 def _get_lesson_scoped(request, lesson_id):
@@ -68,6 +79,73 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
         if child_id:
             qs = qs.filter(child_id=child_id)
         return qs
+
+    @action(detail=False, methods=["get", "post"], url_path="parent-notes")
+    def parent_notes(self, request):
+        lesson_id = request.query_params.get("lesson") or request.data.get("lesson")
+        if not lesson_id:
+            raise ValidationError({"lesson": "Обязателен."})
+        lesson = _get_lesson_scoped(request, lesson_id)
+
+        if request.method == "GET":
+            notes = (
+                ParentNote.objects.for_tenant(request.organization)
+                .filter(lesson=lesson)
+                .select_related("child", "author")
+            )
+            return Response(
+                {
+                    "results": ParentNoteSerializer(
+                        notes, many=True, context={"request": request}
+                    ).data,
+                    "templates": PARENT_NOTE_TEMPLATES,
+                    "edit_window_hours": ParentNote.EDIT_WINDOW_HOURS,
+                }
+            )
+
+        payload = ParentNoteCreateSerializer(
+            data=request.data, context={"request": request, "lesson": lesson}
+        )
+        payload.is_valid(raise_exception=True)
+        note = ParentNote.objects.create(
+            organization=request.organization,
+            lesson=lesson,
+            author=request.user,
+            **payload.validated_data,
+        )
+        return Response(
+            ParentNoteSerializer(note, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=False,
+        methods=["patch", "delete"],
+        url_path=r"parent-notes/(?P<note_id>[^/.]+)",
+    )
+    def parent_note_detail(self, request, note_id=None):
+        note = (
+            ParentNote.objects.for_tenant(request.organization)
+            .filter(pk=note_id)
+            .select_related("child", "author", "lesson")
+            .first()
+        )
+        if note is None:
+            raise NotFound("Заметка не найдена.")
+        _get_lesson_scoped(request, note.lesson_id)
+        if not note.can_edit(request.user):
+            raise PermissionDenied(
+                "Редактировать или удалять заметку может только её автор в течение 24 часов."
+            )
+        if request.method == "DELETE":
+            note.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        payload = ParentNoteUpdateSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        note.body = payload.validated_data["body"]
+        note.save(update_fields=["body", "updated_at"])
+        return Response(ParentNoteSerializer(note, context={"request": request}).data)
 
     @action(detail=False, methods=["get"])
     def history(self, request):

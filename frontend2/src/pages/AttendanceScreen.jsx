@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Check, X, RotateCcw, AlertTriangle, MapPin, Clock, ChevronLeft, ChevronRight,
   WifiOff, History, CalendarDays, Undo2, Camera,
+  MessageSquarePlus, Pencil, Trash2, Users, UserRound,
 } from 'lucide-react'
 import { addDays, localDatePart, localTimePart, toISODate } from '../utils/calendarDate'
 import AttendancePhoto from '../components/ai/AttendancePhoto'
@@ -10,9 +11,11 @@ import { useAI } from '../components/ai/ai'
 import { fetchLessons } from '../api/lessons'
 import {
   fetchLesson, fetchAttendanceRoster, markAttendance, markAllPresent, resetAllAttendance, resetAttendance,
+  createParentNote, deleteParentNote, fetchParentNotes, updateParentNote,
 } from '../api/attendance'
 import {
-  ageLabel, Avatar, Badge, Button, Card, CHILD_STATUSES, DateInput, EmptyState, formatDate, PageHeader,
+  ageLabel, apiErrorMessage, Avatar, Badge, Button, Card, CHILD_STATUSES, DateInput, EmptyState,
+  Field, formatDate, formatDateTime, Modal, PageHeader, Select, Textarea, useConfirm, useToast,
 } from '../ui'
 import { t } from '../i18n'
 
@@ -251,6 +254,7 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
   const [savingIds, setSavingIds] = useState({})
   const [bulkSaving, setBulkSaving] = useState(false)
   const [photoOpen, setPhotoOpen] = useState(false) // ИИ: отметка по фото журнала (эксперимент)
+  const [parentNotes, setParentNotes] = useState({ results: [], templates: [], edit_window_hours: 24 })
   const ai = useAI()
 
   const load = useCallback(() => {
@@ -261,10 +265,11 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
     }
     setLoading(true)
     setError('')
-    Promise.all([fetchLesson(lessonId), fetchAttendanceRoster(lessonId)])
-      .then(([lessonData, rosterData]) => {
+    Promise.all([fetchLesson(lessonId), fetchAttendanceRoster(lessonId), fetchParentNotes(lessonId)])
+      .then(([lessonData, rosterData, notesData]) => {
         setLesson(lessonData)
         setRows(rosterData.results)
+        setParentNotes(notesData)
       })
       .catch(err => {
         setError(
@@ -422,6 +427,14 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
         ))}
       </div>
 
+      <ParentNotesPanel
+        lessonId={lessonId}
+        lesson={lesson}
+        rows={rows}
+        notesData={parentNotes}
+        onChange={setParentNotes}
+      />
+
       {photoOpen && (
         <AttendancePhoto lessonId={lessonId} onClose={() => setPhotoOpen(false)} onSaved={() => { setPhotoOpen(false); load() }} />
       )}
@@ -434,6 +447,210 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
         />
       )}
     </div>
+  )
+}
+
+function ParentNotesPanel({ lessonId, lesson, rows, notesData, onChange }) {
+  const confirm = useConfirm()
+  const toast = useToast()
+  const [editor, setEditor] = useState(null)
+  const [deleting, setDeleting] = useState(null)
+  const notes = notesData.results || []
+
+  async function reload() {
+    onChange(await fetchParentNotes(lessonId))
+  }
+
+  async function remove(note) {
+    const accepted = await confirm({
+      title: t('Удалить заметку?'),
+      message: t('Родители больше не увидят эту заметку.'),
+      confirmText: t('Удалить'),
+      danger: true,
+    })
+    if (!accepted) return
+    setDeleting(note.id)
+    try {
+      await deleteParentNote(note.id)
+      await reload()
+      toast.success(t('Заметка удалена'))
+    } catch (error) {
+      toast.error(apiErrorMessage(error))
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  return (
+    <Card className="mt-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-base font-bold text-ink">{t('Заметки и домашние задания')}</h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            {t('Эти заметки увидят родители. Внутренние заметки ребёнка сюда не попадают.')}
+          </p>
+          <p className="mt-1 text-xs text-ink-subtle">
+            {t('Свою заметку можно изменить или удалить в течение {n} ч.', { n: notesData.edit_window_hours || 24 })}
+          </p>
+        </div>
+        <Button
+          variant="primary"
+          icon={MessageSquarePlus}
+          onClick={() => setEditor({ scope: lesson.group ? 'group' : 'child' })}
+        >
+          {t('Добавить заметку')}
+        </Button>
+      </div>
+
+      {notes.length === 0 ? (
+        <div className="mt-4 rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-ink-muted">
+          {t('Заметок для родителей пока нет')}
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {notes.map(note => {
+            const ScopeIcon = note.scope === 'group' ? Users : UserRound
+            return (
+              <div key={note.id} className="rounded-xl border border-line bg-surface-muted/40 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={note.scope === 'group' ? 'info' : 'warning'}>
+                        <ScopeIcon className="mr-1 inline size-3.5" />
+                        {note.scope === 'group' ? t('Всем родителям группы') : note.child_name}
+                      </Badge>
+                      <span className="text-xs text-ink-subtle">{formatDateTime(note.created_at)}</span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-line text-sm font-medium text-ink">{note.body}</p>
+                    <p className="mt-2 text-xs text-ink-muted">{note.author_name}</p>
+                  </div>
+                  {note.can_edit && (
+                    <div className="flex shrink-0 gap-1">
+                      <Button icon={Pencil} aria-label={t('Редактировать')} title={t('Редактировать')} onClick={() => setEditor({ note })} />
+                      <Button icon={Trash2} aria-label={t('Удалить')} title={t('Удалить')} loading={deleting === note.id} onClick={() => remove(note)} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {editor && (
+        <ParentNoteModal
+          key={editor.note?.id || editor.scope}
+          lessonId={lessonId}
+          hasGroup={Boolean(lesson.group)}
+          rows={rows}
+          templates={notesData.templates || []}
+          initial={editor}
+          onClose={() => setEditor(null)}
+          onSaved={async () => {
+            setEditor(null)
+            await reload()
+          }}
+        />
+      )}
+    </Card>
+  )
+}
+
+function ParentNoteModal({ lessonId, hasGroup, rows, templates, initial, onClose, onSaved }) {
+  const toast = useToast()
+  const note = initial.note
+  const [scope, setScope] = useState(note?.scope || initial.scope || (hasGroup ? 'group' : 'child'))
+  const [child, setChild] = useState(note?.child || '')
+  const [body, setBody] = useState(note?.body || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save() {
+    if (body.trim().length < 3) {
+      setError(t('Минимум 3 символа'))
+      return
+    }
+    if (!note && scope === 'child' && !child) {
+      setError(t('Выберите ребёнка'))
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      if (note) await updateParentNote(note.id, body.trim())
+      else await createParentNote({ lesson: lessonId, scope, child, body: body.trim() })
+      toast.success(note ? t('Заметка обновлена') : t('Заметка отправлена родителям'))
+      await onSaved()
+    } catch (requestError) {
+      setError(apiErrorMessage(requestError))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={note ? t('Редактировать заметку') : t('Новая заметка для родителей')}
+      description={t('Текст без проверки администратора увидят родители.')}
+      footer={(
+        <>
+          <Button onClick={onClose}>{t('Отмена')}</Button>
+          <Button variant="primary" loading={saving} onClick={save}>{t('Сохранить')}</Button>
+        </>
+      )}
+    >
+      {!note && (
+        <div className="grid grid-cols-2 gap-2">
+          {hasGroup && (
+            <button
+              type="button"
+              onClick={() => setScope('group')}
+              className={`rounded-lg border px-3 py-3 text-sm font-semibold ${scope === 'group' ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line text-ink-muted'}`}
+            >
+              <Users className="mx-auto mb-1 size-5" />{t('Всей группе')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setScope('child')}
+            className={`rounded-lg border px-3 py-3 text-sm font-semibold ${scope === 'child' ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-line text-ink-muted'}`}
+          >
+            <UserRound className="mx-auto mb-1 size-5" />{t('Одному ребёнку')}
+          </button>
+        </div>
+      )}
+
+      {!note && scope === 'child' && (
+        <Field className="mt-4" label={t('Ребёнок')} required>
+          {({ id }) => (
+            <Select id={id} value={child} onChange={event => setChild(event.target.value)}>
+              <option value="">{t('Выберите ребёнка')}</option>
+              {rows.map(row => <option key={row.child} value={row.child}>{row.child_name}</option>)}
+            </Select>
+          )}
+        </Field>
+      )}
+
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-subtle">{t('Частые шаблоны')}</p>
+        <div className="flex flex-wrap gap-2">
+          {templates.map(template => (
+            <button key={template} type="button" onClick={() => setBody(template)} className="rounded-full border border-line px-3 py-1.5 text-left text-xs font-semibold text-ink-muted hover:border-brand-300 hover:text-brand-700">
+              {t(template)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Field className="mt-4" label={t('Заметка или домашнее задание')} required error={error} hint={t('Родитель увидит текст именно в таком виде.')}>
+        {({ id, invalid }) => (
+          <Textarea id={id} invalid={invalid} rows={5} maxLength={1000} value={body} onChange={event => { setBody(event.target.value); setError('') }} autoFocus />
+        )}
+      </Field>
+      <p className="mt-1 text-right text-xs text-ink-subtle">{body.length}/1000</p>
+    </Modal>
   )
 }
 
