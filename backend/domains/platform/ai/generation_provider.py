@@ -48,10 +48,11 @@ def _openai(*, system, user, schema, model, max_tokens):
         )
     except openai.RateLimitError as exc:
         raise services.AIError("ИИ сейчас перегружен — попробуйте позже.") from exc
-    except (openai.APIConnectionError, openai.APIStatusError) as exc:
-        raise services.AIError("ИИ временно недоступен.") from exc
+    # AuthenticationError — подкласс APIStatusError: ловим раньше, иначе текст не дойдёт.
     except openai.AuthenticationError as exc:
         raise services.AIError("Ключ ИИ не подошёл.") from exc
+    except (openai.APIConnectionError, openai.APIStatusError) as exc:
+        raise services.AIError("ИИ временно недоступен.") from exc
     choice = response.choices[0]
     if choice.message.refusal or choice.finish_reason == "length":
         raise services.AIError("Ответ ИИ не получился.")

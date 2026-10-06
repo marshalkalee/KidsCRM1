@@ -42,3 +42,20 @@ generation = enqueue(request.organization, "marketing_recommendations")
 - `OPENAI_DIGEST_MODEL` — модель фоновых рекомендаций;
 - `AI_FIXTURE_MODE` — использовать локальную фикстуру без ключа;
 - `AI_GENERATION_MAX_INPUT_CHARS` — максимальный размер system + user prompt.
+
+## Учёт расхода и лимит (TRU-160)
+
+Каждый ответ модели — строка `AIUsage` (функция, модель, токены, стоимость
+в $ по `AI_PRICES_USD`). Пишется сразу после ответа провайдера, до разбора:
+невалидный ответ и отказ модели тоже учтены. Генерация связывает свои
+строки с `AIGeneration` — сумма токенов совпадает с журналом.
+
+- Лимит месяца в ₸: `Organization.ai_monthly_limit_kzt`, пусто — платформенный
+  `AI_MONTHLY_LIMIT_KZT`. Проверяется до начала работы (вопрос в чате,
+  короткая задача, `enqueue()`); начатое доводится до конца.
+- Опция: `Organization.ai_enabled`. Выключено — `ai/status` отдаёт
+  `enabled: false`, эндпоинты ИИ отвечают 403.
+- Владелец видит расход на странице «Организация» (`GET ai/usage/`),
+  платформа — в админке (`AIUsage`) и `manage.py ai_usage_report --month ГГГГ-ММ`.
+- Новый вызов модели в коде — через `_ask_json(feature=…)`, чат или
+  `generations`; мимо них вызов не попадёт в учёт.

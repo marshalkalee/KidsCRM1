@@ -261,7 +261,8 @@ class PDFlowTests(PDFlowFixtures):
         """Новый ИИ-эндпоинт без записи в описи — сборка падает."""
         routes = {pattern.name for pattern in get_resolver("domains.platform.ai.urls").url_patterns}
         described = {info["route"] for info in pd_inventory.INVENTORY.values() if "route" in info}
-        service_routes = {"status", "conversations", "conversation-detail"}
+        # Служебные: в модель ничего не отправляют (usage — расход, TRU-160).
+        service_routes = {"status", "usage", "conversations", "conversation-detail"}
         self.assertEqual(routes - service_routes, described)
 
     def test_medical_notes_never_leave(self):

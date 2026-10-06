@@ -123,6 +123,7 @@ def reminders(user, child_ids, *, kind: str, language: str) -> list[dict]:
 
     def write(batch):
         data = _ask_json(
+            feature="reminders",
             organization=organization,
             system=f"Ты пишешь сообщения родителям от имени администратора детского центра {organization.name} в Казахстане. Каждое сообщение уйдёт отдельно в WhatsApp, администратор проверит и отправит сам.\n{TONE}",
             user=(
@@ -181,6 +182,7 @@ def communication_note(organization, text: str) -> dict:
     if len(text) > 3000:
         raise AIError("Слишком длинная заметка.")
     data = _ask_json(
+        feature="communication_note",
         organization=organization,
         system=NOTE_SYSTEM,
         user=f"Сегодня: {timezone.localdate():%d.%m.%Y}\nЗаметка:\n<note>\n{text}\n</note>",
@@ -283,6 +285,7 @@ def child_brief(child, user) -> dict:
         )
         facts["долг"] = _money(debt_by_child(organization, [child.id]).get(child.id)) or "нет"
     data = _ask_json(
+        feature="child_brief",
         organization=organization,
         system=BRIEF_SYSTEM,
         user=f"Сегодня: {timezone.localdate():%d.%m.%Y}\nДанные:\n{json.dumps(facts, ensure_ascii=False, indent=1)}",
@@ -368,6 +371,7 @@ def lead_groups(lead) -> dict:
         "пожелания и комментарии": comments or None,
     }
     data = _ask_json(
+        feature="lead_groups",
         organization=lead.organization,
         system=GROUPS_SYSTEM,
         user=f"Заявка: {json.dumps(request, ensure_ascii=False)}\nГруппы: {json.dumps(listing, ensure_ascii=False, indent=1)}",
@@ -454,6 +458,7 @@ def daily_plan(request) -> dict:
             ]
         }
     data = _ask_json(
+        feature="daily_plan",
         organization=organization,
         system=PLAN_SYSTEM,
         user=json.dumps(
@@ -498,6 +503,7 @@ def rejection_reason(organization, *, text: str, kind: str) -> dict:
     if not reasons:
         raise AIError("Справочник причин пуст.")
     data = _ask_json(
+        feature="rejection_reason",
         organization=organization,
         system="Подбери причину отказа из справочника центра по комментарию администратора. Только значение из списка. Выбирай по смыслу самую конкретную причину (ребёнку не понравилось или хочет другое занятие — это про направление, а не «Другое»). «Другое» — только если по смыслу не подходит ни одна, а если нет и его — пустая строка.",
         user=f"Справочник: {json.dumps(list(reasons), ensure_ascii=False)}\nКомментарий: {text[:1000]}",
