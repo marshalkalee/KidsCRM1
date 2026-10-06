@@ -9,7 +9,7 @@ export default function OrganizationSettings() {
   return (
     <div>
       <PageHeader title={t('Организация')} description={t('Название, часовой пояс и когда подсвечивать продления, долги и пустые группы.')} />
-      <OrganizationForm onSaved={() => reload()} />
+      <OrganizationForm wide onSaved={() => reload()} />
     </div>
   )
 }
