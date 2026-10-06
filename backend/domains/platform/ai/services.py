@@ -27,6 +27,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.leads.campaigns import find_campaign
 from domains.platform.leads.models import Lead, LeadSource
 from domains.platform.tenants.models import Direction
 
@@ -271,6 +272,11 @@ def lead_from_text(organization, text: str) -> dict:
     age = data.get("child_age") or None
     direction = directions.get(data.get("direction") or "")
     source = sources.get(data.get("source") or "")
+    # Код публикации (K12) из ссылки под роликом — точнее догадки модели
+    # об источнике (TRU-165). Ищем в исходном тексте, без модели.
+    campaign = find_campaign(organization, text)
+    if campaign is not None:
+        source = campaign.source
     return {
         "parent_name": (data.get("parent_name") or "").strip(),
         "phone": phone,
@@ -278,6 +284,7 @@ def lead_from_text(organization, text: str) -> dict:
         "child_age": age if age and 0 < age <= 25 else None,
         "direction": str(direction.id) if direction else None,
         "source": str(source.id) if source else None,
+        "campaign": str(campaign.id) if campaign else None,
         "summary": (data.get("summary") or "").strip(),
     }
 

@@ -21,6 +21,7 @@ from domains.platform.core.viewsets import TenantModelViewSet
 from .conversion import LeadConversionError, conversion_preview, convert_lead
 from .models import (
     Lead,
+    LeadCampaign,
     LeadComment,
     LeadKind,
     LeadRejectionReason,
@@ -32,6 +33,7 @@ from .reporting import leads_workbook
 from .sale import LeadSaleError, sale_options, sell_from_lead
 from .serializers import (
     LeadBulkSerializer,
+    LeadCampaignSerializer,
     LeadCommentSerializer,
     LeadConversionQuerySerializer,
     LeadConversionSerializer,
@@ -176,7 +178,7 @@ class LeadViewSet(TenantModelViewSet):
             qs = qs.filter(status__in=statuses)
         if stages := _uuids(_values(params.get("stage"))):
             qs = _filter_stages(qs, Funnel(self.request.user.organization), stages)
-        for field in ("source", "direction", "branch", "assigned_to"):
+        for field in ("source", "campaign", "direction", "branch", "assigned_to"):
             values = _values(params.get(field))
             if field == "assigned_to":
                 values = [str(self.request.user.pk) if value == "me" else value for value in values]
@@ -569,6 +571,20 @@ class LeadSourceViewSet(LeadDictionaryViewSet):
     serializer_class = LeadSourceSerializer
     model = LeadSource
     usage = Count("leads", filter=Q(leads__deleted_at__isnull=True))
+
+
+class LeadCampaignViewSet(LeadDictionaryViewSet):
+    """Публикации и кампании (TRU-165). ?source=<id> — публикации источника."""
+
+    serializer_class = LeadCampaignSerializer
+    model = LeadCampaign
+    usage = Count("leads", filter=Q(leads__deleted_at__isnull=True))
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("source", "organization")
+        if source := self.request.query_params.get("source"):
+            qs = qs.filter(source_id__in=_uuids([source]))
+        return qs
 
 
 class LeadRejectionReasonViewSet(LeadDictionaryViewSet):

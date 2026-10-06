@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Pencil, Plus, Search, UsersRound } from 'lucide-react'
+import { Pencil, Plus, Search, ShieldCheck, UsersRound } from 'lucide-react'
 import api from '../api/axios'
 import { ROLE_LABELS, useSession } from '../session/SessionContext'
 import {
@@ -116,7 +116,13 @@ export default function Staff() {
       <PageHeader
         title={t('Сотрудники')}
         description={staff ? t('{active} активных · {teachers} преподавателей', { active: activeCount, teachers: teacherCount }) : t('Загрузка…')}
-        actions={<Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>{t('Новый сотрудник')}</Button>}
+        actions={(
+          <>
+            {/* Что роли видят сверх обычного (TRU-153) — только владелец. */}
+            {can('can_manage_org_settings') && <Button to="/settings/access" icon={ShieldCheck}>{t('Доступ сотрудников')}</Button>}
+            <Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>{t('Новый сотрудник')}</Button>
+          </>
+        )}
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_240px]">
