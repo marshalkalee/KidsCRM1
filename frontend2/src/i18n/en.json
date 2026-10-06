@@ -2137,5 +2137,16 @@
  "Предлагать продление заранее": "Offer renewal in advance",
  "Приём заявок с сайта": "Website leads",
  "Форма сможет слать заявки только с этого адреса": "The form can send leads only from this address",
- "часов": "hours"
+ "часов": "hours",
+ "ИИ-помощник: расход за {month}": "AI assistant: spending for {month}",
+ "Лимит обновится {date}.": "The limit resets on {date}.",
+ "из {limit}": "of {limit}",
+ "Лимит месяца исчерпан: ИИ-функции вернутся {date}. Чтобы поднять лимит, напишите нам.": "This month's limit is used up: AI features will return on {date}. To raise the limit, contact us.",
+ "В этом месяце ИИ ещё не использовали.": "AI hasn't been used this month yet.",
+ "Чат с помощником": "Assistant chat",
+ "Рекомендации и дайджест": "Recommendations and digest",
+ "Посещаемость по фото": "Attendance from a photo",
+ "Импорт клиентов": "Client import",
+ "Короткие задачи: заявки, сообщения, поиск, напоминания": "Quick tasks: leads, messages, search, reminders",
+ "plural:запрос": ["request", "requests"]
 }

@@ -9,13 +9,12 @@ from django.utils import timezone
 
 from domains.platform.tenants.models import Organization
 
-from . import aggregates, generation_provider, services
+from . import aggregates, generation_provider, services, usage
 from .models import AIGeneration
 from .prompts import get_template
 
-
-class AILimitExceeded(Exception):
-    """Точка интеграции TRU-160: лимит проверяется до вызова провайдера."""
+# Лимит месяца — общий для всех функций помощника (usage.py, TRU-160).
+AILimitExceeded = usage.AILimitExceeded
 
 
 DEGRADATION_MESSAGES = {
@@ -44,7 +43,11 @@ def numeric_facts(value, prefix="") -> dict:
 
 
 def enqueue(organization, template_key: str) -> AIGeneration:
-    """Веб-слой только ставит задачу в очередь и сразу возвращает id."""
+    """Веб-слой только ставит задачу в очередь и сразу возвращает id.
+
+    Лимит проверяется здесь, до очереди (TRU-160): исчерпан — запись сразу
+    получает своё состояние, задача не ставится. Начатая генерация
+    доводится до конца, даже если вышла за лимит."""
     template = get_template(template_key)
     generation = AIGeneration.objects.create(
         organization=organization,
@@ -53,6 +56,15 @@ def enqueue(organization, template_key: str) -> AIGeneration:
         provider=services.provider(),
         model=generation_provider.model_name(),
     )
+    try:
+        ensure_within_limit(organization)
+    except AILimitExceeded as exc:
+        return _finish(
+            generation.id,
+            status=AIGeneration.Status.LIMIT_EXHAUSTED,
+            error_code="limit_exhausted",
+            error_detail=str(exc),
+        )
     from .tasks import run_ai_generation
 
     transaction.on_commit(lambda: run_ai_generation.delay(str(generation.id)))
@@ -95,12 +107,12 @@ def run(generation_id) -> AIGeneration:
 
     try:
         ensure_within_limit(generation.organization)
-    except AILimitExceeded:
+    except AILimitExceeded as exc:
         return _finish(
             generation.id,
             status=AIGeneration.Status.LIMIT_EXHAUSTED,
             error_code="limit_exhausted",
-            error_detail=DEGRADATION_MESSAGES[AIGeneration.Status.LIMIT_EXHAUSTED],
+            error_detail=str(exc),
         )
 
     snapshot = aggregates.snapshot(generation.organization)
@@ -129,6 +141,16 @@ def run(generation_id) -> AIGeneration:
                     schema=template.schema,
                     model=generation.model,
                     max_tokens=template.max_tokens,
+                )
+                # Учёт — сразу после ответа, отдельной строкой на каждую попытку:
+                # невалидный ответ тоже оплачен.
+                usage.record(
+                    generation.organization,
+                    feature=generation.function,
+                    model=generation.model,
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                    generation=generation,
                 )
                 payload = response.payload
                 input_tokens += response.input_tokens
@@ -172,4 +194,4 @@ def run(generation_id) -> AIGeneration:
 
 
 def ensure_within_limit(organization: Organization) -> None:
-    """TRU-160 заменит тело проверкой месячного лимита организации."""
+    usage.ensure_within_limit(organization)

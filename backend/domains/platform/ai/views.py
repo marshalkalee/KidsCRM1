@@ -2,10 +2,15 @@ import base64
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
-from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOfOrganization
+from domains.platform.core.permissions import (
+    IsOwner,
+    IsOwnerOrManagerOrAdmin,
+    IsStaffOfOrganization,
+)
 from domains.platform.core.role_permissions import can_use_ai_chat
 from domains.platform.leads.services import visible_leads
 from domains.platform.leads.views import CanManageLeads
@@ -15,7 +20,7 @@ from domains.platform.tenants.org_settings import (
     get_org_setting,
 )
 
-from . import assist, chat, services
+from . import assist, chat, services, usage
 
 
 def _uuid_list(value):
@@ -32,6 +37,17 @@ class CanUseAIChat(IsStaffOfOrganization):
 
     def has_permission(self, request, view):
         return super().has_permission(request, view) and can_use_ai_chat(request.user)
+
+
+class HasAIOption(BasePermission):
+    """ИИ-помощник — платная опция (TRU-160): у центра без неё эндпоинты
+    ИИ закрыты, а не просто спрятаны кнопки."""
+
+    message = "ИИ-помощник не подключён для вашего центра."
+
+    def has_permission(self, request, view):
+        organization = getattr(request.user, "organization", None)
+        return bool(organization and organization.ai_enabled)
 
 
 class AIThrottle(UserRateThrottle):
@@ -56,7 +72,7 @@ OPT_IN_REQUIRED = (
 def ai_status(request, version=None):
     """Показывать ли ИИ-кнопки: без ключа их нет; фото журнала и чистка
     импорта — ещё и только у центров, которые их включили."""
-    enabled = services.is_enabled()
+    enabled = usage.enabled_for(request.user.organization)
     return Response(
         {
             "enabled": enabled,
@@ -68,7 +84,7 @@ def ai_status(request, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([CanManageLeads])
+@permission_classes([CanManageLeads, HasAIOption])
 @throttle_classes([AIThrottle])
 def lead_from_text(request, version=None):
     try:
@@ -79,7 +95,7 @@ def lead_from_text(request, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([CanManageLeads])
+@permission_classes([CanManageLeads, HasAIOption])
 @throttle_classes([AIThrottle])
 def lead_message(request, lead_id, version=None):
     lead = (
@@ -103,7 +119,7 @@ def lead_message(request, lead_id, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([IsStaffOfOrganization])
+@permission_classes([IsStaffOfOrganization, HasAIOption])
 @throttle_classes([AIThrottle])
 def search(request, version=None):
     """Поиск обычным языком → адрес списка с нашими фильтрами."""
@@ -114,7 +130,7 @@ def search(request, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([IsStaffOfOrganization])
+@permission_classes([IsStaffOfOrganization, HasAIOption])
 @throttle_classes([AIThrottle])
 def attendance_from_photo(request, version=None):
     """Фото журнала → предлагаемые отметки. Доступ к занятию — как у экрана
@@ -145,7 +161,7 @@ def attendance_from_photo(request, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([IsOwnerOrManagerOrAdmin])
+@permission_classes([IsOwnerOrManagerOrAdmin, HasAIOption])
 @throttle_classes([AIThrottle])
 def import_clean(request, version=None):
     """«Грязный» файл → файл в формате шаблона (base64) и строки для просмотра.
@@ -175,7 +191,7 @@ def _ai(call):
 
 
 @api_view(["POST"])
-@permission_classes([IsOwnerOrManagerOrAdmin])
+@permission_classes([IsOwnerOrManagerOrAdmin, HasAIOption])
 @throttle_classes([AIThrottle])
 def reminders(request, version=None):
     """Напоминания о долге или продлении пачкой: {children: [id], kind, language}."""
@@ -200,7 +216,7 @@ def reminders(request, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([IsStaffOfOrganization])
+@permission_classes([IsStaffOfOrganization, HasAIOption])
 @throttle_classes([AIThrottle])
 def communication_note(request, version=None):
     return _ai(
@@ -209,7 +225,7 @@ def communication_note(request, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([IsStaffOfOrganization])
+@permission_classes([IsStaffOfOrganization, HasAIOption])
 @throttle_classes([AIThrottle])
 def child_brief(request, child_id, version=None):
     from domains.people.clients.models import Child
@@ -221,7 +237,7 @@ def child_brief(request, child_id, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([CanManageLeads])
+@permission_classes([CanManageLeads, HasAIOption])
 @throttle_classes([AIThrottle])
 def lead_groups(request, lead_id, version=None):
     lead = (
@@ -233,14 +249,14 @@ def lead_groups(request, lead_id, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([IsStaffOfOrganization])
+@permission_classes([IsStaffOfOrganization, HasAIOption])
 @throttle_classes([AIThrottle])
 def daily_plan(request, version=None):
     return _ai(lambda: assist.daily_plan(request))
 
 
 @api_view(["POST"])
-@permission_classes([CanManageLeads])
+@permission_classes([CanManageLeads, HasAIOption])
 @throttle_classes([AIThrottle])
 def rejection_reason(request, version=None):
     kind = "renewal" if request.data.get("kind") == "renewal" else "new"
@@ -252,7 +268,7 @@ def rejection_reason(request, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([CanUseAIChat])
+@permission_classes([CanUseAIChat, HasAIOption])
 @throttle_classes([AIThrottle])
 def chat_view(request, version=None):
     """Чат на главной: {message, conversation?} → {conversation, answer, sources}.
@@ -277,7 +293,7 @@ def chat_view(request, version=None):
 
 
 @api_view(["GET"])
-@permission_classes([CanUseAIChat])
+@permission_classes([CanUseAIChat, HasAIOption])
 def conversations(request, version=None):
     """История чатов сотрудника — последние 50, свежие сверху."""
     rows = chat.own_conversations(request.user)[:50]
@@ -285,7 +301,7 @@ def conversations(request, version=None):
 
 
 @api_view(["GET", "DELETE"])
-@permission_classes([CanUseAIChat])
+@permission_classes([CanUseAIChat, HasAIOption])
 def conversation_detail(request, conversation_id, version=None):
     conversation = chat.own_conversations(request.user).filter(pk=conversation_id).first()
     if conversation is None:
@@ -309,3 +325,12 @@ def conversation_detail(request, conversation_id, version=None):
             ],
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsOwner])
+def usage_summary(request, version=None):
+    """Расход ИИ за месяц для владельца (TRU-160): сколько, из какого
+    лимита, на что, когда обновится."""
+    organization = request.user.organization
+    return Response({"enabled": usage.enabled_for(organization), **usage.summary(organization)})

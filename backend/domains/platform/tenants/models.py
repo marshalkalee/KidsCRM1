@@ -37,6 +37,15 @@ class Organization(TimestampedSoftDeleteModel):
         blank=True,
         help_text="Домен сайта центра для формы приёма заявок (CORS), например https://trueballet.kz",
     )
+    # ИИ-помощник — платная опция (ТЗ раздел 8, TRU-160). Включает платформа,
+    # не центр: поэтому флаг здесь, а не в settings владельца. Выключено —
+    # ИИ-кнопок нет, эндпоинты ИИ отвечают 403.
+    ai_enabled = models.BooleanField(default=True, help_text="ИИ-помощник включён (платная опция)")
+    ai_monthly_limit_kzt = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Лимит расхода ИИ в месяц, ₸. Пусто — лимит платформы по умолчанию.",
+    )
 
     def save(self, *args, **kwargs):
         if not self.public_api_key:

@@ -75,6 +75,8 @@ def _ask_json(
     max_tokens: int = 4000,
     image: tuple[str, str] | None = None,
     names: Pseudonymizer | None = None,
+    feature: str = "short_task",
+    meter=None,
 ) -> dict:
     """Один запрос, ответ строго по JSON-схеме — у обоих провайдеров.
     image — (media_type, base64) для задач по фото.
@@ -83,9 +85,28 @@ def _ask_json(
     (pseudonyms.py, ADR-0008): поэтому организация обязательна — мимо
     подмены запрос не отправить. names — готовые метки, если запросов
     несколько параллельно (чистка импорта): список имён читается из базы
-    один раз, а не в каждом потоке."""
+    один раз, а не в каждом потоке.
+
+    Расход (usage.py, TRU-160): лимит центра проверяется до запроса, ответ
+    модели записывается сразу, до разбора. meter — свой учёт для запросов
+    из потоков (чистка импорта): тогда лимит и запись — на вызывающем, в
+    основном потоке, а не в каждом."""
+    from . import usage
+
     if not is_enabled():
         raise AIError("ИИ-помощник не настроен.")
+    if meter is None:
+        usage.ensure_within_limit(organization)
+
+        def meter(model, input_tokens, output_tokens):
+            usage.record(
+                organization,
+                feature=feature,
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+
     names = names or Pseudonymizer(organization)
     ask = _ask_openai if provider() == "openai" else _ask_anthropic
     text = ask(
@@ -94,6 +115,7 @@ def _ask_json(
         schema=schema,
         max_tokens=max_tokens,
         image=image,
+        meter=meter,
     )
     try:
         return names.unmask(json.loads(text))
@@ -126,7 +148,7 @@ def _openai_content(user, image):
     ]
 
 
-def _ask_anthropic(*, system, user, schema, max_tokens, image=None) -> str:
+def _ask_anthropic(*, system, user, schema, max_tokens, image=None, meter=None) -> str:
     """Claude: короткие задачи — effort low (быстрее и дешевле); отказ модели
     fallbacks по умолчанию переигрывает на подходящей модели на стороне API."""
     try:
@@ -149,6 +171,11 @@ def _ask_anthropic(*, system, user, schema, max_tokens, image=None) -> str:
         logger.error("AI connection error: %s", exc)
         raise AIError("Нет связи с ИИ — проверьте интернет.") from exc
 
+    # Учёт — до проверок ответа: отказ и обрыв по длине тоже оплачены.
+    if meter:
+        from .usage import anthropic_tokens
+
+        meter(settings.AI_MODEL, *anthropic_tokens(response))
     if response.stop_reason == "refusal":
         raise AIError("ИИ не стал обрабатывать этот текст.")
     if response.stop_reason == "max_tokens":
@@ -156,14 +183,15 @@ def _ask_anthropic(*, system, user, schema, max_tokens, image=None) -> str:
     return next((block.text for block in response.content if block.type == "text"), "")
 
 
-def _ask_openai(*, system, user, schema, max_tokens, image=None) -> str:
+def _ask_openai(*, system, user, schema, max_tokens, image=None, meter=None) -> str:
     """OpenAI: Chat Completions со strict json_schema — ответ строго по схеме."""
     import openai
 
+    # Фото журнала mini читает с ошибками в колонках — для картинок модель сильнее.
+    model = settings.OPENAI_VISION_MODEL if image else settings.OPENAI_MODEL
     try:
         response = _openai_client().chat.completions.create(
-            # Фото журнала mini читает с ошибками в колонках — для картинок модель сильнее.
-            model=settings.OPENAI_VISION_MODEL if image else settings.OPENAI_MODEL,
+            model=model,
             max_completion_tokens=max_tokens,
             # Разбор и фильтры должны быть предсказуемыми: одна фраза — один ответ.
             temperature=0,
@@ -189,6 +217,10 @@ def _ask_openai(*, system, user, schema, max_tokens, image=None) -> str:
         logger.error("OpenAI connection error: %s", exc)
         raise AIError("Нет связи с ИИ — проверьте интернет.") from exc
 
+    if meter:
+        from .usage import openai_tokens
+
+        meter(model, *openai_tokens(response))
     choice = response.choices[0]
     if choice.message.refusal:
         raise AIError("ИИ не стал обрабатывать этот текст.")
@@ -258,6 +290,7 @@ def lead_from_text(organization, text: str) -> dict:
         f"Источники заявок: {json.dumps(list(sources), ensure_ascii=False)}"
     )
     data = _ask_json(
+        feature="lead_from_text",
         organization=organization,
         system=LEAD_SYSTEM,
         # Сегодняшняя дата — иначе «2017 г.р.» превращается в неверный возраст.
@@ -339,6 +372,7 @@ def lead_message(lead: Lead, *, goal: str, language: str, note: str = "") -> str
         + (f"Пожелание администратора: {note.strip()[:500]}\n" if note.strip() else "")
     )
     data = _ask_json(
+        feature="lead_message",
         organization=lead.organization,
         system=MESSAGE_SYSTEM,
         user=user,
@@ -455,6 +489,7 @@ def search_to_filters(user, query: str) -> dict:
         "источники заявок": list(sources),
     }
     data = _ask_json(
+        feature="search",
         organization=user.organization,
         system=SEARCH_SYSTEM,
         user=f"{json.dumps(lists, ensure_ascii=False)}\n\nЗапрос: {query}",
@@ -595,6 +630,7 @@ def attendance_from_photo(lesson, participants, uploaded) -> dict:
         raise AIError("На занятии нет детей.")
     image = (uploaded.content_type, base64.b64encode(uploaded.read()).decode())
     data = _ask_json(
+        feature="attendance_photo",
         organization=lesson.organization,
         system=PHOTO_SYSTEM,
         user="Перепиши таблицу с фото.",
@@ -805,11 +841,21 @@ def clean_import_file(organization, uploaded) -> dict:
             f"В пробной версии — до {IMPORT_MAX_ROWS} строк за раз. Разбейте файл на части."
         )
 
+    from . import usage
+
+    usage.ensure_within_limit(organization)
     names = Pseudonymizer(organization)
+    # Потоки только копят токены, в базу пишет основной поток — в finally,
+    # чтобы упавший кусок не унёс учёт уже потраченного.
+    spent = []
+
+    def meter(model, input_tokens, output_tokens):
+        spent.append((model, input_tokens, output_tokens))
 
     def ask(chunk):
         table = [{"row": number, "cells": [_cell(v) for v in values]} for number, values in chunk]
         data = _ask_json(
+            meter=meter,
             organization=organization,
             names=names,
             system=IMPORT_SYSTEM,
@@ -820,8 +866,18 @@ def clean_import_file(organization, uploaded) -> dict:
         return data.get("rows") or []
 
     chunks = [raw_rows[i : i + IMPORT_CHUNK] for i in range(0, len(raw_rows), IMPORT_CHUNK)]
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(ask, chunks))
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(ask, chunks))
+    finally:
+        for model, input_tokens, output_tokens in spent:
+            usage.record(
+                organization,
+                feature="import_clean",
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
     rows = _tidy_import_rows(
         sorted((row for chunk in results for row in chunk), key=lambda r: r.get("row") or 0)
     )

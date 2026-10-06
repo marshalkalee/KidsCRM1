@@ -86,3 +86,27 @@ class AIGeneration(TenantModel):
 
     def __str__(self) -> str:
         return f"{self.function}@{self.prompt_version}: {self.status}"
+
+
+class AIUsage(TenantModel):
+    """Одно обращение к модели (TRU-160, ADR-0009 раздел 5): на этих строках
+    стоят счётчик месяца, лимит центра и сводка платформы. Пишется сразу
+    после ответа провайдера — что бы ни случилось дальше, токены учтены."""
+
+    feature = models.CharField(max_length=64)
+    model = models.CharField(max_length=100)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    # Стоимость по таблице AI_PRICES_USD на момент вызова — цены меняются,
+    # прошлые месяцы пересчитывать не нужно.
+    cost_usd = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    generation = models.ForeignKey(
+        AIGeneration, null=True, blank=True, on_delete=models.SET_NULL, related_name="usage"
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["organization", "created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.feature} {self.model}: {self.input_tokens}/{self.output_tokens}"

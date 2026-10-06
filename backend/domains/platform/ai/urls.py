@@ -6,6 +6,7 @@ app_name = "ai"
 
 urlpatterns = [
     path("status/", views.ai_status, name="status"),
+    path("usage/", views.usage_summary, name="usage"),
     path("chat/", views.chat_view, name="chat"),
     path("conversations/", views.conversations, name="conversations"),
     path(

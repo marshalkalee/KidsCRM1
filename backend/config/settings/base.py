@@ -285,6 +285,21 @@ OPENAI_DIGEST_MODEL = env("OPENAI_DIGEST_MODEL", default="gpt-5.4")
 AI_FIXTURE_MODE = env.bool("AI_FIXTURE_MODE", default=False)
 AI_GENERATION_MAX_INPUT_CHARS = env.int("AI_GENERATION_MAX_INPUT_CHARS", default=120_000)
 
+# Учёт расхода ИИ (TRU-160, ADR-0009 раздел 5). Цены — $ за 1 млн токенов
+# (вход, выход), октябрь 2026. Модель без цены считается по нулям и пишется
+# в лог: расход в токенах всё равно учтён, дописать цену и пересчитать.
+AI_PRICES_USD = {
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-5.4": (2.50, 15.00),
+    "gpt-5.4-mini": (0.75, 4.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+}
+# Курс только для показа в тенге: учёт ведётся в $, как выставляет провайдер.
+AI_USD_KZT = env.float("AI_USD_KZT", default=500.0)
+# Лимит месяца на центр, ₸, если у организации свой не задан (ai_monthly_limit_kzt).
+AI_MONTHLY_LIMIT_KZT = env.int("AI_MONTHLY_LIMIT_KZT", default=10_000)
+
 # Код входа родителя (ADR-0007, otp/senders.py): каналы по порядку, через
 # запятую — первый не доставил, пробуем следующий. console — код в лог.
 OTP_CHANNELS = env("OTP_CHANNELS", default="console")
