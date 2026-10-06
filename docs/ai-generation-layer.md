@@ -1,0 +1,44 @@
+# Слой генераций ИИ (TRU-159)
+
+Версионированные промпты находятся в
+`backend/domains/platform/ai/prompts/`. Новый сценарий добавляет экземпляр
+`PromptTemplate` и регистрирует его в `prompts/__init__.py`.
+
+Запуск из веб-кода не вызывает модель:
+
+```python
+from domains.platform.ai.generations import enqueue
+
+generation = enqueue(request.organization, "marketing_recommendations")
+```
+
+`enqueue()` сохраняет `AIGeneration` со статусом `queued` и через
+`transaction.on_commit()` отправляет `run_ai_generation` в Celery. Результат,
+версия промпта, модель, число попыток и токены сохраняются в этой же записи.
+
+## Инварианты
+
+- Данные для маркетинговых генераций берутся только из `ai/aggregates.py`.
+- Текст модели не может внести цифры в результат. Модель возвращает ключи
+  доказательств, а значения подставляет код из обезличенного snapshot.
+- Ответ дважды проверяется шаблоном. Невалидный ответ не сохраняется в
+  `result` и получает статус `schema_error`.
+- Таймаут и повторы с отступом выполняют существующие клиенты провайдеров из
+  `ai/services.py`; размер запроса ограничен
+  `AI_GENERATION_MAX_INPUT_CHARS`.
+- `provider_unavailable`, `schema_error`, `limit_exhausted`, `no_key` и
+  `input_too_large` — разные состояния, экран может показать понятную
+  деградацию и продолжить работу без ИИ.
+
+## Без ключа
+
+В production функция остаётся скрытой, потому что `services.is_enabled()`
+без ключа возвращает `False`. В `settings/local.py` включён
+`AI_FIXTURE_MODE`: фоновая цепочка и интерфейс можно разрабатывать на
+детерминированной фикстуре без внешнего запроса. В CI внешняя сеть не нужна.
+
+Настройки:
+
+- `OPENAI_DIGEST_MODEL` — модель фоновых рекомендаций;
+- `AI_FIXTURE_MODE` — использовать локальную фикстуру без ключа;
+- `AI_GENERATION_MAX_INPUT_CHARS` — максимальный размер system + user prompt.

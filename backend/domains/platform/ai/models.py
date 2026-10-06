@@ -48,3 +48,41 @@ class AIMessage(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_role_display()}: {self.content[:40]}"
+
+
+class AIGeneration(TenantModel):
+    """Один фоновый запуск версионированного промпта (TRU-159)."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "В очереди"
+        RUNNING = "running", "Выполняется"
+        SUCCEEDED = "succeeded", "Готово"
+        PROVIDER_UNAVAILABLE = "provider_unavailable", "Провайдер недоступен"
+        SCHEMA_ERROR = "schema_error", "Ответ не прошёл проверку"
+        LIMIT_EXHAUSTED = "limit_exhausted", "Лимит исчерпан"
+        NO_KEY = "no_key", "ИИ не настроен"
+        INPUT_TOO_LARGE = "input_too_large", "Слишком большой запрос"
+
+    function = models.CharField(max_length=64)
+    prompt_version = models.CharField(max_length=32)
+    provider = models.CharField(max_length=20, blank=True)
+    model = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=32, choices=Status.choices, default=Status.QUEUED)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    request_chars = models.PositiveIntegerField(default=0)
+    result = models.JSONField(default=dict, blank=True)
+    error_code = models.CharField(max_length=64, blank=True)
+    error_detail = models.CharField(max_length=500, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["organization", "function", "-created_at"]),
+            models.Index(fields=["organization", "status", "-created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.function}@{self.prompt_version}: {self.status}"
