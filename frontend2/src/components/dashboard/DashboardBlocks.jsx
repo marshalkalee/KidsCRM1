@@ -98,7 +98,7 @@ export function KpiTiles({ data }) {
       hint: owes
         ? t('должников: {n} · просрочено {sum}', { n: data.debts.count, sum: nb(data.debts.overdue_debt) })
         : t('Все оплатили'),
-      to: '/debts',
+      to: '/money?tab=debts',
     })
   }
   const groups = data.groups?.results
@@ -209,7 +209,7 @@ export function Renewals({ data }) {
   if (!data) return <Skeleton className="h-40" />
   return (
     <Card>
-      <BlockTitle to="/renewals" link={data.count ? t('Все {n}', { n: data.count }) : null}>{t('Продления')}</BlockTitle>
+      <BlockTitle to="/money?tab=renewals" link={data.count ? t('Все {n}', { n: data.count }) : null}>{t('Продления')}</BlockTitle>
       {data.results.length === 0 ? (
         <p className="py-3 text-sm text-ink-muted">{t('Ближайших продлений нет.')}</p>
       ) : (

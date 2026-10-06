@@ -6,7 +6,7 @@ import { fetchTeachers } from '../api/lessons'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
 import { SellModal } from '../components/money/SubscriptionsTab'
 import { useSession } from '../session/SessionContext'
-import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, Select, Skeleton, Tabs, apiErrorMessage, useToast } from '../ui'
+import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, PageHeader, Select, Skeleton, Tabs, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
 
 function waLink(phone, text) {
@@ -117,21 +117,19 @@ export default function MyTasks() {
 
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-xl font-bold text-ink">{t('Мои задачи на сегодня')}</h1>
-        <p className="text-[13px] text-ink-muted">
-          {overdue.length > 0
-            ? t('{n} просрочено, {m} на сегодня', { n: overdue.length, m: today.length })
-            : t('{n} задач на сегодня', { n: today.length })}
-        </p>
-      </div>
+      <PageHeader
+        title={t('Мои задачи на сегодня')}
+        description={overdue.length > 0
+          ? t('{n} просрочено, {m} на сегодня', { n: overdue.length, m: today.length })
+          : t('{n} задач на сегодня', { n: today.length })}
+      />
 
       <Tabs
         value={tab}
         onChange={setTab}
-        items={[
-          { value: 'today', label: t('Сегодня и просроченные'), count: overdue.length + today.length },
-          { value: 'future', label: t('На будущее'), count: future.length },
+        tabs={[
+          { key: 'today', label: t('Сегодня и просроченные'), count: overdue.length + today.length },
+          { key: 'future', label: t('На будущее'), count: future.length },
         ]}
       />
 

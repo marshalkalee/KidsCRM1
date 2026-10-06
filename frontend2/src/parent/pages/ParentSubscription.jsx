@@ -100,8 +100,6 @@ function Current({ subscription: s }) {
 }
 
 function HowToPay({ amount, howToPay }) {
-  const kaspi = howToPay?.kaspi || ''
-  const isLink = /^https?:\/\//.test(kaspi)
   const contacts = howToPay?.contacts || []
   return (
     <Card>
@@ -116,10 +114,7 @@ function HowToPay({ amount, howToPay }) {
       {amount > 0 && (
         <div className="mt-3 space-y-2 border-t border-line pt-3">
           <p className="text-[13px] font-semibold text-ink">{t('Как оплатить')}</p>
-          {kaspi && (isLink
-            ? <a href={kaspi} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center rounded-md bg-[#f14635] text-sm font-semibold text-white hover:brightness-95">{t('Оплатить через Kaspi')}</a>
-            : <p className="rounded-lg bg-surface-muted px-3 py-2 text-sm text-ink">{t('Перевод через Kaspi: {details}', { details: kaspi })}</p>)}
-          {!kaspi && <p className="text-[13px] text-ink-muted">{t('Оплатить можно в центре или переводом — уточните у администратора.')}</p>}
+          <p className="text-[13px] text-ink-muted">{t('Оплатить можно в центре или переводом — уточните у администратора.')}</p>
           {contacts.map(c => (
             <div key={c.phone} className="flex flex-wrap items-center gap-2">
               <span className="min-w-0 flex-1 text-sm text-ink">{c.branch} · {formatPhone(c.phone)}</span>

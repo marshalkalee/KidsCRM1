@@ -12,12 +12,12 @@ const RULES = [
   [/^\/clients\/parents\/([0-9a-f-]{36})(\/edit)?\/?$/, m => `/parents/${m[1]}`],
   [/^\/clients\/parents\/?$/, () => '/parents'],
   [/^\/settings\/branches\/([0-9a-f-]{36})\/rooms\/?$/, m => `/branches/${m[1]}/rooms`],
-  [/^\/settings\/branches\/?.*$/, () => '/branches'],
-  [/^\/settings\/directions\/?.*$/, () => '/directions'],
+  [/^\/settings\/branches\/?.*$/, () => '/settings/structure?tab=branches'],
+  [/^\/settings\/directions\/?.*$/, () => '/settings/structure?tab=directions'],
   [/^\/groups\/([0-9a-f-]{36})\/(edit|close)\/?$/, m => `/groups/${m[1]}`],
   [/^\/groups\/create\/?$/, () => '/groups'],
   [/^\/onboarding\/.+$/, () => '/onboarding'],
-  [/^\/debtors\/?.*$/, () => '/debts'],
+  [/^\/debtors\/?.*$/, () => '/money?tab=debts'],
   [/^\/payments\/child\/([0-9a-f-]{36})\/.*$/, m => `/children/${m[1]}?tab=payments`],
 ]
 

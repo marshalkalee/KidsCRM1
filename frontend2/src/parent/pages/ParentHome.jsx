@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, CalendarDays, Clock, MapPin, Megaphone, Snowflake, UserRound, Wallet } from 'lucide-react'
-import { Card, ErrorState, Skeleton, cn, money, plural } from '../../ui'
+import { Card, ErrorState, Skeleton, money, plural } from '../../ui'
 import { locale, t } from '../../i18n'
 import { usePortalData } from '../api'
 import { useParent } from '../useParent'
@@ -52,7 +52,7 @@ export default function ParentHome() {
     <div className="space-y-3">
       <NextLesson lessons={data.next_lessons} today={data.today} left={child.status === 'left'} />
       <SubscriptionCard subscription={data.subscription} />
-      <ToPay amount={Number(data.to_pay)} kaspi={data.payment?.kaspi} />
+      <ToPay amount={Number(data.to_pay)} />
       <News />
     </div>
   )
@@ -160,7 +160,7 @@ function SubscriptionCard({ subscription: s }) {
   )
 }
 
-function ToPay({ amount, kaspi }) {
+function ToPay({ amount }) {
   if (!(amount > 0)) {
     return (
       <Card className="flex items-center gap-3 py-4">
@@ -169,22 +169,15 @@ function ToPay({ amount, kaspi }) {
       </Card>
     )
   }
-  const isLink = /^https?:\/\//.test(kaspi || '')
   return (
     <Card>
       <p className="font-btn text-[11px] font-bold uppercase tracking-[0.07em] text-ink-subtle">{t('К оплате')}</p>
       <p className="mt-1 text-[22px] font-bold text-ink">{money(amount)}</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        {isLink && (
-          <a href={kaspi} target="_blank" rel="noreferrer" className={cn('inline-flex h-10 items-center rounded-md bg-[#f14635] px-4 text-sm font-semibold text-white hover:brightness-95')}>
-            {t('Оплатить через Kaspi')}
-          </a>
-        )}
         <Link to="/parent/subscription" className="inline-flex h-10 items-center rounded-md border border-line-strong px-4 text-sm font-semibold text-ink">
           {t('Подробнее')}
         </Link>
       </div>
-      {kaspi && !isLink && <p className="mt-2 text-[13px] text-ink-muted">{t('Перевод через Kaspi: {details}', { details: kaspi })}</p>}
     </Card>
   )
 }

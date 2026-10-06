@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Banknote, CheckCircle2, CreditCard, Send, Smartphone, Store, Wallet } from 'lucide-react'
-import { createPaymentRequest, fetchPaymentRequestOptions, recordPayment } from '../../api/payments'
+import { Banknote, CheckCircle2, CreditCard, Smartphone, Wallet } from 'lucide-react'
+import { recordPayment } from '../../api/payments'
 import { fetchChildSubscriptions } from '../../api/subscriptions'
 import { Button, Field, Input, Modal, Select, Skeleton, apiErrorMessage, cn, money, useToast } from '../../ui'
 import { t } from '../../i18n'
 import api from '../../api/axios'
-import { phoneDigits, phoneInputProps } from '../../utils/formValidation'
-import { InvoiceSentModal, KaspiNotConfigured } from './KaspiInvoice'
 
 // Kaspi первым — самый частый случай у стойки (ТЗ п. 10.4).
 const METHODS = [
@@ -26,20 +24,12 @@ function newKey() {
 
 const hasDebt = s => Number(s.debt) > 0
 
-// Как платят: здесь и сейчас — или удалённо, счётом в Kaspi.
-const MODES = [
-  { value: 'desk', icon: Store, get label() { return t('Принять сейчас') } },
-  { value: 'remote', icon: Send, get label() { return t('Счёт в Kaspi') } },
-]
-
 /**
  * «Принять оплату» (TRU-67): сумма по умолчанию — долг по абонементу,
  * способ — кнопками, после оплаты — итог «оплачено / осталось».
- * Режим «Счёт в Kaspi» — удалённая оплата: счёт родителю на телефон или
- * сообщение с реквизитами центра; долг уменьшится, когда деньги придут.
  * subscriptionId — какой абонемент выбрать сразу (экран «Задолженности»).
  */
-export default function AcceptPaymentModal({ child, subscriptionId, onClose, onPaid, onInvoiced }) {
+export default function AcceptPaymentModal({ child, subscriptionId, onClose, onPaid }) {
   const toast = useToast()
   const [subscriptions, setSubscriptions] = useState(null)
   const [form, setForm] = useState({ subscription: '', amount: '', method: 'kaspi_transfer', comment: '', payer: '' })
@@ -48,24 +38,11 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
   const [key] = useState(newKey)
   const [result, setResult] = useState(null)
   const [contacts, setContacts] = useState([])
-  const [mode, setMode] = useState('desk')
-  const [remote, setRemote] = useState(null)
-  const [phone, setPhone] = useState('')
-  const [invoiceKey] = useState(newKey)
-  const [invoice, setInvoice] = useState(null)
-
-  // Канал и телефон плательщика — когда впервые открыли «Счёт в Kaspi».
-  useEffect(() => {
-    if (mode !== 'remote' || remote) return
-    fetchPaymentRequestOptions(child.id)
-      .then(options => { setRemote(options); setPhone(options.phone || '') })
-      .catch(err => { toast.error(apiErrorMessage(err)); setMode('desk') })
-  }, [mode, remote, child.id, toast])
 
   useEffect(() => {
     Promise.all([
       fetchChildSubscriptions(child.id),
-      api.get('child-contacts/', { params: { child: child.id } }),
+      api.get('clients/child-contacts/', { params: { child: child.id } }),
     ])
       .then(([subs, contactsRes]) => {
         const payable = subs.filter(s => hasDebt(s) || s.status === 'active' || s.status === 'frozen')
@@ -99,17 +76,9 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
     setSubmitting(true)
     setErrors({})
     try {
-      if (mode === 'remote') {
-        const request = await createPaymentRequest({
-          subscription: form.subscription, amount: form.amount, phone, idempotency_key: invoiceKey,
-        })
-        setInvoice(request)
-        onInvoiced?.(request)
-      } else {
-        const payment = await recordPayment({ ...form, idempotency_key: key })
-        setResult(payment)
-        onPaid?.(payment)
-      }
+      const payment = await recordPayment({ ...form, idempotency_key: key })
+      setResult(payment)
+      onPaid?.(payment)
     } catch (err) {
       const data = err.response?.data
       if (data && typeof data === 'object' && !data.detail) setErrors(data)
@@ -119,12 +88,7 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
     }
   }
 
-  if (invoice) return <InvoiceSentModal request={invoice} onClose={onClose} />
-
-  const remoteBlocked = mode === 'remote' && (!remote || !remote.ready)
-  const submitLabel = mode === 'remote'
-    ? (form.amount ? t('Выставить счёт {sum}', { sum: money(form.amount) }) : t('Выставить счёт'))
-    : (form.amount ? t('Принять {sum}', { sum: money(form.amount) }) : t('Принять оплату'))
+  const submitLabel = form.amount ? t('Принять {sum}', { sum: money(form.amount) }) : t('Принять оплату')
 
   if (result) {
     const left = Number(result.subscription_debt)
@@ -156,7 +120,7 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
       footer={
         <>
           <Button onClick={onClose}>{t('Отмена')}</Button>
-          <Button variant="primary" type="submit" form="accept-payment-form" loading={submitting} disabled={!selected || remoteBlocked}>
+          <Button variant="primary" type="submit" form="accept-payment-form" loading={submitting} disabled={!selected}>
             {submitLabel}
           </Button>
         </>
@@ -168,8 +132,6 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
         <p className="py-4 text-center text-sm text-ink-muted">{t('Нет абонемента, за который можно принять оплату. Сначала продайте абонемент.')}</p>
       ) : (
         <form id="accept-payment-form" onSubmit={submit} className="flex flex-col gap-4">
-          <ChoicePicker options={MODES} value={mode} onChange={setMode} label={t('Как платят')} columns="grid-cols-2" />
-
           {subscriptions.length > 1 ? (
             <Field label={t('Абонемент')} error={errors.subscription}>
               {({ id }) => (
@@ -223,32 +185,11 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
             )}
           </Field>
 
-          {mode === 'desk' ? (
-            <MethodPicker value={form.method} onChange={method => setForm({ ...form, method })} />
-          ) : remote === null ? (
-            <Skeleton className="h-16" />
-          ) : !remote.ready ? (
-            <KaspiNotConfigured />
-          ) : (
-            <Field
-              label={t('Телефон родителя в Kaspi')}
-              required
-              error={errors.phone}
-              hint={remote.channel === 'gateway'
-                ? t('Счёт придёт в приложение Kaspi.kz на этот номер')
-                : t('На этот номер откроется WhatsApp с сообщением об оплате')}
-            >
-              {({ id, invalid }) => (
-                <Input id={id} invalid={invalid} value={phone} onChange={e => setPhone(phoneDigits(e.target.value))} required {...phoneInputProps} />
-              )}
-            </Field>
-          )}
+          <MethodPicker value={form.method} onChange={method => setForm({ ...form, method })} />
 
-          {mode === 'desk' && (
-            <Field label={t('Комментарий')} error={errors.comment}>
-              {({ id }) => <Input id={id} value={form.comment} onChange={e => setForm({ ...form, comment: e.target.value })} placeholder={t('Необязательно')} />}
-            </Field>
-          )}
+          <Field label={t('Комментарий')} error={errors.comment}>
+            {({ id }) => <Input id={id} value={form.comment} onChange={e => setForm({ ...form, comment: e.target.value })} placeholder={t('Необязательно')} />}
+          </Field>
         </form>
       )}
     </Modal>
