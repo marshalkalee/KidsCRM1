@@ -5,6 +5,7 @@ from django.core.management import call_command
 from django.test import TestCase
 
 from domains.people.clients.models import Child
+from domains.platform.leads.models import Lead
 from domains.platform.tenants.models import Organization
 from domains.platform.users.models import User
 from domains.scheduling.schedule.models import Lesson
@@ -36,3 +37,13 @@ class LoadSeedTest(TestCase):
         small = Organization.objects.exclude(pk=target.pk)
         self.assertEqual(Child.objects.filter(organization__in=small).count(), 20)
         self.assertEqual(Lesson.objects.filter(organization__in=small).count(), 4)
+
+        # seed_analytics временно разрешает исторические created_at. Флаг
+        # модели не должен утекать в остальные тесты и рабочие запросы.
+        self.assertTrue(Lead._meta.get_field("created_at").auto_now_add)
+        lead = Lead.objects.create(
+            organization=target,
+            parent_name="Проверка после сида",
+            phone="+77009990001",
+        )
+        self.assertIsNotNone(lead.created_at)

@@ -103,18 +103,29 @@ class Command(BaseCommand):
         self.today = datetime.now(self.tz).date()
         self.first_day = self.today - timedelta(days=DAYS - 1)
         # created_at/paid_at проставляются «сейчас» даже в bulk_create — для
-        # истории за год даём сиду самому задать дату.
-        for model, name in ((Payment, "paid_at"), (Lead, "created_at")):
-            model._meta.get_field(name).auto_now_add = False
+        # истории за год даём сиду самому задать дату. Метаданные полей общие
+        # для всего процесса Django, поэтому обязательно возвращаем их даже
+        # при исключении: иначе следующие тесты/запросы создадут записи с NULL.
+        timestamp_fields = [
+            Payment._meta.get_field("paid_at"),
+            Lead._meta.get_field("created_at"),
+        ]
+        original_auto_now_add = [field.auto_now_add for field in timestamp_fields]
+        try:
+            for field in timestamp_fields:
+                field.auto_now_add = False
 
-        with transaction.atomic():
-            owner = self._owner(organization)
-            branches, directions, version = self._catalog(organization)
-            children, groups = self._children_and_groups(organization, branches, directions)
-            self._lessons_and_attendance(organization, groups)
-            self._subscriptions_and_payments(organization, owner, version, groups)
-            self._leads(organization, branches, directions, owner)
-            self._system_scale(system_organizations - 1)
+            with transaction.atomic():
+                owner = self._owner(organization)
+                branches, directions, version = self._catalog(organization)
+                children, groups = self._children_and_groups(organization, branches, directions)
+                self._lessons_and_attendance(organization, groups)
+                self._subscriptions_and_payments(organization, owner, version, groups)
+                self._leads(organization, branches, directions, owner)
+                self._system_scale(system_organizations - 1)
+        finally:
+            for field, auto_now_add in zip(timestamp_fields, original_auto_now_add, strict=True):
+                field.auto_now_add = auto_now_add
         with connection.cursor() as cursor:
             cursor.execute("ANALYZE")
         self.stdout.write(self.style.SUCCESS(f"Готово: organization={organization.pk}"))
