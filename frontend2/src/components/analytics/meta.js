@@ -1,4 +1,4 @@
-import { Banknote, CalendarCheck, CalendarX, Inbox, Percent, Receipt, UsersRound, Wallet, Baby } from 'lucide-react'
+import { Banknote, BadgePercent, CalendarCheck, CalendarX, CircleCheck, Hourglass, Inbox, Percent, Receipt, Scale, ShoppingBag, UsersRound, Wallet, Baby } from 'lucide-react'
 import { t } from '../../i18n'
 
 /**
@@ -11,6 +11,17 @@ export const METRIC_META = {
   revenue: { get label() { return t('Выручка') }, icon: Banknote },
   payments_count: { get label() { return t('Оплат') }, icon: Receipt },
   average_check: { get label() { return t('Средний чек') }, icon: Receipt },
+  // Чек и долги (TRU-124): медиана и долг на конец периода — цифры отчёта, не метрики реестра.
+  median_check: { get label() { return t('Медиана чека') }, icon: Scale },
+  sales_count: { get label() { return t('Продано абонементов') }, icon: ShoppingBag },
+  sales_amount: { get label() { return t('Продано на сумму') }, icon: ShoppingBag },
+  discount_total: { get label() { return t('Скидки') }, icon: BadgePercent },
+  debt_end: { get label() { return t('Долг на конец периода') }, icon: Wallet, goodWhenDown: true },
+  debt_age_0_30: { get label() { return t('Долг до 30 дней') }, icon: Hourglass, goodWhenDown: true },
+  debt_age_31_60: { get label() { return t('Долг 31–60 дней') }, icon: Hourglass, goodWhenDown: true },
+  debt_age_over_60: { get label() { return t('Долг больше 60 дней') }, icon: Hourglass, goodWhenDown: true },
+  debtors_share: { get label() { return t('Доля должников') }, icon: Percent, goodWhenDown: true },
+  debt_repaid: { get label() { return t('Погашено старых долгов') }, icon: CircleCheck },
   debt_total: { get label() { return t('Задолженность') }, icon: Wallet, goodWhenDown: true },
   visits: { get label() { return t('Посещений') }, icon: CalendarCheck },
   attendance_marks: { get label() { return t('Отметок посещаемости') }, icon: CalendarCheck },
@@ -53,6 +64,13 @@ const KEY_LABELS = {
   no_reason: () => t('Без причины'),
   new: () => t('Новые клиенты'),
   renewal: () => t('Продления'),
+  large_family: () => t('Многодетная семья'),
+  second_child: () => t('Второй ребёнок'),
+  promotion: () => t('Акция'),
+  staff: () => t('Сотрудник'),
+  '0_30': () => t('до 30 дней'),
+  '31_60': () => t('31–60 дней'),
+  over_60: () => t('больше 60 дней'),
 }
 
 export function breakdownLabel(item) {
@@ -64,6 +82,7 @@ export function breakdownLabel(item) {
 export const REPORTS = [
   { key: '/analytics', get label() { return t('Обзор') } },
   { key: '/analytics/revenue', get label() { return t('Выручка') } },
+  { key: '/analytics/check-debt', get label() { return t('Чек и долги') } },
   { key: '/analytics/attendance', get label() { return t('Посещаемость') } },
   { key: '/analytics/risk', get label() { return t('Зона ухода') } },
   { key: '/analytics/groups', get label() { return t('Группы') } },

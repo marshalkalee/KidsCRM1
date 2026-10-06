@@ -11,6 +11,7 @@ from .attendance_trends import attendance_trends
 from .branches import COLUMNS as BRANCH_COLUMNS
 from .branches import compare_branches
 from .breakdowns import breakdown, visits_heatmap
+from .check_debt import average_check, debt_dynamics
 from .export import Column, Export, Section
 from .funnel import BY as FUNNEL_BY
 from .funnel import STAGES, funnel, funnel_by
@@ -211,6 +212,195 @@ def revenue(scope, period, params):
         "Деньги — в тенге, доли — в процентах."
     )
     return sections
+
+
+CHECK_TITLES = [
+    ("branch", "По филиалам", "Филиал"),
+    ("direction", "По направлениям", "Направление"),
+    ("subscription_type", "По типам абонементов", "Тип абонемента"),
+    ("source", "По источникам клиентов", "Источник"),
+    ("client", "Новые и продления", "Клиенты"),
+]
+AGE_TITLES = [("0_30", "до 30 дней"), ("31_60", "31–60 дней"), ("over_60", "больше 60 дней")]
+DEBT_SOURCE = {"live": "сейчас", "snapshot": "снимок", None: "нет данных"}
+
+
+def _check_stats_columns(first_title):
+    return [
+        Column(first_title, width=28),
+        Column("Продано", "count", 10),
+        Column("Сумма, ₸", "money", 16),
+        Column("Средний чек, ₸", "money", 16, total=False),
+        Column("Медиана, ₸", "money", 14, total=False),
+    ]
+
+
+def _check_row(label, stats):
+    return [label, stats["count"], stats["amount"], stats["average"], stats["median"]]
+
+
+def check_sections(scope, period):
+    data = average_check(scope, period)
+    summary, previous, discounts = data["summary"], data["previous"], data["discounts"]
+    rows = [
+        ["Продано абонементов", (summary["count"], "count"), (previous["count"], "count")],
+        ["Сумма продаж", (summary["amount"], "money"), (previous["amount"], "money")],
+        ["Средний чек", (summary["average"], "money"), (previous["average"], "money")],
+        ["Медиана", (summary["median"], "money"), (previous["median"], "money")],
+        ["Четверть дешевле (25%)", (summary["p25"], "money"), (previous["p25"], "money")],
+        ["Четверть дороже (75%)", (summary["p75"], "money"), (previous["p75"], "money")],
+        ["Самый дешёвый", (summary["min"], "money"), (previous["min"], "money")],
+        ["Самый дорогой", (summary["max"], "money"), (previous["max"], "money")],
+        ["Средний чек без скидок", (discounts["list_average"], "money"), (None, "money")],
+        ["Скидки снизили чек на", (discounts["effect"], "money"), (None, "money")],
+        ["Скидки, всего", (discounts["total"], "money"), (None, "money")],
+        ["Абонементов со скидкой", (discounts["count"], "count"), (None, "count")],
+    ]
+    sections = [
+        Section(
+            "Средний чек",
+            [
+                Column("Показатель", width=28),
+                Column("За период", "decimal", 16, total=False),
+                Column("Прошлый период", "decimal", 16, total=False),
+            ],
+            rows,
+            note=(
+                "Средний чек — средняя цена проданного абонемента со скидкой, по дате продажи. "
+                "Медиана — середина: половина абонементов дешевле, половина дороже; "
+                "один дорогой абонемент сдвигает среднее, но не медиану. Деньги — в тенге."
+            ),
+        ),
+        Section(
+            "Распределение цен",
+            [
+                Column("Цена от, ₸", "money", 14, total=False),
+                Column("до, ₸", "money", 14, total=False),
+                Column("Продано", "count", 10),
+                Column("Доля, %", "percent", 10),
+            ],
+            [[b["from"], b["to"], b["count"], b["share"]] for b in data["distribution"]],
+            note="Интервал включает нижнюю границу и не включает верхнюю.",
+        ),
+    ]
+    for key, title, label in CHECK_TITLES:
+        sections.append(
+            Section(
+                f"Чек — {title.lower()}",
+                _check_stats_columns(label),
+                [_check_row(item["label"] or NOT_SET, item) for item in data["by"][key]],
+            )
+        )
+    sections.append(
+        Section(
+            "Чек по месяцам",
+            [
+                Column("Месяц", "date", 12),
+                Column("Продано", "count", 10),
+                Column("Средний чек, ₸", "money", 16, total=False),
+                Column("Медиана, ₸", "money", 14, total=False),
+                Column("Скидки, ₸", "money", 14),
+            ],
+            [
+                [m["month"], m["count"], m["average"], m["median"], m["discount_total"]]
+                for m in data["monthly"]
+            ],
+            note="12 месяцев до конца выбранного периода.",
+        )
+    )
+    sections.append(
+        Section(
+            "Скидки по причинам",
+            [
+                Column("Причина", width=28),
+                Column("Абонементов", "count", 12),
+                Column("Скидки, ₸", "money", 14),
+            ],
+            [
+                [item["label"] or NOT_SET, item["count"], item["amount"]]
+                for item in discounts["reasons"]
+            ],
+        )
+    )
+    return sections
+
+
+def debt_sections(scope, period):
+    data = debt_dynamics(scope, period)
+    end, before, repaid = data["end"], data["previous"], data["repaid"]
+
+    def ages(point):
+        return [(point.get("by_age") or {}).get(key) for key, _ in AGE_TITLES]
+
+    point_columns = [
+        Column("Долг, ₸", "money", 14, total=False),
+        *[Column(f"{title}, ₸", "money", 16, total=False) for _, title in AGE_TITLES],
+        Column("Доля должников, %", "percent", 18, total=False),
+        Column("Откуда цифра", width=14),
+    ]
+
+    def point_row(label, point):
+        return [
+            label,
+            point["total"],
+            *ages(point),
+            point.get("debtors_share"),
+            DEBT_SOURCE[point["source"]],
+        ]
+
+    return [
+        Section(
+            "Задолженность",
+            [Column("На дату", width=28), *point_columns],
+            [
+                point_row(f"Конец периода ({end['date']})", end),
+                point_row(f"Конец прошлого периода ({before['date']})", before),
+            ],
+            note=(
+                "Долг — тот же расчёт, что экран «Задолженности»: по каждому абонементу "
+                "цена минус оплаты. «Сейчас» — живая цифра, «снимок» — сохранённая на ту дату, "
+                "задним числом долг не пересчитывается. Давность — от даты начала абонемента."
+            ),
+        ),
+        Section(
+            "Долг по месяцам",
+            [Column("Месяц", "date", 12), *point_columns],
+            [
+                [m["month"], m["total"], *ages(m), m.get("debtors_share"), DEBT_SOURCE[m["source"]]]
+                for m in data["monthly"]
+            ],
+            note=(
+                "Долг на конец каждого месяца (текущий месяц — сейчас). "
+                f"История снимков копится с {data['history_since'] or '—'}."
+            ),
+        ),
+        Section(
+            "Погашение",
+            [
+                Column("Долг на начало периода, ₸", "money", 22, total=False),
+                Column("Погашено за период, ₸", "money", 20, total=False),
+                Column("Осталось, ₸", "money", 14, total=False),
+                Column("Погашено, %", "percent", 12, total=False),
+            ],
+            [
+                [
+                    repaid["owed_at_start"],
+                    repaid["repaid"],
+                    repaid["remaining"],
+                    repaid["percent"],
+                ]
+            ],
+            note=(
+                "Долг по абонементам, проданным до начала периода, и сколько из него "
+                "оплатили за период. Переплата не считается погашением."
+            ),
+        ),
+    ]
+
+
+@report("check_debt", "Средний чек и задолженность")
+def check_debt(scope, period, params):
+    return check_sections(scope, period) + debt_sections(scope, period)
 
 
 @report("attendance", "Посещаемость и пропуски")

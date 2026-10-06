@@ -33,6 +33,7 @@ from . import metrics  # noqa: F401 — регистрирует базовые 
 from .attendance_trends import attendance_trends
 from .branches import branch_trends, compare_branches
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
+from .check_debt import average_check, debt_dynamics
 from .export import filename, workbook
 from .funnel import FILTERS as FUNNEL_FILTERS
 from .funnel import FunnelError, funnel, funnel_by
@@ -315,6 +316,28 @@ def sources_api(request, version=None):
             "by_month": sources_by_month(scope, period, filters),
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def average_check_api(request, version=None):
+    """Средний чек за период (TRU-124): медиана, распределение, разрезы,
+    скидки по причинам, помесячная динамика."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response({"period": period.as_dict(), **average_check(scope, period)})
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def debt_dynamics_api(request, version=None):
+    """Долг на конец периода и его динамика (TRU-124): давность, доля
+    должников, погашение. Сумма — subscriptions.debt (как экран «Задолженности»)."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response({"period": period.as_dict(), **debt_dynamics(scope, period)})
 
 
 def _rejection_filters(request):

@@ -22,7 +22,7 @@ from domains.scheduling.schedule.models import Lesson
 from . import metrics  # noqa: F401
 from .models import MetricSnapshot
 from .period import Period, PeriodError, period_for
-from .registry import compute
+from .registry import REGISTRY, compute
 from .scope import Scope
 from .snapshots import snapshot_organization
 
@@ -138,7 +138,8 @@ class MetricTests(AnalyticsFixtures):
             self.metric("revenue", Scope(self.org, (self.abaya.pk,)))["value"], "30000"
         )
         self.assertEqual(self.metric("payments_count")["value"], 2)
-        self.assertEqual(self.metric("average_check")["value"], "22500")
+        # Средний чек — по проданным абонементам, а не по оплатам (TRU-124).
+        self.assertEqual(self.metric("average_check")["value"], "30000")
 
     def test_day_boundary_is_center_time(self):
         """Оплата в 23:30 по Алматы — это ещё тот день, хотя в UTC уже другой."""
@@ -217,7 +218,9 @@ class MetricTests(AnalyticsFixtures):
 class SnapshotTests(AnalyticsFixtures):
     def test_snapshot_once_a_day_and_used_as_history(self):
         sub = self.subscription(self.abaya)
-        self.assertEqual(snapshot_organization(self.org), 6)  # 2 метрики × (орг + 2 филиала)
+        snapshots = sum(1 for metric in REGISTRY.values() if metric.kind == "snapshot")
+        # Каждая метрика-снимок × (организация + 2 филиала).
+        self.assertEqual(snapshot_organization(self.org), snapshots * 3)
         self.pay(sub, 10000)
         snapshot_organization(self.org)
         rows = MetricSnapshot.objects.filter(metric="debt_total", branch__isnull=True)

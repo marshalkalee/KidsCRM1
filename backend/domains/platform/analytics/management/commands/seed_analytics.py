@@ -48,6 +48,7 @@ REJECTION_COMMENTS = [
     "Нашли кружок рядом с домом",
     "Не отвечают на звонки",
 ]
+DISCOUNT_REASONS = ["second_child", "large_family", "promotion", "staff"]
 DIRECTIONS = ["Балет", "Хореография", "Гимнастика", "Акробатика", "Растяжка"]
 
 
@@ -74,7 +75,11 @@ class Command(BaseCommand):
         self.first_day = self.today - timedelta(days=DAYS - 1)
         # created_at/paid_at проставляются «сейчас» даже в bulk_create — для
         # истории за год даём сиду самому задать дату.
-        for model, name in ((Payment, "paid_at"), (Lead, "created_at")):
+        for model, name in (
+            (Payment, "paid_at"),
+            (Lead, "created_at"),
+            (Subscription, "created_at"),
+        ):
             model._meta.get_field(name).auto_now_add = False
 
         with transaction.atomic():
@@ -292,6 +297,11 @@ class Command(BaseCommand):
                 chosen = version if random.random() < 0.7 else bigger
                 end_of_membership = left or self.today
                 while start <= end_of_membership:
+                    # Каждая десятая продажа — со скидкой (TRU-124, влияние скидок).
+                    discount, reason = 0, ""
+                    if random.random() < 0.1:
+                        discount = int(chosen.price) // 10
+                        reason = random.choice(DISCOUNT_REASONS)
                     subscription = Subscription(
                         id=uuid.uuid4(),
                         organization=organization,
@@ -310,13 +320,17 @@ class Command(BaseCommand):
                             else Subscription.Status.EXPIRED
                         ),
                         list_price=chosen.price,
-                        price=chosen.price,
+                        discount_amount=discount,
+                        discount_reason=reason,
+                        price=chosen.price - discount,
+                        # Дата продажи — день начала абонемента, а не день сида.
+                        created_at=self.tz.localize(datetime.combine(start, time(11))),
                     )
                     previous = subscription
                     subscriptions.append(subscription)
                     # 85% платят полностью, остальные частично или позже.
                     roll = random.random()
-                    full = int(chosen.price)
+                    full = int(subscription.price)
                     amounts = [full] if roll < 0.85 else [full // 2] if roll < 0.95 else []
                     for amount in amounts:
                         paid_day = start + timedelta(days=random.randint(0, 3))

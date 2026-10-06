@@ -118,7 +118,8 @@ def _grouped(scope, period):
     by = {}
     for name in (
         "revenue",
-        "payments_count",
+        "sales_amount",
+        "sales_count",
         "visits",
         "attendance_marks",
         "new_leads",
@@ -139,7 +140,7 @@ def _branch_values(branch_id, by, conversion):
     revenue, children = get("revenue") or Decimal(0), get("active_children")
     return {
         "revenue": revenue,
-        "average_check": _ratio(get("revenue"), get("payments_count")),
+        "average_check": _ratio(get("sales_amount"), get("sales_count")),
         "attendance_rate": _ratio(get("visits"), get("attendance_marks"), 100),
         "active_children": children or Decimal(0),
         "new_leads": get("new_leads") or Decimal(0),
