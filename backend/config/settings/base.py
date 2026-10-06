@@ -278,6 +278,12 @@ OPENAI_VISION_MODEL = env("OPENAI_VISION_MODEL", default="gpt-4o")
 # Чат на главной: инструментов много, вопросы свободные — mini путается в
 # цепочках вызовов, поэтому модель сильнее, чем для коротких задач.
 OPENAI_CHAT_MODEL = env("OPENAI_CHAT_MODEL", default="gpt-4o")
+# Еженедельные рекомендации: сильная модель, вызов только из Celery.
+OPENAI_DIGEST_MODEL = env("OPENAI_DIGEST_MODEL", default="gpt-5.4")
+# В production без ключа ИИ скрыт. local.py включает детерминированную
+# фикстуру, чтобы разработка и демо не зависели от внешнего API.
+AI_FIXTURE_MODE = env.bool("AI_FIXTURE_MODE", default=False)
+AI_GENERATION_MAX_INPUT_CHARS = env.int("AI_GENERATION_MAX_INPUT_CHARS", default=120_000)
 
 # Код входа родителя (ADR-0007, otp/senders.py): каналы по порядку, через
 # запятую — первый не доставил, пробуем следующий. console — код в лог.
