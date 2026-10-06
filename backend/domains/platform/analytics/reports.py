@@ -12,6 +12,7 @@ from .branches import COLUMNS as BRANCH_COLUMNS
 from .branches import compare_branches
 from .breakdowns import breakdown, visits_heatmap
 from .export import Column, Export, Section
+from .forecast import revenue_forecast
 from .funnel import BY as FUNNEL_BY
 from .funnel import STAGES, funnel, funnel_by
 from .group_occupancy import group_occupancy
@@ -801,6 +802,159 @@ def risk_list_report(scope, period, params):
             ),
         )
     ]
+
+
+FORECAST_STATUS = {
+    "point": "прогноз и диапазон",
+    "range": "только диапазон — данных мало",
+    "hidden": "не показываем — данных мало",
+}
+
+
+def _forecast_comment(forecast, rules):
+    sample = forecast["conversion"]["ended"]
+    if forecast["status"] == "hidden":
+        return (
+            f"Не показываем: в выборке {sample} закончившихся абонементов, "
+            f"нужно хотя бы {rules['min_sample_range']}. Цифра из воздуха хуже, чем никакой."
+        )
+    spread = f"{forecast['low']:,.0f}–{forecast['high']:,.0f} ₸".replace(",", " ")
+    if forecast["status"] == "range":
+        return (
+            f"Только диапазон {spread}: в выборке {sample} закончившихся абонементов, "
+            f"для точной цифры нужно {rules['min_sample_point']}."
+        )
+    return f"Скорее всего {spread}."
+
+
+@report("forecast", "Прогноз выручки")
+def forecast_report(scope, period, params):
+    data = revenue_forecast(scope)
+    forecast, rules = data["forecast"], data["rules"]
+    month = f"{forecast['month'][5:7]}.{forecast['month'][:4]}"
+    summary = Section(
+        "Три величины",
+        [
+            Column("Величина", width=44),
+            Column("Сумма, ₸", "money", 16, total=False),
+            Column("Абонементов", "count", 13, total=False),
+            Column("Что это значит", width=80),
+        ],
+        [
+            [
+                "Оплачено, но не отработано (обязательства центра)",
+                data["prepaid"]["value"],
+                data["prepaid"]["subscriptions"],
+                "Деньги уже получены, занятия впереди. Это не будущая выручка: "
+                "центр должен провести эти занятия.",
+            ],
+            [
+                "Продано, но не оплачено (задолженность)",
+                data["unpaid"]["value"],
+                data["unpaid"]["subscriptions"],
+                "Должно прийти от родителей. Та же сумма, что на экране «Задолженности».",
+            ],
+            [
+                f"Ожидаемые продления за {month} (прогноз)",
+                forecast["value"],
+                forecast["expiring"],
+                "Сколько продлений придётся на месяц (по доле продлений за прошлые месяцы, "
+                "с продлениями продлений) × средняя цена продления. В колонке «Абонементов» — "
+                "сколько заканчивается в этом месяце уже сейчас. Новые клиенты и оплаты долгов "
+                "не входят. " + _forecast_comment(forecast, rules),
+            ],
+        ],
+        note=(
+            f"Три величины не складываются: это разные деньги. Посчитано на "
+            f"{data['today'][8:10]}.{data['today'][5:7]}.{data['today'][:4]}; "
+            "период в шапке на расчёт не влияет."
+        ),
+    )
+    conversion = forecast["conversion"]
+    calc = Section(
+        "Расчёт прогноза",
+        [Column("Показатель", width=48), Column("Значение", "decimal", 18, total=False)],
+        [
+            ["Месяц прогноза", (forecast["month"], "date")],
+            ["Активных абонементов в расчёте (ещё не продлены)", (forecast["base"], "count")],
+            ["Из них заканчиваются в этом месяце", (forecast["expiring"], "count")],
+            ["Ожидаемых продлений в этом месяце", (forecast["expected_renewals"], "decimal")],
+            ["Выборка: закончилось абонементов", (conversion["ended"], "count")],
+            ["Из них продлены", (conversion["renewed"], "count")],
+            ["Конверсия продлений, %", (conversion["rate"], "percent")],
+            [
+                f"Конверсия — нижняя граница ({rules['confidence']}%), %",
+                (conversion["low"], "percent"),
+            ],
+            [
+                f"Конверсия — верхняя граница ({rules['confidence']}%), %",
+                (conversion["high"], "percent"),
+            ],
+            [
+                "Средняя цена продления, ₸"
+                if forecast["avg_check_source"] != "expiring"
+                else "Средняя цена активных абонементов, ₸ (продлений в выборке нет)",
+                (forecast["avg_check"], "money"),
+            ],
+            ["Прогноз, ₸", (forecast["value"], "money")],
+            [
+                "Диапазон расширен до худшей ошибки прошлых месяцев, %",
+                (forecast["calibration_percent"], "percent"),
+            ],
+            ["Нижняя граница, ₸", (forecast["low"], "money")],
+            ["Верхняя граница, ₸", (forecast["high"], "money")],
+            ["Что показываем", (FORECAST_STATUS[forecast["status"]], "text")],
+        ],
+        note=(
+            f"Выборка — абонементы, закончившиеся с {conversion['window_start']} по "
+            f"{conversion['window_end']}. Продлён — у ребёнка есть следующий абонемент того же "
+            f"направления (или проданный кнопкой «Продлить»), начавшийся не позже "
+            f"{rules['grace_days']} дней после окончания. Продление ждём в день окончания "
+            "абонемента; продление той же длины тоже может закончиться и продлиться в этом "
+            "месяце — так в прогноз попадают месячные абонементы, которые ещё не проданы."
+        ),
+    )
+    retro = Section(
+        "Ретроспектива",
+        [
+            Column("Месяц", "date", 12),
+            Column("Прогноз делали на", "date", 14),
+            Column("Ожидали продлений", "decimal", 14, total=False),
+            Column("Выборка", "count", 10, total=False),
+            Column("Прогноз, ₸", "money", 14, total=False),
+            Column("От, ₸", "money", 14, total=False),
+            Column("До, ₸", "money", 14, total=False),
+            Column("Продлили", "count", 10, total=False),
+            Column("Факт, ₸", "money", 14, total=False),
+            Column("Отклонение, %", "percent", 13),
+            Column("Факт в диапазоне", width=14),
+            Column("Факт окончательный", width=16),
+        ],
+        [
+            [
+                row["month"],
+                row["as_of"],
+                row["expected_renewals"],
+                row["conversion"]["ended"],
+                row["value"],
+                row["low"],
+                row["high"],
+                row["fact_renewed"],
+                row["fact"],
+                row["deviation_percent"],
+                "—" if row["in_range"] is None else ("да" if row["in_range"] else "нет"),
+                "да" if row["complete"] else f"дособирается до {row['settles_on']}",
+            ]
+            for row in data["retrospective"]
+        ],
+        note=(
+            "Прогноз восстановлен так, как его показали бы на 1-е число предыдущего месяца: "
+            "только продажи, сделанные до этой даты. Факт — продления, пришедшиеся на месяц, "
+            "по цепочкам от тех же абонементов (новые клиенты не входят), по цене продления, "
+            "по данным на сегодня."
+        ),
+    )
+    return [summary, calc, retro]
 
 
 def build(name, scope, period, params=None) -> Export:

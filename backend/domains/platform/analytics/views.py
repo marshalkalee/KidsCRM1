@@ -34,6 +34,7 @@ from .attendance_trends import attendance_trends
 from .branches import branch_trends, compare_branches
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
 from .export import filename, workbook
+from .forecast import revenue_forecast
 from .funnel import FILTERS as FUNNEL_FILTERS
 from .funnel import FunnelError, funnel, funnel_by
 from .group_occupancy import group_occupancy
@@ -415,6 +416,20 @@ def branch_trends_api(request, version=None):
             "branches": branch_trends(scope, period, metric),
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def forecast_api(request, version=None):
+    """Прогноз выручки от активных абонементов (TRU-125): оплачено, но не
+    отработано; продано, но не оплачено; ожидаемые продления следующего
+    месяца и ретроспектива прогноза. Смотрит вперёд от сегодня — период
+    не нужен, только филиалы."""
+    try:
+        scope = scope_for(request)
+    except ScopeError as exc:
+        return Response({"detail": str(exc)}, status=403)
+    return Response(revenue_forecast(scope))
 
 
 @api_view(["GET"])

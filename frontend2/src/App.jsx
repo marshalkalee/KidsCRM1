@@ -47,6 +47,7 @@ import AnalyticsTeachers from './pages/AnalyticsTeachers'
 import AnalyticsRejections from './pages/AnalyticsRejections'
 import AnalyticsBranches from './pages/AnalyticsBranches'
 import AnalyticsRisk from './pages/AnalyticsRisk'
+import AnalyticsForecast from './pages/AnalyticsForecast'
 import TaskEscalation from './pages/TaskEscalation'
 import ParentRequests from './pages/ParentRequests'
 import PageGroup, { TabRedirect } from './components/shell/PageGroup'
@@ -122,6 +123,7 @@ function StaffApp() {
                 <Route path="analytics/rejections" element={<RequirePermission permission="can_view_analytics"><AnalyticsRejections /></RequirePermission>} />
                 <Route path="analytics/sources" element={<RequirePermission permission="can_view_analytics"><AnalyticsSources /></RequirePermission>} />
                 <Route path="analytics/teachers" element={<RequirePermission permission="can_view_analytics"><AnalyticsTeachers /></RequirePermission>} />
+                <Route path="analytics/forecast" element={<RequirePermission permission="can_view_analytics"><AnalyticsForecast /></RequirePermission>} />
                 <Route path="analytics/kit" element={<RequirePermission permission="can_view_analytics"><AnalyticsKit /></RequirePermission>} />
                 <Route path="groups" element={<Groups />} />
                 <Route path="groups/:id" element={<GroupDetail />} />
