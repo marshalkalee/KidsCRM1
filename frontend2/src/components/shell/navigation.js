@@ -1,5 +1,21 @@
 import {
-  Building2, ChartColumn, CalendarDays, CheckSquare, Contact, Home, Inbox, ListChecks, ListTodo, Megaphone, Settings, Sparkles, UserRoundCog, Users, UsersRound, Wallet,
+  Building2,
+  CalendarDays,
+  ChartColumn,
+  CheckSquare,
+  Contact,
+  Home,
+  Inbox,
+  ListChecks,
+  ListTodo,
+  Megaphone,
+  MessageSquareText,
+  Settings,
+  Sparkles,
+  UserRoundCog,
+  Users,
+  UsersRound,
+  Wallet,
 } from 'lucide-react'
 import { t } from '../../i18n'
 
@@ -24,6 +40,7 @@ export const NAV_SECTIONS = [
       { to: '/tasks', get label() { return t('Задачи') }, icon: ListTodo },
       { to: '/money', get label() { return t('Деньги') }, icon: Wallet, permission: 'can_view_client_money' },
       { to: '/announcements', get label() { return t('Объявления') }, icon: Megaphone, permission: 'can_manage_announcements' },
+      { to: '/parent-requests', get label() { return t('Запросы родителей') }, icon: MessageSquareText, permission: 'can_manage_parent_requests' },
       { to: '/analytics', get label() { return t('Аналитика') }, icon: ChartColumn, permission: 'can_view_analytics' },
       { to: '/assistant', get label() { return t('ИИ-помощник') }, icon: Sparkles, permission: 'can_use_ai_chat' },
     ],

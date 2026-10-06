@@ -332,6 +332,7 @@ class LessonEnrollment(TenantModel):
     без объяснения."""
 
     class Kind(models.TextChoices):
+        REGULAR = "regular", _("Обычная запись")
         MAKEUP = "makeup", _("Отработка")
         TRIAL = "trial", _("Пробное")
 

@@ -20,7 +20,11 @@ from domains.people.clients.child_list import (
     children_without_subscription,
     overdue_debt_threshold,
 )
-from domains.platform.core.role_permissions import can_manage_leads, can_view_client_money
+from domains.platform.core.role_permissions import (
+    can_manage_leads,
+    can_manage_parent_requests,
+    can_view_client_money,
+)
 from domains.platform.leads.models import Lead
 from domains.platform.leads.services import visible_leads
 from domains.platform.users.models import User
@@ -148,4 +152,27 @@ def overdue_debts(user, branch_ids):
     )
 
 
-SOURCES = [new_leads, unmarked_lessons, overdue_debts, no_subscription, overdue_tasks]
+def parent_requests(user, branch_ids):
+    """Новые запросы из кабинета родителя, ещё не обработанные сотрудником."""
+    if not can_manage_parent_requests(user):
+        return None
+    from domains.people.portal.models import ParentLessonRequest
+    from domains.people.portal.staff_requests import visible_parent_requests
+
+    qs = visible_parent_requests(user).filter(status=ParentLessonRequest.Status.NEW)
+    if branch_ids is not None:
+        qs = qs.filter(
+            Q(lesson__group__branch_id__in=branch_ids) | Q(lesson__room__branch_id__in=branch_ids)
+        )
+    latest = qs.order_by("-created_at").values_list("created_at", flat=True).first()
+    return Item("parent_requests", qs.count(), latest, "/parent-requests")
+
+
+SOURCES = [
+    new_leads,
+    parent_requests,
+    unmarked_lessons,
+    overdue_debts,
+    no_subscription,
+    overdue_tasks,
+]

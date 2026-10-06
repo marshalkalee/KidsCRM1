@@ -48,6 +48,7 @@ import AnalyticsRejections from './pages/AnalyticsRejections'
 import AnalyticsBranches from './pages/AnalyticsBranches'
 import AnalyticsRisk from './pages/AnalyticsRisk'
 import TaskEscalation from './pages/TaskEscalation'
+import ParentRequests from './pages/ParentRequests'
 import PageGroup, { TabRedirect } from './components/shell/PageGroup'
 
 function RoleLandingRedirect() {
@@ -93,6 +94,7 @@ function StaffApp() {
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
                 <Route path="assistant" element={<RequirePermission permission="can_use_ai_chat"><Assistant /></RequirePermission>} />
                 <Route path="announcements" element={<RequirePermission permission="can_manage_announcements"><Announcements /></RequirePermission>} />
+                <Route path="parent-requests" element={<RequirePermission permission="can_manage_parent_requests"><ParentRequests /></RequirePermission>} />
                 <Route path="notifications" element={<Notifications />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="staff" element={<Navigate to="/settings/staff" replace />} />
