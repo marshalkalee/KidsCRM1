@@ -88,7 +88,7 @@ export default function AccessSettings() {
 
   return (
     <div>
-      <PageHeader title={t('Доступ сотрудников')} description={t('Что видят роли сверх обычного. Изменения действуют сразу и записываются в журнал действий.')} />
+      <PageHeader back={{ to: '/settings/staff', label: t('Сотрудники') }} title={t('Доступ сотрудников')} description={t('Что видят роли сверх обычного. Изменения действуют сразу и записываются в журнал действий.')} />
       {error ? (
         <Card><ErrorState onRetry={load} /></Card>
       ) : values === null ? (

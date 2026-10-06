@@ -264,7 +264,7 @@ function DoneStep({ state, onSelect }) {
         <Button variant="primary" loading={finishing} onClick={finish}>{t('Завершить настройку')}</Button>
         <Button to="/dashboard" variant="ghost">{t('На главную')}</Button>
       </div>
-      <p className="mt-4 text-xs text-ink-subtle">{t('Изменить всё это можно в любой момент в')} <Link to="/branches" className="underline">{t('Настройках')}</Link>.</p>
+      <p className="mt-4 text-xs text-ink-subtle">{t('Изменить всё это можно в любой момент в')} <Link to="/settings/structure" className="underline">{t('Настройках')}</Link>.</p>
     </Card>
   )
 }

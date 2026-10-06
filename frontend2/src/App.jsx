@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/shell/Layout'
-import { useLang } from './i18n'
+import { t, useLang } from './i18n'
 import { RequireAuth, RequirePermission, SessionProvider, useSession } from './session/SessionContext'
 import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
@@ -48,6 +48,7 @@ import AnalyticsRejections from './pages/AnalyticsRejections'
 import AnalyticsBranches from './pages/AnalyticsBranches'
 import AnalyticsRisk from './pages/AnalyticsRisk'
 import TaskEscalation from './pages/TaskEscalation'
+import PageGroup, { TabRedirect } from './components/shell/PageGroup'
 
 function RoleLandingRedirect() {
   const { user } = useSession()
@@ -82,8 +83,11 @@ function StaffApp() {
               <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
                 <Route index element={<RoleLandingRedirect />} />
                 <Route path="dashboard" element={<Dashboard />} />
-                <Route path="tasks" element={<MyTasks />} />
-                <Route path="tasks/escalation" element={<RequirePermission permission="can_manage_staff"><TaskEscalation /></RequirePermission>} />
+                <Route path="tasks" element={<PageGroup title={t('Задачи')} tabs={[
+                  { key: 'mine', label: t('Мои'), element: <MyTasks /> },
+                  { key: 'team', label: t('Просроченные у команды'), permission: 'can_manage_staff', element: <TaskEscalation /> },
+                ]} />} />
+                <Route path="tasks/escalation" element={<TabRedirect to="/tasks" tab="team" />} />
                 <Route path="onboarding" element={<RequirePermission permission="can_manage_org_settings"><Onboarding /></RequirePermission>} />
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
@@ -100,8 +104,12 @@ function StaffApp() {
                 <Route path="parents/:id" element={<ParentDetail />} />
                 <Route path="schedule" element={<div className="kc-schedule"><Schedule /></div>} />
                 <Route path="attendance" element={<AttendanceScreen />} />
-                <Route path="debts" element={<RequirePermission permission="can_view_client_money"><Debts /></RequirePermission>} />
-                <Route path="renewals" element={<RequirePermission permission="can_view_client_money"><Renewals /></RequirePermission>} />
+                <Route path="money" element={<RequirePermission permission="can_view_client_money"><PageGroup title={t('Деньги')} tabs={[
+                  { key: 'debts', label: t('Долги'), element: <Debts /> },
+                  { key: 'renewals', label: t('Продления'), element: <Renewals /> },
+                ]} /></RequirePermission>} />
+                <Route path="debts" element={<TabRedirect to="/money" tab="debts" />} />
+                <Route path="renewals" element={<TabRedirect to="/money" tab="renewals" />} />
                 <Route path="analytics" element={<RequirePermission permission="can_view_analytics"><Analytics /></RequirePermission>} />
                 <Route path="analytics/revenue" element={<RequirePermission permission="can_view_analytics"><AnalyticsRevenue /></RequirePermission>} />
                 <Route path="analytics/attendance" element={<RequirePermission permission="can_view_analytics"><AnalyticsAttendance /></RequirePermission>} />
@@ -115,10 +123,15 @@ function StaffApp() {
                 <Route path="analytics/kit" element={<RequirePermission permission="can_view_analytics"><AnalyticsKit /></RequirePermission>} />
                 <Route path="groups" element={<Groups />} />
                 <Route path="groups/:id" element={<GroupDetail />} />
-                <Route path="branches" element={<RequirePermission permission="can_manage_branches"><Branches /></RequirePermission>} />
+                <Route path="settings/structure" element={<PageGroup title={t('Структура центра')} tabs={[
+                  { key: 'branches', label: t('Филиалы'), permission: 'can_manage_branches', element: <Branches /> },
+                  { key: 'directions', label: t('Направления'), permission: 'can_manage_directions', element: <Directions /> },
+                  { key: 'subscription-types', label: t('Типы абонементов'), permission: 'can_manage_subscription_types', element: <SubscriptionTypes /> },
+                ]} />} />
+                <Route path="branches" element={<TabRedirect to="/settings/structure" tab="branches" />} />
                 <Route path="branches/:id/rooms" element={<BranchRooms />} />
-                <Route path="directions" element={<RequirePermission permission="can_manage_directions"><Directions /></RequirePermission>} />
-                <Route path="subscription-types" element={<RequirePermission permission="can_manage_subscription_types"><SubscriptionTypes /></RequirePermission>} />
+                <Route path="directions" element={<TabRedirect to="/settings/structure" tab="directions" />} />
+                <Route path="subscription-types" element={<TabRedirect to="/settings/structure" tab="subscription-types" />} />
                 <Route path="settings/sales" element={<RequirePermission permission="can_manage_lead_dictionaries"><LeadDictionaries /></RequirePermission>} />
                 <Route path="settings/staff" element={<RequirePermission permission="can_manage_staff"><Staff /></RequirePermission>} />
                 <Route path="settings/organization" element={<RequirePermission permission="can_manage_org_settings"><OrganizationSettings /></RequirePermission>} />
