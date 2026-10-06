@@ -35,6 +35,10 @@ ADMIN_SEES_ORG_SUMMARY = "admin_sees_org_summary"
 # и файл клиентов нового центра. Метками их не закрыть — центр включает сам.
 AI_ATTENDANCE_PHOTO_ENABLED = "ai_attendance_photo_enabled"
 AI_IMPORT_CLEAN_ENABLED = "ai_import_clean_enabled"
+# Еженедельный дайджест ИИ (TRU-163): день недели (0 — понедельник) и час
+# по времени центра, когда он собирается и приходит владельцу.
+DIGEST_WEEKDAY = "digest_weekday"
+DIGEST_HOUR = "digest_hour"
 ACCESS_SETTINGS = (
     TEACHER_SEES_PARENT_PHONES,
     TEACHER_SEES_FINANCES,
@@ -76,6 +80,9 @@ DEFAULT_ORG_SETTINGS = {
     # Выключено, пока центр сам не согласится (решение 05.10.2026, TRU-156).
     AI_ATTENDANCE_PHOTO_ENABLED: False,
     AI_IMPORT_CLEAN_ENABLED: False,
+    # Утро понедельника по времени центра (ТЗ п. 3.2).
+    DIGEST_WEEKDAY: 0,
+    DIGEST_HOUR: 9,
 }
 
 

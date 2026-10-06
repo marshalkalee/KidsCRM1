@@ -218,7 +218,22 @@ class PDFlowTests(PDFlowFixtures):
                 "/api/v1/ai/rejection-reason/", {"text": "дорого"}, format="json"
             ),
             "chat": lambda: api.post("/api/v1/ai/chat/", {"message": "Что нового?"}, format="json"),
+            # Сборка дайджеста — фоновая; здесь синхронно и без порога «данных
+            # мало», чтобы запрос к модели точно ушёл.
+            "digest": self.build_digest,
         }
+
+    def build_digest(self):
+        from unittest import mock
+
+        from . import digest
+        from .models import AIDigest
+
+        item = AIDigest.objects.create(
+            organization=self.org, week_start=timezone.localdate(), trigger="manual"
+        )
+        with mock.patch.object(digest, "MIN_ACTIVE_CHILDREN", 0):
+            digest.build(item.id)
 
     def tool_args(self):
         ids = {
@@ -262,7 +277,13 @@ class PDFlowTests(PDFlowFixtures):
         routes = {pattern.name for pattern in get_resolver("domains.platform.ai.urls").url_patterns}
         described = {info["route"] for info in pd_inventory.INVENTORY.values() if "route" in info}
         # Служебные: в модель ничего не отправляют (usage — расход, TRU-160).
-        service_routes = {"status", "usage", "conversations", "conversation-detail"}
+        service_routes = {
+            "status",
+            "usage",
+            "conversations",
+            "conversation-detail",
+            "digest-detail",
+        }
         self.assertEqual(routes - service_routes, described)
 
     def test_medical_notes_never_leave(self):

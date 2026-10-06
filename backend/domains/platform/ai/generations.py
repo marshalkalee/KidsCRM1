@@ -2,6 +2,7 @@
 
 import copy
 import json
+from decimal import Decimal
 
 from django.conf import settings
 from django.db import transaction
@@ -39,7 +40,23 @@ def numeric_facts(value, prefix="") -> dict:
             result.update(numeric_facts(item, f"{prefix}[{index}]"))
     elif isinstance(value, int | float) and not isinstance(value, bool):
         result[prefix] = value
+    elif isinstance(value, Decimal):
+        # Деньги в агрегатах — Decimal: тоже факт, в JSON — числом.
+        result[prefix] = int(value) if value == value.to_integral_value() else float(value)
     return result
+
+
+def create(organization, template_key: str) -> AIGeneration:
+    """Запись журнала в очереди, без запуска: enqueue ставит её в Celery,
+    дайджест (digest.py) прогоняет блоки сам — он уже фоновая задача."""
+    template = get_template(template_key)
+    return AIGeneration.objects.create(
+        organization=organization,
+        function=template.key,
+        prompt_version=template.version,
+        provider=services.provider(),
+        model=generation_provider.model_name(),
+    )
 
 
 def enqueue(organization, template_key: str) -> AIGeneration:
@@ -48,14 +65,7 @@ def enqueue(organization, template_key: str) -> AIGeneration:
     Лимит проверяется здесь, до очереди (TRU-160): исчерпан — запись сразу
     получает своё состояние, задача не ставится. Начатая генерация
     доводится до конца, даже если вышла за лимит."""
-    template = get_template(template_key)
-    generation = AIGeneration.objects.create(
-        organization=organization,
-        function=template.key,
-        prompt_version=template.version,
-        provider=services.provider(),
-        model=generation_provider.model_name(),
-    )
+    generation = create(organization, template_key)
     try:
         ensure_within_limit(organization)
     except AILimitExceeded as exc:
@@ -117,7 +127,9 @@ def run(generation_id) -> AIGeneration:
 
     snapshot = aggregates.snapshot(generation.organization)
     facts = numeric_facts(snapshot)
-    user = json.dumps({"aggregates": snapshot, "facts": facts}, ensure_ascii=False, sort_keys=True)
+    user = json.dumps(
+        {"aggregates": snapshot, "facts": facts}, ensure_ascii=False, sort_keys=True, default=str
+    )
     request_chars = len(template.system) + len(user)
     if request_chars > settings.AI_GENERATION_MAX_INPUT_CHARS:
         return _finish(

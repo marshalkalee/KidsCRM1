@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { BellRing, Building2, CalendarX2, Gauge, Globe } from 'lucide-react'
+import { BellRing, Building2, CalendarX2, Gauge, Globe, Newspaper } from 'lucide-react'
 import api from '../api/axios'
 import { Button, Card, CardHeader, Checkbox, ErrorState, Field, Input, Select, Skeleton, apiErrorMessage, cn, useToast } from '../ui'
-import { t } from '../i18n'
+import { locale, t } from '../i18n'
+import { useAI } from './ai/ai'
 import { entityNameInputProps } from '../utils/formValidation'
 
 // Пороги автостатусов (backend: tenants/org_settings.py) — по ним экраны
@@ -36,6 +37,7 @@ const RULES = [
  */
 export default function OrganizationForm({ onSaved, submitLabel = t('Сохранить'), secondaryAction, wide = false }) {
   const toast = useToast()
+  const ai = useAI()
   const [form, setForm] = useState(null)
   const [saved, setSaved] = useState(null)
   const [timezones, setTimezones] = useState([])
@@ -215,6 +217,31 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
     </Section>
   )
 
+  // Дайджест ИИ (TRU-163): день и час по времени центра. Только у центров
+  // с подключённым ИИ и только на экране «Организация».
+  const digest = wide && ai.enabled && (
+    <Section icon={Newspaper} title={t('Дайджест недели')} description={t('Когда собирать советы на неделю и присылать уведомление владельцу и управляющему.')} wide={wide}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t('День')}>
+          {({ id }) => (
+            <Select id={id} value={form.digest_weekday ?? 0} onChange={e => set('digest_weekday', Number(e.target.value))}>
+              {[0, 1, 2, 3, 4, 5, 6].map(day => (
+                <option key={day} value={day}>{new Date(2026, 9, 5 + day).toLocaleString(locale, { weekday: 'long' })}</option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field label={t('Время')} hint={t('По часовому поясу центра')}>
+          {({ id }) => (
+            <Select id={id} value={form.digest_hour ?? 9} onChange={e => set('digest_hour', Number(e.target.value))}>
+              {Array.from({ length: 17 }, (_, i) => i + 6).map(hour => <option key={hour} value={hour}>{hour}:00</option>)}
+            </Select>
+          )}
+        </Field>
+      </div>
+    </Section>
+  )
+
   if (!wide) {
     return (
       <form onSubmit={submit} className="max-w-3xl space-y-4">
@@ -240,7 +267,10 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
       {thresholds}
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
         {rules}
-        {site}
+        <div className="space-y-4">
+          {site}
+          {digest}
+        </div>
       </div>
       {/* «Сохранить» всегда под рукой: форма длинная, кнопка внизу терялась. */}
       <div className="sticky bottom-3 z-10 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-pop backdrop-blur">
