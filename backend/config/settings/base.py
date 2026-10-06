@@ -264,6 +264,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "domains.platform.tasks.tasks.create_debt_reminder_tasks_task",
         "schedule": crontab(hour=2, minute=15),
     },
+    # Еженедельный дайджест ИИ (TRU-163): раз в час проверяем, у каких центров
+    # наступили их день и час по местному времени.
+    "dispatch-ai-digests": {
+        "task": "domains.platform.ai.tasks.dispatch_ai_digests",
+        "schedule": crontab(minute=10),
+    },
 }
 
 # ИИ-помощник (эксперимент): без ключа функции выключены, экраны их не показывают.

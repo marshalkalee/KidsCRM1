@@ -8,6 +8,7 @@ from rest_framework.throttling import UserRateThrottle
 
 from domains.platform.core.permissions import (
     IsOwner,
+    IsOwnerOrManager,
     IsOwnerOrManagerOrAdmin,
     IsStaffOfOrganization,
 )
@@ -17,10 +18,13 @@ from domains.platform.leads.views import CanManageLeads
 from domains.platform.tenants.org_settings import (
     AI_ATTENDANCE_PHOTO_ENABLED,
     AI_IMPORT_CLEAN_ENABLED,
+    DIGEST_HOUR,
+    DIGEST_WEEKDAY,
     get_org_setting,
 )
 
-from . import assist, chat, services, usage
+from . import assist, chat, digest, services, usage
+from .models import AIDigest
 
 
 def _uuid_list(value):
@@ -334,3 +338,69 @@ def usage_summary(request, version=None):
     лимита, на что, когда обновится."""
     organization = request.user.organization
     return Response({"enabled": usage.enabled_for(organization), **usage.summary(organization)})
+
+
+# --- Еженедельный дайджест (TRU-163) -------------------------------------
+
+
+def _digest_brief(item):
+    content = item.content or {}
+    changes = content.get("changes") or {}
+    return {
+        "id": str(item.id),
+        "week_start": item.week_start,
+        "status": item.status,
+        "ready_at": item.ready_at,
+        "highlights": len(content.get("highlights", [])),
+        "unchanged": bool(changes.get("unchanged")),
+    }
+
+
+def _digest_full(item):
+    return {**_digest_brief(item), "trigger": item.trigger, "content": item.content}
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsOwnerOrManager, HasAIOption])
+def digests(request, version=None):
+    """GET — последний готовый дайджест, что собирается сейчас, архив.
+    POST — «Обновить»: генерация в фоне, повторные нажатия не плодят новых."""
+    organization = request.user.organization
+    if request.method == "POST":
+        try:
+            item, created = digest.request_refresh(organization, request.user)
+        except services.AIError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"building": _digest_brief(item), "created": created}, status=status.HTTP_202_ACCEPTED
+        )
+
+    rows = AIDigest.objects.for_tenant(organization)
+    latest = rows.filter(status__in=digest.DONE).first()
+    last = rows.first()
+    pending = rows.filter(status__in=digest.PENDING).first()
+    notice = None
+    # Последняя попытка не удалась — показываем прошлый и честно говорим почему.
+    if last and last.status not in (*digest.DONE, *digest.PENDING) and last != latest:
+        notice = {"status": last.status, "text": last.error_detail}
+    return Response(
+        {
+            "schedule": {
+                "weekday": get_org_setting(organization, DIGEST_WEEKDAY),
+                "hour": get_org_setting(organization, DIGEST_HOUR),
+            },
+            "latest": _digest_full(latest) if latest else None,
+            "building": _digest_brief(pending) if pending else None,
+            "notice": notice,
+            "archive": [_digest_brief(d) for d in rows.filter(status=AIDigest.Status.READY)[:52]],
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsOwnerOrManager, HasAIOption])
+def digest_detail(request, digest_id, version=None):
+    item = AIDigest.objects.for_tenant(request.user.organization).filter(pk=digest_id).first()
+    if item is None:
+        return Response({"detail": "Дайджест не найден."}, status=status.HTTP_404_NOT_FOUND)
+    return Response(_digest_full(item))
