@@ -41,6 +41,7 @@ from .group_occupancy import group_occupancy
 from .period import PRESETS, PeriodError, parse_period
 from .registry import REGISTRY, compute
 from .rejections import RejectionError, rejection_comments, rejections, rejections_by
+from .renewal_report import renewal_conversion_report
 from .reports import REPORTS, build
 from .risk_list import risk_list
 from .scope import ScopeError, allowed_branch_ids, scope_for
@@ -430,6 +431,20 @@ def forecast_api(request, version=None):
     except ScopeError as exc:
         return Response({"detail": str(exc)}, status=403)
     return Response(revenue_forecast(scope))
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def renewal_conversion_api(request, version=None):
+    """Конверсия продлений (TRU-126, ТЗ п. 5.3): абонементы, закончившиеся
+    за период, — сколько продлено; первые продления отдельно от
+    последующих; срок продления; динамика за 12 месяцев; разрезы по
+    филиалу, направлению, группе, преподавателю (с заполняемостью и
+    временем занятий), типу абонемента и возрасту."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(renewal_conversion_report(scope, period))
 
 
 @api_view(["GET"])

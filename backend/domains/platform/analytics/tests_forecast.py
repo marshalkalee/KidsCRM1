@@ -9,7 +9,7 @@ from django.test import tag
 
 from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.renewal_conversion import (
-    RENEWAL_GRACE_DAYS,
+    DEFAULT_GRACE_DAYS,
     RenewalIndex,
     add_months,
     load_rows,
@@ -93,7 +93,7 @@ class ForecastFixtures(AnalyticsFixtures):
 
     def history_end(self):
         """Дата окончания, у которой окно продления уже точно прошло."""
-        return self.today - timedelta(days=RENEWAL_GRACE_DAYS + 40)
+        return self.today - timedelta(days=DEFAULT_GRACE_DAYS + 40)
 
     def forecast(self, branch_ids=None):
         return revenue_forecast(Scope(self.org, branch_ids))
@@ -184,7 +184,7 @@ class RenewalConversionTests(ForecastFixtures):
         late = self.sub(starts_on=ends - timedelta(days=30), ends_on=ends)
         self.sub(
             child=late.child,
-            starts_on=ends + timedelta(days=RENEWAL_GRACE_DAYS + 1),
+            starts_on=ends + timedelta(days=DEFAULT_GRACE_DAYS + 1),
             ends_on=later,
         )
 
@@ -200,7 +200,7 @@ class RenewalConversionTests(ForecastFixtures):
     def test_as_of_does_not_see_later_sales(self):
         ends = self.history_end()
         self.ended(1, renewed=1, ends_on=ends)
-        as_of = ends + timedelta(days=RENEWAL_GRACE_DAYS + 1)  # продление продано после
+        as_of = ends + timedelta(days=DEFAULT_GRACE_DAYS + 1)  # продление продано после
         late_look = self.conversion(as_of=as_of + timedelta(days=10))
         early_look = self.conversion(as_of=ends + timedelta(days=2))
         self.assertEqual(late_look["renewed"], 1)
@@ -271,7 +271,7 @@ class ForecastTests(ForecastFixtures):
         target = add_months(self.month, -1)  # прошлый месяц
         made_on = add_months(target, -1)
         # История к моменту прогноза: 60 закончились за 2 месяца до made_on, 30 продлены.
-        old_ends = made_on - timedelta(days=RENEWAL_GRACE_DAYS + 20)
+        old_ends = made_on - timedelta(days=DEFAULT_GRACE_DAYS + 20)
         self.ended(MIN_SAMPLE_POINT, renewed=30, ends_on=old_ends, renewal_price=30000)
         # В прошлом месяце заканчивались 4 абонемента, проданные до made_on.
         ends = target + timedelta(days=4)

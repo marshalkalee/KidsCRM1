@@ -33,9 +33,9 @@ from decimal import ROUND_HALF_UP, Decimal
 from domains.money.subscriptions.debt import debt_total, debtor_subscriptions, paid_sum
 from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.renewal_conversion import (
-    RENEWAL_GRACE_DAYS,
     RenewalIndex,
     add_months,
+    grace_days,
     in_branches,
     load_rows,
     renewal_conversion,
@@ -274,7 +274,7 @@ def _retro_row(index, month, today, branch_ids) -> dict:
     if forecast["low"] is not None:
         in_range = forecast["low"] <= fact <= forecast["high"]
     # Окно продления для конца месяца ещё идёт — факт дособирается.
-    settles_on = _month_end(month) + timedelta(days=RENEWAL_GRACE_DAYS)
+    settles_on = _month_end(month) + timedelta(days=index.grace_days)
     return {
         **forecast,
         "fact_renewed": fact_renewed,
@@ -313,7 +313,7 @@ def revenue_forecast(scope) -> dict:
     first_retro = add_months(today.replace(day=1), -RETRO_MONTHS)
     # Самая ранняя выборка конверсии — для первой ретроспективы.
     since = add_months(add_months(first_retro, -1), -LOOKBACK_MONTHS)
-    index = RenewalIndex(load_rows(organization, ends_since=since))
+    index = RenewalIndex(load_rows(organization, ends_since=since), grace_days(organization))
     branch_ids = scope.branch_ids
 
     forecast = renewal_forecast(index, next_month, today, today + timedelta(days=1), branch_ids)
@@ -330,7 +330,7 @@ def revenue_forecast(scope) -> dict:
         "forecast": forecast,
         "retrospective": retrospective,
         "rules": {
-            "grace_days": RENEWAL_GRACE_DAYS,
+            "grace_days": index.grace_days,
             "lookback_months": LOOKBACK_MONTHS,
             "min_sample_range": MIN_SAMPLE_RANGE,
             "min_sample_point": MIN_SAMPLE_POINT,

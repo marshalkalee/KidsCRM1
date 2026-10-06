@@ -19,6 +19,8 @@ from .group_occupancy import group_occupancy
 from .registry import REGISTRY, compute
 from .rejections import STAGES as REJECTION_STAGES
 from .rejections import rejection_comments, rejections, rejections_by
+from .renewal_report import DIMENSIONS as RENEWAL_DIMENSIONS
+from .renewal_report import renewal_conversion_report
 from .risk_list import risk_list
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
 from .teacher_load import teacher_workload
@@ -892,7 +894,7 @@ def forecast_report(scope, period, params):
             ],
             [
                 "Средняя цена продления, ₸"
-                if forecast["avg_check_source"] != "expiring"
+                if forecast["avg_check_source"] != "base"
                 else "Средняя цена активных абонементов, ₸ (продлений в выборке нет)",
                 (forecast["avg_check"], "money"),
             ],
@@ -955,6 +957,139 @@ def forecast_report(scope, period, params):
         ),
     )
     return [summary, calc, retro]
+
+
+RENEWAL_SHEETS = {
+    "branch": "По филиалам",
+    "direction": "По направлениям",
+    "group": "По группам",
+    "teacher": "По преподавателям",
+    "type": "По типам абонементов",
+    "age": "По возрасту",
+}
+
+
+def _renewal_columns(first_title, *, summable=True):
+    total = None if summable else False
+    return [
+        Column(first_title, width=32),
+        Column("Закончилось", "count", 13, total=total),
+        Column("Окно прошло", "count", 13, total=total),
+        Column("Продлили", "count", 11, total=total),
+        Column("Не продлили", "count", 12, total=total),
+        Column("Конверсия, %", "percent", 13),
+        Column("Первые: продлили", "count", 15, total=total),
+        Column("Первые: из", "count", 11, total=total),
+        Column("Первые, %", "percent", 11),
+        Column("Последующие: продлили", "count", 15, total=total),
+        Column("Последующие: из", "count", 13, total=total),
+        Column("Последующие, %", "percent", 13),
+        Column("Окно идёт", "count", 11, total=total),
+    ]
+
+
+def _renewal_cells(item):
+    return [
+        item["ended"],
+        item["decided"],
+        item["renewed"],
+        item["lost"],
+        item["rate"],
+        item["first"]["renewed"],
+        item["first"]["decided"],
+        item["first"]["rate"],
+        item["repeat"]["renewed"],
+        item["repeat"]["decided"],
+        item["repeat"]["rate"],
+        item["pending"],
+    ]
+
+
+@report("renewal_conversion", "Конверсия продлений")
+def renewal_conversion_export(scope, period, params):
+    data = renewal_conversion_report(scope, period)
+    rules, summary = data["rules"], data["summary"]
+    definition = (
+        f"Продлён — у ребёнка есть следующий абонемент того же направления, начавшийся "
+        f"не позже {rules['grace_days']} дней после окончания, или проданный кнопкой "
+        "«Продлить». Конверсия — по абонементам, у которых это окно уже прошло; "
+        "абонементы, у которых окно ещё идёт, в неё не входят."
+    )
+    total = Section(
+        "Итог",
+        _renewal_columns("Абонементы"),
+        [["Закончились в периоде", *_renewal_cells(summary)]],
+        note=definition
+        + f" Из тех, у кого окно ещё идёт, уже продлили: {summary['pending_renewed']}.",
+    )
+    trend = Section(
+        "По месяцам",
+        [Column("Месяц", "date", 12), *_renewal_columns("", summable=True)[1:]]
+        + [Column("Окончательно", width=13)],
+        [
+            [row["month"], *_renewal_cells(row), "да" if row["complete"] else "дособирается"]
+            for row in data["trend"]
+        ],
+        note="Месяц — по дате окончания абонемента. 12 месяцев до конца выбранного периода.",
+    )
+    gaps = data["gaps"]
+    gap = Section(
+        "Срок продления",
+        [
+            Column("Купили продление", width=32),
+            Column("Продлений", "count", 12),
+            Column("Доля, %", "percent", 10),
+        ],
+        [[row["label"], row["value"], row["share"]] for row in gaps["buckets"]],
+        note=(
+            "День покупки продления относительно окончания абонемента. "
+            f"Средний срок: {gaps['average_days'] if gaps['average_days'] is not None else '—'} "
+            f"дн. Пауза дольше {gaps['long_pause_days']} дней — риск потери."
+        ),
+    )
+    sections = [total, trend, gap]
+    for dimension, title in RENEWAL_DIMENSIONS:
+        rows = data["breakdowns"][dimension]
+        # Ребёнок у двух преподавателей попадает в обе строки — сумма не итог.
+        columns = _renewal_columns(title, summable=dimension != "teacher")
+        note = f"Меньше {rules['min_sample']} абонементов с прошедшим окном — процент ненадёжен."
+        if dimension in ("group", "teacher"):
+            columns += [
+                Column("Заполняемость сейчас, %", "percent", 14),
+                Column("Группы", width=60),
+            ]
+            note = (
+                "Не рейтинг преподавателей: продления зависят и от времени занятий, и от "
+                "возраста детей — рядом заполняемость и расписание групп. " + note
+            )
+        sections.append(
+            Section(
+                RENEWAL_SHEETS[dimension],
+                columns,
+                [
+                    [
+                        row["label"],
+                        *_renewal_cells(row),
+                        *(
+                            [
+                                row["context"]["fill_percent"],
+                                "; ".join(
+                                    f"{g['name']} ({g['occupied']}/{g['capacity']}"
+                                    + (f", {g['schedule']}" if g["schedule"] else "")
+                                    + ")"
+                                    for g in row["context"]["groups"]
+                                ),
+                            ]
+                            if dimension in ("group", "teacher")
+                            else []
+                        ),
+                    ]
+                    for row in rows
+                ],
+                note=note,
+            )
+        )
+    return sections
 
 
 def build(name, scope, period, params=None) -> Export:

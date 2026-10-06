@@ -16,6 +16,7 @@ from domains.platform.tenants.org_settings import (
     LEAD_STALE_DAYS_THRESHOLD,
     PARENT_CANCEL_CHARGE_ON_TIME,
     PARENT_CANCEL_NOTICE_HOURS,
+    RENEWAL_GRACE_DAYS,
     RISK_ABSENCE_CHANGE_PP_THRESHOLD,
     RISK_CURRENT_ABSENCES_MIN,
     RULE_DEBT_REMINDER_ENABLED,
@@ -117,6 +118,12 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     lead_stale_days_threshold = forms.IntegerField(
         min_value=0, max_value=90, required=False, label="Заявка без движения после N дней"
     )
+    renewal_grace_days = forms.IntegerField(
+        min_value=0,
+        max_value=120,
+        required=False,
+        label="Продление: новый абонемент не позже N дней после окончания",
+    )
     rule_lead_stale_enabled = forms.BooleanField(
         required=False, label="Напоминать перезвонить по зависшим заявкам"
     )
@@ -194,6 +201,11 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             if self.cleaned_data[LEAD_STALE_DAYS_THRESHOLD] is not None
             else organization.settings.get(
                 LEAD_STALE_DAYS_THRESHOLD, DEFAULT_ORG_SETTINGS[LEAD_STALE_DAYS_THRESHOLD]
+            ),
+            RENEWAL_GRACE_DAYS: (
+                self.cleaned_data.get(RENEWAL_GRACE_DAYS)
+                if self.cleaned_data.get(RENEWAL_GRACE_DAYS) is not None
+                else get_org_setting(organization, RENEWAL_GRACE_DAYS)
             ),
             RULE_LEAD_STALE_ENABLED: self.cleaned_data[RULE_LEAD_STALE_ENABLED],
             RULE_RENEWAL_OFFER_ENABLED: self.cleaned_data[RULE_RENEWAL_OFFER_ENABLED],
