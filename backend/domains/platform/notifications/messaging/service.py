@@ -24,7 +24,6 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from domains.platform.core.audit import AuditLog
-from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.tenants.org_settings import (
     MESSAGING_CHANNELS,
     MESSAGING_QUIET_FROM,
@@ -35,6 +34,7 @@ from domains.platform.tenants.org_settings import (
 from ..models import MessageCategory, MessageTemplate, MessagingConsent, OutboundMessage
 from .channels import CHANNELS, ChannelError
 from .events import EVENTS, LANGUAGES, UNSUBSCRIBE_FOOTER
+from .recipients import accounts_for_parent
 
 logger = logging.getLogger(__name__)
 Status = OutboundMessage.Status
@@ -124,9 +124,9 @@ def template_vars(text: str) -> set[str]:
 
 def default_template(event_key, channel, language) -> tuple[str, str]:
     event = EVENTS[event_key]
-    if channel == "email":
-        return event.email.get(language) or event.email["ru"]
-    # Тексты WhatsApp и push утверждаются/задаются в своих тикетах (169, 172).
+    if channel == "push" and event.push:
+        return event.push.get(language) or event.push["ru"]
+    # Тексты WhatsApp утверждает Meta — TRU-169; до него — текст письма.
     return event.email.get(language) or event.email["ru"]
 
 
@@ -164,21 +164,7 @@ def render(text: str, values: dict) -> str:
 
 def parent_language(parent) -> str:
     """Язык кабинета родителя (по любому его номеру), иначе русский."""
-    from domains.people.portal.models import ParentAccount
-
-    phones = [parent.whatsapp, *parent.phones.values_list("number", flat=True)]
-    normalized = set()
-    for phone in phones:
-        try:
-            if phone:
-                normalized.add(normalize_phone_number(phone))
-        except InvalidPhoneNumberError:
-            continue
-    language = (
-        ParentAccount.objects.filter(phone__in=normalized)
-        .values_list("language", flat=True)
-        .first()
-    )
+    language = accounts_for_parent(parent).values_list("language", flat=True).first()
     return language if language in LANGUAGES else "ru"
 
 
@@ -274,6 +260,12 @@ def deliver(message_id, now=None) -> OutboundMessage:
         return _finish(message, Status.OPTED_OUT)
     if consent != MessagingConsent.Status.OPTED_IN:
         return _finish(message, Status.NO_CONSENT)
+    # Родитель сам отключил этот тип в профиле кабинета — по всем каналам.
+    if any(
+        prefs.get(message.event) is False
+        for prefs in accounts_for_parent(parent).values_list("notification_prefs", flat=True)
+    ):
+        return _finish(message, Status.OPTED_OUT, error="Родитель отключил этот тип в кабинете")
 
     wait_until = quiet_until(organization, now)
     if wait_until:
@@ -300,9 +292,11 @@ def deliver(message_id, now=None) -> OutboundMessage:
         message.channel, message.recipient, message.language = key, recipient, language
         message.subject = render(subject, values)[:200]
         link = unsubscribe_url(message)
-        message.body = render(body, values) + UNSUBSCRIBE_FOOTER[language].format(
-            center=organization.name, unsubscribe_url=link
-        )
+        message.body = render(body, values)
+        if key == "email":
+            message.body += UNSUBSCRIBE_FOOTER[language].format(
+                center=organization.name, unsubscribe_url=link
+            )
         try:
             provider_id = channel.send(message, unsubscribe_url=link)
         except ChannelError as exc:
