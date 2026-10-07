@@ -30,6 +30,7 @@ import OrganizationSettings from './pages/OrganizationSettings'
 import AccessSettings from './pages/AccessSettings'
 import BalanceCheck from './pages/BalanceCheck'
 import ApiKeys from './pages/ApiKeys'
+import CenterProfile from './pages/CenterProfile'
 import LeadDictionaries from './pages/LeadDictionaries'
 import Leads from './pages/Leads'
 import Notifications from './pages/Notifications'
@@ -154,6 +155,7 @@ function StaffApp() {
                 <Route path="settings/organization" element={<RequirePermission permission="can_manage_org_settings"><OrganizationSettings /></RequirePermission>} />
                 <Route path="settings/access" element={<RequirePermission permission="can_manage_org_settings"><AccessSettings /></RequirePermission>} />
                 <Route path="settings/api-keys" element={<RequirePermission permission="can_manage_org_settings"><ApiKeys /></RequirePermission>} />
+                <Route path="settings/center-profile" element={<RequirePermission permission="can_manage_org_settings"><CenterProfile /></RequirePermission>} />
                 <Route path="*" element={<LegacyRedirect />} />
               </Route>
             </Routes>
