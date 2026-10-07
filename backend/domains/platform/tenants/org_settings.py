@@ -81,7 +81,7 @@ DEFAULT_ORG_SETTINGS = {
     # как массовый отток. Читается только через renewal_conversion.grace_days().
     RENEWAL_GRACE_DAYS: 14,
     # Ушёл — нет активного абонемента дольше N дней. 30 и летняя пауза —
-    # решения по умолчанию (docs/project-status.md, Д20 и Д21).
+    # решения по умолчанию (docs/project-status.md, Д25 и Д26).
     # Читаются только через analytics/churn.py (churn_rules).
     CHURN_INACTIVE_DAYS: 30,
     CHURN_SUMMER_PAUSE: True,

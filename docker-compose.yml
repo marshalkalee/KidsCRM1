@@ -32,6 +32,7 @@ services:
       - backend/.env
     volumes:
       - ./backend:/app
+      - ./docs:/docs
     ports:
       - "8000:8000"
     depends_on:
