@@ -28,6 +28,12 @@ DEGRADATION_MESSAGES = {
     AIGeneration.Status.INPUT_TOO_LARGE: "Данных слишком много для одного запроса.",
 }
 
+LANGUAGE_INSTRUCTIONS = {
+    "ru": "Пиши все человекочитаемые поля ответа на русском языке.",
+    "kk": "Барлық адам оқитын жауап өрістерін қазақ тілінде жаз.",
+    "en": "Write all human-readable response fields in English.",
+}
+
 
 def numeric_facts(value, prefix="") -> dict:
     """Плоская карта чисел: только она может попасть в итоговую выдачу."""
@@ -189,7 +195,9 @@ def run(generation_id) -> AIGeneration:
         sort_keys=True,
         default=str,
     )
-    request_chars = len(template.system) + len(user)
+    language_instruction = LANGUAGE_INSTRUCTIONS.get(generation.parameters.get("language"), "")
+    request_context = f"{user}\n\n{language_instruction}" if language_instruction else user
+    request_chars = len(template.system) + len(request_context)
     if request_chars > settings.AI_GENERATION_MAX_INPUT_CHARS:
         return _finish(
             generation.id,
@@ -200,7 +208,7 @@ def run(generation_id) -> AIGeneration:
         )
 
     input_tokens = output_tokens = 0
-    provider_user = user
+    provider_user = request_context
     for attempt in range(1, 3):
         try:
             if fixture_mode:
@@ -229,7 +237,7 @@ def run(generation_id) -> AIGeneration:
             result = template.validate(payload, facts, snapshot, generation.parameters)
         except ValueError:
             provider_user = (
-                f"{user}\n\n"
+                f"{request_context}\n\n"
                 "Предыдущий ответ не прошёл проверку. Создай новый JSON с нуля. "
                 "Не используй цифры, проценты, цены, размеры скидок, сроки акции "
                 "или другие неподтверждённые условия в текстовых полях. "

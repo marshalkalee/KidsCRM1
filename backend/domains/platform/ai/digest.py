@@ -74,6 +74,61 @@ METRICS = {
 # Списки, у элементов которых своё имя: само имя списка в подписи лишнее.
 COLLECTIONS = {"группы"}
 
+LABELS = {
+    "kk": {
+        "Заполняемость": "Толымдылық",
+        "Воронка": "Сату кезеңдері",
+        "Источники заявок": "Өтінім көздері",
+        "Отказы": "Бас тартулар",
+        "Дети по возрасту": "Балалардың жасы",
+        "Деньги": "Қаржы",
+        "Сезонность": "Маусымдылық",
+        "заполняемость, %": "толымдылық, %",
+        "занято мест": "орын бос емес",
+        "мест": "орын",
+        "мест всего": "барлық орын",
+        "групп": "топ",
+        "групп с недобором": "толмаған топ",
+        "конверсия, %": "конверсия, %",
+        "весь центр": "бүкіл орталық",
+        "Что сделать на этой неделе": "Осы аптада не істеу керек",
+        "прошлый месяц": "өткен ай",
+        "этот месяц": "осы ай",
+        "заявок": "өтінім",
+        "этапы": "кезеңдер",
+        "Купил абонемент": "Абонемент сатып алды",
+        "Новая": "Жаңа",
+        "кандидаты": "үміткерлер",
+        "приоритет": "басымдық",
+    },
+    "en": {
+        "Заполняемость": "Occupancy",
+        "Воронка": "Sales funnel",
+        "Источники заявок": "Lead sources",
+        "Отказы": "Rejections",
+        "Дети по возрасту": "Children by age",
+        "Деньги": "Money",
+        "Сезонность": "Seasonality",
+        "заполняемость, %": "occupancy, %",
+        "занято мест": "occupied spots",
+        "мест": "spots",
+        "мест всего": "total spots",
+        "групп": "groups",
+        "групп с недобором": "underfilled groups",
+        "конверсия, %": "conversion, %",
+        "весь центр": "whole centre",
+        "Что сделать на этой неделе": "What to do this week",
+        "прошлый месяц": "last month",
+        "этот месяц": "this month",
+        "заявок": "leads",
+        "этапы": "stages",
+        "Купил абонемент": "Bought a subscription",
+        "Новая": "New",
+        "кандидаты": "candidates",
+        "приоритет": "priority",
+    },
+}
+
 
 class DigestCooldown(services.AIError):
     """«Обновить» нажали слишком рано — текст для сотрудника."""
@@ -88,7 +143,25 @@ def _human(text: str) -> str:
     return str(text).replace("_", " ")
 
 
-def fact_label(snapshot: dict, key: str) -> str:
+def _label(value: str, language: str) -> str:
+    return LABELS.get(language, {}).get(value, value)
+
+
+def _display_names(row: dict) -> list[str]:
+    """Human-readable row values, never internal ids or stable keys."""
+    names = []
+    for key, value in row.items():
+        normalized = str(key).lower()
+        if normalized == "id" or normalized.endswith(("_id", "_key")):
+            continue
+        if isinstance(value, str) and value.strip() and value not in names:
+            names.append(value)
+        if len(names) == 2:
+            break
+    return names
+
+
+def fact_label(snapshot: dict, key: str, language="ru") -> str:
     """'occupancy.группы[3].процент' → 'Заполняемость · Балет 4–9, Алмалы:
     заполняемость, %'. Имя элемента списка — его строковые поля (группа,
     филиал, источник, месяц) из того же снимка."""
@@ -99,20 +172,20 @@ def fact_label(snapshot: dict, key: str) -> str:
         if number is not None:
             node = node[int(number)] if isinstance(node, list) and int(number) < len(node) else {}
             if isinstance(node, dict):
-                names = [str(v) for v in node.values() if isinstance(v, str)][:2]
+                names = _display_names(node)
                 if names:
                     labels.append(", ".join(names))
             continue
         node = node.get(name, {}) if isinstance(node, dict) else {}
         if index == 0:
-            labels.append(SECTIONS.get(name, _human(name)))
+            labels.append(_label(SECTIONS.get(name, _human(name)), language))
         elif last:
-            metric = METRICS.get(name, _human(name))
+            metric = _label(METRICS.get(name, _human(name)), language)
             return f"{' · '.join(labels)}: {metric}" if metric else " · ".join(labels)
         elif name not in COLLECTIONS:
             # «группы» не пишем — дальше имя самой группы; ряд сезонности
             # («Новых заявок») — пишем, у его элементов только месяц.
-            labels.append(METRICS.get(name, _human(name)))
+            labels.append(_label(METRICS.get(name, _human(name)), language))
     return " · ".join(labels)
 
 
@@ -129,10 +202,13 @@ def _signature(item: dict) -> str:
     return "|".join(sorted(e["key"] for e in item["evidence"]))
 
 
-def _items(result: dict, snapshot: dict) -> list:
+def _items(result: dict, snapshot: dict, language="ru") -> list:
     rows = []
     for row in result.get("recommendations", []):
-        evidence = [{**e, "label": fact_label(snapshot, e["key"])} for e in row.get("evidence", [])]
+        evidence = [
+            {**e, "label": fact_label(snapshot, e["key"], language)}
+            for e in row.get("evidence", [])
+        ]
         item = {**row, "evidence": evidence}
         item["id"] = _signature(item)
         rows.append(item)
@@ -162,15 +238,16 @@ def compare(content: dict, previous: AIDigest | None) -> dict:
     return changes
 
 
-def compose(organization, results: list, snapshot: dict, previous) -> dict:
+def compose(organization, results: list, snapshot: dict, previous, language="ru") -> dict:
     blocks, items = [], []
     for key, title, result in results:
-        rows = _items(result, snapshot)
-        blocks.append({"key": key, "title": title, "items": rows})
+        rows = _items(result, snapshot, language)
+        blocks.append({"key": key, "title": _label(title, language), "items": rows})
         items.extend(rows)
     highlights = sorted(items, key=lambda r: PRIORITY_RANK.get(r.get("priority"), 3))[:HIGHLIGHTS]
     fact_labels = {e["key"]: (e["label"], e["value"]) for item in items for e in item["evidence"]}
     content = {
+        "language": language,
         "highlights": highlights,
         "blocks": blocks,
         "items": items,
@@ -192,7 +269,11 @@ def _set(digest, **fields):
 def _previous(digest):
     return (
         AIDigest.objects.for_tenant(digest.organization)
-        .filter(status=AIDigest.Status.READY, created_at__lt=digest.created_at)
+        .filter(
+            status=AIDigest.Status.READY,
+            language=digest.language,
+            created_at__lt=digest.created_at,
+        )
         .first()
     )
 
@@ -235,7 +316,9 @@ def _build(digest) -> AIDigest:
 
     results, failed = [], []
     for key, title in BLOCKS:
-        generation = generations.run(generations.create(organization, key).id)
+        generation = generations.run(
+            generations.create(organization, key, parameters={"language": digest.language}).id
+        )
         if generation.status == AIGeneration.Status.SUCCEEDED:
             results.append((key, title, generation.result))
         else:
@@ -244,7 +327,7 @@ def _build(digest) -> AIDigest:
         reason = failed[0] if failed else ""
         text = f"{reason} Новый дайджест не собрался — повторим завтра.".strip()
         return _set(digest, status=AIDigest.Status.FAILED, error_detail=text[:500])
-    content = compose(organization, results, snapshot, _previous(digest))
+    content = compose(organization, results, snapshot, _previous(digest), digest.language)
     content["failed_blocks"] = len(failed)
     return _set(digest, status=AIDigest.Status.READY, content=content, ready_at=timezone.now())
 
@@ -264,14 +347,14 @@ def _schedule(digest):
     return digest
 
 
-def request_refresh(organization, user) -> tuple[AIDigest, bool]:
+def request_refresh(organization, user, language="ru") -> tuple[AIDigest, bool]:
     """Кнопка «Обновить». Уже собирается — тот же дайджест; недавно
     обновляли — текст; лимит исчерпан — текст. (дайджест, создан ли новый)."""
     digests = AIDigest.objects.for_tenant(organization)
-    pending = digests.filter(status__in=PENDING).first()
+    pending = digests.filter(status__in=PENDING, language=language).first()
     if pending:
         return pending, False
-    last_manual = digests.filter(trigger=AIDigest.Trigger.MANUAL).first()
+    last_manual = digests.filter(trigger=AIDigest.Trigger.MANUAL, language=language).first()
     if last_manual and timezone.now() - last_manual.created_at < REFRESH_COOLDOWN:
         minutes = int((timezone.now() - last_manual.created_at).total_seconds() // 60)
         raise DigestCooldown(
@@ -283,6 +366,7 @@ def request_refresh(organization, user) -> tuple[AIDigest, bool]:
         week_start=week_start(organization),
         trigger=AIDigest.Trigger.MANUAL,
         requested_by=user,
+        language=language,
     )
     return _schedule(digest), True
 
@@ -314,10 +398,18 @@ def dispatch(now=None) -> int:
     for organization in Organization.objects.filter(is_active=True, ai_enabled=True):
         if not due(organization, now):
             continue
+        previous_language = (
+            AIDigest.objects.for_tenant(organization)
+            .filter(status=AIDigest.Status.READY)
+            .values_list("language", flat=True)
+            .first()
+            or "ru"
+        )
         digest = AIDigest.objects.create(
             organization=organization,
             week_start=week_start(organization, now),
             trigger=AIDigest.Trigger.SCHEDULE,
+            language=previous_language,
         )
         _schedule(digest)
         started += 1
