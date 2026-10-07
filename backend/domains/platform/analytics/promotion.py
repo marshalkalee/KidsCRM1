@@ -3,8 +3,12 @@
 import hashlib
 from collections import Counter, defaultdict
 
+from django.db.models import Prefetch
+
 from domains.platform.leads.models import Lead, LeadKind
 from domains.scheduling.groups.models import Group
+from domains.scheduling.groups.queries import active_template
+from domains.scheduling.schedule_templates.models import ScheduleTemplate
 
 from .group_occupancy import group_occupancy
 from .period import Period, _add_months
@@ -52,6 +56,16 @@ def _key(row):
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+def _schedule(group):
+    template = active_template(group)
+    if template is None:
+        return []
+    return [
+        {"день": slot.get_weekday_display(), "время": slot.start_time.strftime("%H:%M")}
+        for slot in template.slots.all()
+    ]
+
+
 def promotion_signals(scope, period):
     """Аргументы по каждой недозаполненной группе и системные срезы."""
     occupancy = group_occupancy(scope, period)
@@ -60,6 +74,12 @@ def promotion_signals(scope, period):
         str(group.id): group
         for group in Group.objects.for_tenant(scope.organization)
         .filter(pk__in=group_ids, exclude_from_ai_recommendations=False)
+        .prefetch_related(
+            Prefetch(
+                "schedule_templates",
+                queryset=ScheduleTemplate.objects.prefetch_related("slots").order_by("-valid_from"),
+            )
+        )
         .only("id", "branch_id", "direction_id", "age_min", "age_max")
     }
     current = _lead_rows(scope, period)
@@ -109,6 +129,7 @@ def promotion_signals(scope, period):
                 "направление": row["direction"],
                 "возраст_от": group.age_min,
                 "возраст_до": group.age_max,
+                "расписание": _schedule(group),
                 "свободных_мест": available,
                 "занято": row["occupied"],
                 "вместимость": row["capacity"],
