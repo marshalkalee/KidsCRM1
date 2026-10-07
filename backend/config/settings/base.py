@@ -196,6 +196,11 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
+    # Допуск расхождения часов: PyJWT отклоняет токен, у которого время выпуска
+    # «в будущем». Часы в Docker на Windows (WSL2) прыгают назад до ~1,2 с —
+    # отсюда были случайные 401 в тестах; на проде то же даёт разница часов
+    # между серверами.
+    "LEEWAY": timedelta(seconds=30),
     "TOKEN_OBTAIN_SERIALIZER": "domains.platform.users.serializers.CustomTokenObtainSerializer",
 }
 
