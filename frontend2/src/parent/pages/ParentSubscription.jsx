@@ -4,6 +4,7 @@ import { Card, CardHeader, ErrorState, Skeleton, cn, formatPhone, money, plural 
 import { locale, t } from '../../i18n'
 import { usePortalData } from '../api'
 import { useParent } from '../useParent'
+import { PushPrompt } from '../Notifications'
 
 /*
  * Абонемент и оплаты в кабинете (TRU-139), только просмотр.
@@ -37,6 +38,7 @@ export default function ParentSubscription() {
   return (
     <div className="space-y-3">
       <Current subscription={data.current} />
+      <PushPrompt />
       <HowToPay amount={Number(data.to_pay)} howToPay={data.how_to_pay} />
       {data.current && data.ledger.length > 0 && <Ledger entries={data.ledger} unlimited={data.current.is_unlimited} />}
       <Payments rows={data.payments} />

@@ -29,6 +29,10 @@ class Event:
     variables: dict = field(default_factory=dict)
     # {"ru": (тема, текст), "kk": (тема, текст)} — email.
     email: dict = field(default_factory=dict)
+    # {"ru": (заголовок, строка)} — push: коротко, одно действие.
+    push: dict = field(default_factory=dict)
+    # Куда открыть кабинет по нажатию на push.
+    link: str = "/parent"
 
     @property
     def all_variables(self) -> dict:
@@ -59,6 +63,14 @@ EVENTS = {
                     "{center}",
                 ),
             },
+            push={
+                "ru": (
+                    "Заканчивается абонемент",
+                    "{child}: осталось {left}. Продлите у администратора.",
+                ),
+                "kk": ("Абонемент аяқталып жатыр", "{child}: {left} қалды. Әкімшіден ұзартыңыз."),
+            },
+            link="/parent/subscription",
         ),
         Event(
             key="payment_due",
@@ -81,6 +93,11 @@ EVENTS = {
                     "{center}",
                 ),
             },
+            push={
+                "ru": ("Напоминание об оплате", "{child}: к оплате {amount}."),
+                "kk": ("Төлем туралы еске салу", "{child}: төлеуге {amount}."),
+            },
+            link="/parent/subscription",
         ),
         Event(
             key="lesson_cancelled",
@@ -106,6 +123,36 @@ EVENTS = {
                     "{center}",
                 ),
             },
+            push={
+                "ru": ("Занятие отменено", "{child}, «{group}», {when}. {note}"),
+                "kk": ("Сабақ болмайды", "{child}, «{group}», {when}. {note}"),
+            },
+            link="/parent/schedule",
+        ),
+        Event(
+            key="announcement",
+            label="Новое объявление центра",
+            category=MessageCategory.UTILITY,
+            variables={"title": "Заголовок объявления"},
+            email={
+                "ru": (
+                    "{center}: {title}",
+                    "Здравствуйте, {parent}!\n\n"
+                    "В кабинете родителя новое объявление: «{title}».\n\n"
+                    "{center}",
+                ),
+                "kk": (
+                    "{center}: {title}",
+                    "Сәлеметсіз бе, {parent}!\n\n"
+                    "Ата-ана кабинетінде жаңа хабарландыру: «{title}».\n\n"
+                    "{center}",
+                ),
+            },
+            push={
+                "ru": ("{center}: объявление", "{title}"),
+                "kk": ("{center}: хабарландыру", "{title}"),
+            },
+            link="/parent/announcements",
         ),
     ]
 }

@@ -8,16 +8,22 @@
   ChannelError — тогда сервис пробует следующий канал.
 
 Прямые вызовы провайдеров живут только здесь (tests_contract проверяет).
-WhatsApp — TRU-169, push в кабинете — TRU-172: пока они «не подключены» и
-просто пропускаются.
+WhatsApp — TRU-169: пока «не подключён» и просто пропускается.
 """
 
+import json
+import logging
 from email.utils import formataddr
 
 from django.conf import settings
 from django.core.mail import EmailMessage
+from django.utils import timezone
 
 from domains.platform.tenants.org_settings import MESSAGING_REPLY_TO, get_org_setting
+
+from .recipients import accounts_for_parent
+
+logger = logging.getLogger(__name__)
 
 
 class ChannelError(Exception):
@@ -69,6 +75,82 @@ class EmailChannel(Channel):
         return (getattr(status, "message_id", None) or "") if status else ""
 
 
+class PushChannel(Channel):
+    """Web Push в кабинете родителя (TRU-172): все устройства, где родитель
+    включил напоминания. Бесплатно — поэтому первым в порядке каналов.
+    Провайдер ответил 404/410 — подписки больше нет, строка удаляется.
+    Ни одно устройство не приняло — ChannelError, сервис пробует WhatsApp
+    и email: дублей нет, потому что после первого принятого перебор
+    останавливается."""
+
+    key = "push"
+    label = "Push в кабинете"
+
+    @property
+    def reason(self):
+        if not (settings.WEBPUSH_VAPID_PUBLIC_KEY and settings.WEBPUSH_VAPID_PRIVATE_KEY):
+            return "push не настроен на сервере (ключи VAPID)"
+        return ""
+
+    def subscriptions(self, parent):
+        from domains.people.portal.models import PushSubscription
+
+        return PushSubscription.objects.filter(account__in=accounts_for_parent(parent))
+
+    def recipient(self, parent):
+        if self.reason:
+            return None, self.reason
+        count = self.subscriptions(parent).count()
+        if not count:
+            return None, "родитель не включил напоминания в кабинете"
+        return f"{count} устр.", ""
+
+    def send(self, message, *, unsubscribe_url):
+        from pywebpush import WebPushException, webpush
+
+        from .events import EVENTS
+
+        event = EVENTS.get(message.event)
+        payload = json.dumps(
+            {
+                "title": message.subject,
+                "body": message.body,
+                "url": event.link if event else "/parent",
+                "tag": message.event,
+            },
+            ensure_ascii=False,
+        )
+        delivered, errors = 0, []
+        for subscription in self.subscriptions(message.parent):
+            try:
+                webpush(
+                    subscription_info={
+                        "endpoint": subscription.endpoint,
+                        "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth},
+                    },
+                    data=payload,
+                    vapid_private_key=settings.WEBPUSH_VAPID_PRIVATE_KEY,
+                    vapid_claims={"sub": settings.WEBPUSH_CONTACT},
+                    ttl=24 * 3600,
+                )
+            except WebPushException as exc:
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status in (404, 410):
+                    # Родитель удалил кабинет или запретил уведомления в браузере.
+                    subscription.delete()
+                else:
+                    errors.append(f"{status or ''} {exc}"[:200])
+                continue
+            delivered += 1
+            subscription.last_sent_at = timezone.now()
+            subscription.save(update_fields=["last_sent_at"])
+        if not delivered:
+            raise ChannelError(
+                "; ".join(errors) or "подписки устройств больше не действуют — удалены"
+            )
+        return f"push:{delivered}"
+
+
 class NotConnectedChannel(Channel):
     """Канал из настроек, которого ещё нет в системе: пропускается."""
 
@@ -85,5 +167,5 @@ class NotConnectedChannel(Channel):
 CHANNELS = {
     "email": EmailChannel(),
     "whatsapp": NotConnectedChannel("whatsapp", "WhatsApp", "WhatsApp центру не подключён"),
-    "push": NotConnectedChannel("push", "Push в кабинете", "push в кабинете ещё не работает"),
+    "push": PushChannel(),
 }
