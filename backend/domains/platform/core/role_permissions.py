@@ -240,6 +240,12 @@ def can_manage_parent_requests(user) -> bool:
     return user.role in CHILD_MANAGE_ROLES
 
 
+def can_view_ai_digest(user) -> bool:
+    """Еженедельный дайджест ИИ (TRU-163) — владелец и управляющий:
+    в нём выручка и что делать центру. Маркетолога как роли нет."""
+    return user.role in (User.Role.OWNER, User.Role.MANAGER)
+
+
 def get_user_permissions(user) -> dict:
     return {
         "can_view_financials": can_view_financials(user),
@@ -263,4 +269,5 @@ def get_user_permissions(user) -> dict:
         "can_use_ai_chat": can_use_ai_chat(user),
         "can_manage_announcements": can_manage_announcements(user),
         "can_manage_parent_requests": can_manage_parent_requests(user),
+        "can_view_ai_digest": can_view_ai_digest(user),
     }

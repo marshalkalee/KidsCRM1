@@ -5,6 +5,8 @@ import { RequireAuth, RequirePermission, SessionProvider, useSession } from './s
 import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Assistant from './pages/Assistant'
+import Digest from './pages/Digest'
+import { MessagingJournal, MessagingSettings, MessagingTemplates } from './pages/Messaging'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LegacyRedirect from './pages/LegacyRedirect'
@@ -94,6 +96,12 @@ function StaffApp() {
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
                 <Route path="assistant" element={<RequirePermission permission="can_use_ai_chat"><Assistant /></RequirePermission>} />
+                <Route path="digest" element={<RequirePermission permission="can_view_ai_digest"><Digest /></RequirePermission>} />
+                <Route path="messaging" element={<PageGroup title={t('Рассылки родителям')} tabs={[
+                  { key: 'journal', label: t('Журнал'), permission: 'can_manage_children', element: <MessagingJournal /> },
+                  { key: 'templates', label: t('Тексты писем'), permission: 'can_manage_org_settings', element: <MessagingTemplates /> },
+                  { key: 'settings', label: t('Настройки'), permission: 'can_manage_org_settings', element: <MessagingSettings /> },
+                ]} />} />
                 <Route path="announcements" element={<RequirePermission permission="can_manage_announcements"><Announcements /></RequirePermission>} />
                 <Route path="parent-requests" element={<RequirePermission permission="can_manage_parent_requests"><ParentRequests /></RequirePermission>} />
                 <Route path="notifications" element={<Notifications />} />
