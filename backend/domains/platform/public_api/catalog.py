@@ -142,7 +142,6 @@ def offer(organization, date_from: datetime.date, date_to: datetime.date, *, inc
     return result
 
 
-
 def center_profile(organization) -> dict | None:
     """Карточка центра для каталога (TRU-179) — только опубликованная."""
     from .models import CenterProfile

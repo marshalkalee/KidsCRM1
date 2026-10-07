@@ -16,7 +16,9 @@ from .models import CenterProfile
 
 FOLDER = "centers"
 MAX_DESCRIPTION = 1000
-_INSTAGRAM = re.compile(r"^(?:https?://)?(?:www\.)?instagram\.com/([A-Za-z0-9_.]+)/?.*$|^@?([A-Za-z0-9_.]+)$")
+_INSTAGRAM = re.compile(
+    r"^(?:https?://)?(?:www\.)?instagram\.com/([A-Za-z0-9_.]+)/?.*$|^@?([A-Za-z0-9_.]+)$"
+)
 
 
 def _profile(organization) -> CenterProfile:
