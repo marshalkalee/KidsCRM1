@@ -2415,5 +2415,19 @@
  "Телефон для родителей": "Phone for parents",
  "Фото": "Photo",
  "Что за центр, для какого возраста, чем отличаетесь. До 1000 символов.": "What the centre is, for which ages, what makes you different. Up to 1000 characters.",
- "JPG или PNG до 5 МБ. Фото — зал, занятия, выступления: до {n} штук.": "JPG or PNG up to 5 MB. Photos — the hall, classes, performances: up to {n}."
+ "JPG или PNG до 5 МБ. Фото — зал, занятия, выступления: до {n} штук.": "JPG or PNG up to 5 MB. Photos — the hall, classes, performances: up to {n}.",
+ "Город": "City",
+ "Выберите город": "Choose a city",
+ "Район": "District",
+ "Например, Бостандыкский": "e.g. Bostandyk",
+ "Улица и дом — по ним сама ставится точка на карте.": "Street and building — the map point is set from them automatically.",
+ "Точка на карте": "Map point",
+ "поставлена вручную": "set manually",
+ "по адресу": "from the address",
+ "Точки на карте пока нет — появится по адресу после сохранения.": "No map point yet — it will appear from the address after saving.",
+ "Проверить на карте": "Check on the map",
+ "Поправить точку": "Adjust the point",
+ "Широта": "Latitude",
+ "Долгота": "Longitude",
+ "Откройте место на карте, скопируйте координаты. Поставленную вручную точку система больше не пересчитывает.": "Open the place on a map and copy the coordinates. A manually set point is no longer recalculated."
 }

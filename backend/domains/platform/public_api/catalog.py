@@ -58,6 +58,10 @@ def _with_seats(lessons):
     return lessons.annotate(taken=_count(members) + _count(enrolled))
 
 
+def _coord(value):
+    return float(value) if value is not None else None
+
+
 def _prices(organization):
     """Публичные типы абонементов: (направления, филиалы, данные). Пустой
     список направлений или филиалов у типа — подходит ко всем."""
@@ -120,6 +124,10 @@ def offer(organization, date_from: datetime.date, date_to: datetime.date, *, inc
                     "id": str(group.branch_id),
                     "name": group.branch.name,
                     "address": group.branch.address,
+                    "city": group.branch.city,
+                    "district": group.branch.district,
+                    "latitude": _coord(group.branch.latitude),
+                    "longitude": _coord(group.branch.longitude),
                 },
                 "capacity": group.capacity,
                 "free_seats": max(group.capacity - lesson.taken, 0),
