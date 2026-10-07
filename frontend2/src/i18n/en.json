@@ -2138,6 +2138,8 @@
  "Приём заявок с сайта": "Website leads",
  "Форма сможет слать заявки только с этого адреса": "The form can send leads only from this address",
  "часов": "hours",
+ "Не предлагать продвижение этой группы": "Do not recommend promoting this group",
+ "Для индивидуальных, конкурсных и других намеренно малых групп.": "For individual, competition and other intentionally small groups.",
  "ИИ-помощник: расход за {month}": "AI assistant: spending for {month}",
  "Лимит обновится {date}.": "The limit resets on {date}.",
  "из {limit}": "of {limit}",

@@ -11,3 +11,4 @@ class PromptTemplate:
     fixture: dict
     validate: Callable[[dict, dict], dict]
     max_tokens: int = 2500
+    finalize: Callable | None = None

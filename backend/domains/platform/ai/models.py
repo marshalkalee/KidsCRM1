@@ -88,6 +88,29 @@ class AIGeneration(TenantModel):
         return f"{self.function}@{self.prompt_version}: {self.status}"
 
 
+class AIRecommendationState(TenantModel):
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Активна"
+        DISMISSED = "dismissed", "Отклонена"
+
+    function = models.CharField(max_length=64)
+    candidate_key = models.CharField(max_length=64)
+    fingerprint = models.CharField(max_length=64)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
+    times_shown = models.PositiveSmallIntegerField(default=0)
+    payload = models.JSONField(default=dict, blank=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "function", "fingerprint"],
+                name="unique_ai_recommendation_fingerprint",
+            )
+        ]
+        indexes = [models.Index(fields=["organization", "function", "status"])]
+
+
 class AIUsage(TenantModel):
     """Одно обращение к модели (TRU-160, ADR-0009 раздел 5): на этих строках
     стоят счётчик месяца, лимит центра и сводка платформы. Пишется сразу

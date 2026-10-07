@@ -26,6 +26,7 @@ from domains.people.clients.models import Child
 from domains.platform.analytics.funnel import funnel
 from domains.platform.analytics.group_occupancy import group_occupancy
 from domains.platform.analytics.period import Period, _add_months, period_for
+from domains.platform.analytics.promotion import promotion_signals
 from domains.platform.analytics.registry import compute
 from domains.platform.analytics.rejections import rejections
 from domains.platform.analytics.scope import Scope
@@ -191,6 +192,11 @@ def seasonality(organization) -> dict:
     return {labels[name]: rows for name, rows in result.items()}
 
 
+def promotion_opportunities(organization) -> dict:
+    """Готовые аргументы для TRU-161: числа считает аналитика, не модель."""
+    return promotion_signals(_scope(organization), _period(organization))
+
+
 # Всё, что слой отдаёт наружу. Новая функция — сюда, иначе тест упадёт.
 AGGREGATES = {
     "occupancy": occupancy,
@@ -200,6 +206,7 @@ AGGREGATES = {
     "ages": ages,
     "money": money,
     "seasonality": seasonality,
+    "promotion_opportunities": promotion_opportunities,
 }
 
 

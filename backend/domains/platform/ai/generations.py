@@ -92,12 +92,19 @@ def _finish(generation_id, *, status, **fields):
     return generation
 
 
-def _fixture_payload(template, facts):
+def _fixture_payload(template, facts, snapshot):
     payload = copy.deepcopy(template.fixture)
     first_key = next(iter(facts), None)
     if first_key:
         for row in payload.get("recommendations", []):
             row["evidence_keys"] = [first_key]
+    candidates = [
+        item["candidate_key"]
+        for item in snapshot.get("promotion_opportunities", {}).get("кандидаты", [])
+    ]
+    if candidates:
+        for row in payload.get("recommendations", []):
+            row["candidate_key"] = candidates[0]
     return payload
 
 
@@ -145,7 +152,7 @@ def run(generation_id) -> AIGeneration:
     for attempt in range(1, 3):
         try:
             if fixture_mode:
-                payload = _fixture_payload(template, facts)
+                payload = _fixture_payload(template, facts, snapshot)
             else:
                 response = generation_provider.call(
                     system=template.system,
@@ -167,7 +174,7 @@ def run(generation_id) -> AIGeneration:
                 payload = response.payload
                 input_tokens += response.input_tokens
                 output_tokens += response.output_tokens
-            result = template.validate(payload, facts)
+            result = template.validate(payload, facts, snapshot)
         except ValueError as exc:
             last_error = exc
             continue
@@ -182,6 +189,8 @@ def run(generation_id) -> AIGeneration:
                 error_code="provider_unavailable",
                 error_detail=str(exc)[:500],
             )
+        if template.finalize:
+            result = template.finalize(generation.organization, result, snapshot)
         return _finish(
             generation.id,
             status=AIGeneration.Status.SUCCEEDED,
