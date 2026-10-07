@@ -63,6 +63,7 @@ DOMAIN_APPS = [
     "domains.platform.leads",
     "domains.platform.ai",
     "domains.platform.analytics",
+    "domains.platform.public_api",
     "domains.scheduling.schedule_templates",
 ]
 
