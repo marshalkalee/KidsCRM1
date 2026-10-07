@@ -23,6 +23,7 @@ export default function GroupModal({ group, onClose, onSaved }) {
     age_min: group?.age_min ?? '',
     age_max: group?.age_max ?? '',
     status: group?.status || 'active',
+    is_public: group?.is_public || false,
     exclude_from_ai_recommendations: group?.exclude_from_ai_recommendations || false,
   })
   const [options, setOptions] = useState({ branches: [], directions: [], teachers: [] })
@@ -135,6 +136,16 @@ export default function GroupModal({ group, onClose, onSaved }) {
             </Select>
           )}
         </Field>
+        <div className="rounded-lg border border-line bg-surface-muted p-3 sm:col-span-2">
+          <Checkbox
+            checked={form.is_public}
+            onChange={e => set('is_public', e.target.checked)}
+            label={t('Показывать в публичном каталоге')}
+          />
+          <p className="mt-1 pl-6 text-xs text-ink-subtle">
+            {t('Название, возраст, расписание и свободные места — для будущего каталога кружков. Детей и родителей каталог не видит.')}
+          </p>
+        </div>
         <div className="rounded-lg border border-line bg-surface-muted p-3 sm:col-span-2">
           <Checkbox
             checked={form.exclude_from_ai_recommendations}

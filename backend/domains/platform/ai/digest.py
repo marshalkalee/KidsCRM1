@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 # одна строка здесь, если его шаблон отдаёт {"recommendations": [...]}.
 BLOCKS = [
     ("marketing_recommendations", "Что сделать на этой неделе"),
+    ("group_promotion", "Какие группы продвигать"),
 ]
 
 # Меньше активных детей — советы были бы догадками, честнее сказать, что
@@ -129,9 +130,48 @@ def _signature(item: dict) -> str:
     return "|".join(sorted(e["key"] for e in item["evidence"]))
 
 
-def _items(result: dict, snapshot: dict) -> list:
+def _from_group_promotion(row: dict) -> dict:
+    """Блок TRU-161 отдаёт группу-кандидата и её цифры (basis), а не ключи
+    фактов: приводим к общему виду совета. Цифры — те же, что посчитал код
+    шаблона из агрегатов, модель их не пишет."""
+    key = row["candidate_key"]
+    place = f"{row['group']}, {row['branch']}"
+    basis = row.get("basis") or {}
+    facts = [
+        ("available_places", "свободных мест"),
+        ("occupancy_percent", "заполняемость, %"),
+        ("conversion_percent", "конверсия заявок направления, %"),
+    ]
+    return {
+        "title": row["title"],
+        "rationale": row["rationale"],
+        "action": row["action"],
+        "priority": "high" if row.get("systemic") else "medium",
+        "evidence": [
+            {
+                "key": f"group_promotion.{key}.{name}",
+                "label": f"{place}: {label}",
+                "value": basis[name],
+            }
+            for name, label in facts
+            if isinstance(basis.get(name), int | float)
+        ],
+    }
+
+
+# Блоки со своим форматом ответа → общий вид совета дайджеста.
+ADAPTERS = {"group_promotion": _from_group_promotion}
+
+
+def _items(result: dict, snapshot: dict, block: str = "") -> list:
     rows = []
+    adapt = ADAPTERS.get(block)
     for row in result.get("recommendations", []):
+        if adapt:
+            row = adapt(row)
+            item = {**row, "id": _signature(row)}
+            rows.append(item)
+            continue
         evidence = [{**e, "label": fact_label(snapshot, e["key"])} for e in row.get("evidence", [])]
         item = {**row, "evidence": evidence}
         item["id"] = _signature(item)
@@ -165,7 +205,7 @@ def compare(content: dict, previous: AIDigest | None) -> dict:
 def compose(organization, results: list, snapshot: dict, previous) -> dict:
     blocks, items = [], []
     for key, title, result in results:
-        rows = _items(result, snapshot)
+        rows = _items(result, snapshot, key)
         blocks.append({"key": key, "title": title, "items": rows})
         items.extend(rows)
     highlights = sorted(items, key=lambda r: PRIORITY_RANK.get(r.get("priority"), 3))[:HIGHLIGHTS]
