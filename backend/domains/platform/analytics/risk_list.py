@@ -3,6 +3,9 @@
 Модуль только объединяет сигналы. Формулы остаются в доменах-источниках:
 посещаемость — attendance_trends, продление — subscriptions.renewals,
 задолженность — subscriptions.debt.
+
+Дети, которые уже ушли по правилу оттока (analytics/churn.py, TRU-127),
+сюда не попадают: их список — в отчёте «Отток».
 """
 
 from decimal import Decimal
@@ -11,7 +14,7 @@ from django.db.models import Q
 
 from domains.money.subscriptions.debt import debt_by_child
 from domains.money.subscriptions.renewals import renewal_risk_by_child
-from domains.people.clients.models import Child, ChildContact, ContactPhone
+from domains.people.clients.models import Child
 from domains.platform.tenants.org_settings import (
     RISK_ABSENCE_CHANGE_PP_THRESHOLD,
     RISK_CURRENT_ABSENCES_MIN,
@@ -20,6 +23,8 @@ from domains.platform.tenants.org_settings import (
 from domains.scheduling.groups.models import GroupMembership
 
 from .attendance_trends import child_attendance_deviation
+from .churn import departed_child_ids
+from .contacts import parent_contacts
 
 SIGNAL_ATTENDANCE = "attendance"
 SIGNAL_SUBSCRIPTION = "subscription"
@@ -58,28 +63,8 @@ def _context_by_child(organization, child_ids):
             row["branch"] = membership.group.branch.name
             row["direction"] = membership.group.direction.name
 
-    links = (
-        ChildContact.objects.for_tenant(organization)
-        .filter(child_id__in=child_ids)
-        .select_related("parent_contact")
-        .order_by("child_id", "-is_primary_contact", "role")
-    )
-    parents = {}
-    for link in links:
-        parents.setdefault(link.child_id, link.parent_contact)
-    phones = {}
-    for phone in ContactPhone.objects.for_tenant(organization).filter(
-        parent_contact_id__in=[parent.id for parent in parents.values()]
-    ):
-        phones.setdefault(phone.parent_contact_id, phone.number)
-    for child_id, parent in parents.items():
-        context[child_id].update(
-            {
-                "parent": parent.full_name,
-                "phone": phones.get(parent.id),
-                "whatsapp": parent.whatsapp or phones.get(parent.id),
-            }
-        )
+    for child_id, contact in parent_contacts(organization, child_ids).items():
+        context[child_id].update(contact)
     return context
 
 
@@ -100,6 +85,10 @@ def risk_list(scope, period):
     attendance_rows = {row["id"]: row for row in child_attendance_deviation(scope, period)}
 
     children = list(_candidate_children(scope, attendance_rows).only("id", "full_name", "status"))
+    # Уже ушедшие (нет абонемента дольше порога оттока) — в отчёте «Отток»
+    # (TRU-127), не здесь: риск-лист — про тех, кого ещё можно удержать.
+    gone = departed_child_ids(organization, [child.id for child in children])
+    children = [child for child in children if child.id not in gone]
     departed = list(
         _candidate_children(scope, attendance_rows, statuses=[Child.Status.LEFT]).only(
             "id", "full_name", "status"

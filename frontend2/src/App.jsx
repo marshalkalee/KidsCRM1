@@ -49,6 +49,7 @@ import AnalyticsTeachers from './pages/AnalyticsTeachers'
 import AnalyticsRejections from './pages/AnalyticsRejections'
 import AnalyticsBranches from './pages/AnalyticsBranches'
 import AnalyticsRisk from './pages/AnalyticsRisk'
+import AnalyticsChurn from './pages/AnalyticsChurn'
 import AnalyticsRenewals from './pages/AnalyticsRenewals'
 import AnalyticsForecast from './pages/AnalyticsForecast'
 import TaskEscalation from './pages/TaskEscalation'
@@ -126,6 +127,7 @@ function StaffApp() {
                 <Route path="analytics/revenue" element={<RequirePermission permission="can_view_analytics"><AnalyticsRevenue /></RequirePermission>} />
                 <Route path="analytics/attendance" element={<RequirePermission permission="can_view_analytics"><AnalyticsAttendance /></RequirePermission>} />
                 <Route path="analytics/risk" element={<RequirePermission permission="can_view_analytics"><AnalyticsRisk /></RequirePermission>} />
+                <Route path="analytics/churn" element={<RequirePermission permission="can_view_analytics"><AnalyticsChurn /></RequirePermission>} />
                 <Route path="analytics/funnel" element={<RequirePermission permission="can_view_analytics"><AnalyticsFunnel /></RequirePermission>} />
                 <Route path="analytics/groups" element={<RequirePermission permission="can_view_analytics"><AnalyticsGroups /></RequirePermission>} />
                 <Route path="analytics/branches" element={<RequirePermission permission="can_view_analytics"><AnalyticsBranches /></RequirePermission>} />

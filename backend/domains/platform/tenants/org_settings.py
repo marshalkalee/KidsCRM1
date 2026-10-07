@@ -20,6 +20,10 @@ LEAD_STALE_DAYS_THRESHOLD = "lead_stale_days_threshold"
 # Что считать продлением (ТЗ п. 5.3, TRU-126): новый абонемент того же
 # направления начался не позже N дней после окончания предыдущего.
 RENEWAL_GRACE_DAYS = "renewal_grace_days"
+# Отток (ТЗ раздел 7, TRU-127): «ушёл» — нет активного абонемента дольше
+# N дней; летом — пауза до 30 сентября, а не уход.
+CHURN_INACTIVE_DAYS = "churn_inactive_days"
+CHURN_SUMMER_PAUSE = "churn_summer_pause"
 RULE_LEAD_STALE_ENABLED = "rule_lead_stale_enabled"
 RULE_RENEWAL_OFFER_ENABLED = "rule_renewal_offer_enabled"
 RULE_DEBT_REMINDER_ENABLED = "rule_debt_reminder_enabled"
@@ -76,6 +80,11 @@ DEFAULT_ORG_SETTINGS = {
     # (docs/project-status.md, вопрос №5): при 7 летний перерыв выглядит
     # как массовый отток. Читается только через renewal_conversion.grace_days().
     RENEWAL_GRACE_DAYS: 14,
+    # Ушёл — нет активного абонемента дольше N дней. 30 и летняя пауза —
+    # решения по умолчанию (docs/project-status.md, Д20 и Д21).
+    # Читаются только через analytics/churn.py (churn_rules).
+    CHURN_INACTIVE_DAYS: 30,
+    CHURN_SUMMER_PAUSE: True,
     # Автоправила создания задач (TRU-108) — владелец может выключить любое.
     RULE_LEAD_STALE_ENABLED: True,
     RULE_RENEWAL_OFFER_ENABLED: True,

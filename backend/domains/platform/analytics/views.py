@@ -16,6 +16,7 @@ GET /api/v1/analytics/catalog/ — какие метрики есть, каки�
 """
 
 import uuid
+from datetime import date
 
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
@@ -25,7 +26,7 @@ from rest_framework.response import Response
 from domains.people.clients.models import Child
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_view_analytics
-from domains.platform.tasks.services import create_retention_task
+from domains.platform.tasks.services import create_retention_task, create_winback_task
 from domains.platform.tenants.plans import has_feature
 from domains.scheduling.groups.queries import underfilled_threshold
 
@@ -33,6 +34,7 @@ from . import metrics  # noqa: F401 — регистрирует базовые 
 from .attendance_trends import attendance_trends
 from .branches import branch_trends, compare_branches
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
+from .churn import churn_report
 from .export import filename, workbook
 from .forecast import revenue_forecast
 from .funnel import FILTERS as FUNNEL_FILTERS
@@ -445,6 +447,44 @@ def renewal_conversion_api(request, version=None):
     if error:
         return error
     return Response(renewal_conversion_report(scope, period))
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def churn_api(request, version=None):
+    """Отток (TRU-127, ТЗ раздел 7): ушедшие за период списком с контактами,
+    непродлившиеся абонементы, динамика с тем же месяцем прошлого года,
+    срок жизни клиента, разрезы и причины ухода. Летняя пауза и порог —
+    настройки организации."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(churn_report(scope, period))
+
+
+@api_view(["POST"])
+@permission_classes([CanViewAnalytics])
+def churn_winback_task_api(request, child_id, version=None):
+    """Задача «вернуть клиента» из списка ушедших: ребёнок должен быть в
+    списке за тот же период и филиалы, что на экране."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    data = churn_report(scope, period)
+    item = next((row for row in data["items"] if row["id"] == str(child_id)), None)
+    if item is None:
+        return Response({"detail": "Ребёнка нет в списке ушедших."}, status=404)
+    child = Child.objects.for_tenant(scope.organization).get(pk=child_id)
+    task, created = create_winback_task(
+        child=child,
+        actor=request.user,
+        left_on=date.fromisoformat(item["left_on"]),
+        reason=item["reason"],
+    )
+    return Response(
+        {"id": str(task.id), "title": task.title, "status": task.status, "created": created},
+        status=201 if created else 200,
+    )
 
 
 @api_view(["GET"])

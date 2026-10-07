@@ -23,6 +23,12 @@ urlpatterns = [
         views.renewal_conversion_api,
         name="analytics-renewal-conversion",
     ),
+    path("churn/", views.churn_api, name="analytics-churn"),
+    path(
+        "churn/<uuid:child_id>/task/",
+        views.churn_winback_task_api,
+        name="analytics-churn-winback-task",
+    ),
     path("rejections/", views.rejections_api, name="analytics-rejections"),
     path("rejections/by/", views.rejections_by_api, name="analytics-rejections-by"),
     path("branches/", views.branches_api, name="analytics-branches"),

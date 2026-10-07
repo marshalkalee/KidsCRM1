@@ -10,6 +10,8 @@ from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone
 from domains.platform.core.text_validation import normalize_entity_name
 from domains.platform.tenants.models import Branch, Direction, Room
 from domains.platform.tenants.org_settings import (
+    CHURN_INACTIVE_DAYS,
+    CHURN_SUMMER_PAUSE,
     DEBT_OVERDUE_DAYS_THRESHOLD,
     DEFAULT_ORG_SETTINGS,
     DIGEST_HOUR,
@@ -126,6 +128,16 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
         required=False,
         label="Продление: новый абонемент не позже N дней после окончания",
     )
+    churn_inactive_days = forms.IntegerField(
+        min_value=1,
+        max_value=365,
+        required=False,
+        label="Отток: нет активного абонемента дольше N дней",
+    )
+    churn_summer_pause = forms.BooleanField(
+        required=False,
+        label="Отток: летом пауза до 30 сентября, а не уход",
+    )
     rule_lead_stale_enabled = forms.BooleanField(
         required=False, label="Напоминать перезвонить по зависшим заявкам"
     )
@@ -214,6 +226,16 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
                 self.cleaned_data.get(RENEWAL_GRACE_DAYS)
                 if self.cleaned_data.get(RENEWAL_GRACE_DAYS) is not None
                 else get_org_setting(organization, RENEWAL_GRACE_DAYS)
+            ),
+            CHURN_INACTIVE_DAYS: (
+                self.cleaned_data.get(CHURN_INACTIVE_DAYS)
+                if self.cleaned_data.get(CHURN_INACTIVE_DAYS) is not None
+                else get_org_setting(organization, CHURN_INACTIVE_DAYS)
+            ),
+            CHURN_SUMMER_PAUSE: (
+                self.cleaned_data[CHURN_SUMMER_PAUSE]
+                if CHURN_SUMMER_PAUSE in self.data
+                else get_org_setting(organization, CHURN_SUMMER_PAUSE)
             ),
             RULE_LEAD_STALE_ENABLED: self.cleaned_data[RULE_LEAD_STALE_ENABLED],
             RULE_RENEWAL_OFFER_ENABLED: self.cleaned_data[RULE_RENEWAL_OFFER_ENABLED],

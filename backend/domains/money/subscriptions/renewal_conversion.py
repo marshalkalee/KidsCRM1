@@ -63,25 +63,25 @@ def add_months(day: date, months: int) -> date:
     return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
 
 
-def load_rows(organization, *, ends_since: date) -> list[SubscriptionRow]:
+def load_rows(organization, *, ends_since: date, child_ids=None) -> list[SubscriptionRow]:
     """Все абонементы центра, закончившиеся не раньше `ends_since`, одним
-    запросом — без филиала: ребёнок мог продлиться в другом филиале."""
+    запросом — без филиала: ребёнок мог продлиться в другом филиале.
+    `child_ids` — только эти дети (риск-лист проверяет отток, TRU-127)."""
     tz = pytz.timezone(organization.timezone)
-    rows = (
-        Subscription.objects.for_tenant(organization)
-        .filter(ends_on__gte=ends_since)
-        .values_list(
-            "id",
-            "child_id",
-            "direction_id",
-            "branch_id",
-            "starts_on",
-            "ends_on",
-            "created_at",
-            "price",
-            "renewed_from_id",
-            "status",
-        )
+    rows = Subscription.objects.for_tenant(organization).filter(ends_on__gte=ends_since)
+    if child_ids is not None:
+        rows = rows.filter(child_id__in=child_ids)
+    rows = rows.values_list(
+        "id",
+        "child_id",
+        "direction_id",
+        "branch_id",
+        "starts_on",
+        "ends_on",
+        "created_at",
+        "price",
+        "renewed_from_id",
+        "status",
     )
     return [
         SubscriptionRow(

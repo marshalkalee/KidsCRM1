@@ -129,6 +129,31 @@ def create_retention_task(*, child, actor, signals):
     return task, created
 
 
+def create_winback_task(*, child, actor, left_on, reason=""):
+    """Задача вернуть ушедшего клиента (отчёт «Отток», TRU-127): одна
+    открытая на ребёнка в месяц. Тип — удержание (отдельного типа нет),
+    ключ свой — не мешает задаче удержания из риск-листа."""
+    assignee = actor if actor and actor.is_active else None
+    description = f"Ушёл {left_on:%d.%m.%Y}."
+    if reason:
+        description += f" Причина: {reason}."
+    task, created = Task.objects.get_or_create(
+        organization=child.organization,
+        type=Task.Type.RETENTION,
+        source_key=f"winback:{child.id}:{today_for_org(child.organization):%Y-%m}",
+        defaults={
+            "assigned_to": assignee,
+            "created_by": assignee,
+            "child": child,
+            "source": Task.Source.MANUAL,
+            "due_at": timezone.now() + datetime.timedelta(days=1),
+            "title": f"Вернуть клиента: {child.full_name}",
+            "description": description,
+        },
+    )
+    return task, created
+
+
 def create_task(
     *,
     type,

@@ -11,6 +11,8 @@ from .attendance_trends import attendance_trends
 from .branches import COLUMNS as BRANCH_COLUMNS
 from .branches import compare_branches
 from .breakdowns import breakdown, visits_heatmap
+from .churn import DIMENSIONS as CHURN_DIMENSIONS
+from .churn import churn_report
 from .export import Column, Export, Section
 from .forecast import revenue_forecast
 from .funnel import BY as FUNNEL_BY
@@ -1079,6 +1081,214 @@ def renewal_conversion_export(scope, period, params):
                                     + ")"
                                     for g in row["context"]["groups"]
                                 ),
+                            ]
+                            if dimension in ("group", "teacher")
+                            else []
+                        ),
+                    ]
+                    for row in rows
+                ],
+                note=note,
+            )
+        )
+    return sections
+
+
+CHURN_SHEETS = {
+    "branch": "Ушли по филиалам",
+    "direction": "Ушли по направлениям",
+    "group": "Ушли по группам",
+    "teacher": "Ушли по преподавателям",
+    "lifetime": "Ушли по сроку жизни",
+    "reason": "Причины ухода",
+}
+CHILD_STATES = {
+    "active": "ходит дальше",
+    "departed": "ушёл",
+    "summer": "пауза на лето",
+    "recent": "в риск-листе",
+}
+
+
+def _churn_rule_note(rules):
+    note = (
+        f"Ушёл — нет активного абонемента дольше {rules['inactive_days']} дней после "
+        "окончания последнего (или отмечен «ушёл»). Дата ухода — окончание последнего "
+        "абонемента."
+    )
+    if rules["summer_pause"]:
+        note += (
+            " Летом (июнь–август) — пауза до 30 сентября: вернулся до неё — не уходил; "
+            "летние месяцы окончательны с 1 октября."
+        )
+    return note
+
+
+@report("churn", "Отток")
+def churn_export(scope, period, params):
+    data = churn_report(scope, period)
+    rules, summary = data["rules"], data["summary"]
+    previous = summary["previous_year"]
+    total = Section(
+        "Итог",
+        [
+            Column("Показатель", width=44),
+            Column("Значение", "decimal", 14, total=False),
+            Column("Год назад", "decimal", 14, total=False),
+        ],
+        [
+            ["Ушли", (summary["departed"], "count"), (previous["departed"], "count")],
+            ["Ходили в периоде", (summary["active"], "count"), (previous["active"], "count")],
+            ["Доля ушедших, %", (summary["rate"], "percent"), (previous["rate"], "percent")],
+            ["Из ушедших уже вернулись", (summary["returned"], "count"), None],
+            ["Не отмечены ушедшими в карточке", (summary["not_marked"], "count"), None],
+            ["Пауза на лето, ждём до 30 сентября", (summary["summer_waiting"], "count"), None],
+            ["Вернулись после лета", (summary["summer_returned"], "count"), None],
+            ["Ещё не ушли — в риск-листе", (summary["recent"], "count"), None],
+            [
+                "Средний срок жизни ушедших, мес.",
+                data["lifetime"]["period"]["average_months"],
+                None,
+            ],
+            ["То же за 12 месяцев, мес.", data["lifetime"]["year"]["average_months"], None],
+        ],
+        note=_churn_rule_note(rules)
+        + ("" if summary["complete"] else " Период ещё дособирается: порог не прошёл."),
+    )
+    departed = Section(
+        "Ушли",
+        [
+            Column("Ребёнок", width=28),
+            Column("Ушёл", "date", 12),
+            Column("Срок жизни, мес.", "decimal", 14, total=False),
+            Column("Вернулся", "date", 12),
+            Column("Причина ухода", width=36),
+            Column("Филиал", width=20),
+            Column("Направление", width=20),
+            Column("Группа", width=20),
+            Column("Преподаватель", width=24),
+            Column("Абонемент", width=24),
+            Column("Родитель", width=24),
+            Column("Телефон", width=18),
+            Column("WhatsApp", width=18),
+        ],
+        [
+            [
+                item["name"],
+                item["left_on"],
+                item["lifetime_months"],
+                item["returned_on"],
+                item["reason"] if item["marked_left"] else "не отмечен ушедшим",
+                item["branch"],
+                item["direction"],
+                item["group"],
+                ", ".join(teacher["name"] for teacher in item["teachers"]),
+                item["subscription"],
+                item["parent"],
+                item["phone"],
+                item["whatsapp"],
+            ]
+            for item in data["items"]
+        ],
+        note="Не вернувшиеся — сверху, свежие уходы — первыми.",
+    )
+    not_renewed = Section(
+        "Не продлили",
+        [
+            Column("Ребёнок", width=28),
+            Column("Абонемент закончился", "date", 14),
+            Column("Абонемент", width=24),
+            Column("Направление", width=20),
+            Column("Филиал", width=20),
+            Column("Ребёнок сейчас", width=16),
+            Column("Родитель", width=24),
+            Column("Телефон", width=18),
+            Column("WhatsApp", width=18),
+        ],
+        [
+            [
+                item["name"],
+                item["ends_on"],
+                item["subscription"],
+                item["direction"],
+                item["branch"],
+                CHILD_STATES.get(item["child_state"], item["child_state"]),
+                item["parent"],
+                item["phone"],
+                item["whatsapp"],
+            ]
+            for item in data["not_renewed"]
+        ],
+        note=(
+            f"Абонемент закончился в периоде, за {rules['grace_days']} дней после окончания "
+            "продления нет (как в отчёте «Продления»). «Ходит дальше» — у ребёнка идёт "
+            "абонемент другого направления."
+        ),
+    )
+    trend = Section(
+        "По месяцам",
+        [
+            Column("Месяц", "date", 12),
+            Column("Ушли", "count", 10),
+            Column("Ходили", "count", 10, total=False),
+            Column("Доля, %", "percent", 10),
+            Column("Год назад: ушли", "count", 14),
+            Column("Год назад: доля, %", "percent", 16),
+            Column("Пауза на лето", "count", 13),
+            Column("Окончательно", width=13),
+        ],
+        [
+            [
+                row["month"],
+                row["departed"],
+                row["active"],
+                row["rate"],
+                row["previous_year"]["departed"],
+                row["previous_year"]["rate"],
+                row["summer_waiting"],
+                "да" if row["complete"] else "дособирается",
+            ]
+            for row in data["trend"]
+        ],
+        note="Месяц ухода — месяц окончания последнего абонемента. Сравнение — с тем же "
+        "месяцем прошлого года: соседние месяцы в детском центре несравнимы из-за лета.",
+    )
+    sections = [total, departed, not_renewed, trend]
+    for dimension, title in CHURN_DIMENSIONS:
+        rows = data["breakdowns"][dimension]
+        columns = [
+            Column(title, width=36),
+            Column("Ушли", "count", 10, total=False if dimension == "teacher" else None),
+            Column("Уже вернулись", "count", 13, total=False if dimension == "teacher" else None),
+            Column("Доля от ушедших, %", "percent", 16),
+            Column("Средний срок жизни, мес.", "decimal", 18, total=False),
+        ]
+        note = "Сколько прожил клиент — от первого абонемента до ухода."
+        if dimension in ("group", "teacher"):
+            columns.append(Column("Группы", width=60))
+            note = (
+                "Не рейтинг преподавателей. Группа — та, где ребёнок ходил по последнему "
+                "абонементу; ребёнок у двух преподавателей учитывается у обоих."
+            )
+        sections.append(
+            Section(
+                CHURN_SHEETS[dimension],
+                columns,
+                [
+                    [
+                        row["label"],
+                        row["departed"],
+                        row["returned"],
+                        row["share"],
+                        row["average_lifetime_months"],
+                        *(
+                            [
+                                "; ".join(
+                                    f"{g['name']} ({g['occupied']}/{g['capacity']}"
+                                    + (f", {g['schedule']}" if g["schedule"] else "")
+                                    + ")"
+                                    for g in row["context"]["groups"]
+                                )
                             ]
                             if dimension in ("group", "teacher")
                             else []

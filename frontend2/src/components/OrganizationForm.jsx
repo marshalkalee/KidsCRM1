@@ -16,6 +16,7 @@ const THRESHOLDS = [
   { key: 'risk_absence_change_pp_threshold', get label() { return t('Рост пропусков для риск-листа') }, get hint() { return t('Отклонение от личной нормы ребёнка') }, get suffix() { return t('п.п. и больше') }, min: 1, max: 100 },
   { key: 'risk_current_absences_min', get label() { return t('Минимум пропусков для риск-листа') }, get hint() { return t('За выбранный период') }, get suffix() { return t('пропуска и больше') }, min: 1, max: 100 },
   { key: 'renewal_grace_days', get label() { return t('Что считать продлением') }, get hint() { return t('Новый абонемент после окончания прошлого — не позже') }, get suffix() { return t('дней') }, max: 120 },
+  { key: 'churn_inactive_days', get label() { return t('Когда считать, что ребёнок ушёл') }, get hint() { return t('Нет активного абонемента дольше') }, get suffix() { return t('дней') }, min: 1, max: 365 },
   { key: 'lead_stale_days_threshold', get label() { return t('Заявка без движения') }, get hint() { return t('Напомнить перезвонить через') }, get suffix() { return t('дней') }, max: 90 },
 ]
 
@@ -197,6 +198,19 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
             </div>
           </div>
         ))}
+      </div>
+      <div className="mt-3 rounded-lg bg-surface-muted px-3 py-2.5">
+        <Checkbox
+          id="churn_summer_pause"
+          checked={Boolean(form.churn_summer_pause)}
+          onChange={e => set('churn_summer_pause', e.target.checked)}
+          label={<span className="text-ink">{t('Летом — пауза, а не уход')}</span>}
+        />
+        <p className="mt-1.5 pl-7 text-[13px] text-ink-muted">
+          {form.churn_summer_pause
+            ? t('Абонемент кончился перед летом или летом — ребёнок ушёл, только если не вернулся до 30 сентября.')
+            : t('Летние уходы считаются сразу, как в любой другой месяц.')}
+        </p>
       </div>
     </Section>
   )
