@@ -44,6 +44,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "contact_whatsapp",
             "child_debt",
             "created_at",
+            "updated_at",
         ]
         read_only_fields = ["source", "created_by", "closing_comment"]
 

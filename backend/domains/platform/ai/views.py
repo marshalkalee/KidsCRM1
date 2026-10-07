@@ -1,9 +1,10 @@
 import base64
+import copy
 import re
 
 from django.db import transaction
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
@@ -26,7 +27,7 @@ from domains.platform.tenants.org_settings import (
     get_org_setting,
 )
 
-from . import assist, chat, digest, generations, recommendations, services, usage
+from . import assist, chat, digest, digest_tasks, generations, recommendations, services, usage
 from .models import AIContentDraft, AIDigest, AIGeneration, AIRecommendationState
 
 
@@ -597,14 +598,38 @@ def _digest_brief(item):
         "id": str(item.id),
         "week_start": item.week_start,
         "status": item.status,
+        "language": item.language,
         "ready_at": item.ready_at,
         "highlights": len(content.get("highlights", [])),
         "unchanged": bool(changes.get("unchanged")),
     }
 
 
+def _visible_digest_content(item):
+    content = copy.deepcopy(item.content or {})
+    dismissed = {
+        state.fingerprint
+        for state in AIRecommendationState.objects.for_tenant(item.organization).filter(
+            function="digest", status=AIRecommendationState.Status.DISMISSED
+        )
+    }
+
+    def visible(row):
+        return digest_tasks.recommendation_fingerprint(row["id"]) not in dismissed
+
+    content["items"] = [row for row in content.get("items", []) if visible(row)]
+    content["highlights"] = [row for row in content.get("highlights", []) if visible(row)]
+    for block in content.get("blocks", []):
+        block["items"] = [row for row in block.get("items", []) if visible(row)]
+    return content
+
+
 def _digest_full(item):
-    return {**_digest_brief(item), "trigger": item.trigger, "content": item.content}
+    return {
+        **_digest_brief(item),
+        "trigger": item.trigger,
+        "content": _visible_digest_content(item),
+    }
 
 
 @api_view(["GET", "POST"])
@@ -613,16 +638,25 @@ def digests(request, version=None):
     """GET — последний готовый дайджест, что собирается сейчас, архив.
     POST — «Обновить»: генерация в фоне, повторные нажатия не плодят новых."""
     organization = request.user.organization
+    language = (
+        request.data.get("language", "ru")
+        if request.method == "POST"
+        else request.query_params.get("language", "ru")
+    )
+    if language not in {"ru", "kk", "en"}:
+        return Response(
+            {"language": ["Поддерживаются русский, казахский и английский."]}, status=400
+        )
     if request.method == "POST":
         try:
-            item, created = digest.request_refresh(organization, request.user)
+            item, created = digest.request_refresh(organization, request.user, language)
         except services.AIError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {"building": _digest_brief(item), "created": created}, status=status.HTTP_202_ACCEPTED
         )
 
-    rows = AIDigest.objects.for_tenant(organization)
+    rows = AIDigest.objects.for_tenant(organization).filter(language=language)
     latest = rows.filter(status__in=digest.DONE).first()
     last = rows.first()
     pending = rows.filter(status__in=digest.PENDING).first()
@@ -651,3 +685,55 @@ def digest_detail(request, digest_id, version=None):
     if item is None:
         return Response({"detail": "Дайджест не найден."}, status=status.HTTP_404_NOT_FOUND)
     return Response(_digest_full(item))
+
+
+def _digest_and_item(request, digest_id):
+    item = AIDigest.objects.for_tenant(request.user.organization).filter(pk=digest_id).first()
+    if item is None:
+        raise digest_tasks.DigestTaskError("Дайджест не найден.")
+    return item, digest_tasks.find_item(item, request.data.get("item_id", ""))
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManager, HasAIOption])
+def digest_task_preview(request, digest_id, version=None):
+    try:
+        item, recommendation = _digest_and_item(request, digest_id)
+        result = digest_tasks.preview(
+            item, recommendation, request.data.get("task_type", ""), request.user
+        )
+    except digest_tasks.DigestTaskError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(result)
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManager, HasAIOption])
+def digest_task_create(request, digest_id, version=None):
+    try:
+        item, recommendation = _digest_and_item(request, digest_id)
+        due_at = serializers.DateTimeField().run_validation(request.data.get("due_at"))
+        if due_at <= timezone.now():
+            raise digest_tasks.DigestTaskError("Срок задачи должен быть в будущем.")
+        result = digest_tasks.create_from_digest(
+            item,
+            recommendation,
+            request.data.get("task_type", ""),
+            request.user,
+            due_at,
+            request.data.get("assignee_id"),
+        )
+    except digest_tasks.DigestTaskError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(result, status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManager, HasAIOption])
+def dismiss_digest_recommendation(request, digest_id, version=None):
+    try:
+        item, recommendation = _digest_and_item(request, digest_id)
+        digest_tasks.dismiss(item.organization, recommendation)
+    except digest_tasks.DigestTaskError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(status=status.HTTP_204_NO_CONTENT)

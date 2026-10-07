@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, CalendarClock, MessageCircle, Phone, Tag, UserCheck } from 'lucide-react'
+import { AlertTriangle, CalendarClock, CheckCircle2, MessageCircle, Phone, UserCheck } from 'lucide-react'
 import api from '../api/axios'
-import { fetchTeachers } from '../api/lessons'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
 import { SellModal } from '../components/money/SubscriptionsTab'
 import { useSession } from '../session/SessionContext'
@@ -25,6 +24,18 @@ function isOverdue(iso) {
   return new Date(iso) < new Date() && !isToday(iso)
 }
 
+function taskDescription(value) {
+  const withoutLink = value?.replace(/\n?Открыть дайджест: \/digest\?id=[0-9a-f-]+/i, '') || ''
+  const lines = withoutLink.split('\n')
+  const reason = lines.find(line => line.startsWith('Основание: '))
+  const action = lines.find(line => line.startsWith('Рекомендация: '))
+  if (!reason || !action) return withoutLink
+  const normalize = line => line.replace(/^(Основание|Рекомендация):\s*/i, '').replace(/[.\s]+$/, '').trim()
+  return normalize(reason) === normalize(action)
+    ? lines.filter(line => line !== reason).join('\n')
+    : withoutLink
+}
+
 const REMINDER_TEMPLATES = {
   payment_reminder: task => t('Здравствуйте! Напоминаем об оплате абонемента для {child}. Сумма к оплате: {debt} ₸.', { child: task.child_name, debt: task.child_debt }),
   call_back: task => t('Здравствуйте! Это True Ballet, перезваниваем по вашей заявке.'),
@@ -38,6 +49,7 @@ export default function MyTasks() {
   const navigate = useNavigate()
   const [tab, setTab] = useState('today')
   const [tasks, setTasks] = useState(null)
+  const [history, setHistory] = useState([])
   const [error, setError] = useState(false)
   const [colleagues, setColleagues] = useState([])
   const [reassigning, setReassigning] = useState(null)
@@ -46,8 +58,17 @@ export default function MyTasks() {
   const [closing, setClosing] = useState(null)
 
   const load = useCallback(() => {
-    api.get('tasks/', { params: { assigned_to: user.id, status: 'open' } })
-      .then(res => { setTasks(res.data.results || res.data); setError(false) })
+    Promise.all([
+      api.get('tasks/', { params: { assigned_to: user.id, status: 'open' } }),
+      api.get('tasks/', { params: { assigned_to: user.id, status: 'done' } }),
+      api.get('tasks/', { params: { assigned_to: user.id, status: 'cancelled' } }),
+    ])
+      .then(([openResponse, doneResponse, cancelledResponse]) => {
+        const rows = response => response.data.results || response.data
+        setTasks(rows(openResponse))
+        setHistory([...rows(doneResponse), ...rows(cancelledResponse)])
+        setError(false)
+      })
       .catch(() => setError(true))
   }, [user.id])
   useEffect(() => { load() }, [load])
@@ -112,8 +133,7 @@ export default function MyTasks() {
   if (error) return <Card><ErrorState onRetry={load} /></Card>
   if (tasks === null) return <Skeleton className="h-60" />
 
-  const visible = tab === 'today' ? [...overdue, ...today] : future
-  const groupLabel = tab === 'today' ? null : null
+  const visible = tab === 'today' ? [...overdue, ...today] : tab === 'future' ? future : history
 
   return (
     <div>
@@ -130,11 +150,17 @@ export default function MyTasks() {
         tabs={[
           { key: 'today', label: t('Сегодня и просроченные'), count: overdue.length + today.length },
           { key: 'future', label: t('На будущее'), count: future.length },
+          { key: 'history', label: t('История'), count: history.length },
         ]}
       />
 
       {visible.length === 0 ? (
-        <Card className="mt-4"><EmptyState title={t('Задач нет')} description={t('На сегодня всё сделано.')} /></Card>
+        <Card className="mt-4">
+          <EmptyState
+            title={tab === 'history' ? t('История задач пуста') : t('Задач нет')}
+            description={tab === 'history' ? t('Выполненные задачи появятся здесь.') : t('На сегодня всё сделано.')}
+          />
+        </Card>
       ) : (
         <div className="mt-4 space-y-2">
           {tab === 'today' && overdue.length > 0 && (
@@ -149,6 +175,7 @@ export default function MyTasks() {
               )}
               <TaskCard
                 task={task}
+                closed={tab === 'history'}
                 overdue={isOverdue(task.due_at)}
                 closing={closing === task.id}
                 onComplete={() => complete(task)}
@@ -198,15 +225,17 @@ export default function MyTasks() {
   )
 }
 
-function TaskCard({ task, overdue, closing, onComplete, onPostpone, onReassign, onPay, onSell, onOpen }) {
+function TaskCard({ task, overdue, closed, closing, onComplete, onPostpone, onReassign, onPay, onSell, onOpen }) {
   const template = REMINDER_TEMPLATES[task.type]
-  const canCallOrWhatsapp = Boolean(task.contact_phone || task.contact_whatsapp)
+  const digestLink = task.description?.match(/\/digest\?id=[0-9a-f-]+/i)?.[0]
+  const description = taskDescription(task.description)
   return (
     <Card className={overdue ? 'border-danger-600' : undefined}>
       <div className="flex items-start justify-between gap-3">
         <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={overdue ? 'danger' : 'neutral'}>{task.type_display}</Badge>
+            {closed && <Badge tone={task.status === 'done' ? 'success' : 'neutral'}>{task.status_display}</Badge>}
             {task.due_at && (
               <span className="inline-flex items-center gap-1 text-[13px] text-ink-muted">
                 <CalendarClock className="size-3.5" />
@@ -220,6 +249,13 @@ function TaskCard({ task, overdue, closing, onComplete, onPostpone, onReassign, 
             {task.type === 'payment_reminder' && task.child_debt ? ` · ${task.child_debt} ₸` : ''}
           </p>
           {task.assigned_to_name && <p className="text-xs text-ink-subtle">{t('Назначено: {name}', { name: task.assigned_to_name })}</p>}
+          {closed && task.updated_at && (
+            <p className="mt-1 inline-flex items-center gap-1 text-xs text-success-700">
+              <CheckCircle2 className="size-3.5" />
+              {t('Завершено {date}', { date: new Date(task.updated_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) })}
+            </p>
+          )}
+          {description && <p className="mt-2 whitespace-pre-line text-[13px] text-ink-muted">{description}</p>}
         </button>
       </div>
 
@@ -245,11 +281,14 @@ function TaskCard({ task, overdue, closing, onComplete, onPostpone, onReassign, 
         {task.type === 'renewal_offer' && task.child && (
           <Button size="sm" variant="secondary" onClick={onSell}>{t('Продать абонемент')}</Button>
         )}
-        <div className="ml-auto flex gap-1.5">
-          <Button size="sm" variant="ghost" icon={UserCheck} onClick={onReassign} aria-label={t('Передать коллеге')} />
-          <Button size="sm" variant="ghost" onClick={onPostpone}>{t('Завтра')}</Button>
-          <Button size="sm" variant="primary" loading={closing} onClick={onComplete}>{t('Выполнено')}</Button>
-        </div>
+        {digestLink && <a href={digestLink} className="inline-flex items-center text-sm font-semibold text-brand-600 hover:underline">{t('Открыть дайджест')}</a>}
+        {!closed && (
+          <div className="ml-auto flex gap-1.5">
+            <Button size="sm" variant="ghost" icon={UserCheck} onClick={onReassign} aria-label={t('Передать коллеге')} />
+            <Button size="sm" variant="ghost" onClick={onPostpone}>{t('Завтра')}</Button>
+            <Button size="sm" variant="primary" loading={closing} onClick={onComplete}>{t('Выполнено')}</Button>
+          </div>
+        )}
       </div>
     </Card>
   )
