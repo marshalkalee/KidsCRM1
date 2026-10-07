@@ -11,6 +11,7 @@ import {
   Megaphone,
   MessageSquareText,
   Newspaper,
+  Send,
   Settings,
   Sparkles,
   UserRoundCog,
@@ -53,6 +54,7 @@ export const NAV_SECTIONS = [
     items: [
       { to: '/settings/structure', get label() { return t('Структура центра') }, icon: Building2, permission: 'can_manage_branches' },
       { to: '/settings/staff', get label() { return t('Сотрудники') }, icon: UserRoundCog, permission: 'can_manage_staff' },
+      { to: '/messaging', get label() { return t('Рассылки родителям') }, icon: Send, permission: 'can_manage_children' },
       { to: '/settings/sales', get label() { return t('Справочники продаж') }, icon: ListChecks, permission: 'can_manage_lead_dictionaries' },
       { to: '/settings/organization', get label() { return t('Организация') }, icon: Settings, permission: 'can_manage_org_settings' },
     ],

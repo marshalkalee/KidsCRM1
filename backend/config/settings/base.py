@@ -40,6 +40,7 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "drf_spectacular",
     "rest_framework_simplejwt.token_blacklist",
+    "anymail",
 ]
 
 DOMAIN_APPS = [
@@ -313,3 +314,30 @@ OTP_CODE_TTL_SECONDS = env.int("OTP_CODE_TTL_SECONDS", default=300)
 OTP_TELEGRAM_TOKEN = env("OTP_TELEGRAM_TOKEN", default="")
 OTP_MOBIZON_API_KEY = env("OTP_MOBIZON_API_KEY", default="")
 OTP_MOBIZON_SENDER = env("OTP_MOBIZON_SENDER", default="")
+
+# Центр рассылок (TRU-168): сообщения родителям — только через
+# domains.platform.notifications.messaging. Email — через django-anymail:
+# провайдер (Amazon SES, Unisender Go, Mailgun…) меняется в .env, недоставка
+# и жалобы приходят одинаково на вебхук anymail/<esp>/tracking/.
+# Без EMAIL_ESP письма пишутся в лог (как OTP-канал console).
+EMAIL_ESP = env("EMAIL_ESP", default="")
+if EMAIL_ESP:
+    EMAIL_BACKEND = f"anymail.backends.{EMAIL_ESP}.EmailBackend"
+    ANYMAIL = {
+        key: value
+        for key, value in {
+            "AMAZON_SES_CLIENT_PARAMS": {"region_name": env("AWS_REGION", default="eu-central-1")},
+            "UNISENDER_GO_API_KEY": env("UNISENDER_GO_API_KEY", default=""),
+            "MAILGUN_API_KEY": env("MAILGUN_API_KEY", default=""),
+            "WEBHOOK_SECRET": env("ANYMAIL_WEBHOOK_SECRET", default=""),
+        }.items()
+        if value
+    }
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# Адрес отправителя — домен платформы; имя — название центра, ответ — на
+# адрес центра (настройка рассылок). Свой домен у каждого центра — это DNS
+# (SPF, DKIM) на центр, на старте не нужно.
+MESSAGING_FROM_EMAIL = env("MESSAGING_FROM_EMAIL", default="noreply@kidscrm.kz")
+# Публичный адрес сайта — для ссылки «отписаться» в письме.
+PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="http://localhost")

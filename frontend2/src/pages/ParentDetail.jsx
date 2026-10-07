@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ChevronRight, Mail, MessageCircle, Pencil, Phone, SearchX, Trash2 } from 'lucide-react'
 import api from '../api/axios'
 import ParentModal from '../components/ParentModal'
+import ParentMessaging from '../components/messaging/ParentMessaging'
+import { useSession } from '../session/SessionContext'
 import { Communications } from '../components/communications/Communications'
 import {
   Avatar, Badge, Button, CHILD_STATUSES, CONTACT_ROLES, Card, CardHeader, EmptyState, ErrorState, PageHeader,
@@ -24,6 +26,7 @@ export default function ParentDetail() {
   const navigate = useNavigate()
   const toast = useToast()
   const confirm = useConfirm()
+  const { can } = useSession()
   const [card, setCard] = useState(null)
   const [status, setStatus] = useState('loading')
   const [editing, setEditing] = useState(false)
@@ -91,6 +94,7 @@ export default function ParentDetail() {
         <aside className="space-y-4 lg:sticky lg:top-24">
           <ContactsCard parent={parent} />
           {card.money && <MoneyCard money={card.money} />}
+          {can('can_manage_children') && <ParentMessaging parentId={parent.id} />}
         </aside>
 
         <div className="min-w-0 space-y-6">

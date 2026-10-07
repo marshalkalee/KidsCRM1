@@ -39,6 +39,13 @@ AI_IMPORT_CLEAN_ENABLED = "ai_import_clean_enabled"
 # по времени центра, когда он собирается и приходит владельцу.
 DIGEST_WEEKDAY = "digest_weekday"
 DIGEST_HOUR = "digest_hour"
+# Рассылки родителям (TRU-168): тихие часы по времени центра (с какого часа
+# и до какого не отправляем), порядок каналов с откатом, адрес для ответа
+# на письма.
+MESSAGING_QUIET_FROM = "messaging_quiet_from"
+MESSAGING_QUIET_TO = "messaging_quiet_to"
+MESSAGING_CHANNELS = "messaging_channels"
+MESSAGING_REPLY_TO = "messaging_reply_to"
 ACCESS_SETTINGS = (
     TEACHER_SEES_PARENT_PHONES,
     TEACHER_SEES_FINANCES,
@@ -83,6 +90,13 @@ DEFAULT_ORG_SETTINGS = {
     # Утро понедельника по времени центра (ТЗ п. 3.2).
     DIGEST_WEEKDAY: 0,
     DIGEST_HOUR: 9,
+    # Ночью не пишем: напоминание об оплате в 23:40 — это жалоба.
+    MESSAGING_QUIET_FROM: 21,
+    MESSAGING_QUIET_TO: 9,
+    # Первый доступный и доставленный — остальные не пробуем. Канала нет у
+    # родителя или он не подключён центру — пропускается.
+    MESSAGING_CHANNELS: ["push", "whatsapp", "email"],
+    MESSAGING_REPLY_TO: "",
 }
 
 

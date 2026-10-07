@@ -138,14 +138,13 @@ Marketing-шаблонов на старте нет: акции и рассыл�
 
 ```
 MessagingConsent (TenantModel)
-  phone        — номер родителя в формате +7XXXXXXXXXX
-  parent       — FK ParentContact, null — номер ещё не привязан
+  parent       — FK ParentContact (ответ «Стоп» в WhatsApp находит его по номеру)
   category     — utility | marketing
   status       — opted_in | opted_out
   source       — admin_form | parent_portal | whatsapp_reply | import
   changed_by   — сотрудник, null — сам родитель
   changed_at
-  уникальность: (organization, phone, category)
+  уникальность: (organization, parent, category)
 ```
 
 Каждое изменение пишется в журнал действий (кто, когда, откуда).
