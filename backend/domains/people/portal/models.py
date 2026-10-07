@@ -20,6 +20,9 @@ from domains.platform.core.models import TenantModel, UUIDPrimaryKeyModel
 class ParentAccount(UUIDPrimaryKeyModel):
     phone = models.CharField(max_length=20, unique=True)
     language = models.CharField(max_length=5, default="ru")
+    # Какие уведомления родитель отключил сам (TRU-172): {"payment_due": false}.
+    # Нет ключа — включено. Действует на все каналы, не только push.
+    notification_prefs = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     last_login_at = models.DateTimeField(null=True, blank=True)
 
@@ -289,3 +292,22 @@ class ParentNoteRead(models.Model):
 
     def __str__(self) -> str:
         return f"{self.account} — {self.note}"
+
+
+class PushSubscription(UUIDPrimaryKeyModel):
+    """Web Push на одном устройстве родителя (TRU-172). Аккаунт — по номеру,
+    поверх центров: одна подписка получает напоминания всех его центров.
+    Провайдер ответил «подписки нет» (404/410) — строка удаляется."""
+
+    account = models.ForeignKey(
+        ParentAccount, on_delete=models.CASCADE, related_name="push_subscriptions"
+    )
+    endpoint = models.TextField(unique=True)
+    p256dh = models.CharField(max_length=255)
+    auth = models.CharField(max_length=255)
+    user_agent = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"push {self.account_id}"

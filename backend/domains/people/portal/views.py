@@ -18,7 +18,7 @@ from domains.scheduling.groups.models import GroupMembership
 from domains.scheduling.schedule.enrollment_service import available_makeups_for_child
 from domains.scheduling.schedule.models import Lesson, LessonEnrollment
 
-from . import access, account
+from . import access, account, push
 from .auth import LoginError, logout, request_code, verify_code
 from .authentication import IsParent, ParentTokenAuthentication, request_meta
 from .lesson_requests import (
@@ -555,3 +555,40 @@ class AnnouncementReadView(ParentView):
             return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
         announcements.mark_read(request.user, announcement_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class NotificationsView(ParentView):
+    """Уведомления родителя (TRU-172): GET — состояние (endpoint этого
+    устройства в ?endpoint=), PATCH — {enabled, events}."""
+
+    def get(self, request, version=None):
+        return Response(push.status(request.user, request.query_params.get("endpoint", "")))
+
+    def patch(self, request, version=None):
+        try:
+            return Response(
+                push.update(
+                    request.user,
+                    enabled=request.data.get("enabled"),
+                    events=request.data.get("events"),
+                    endpoint=request.data.get("endpoint", ""),
+                )
+            )
+        except LoginError as exc:
+            return _error(exc)
+
+
+class PushSubscriptionView(ParentView):
+    """POST — подписать это устройство (PushSubscription.toJSON()),
+    DELETE — отписать по {endpoint}."""
+
+    def post(self, request, version=None):
+        try:
+            return Response(
+                push.subscribe(request.user, request.data, request.META.get("HTTP_USER_AGENT", ""))
+            )
+        except LoginError as exc:
+            return _error(exc)
+
+    def delete(self, request, version=None):
+        return Response(push.unsubscribe_device(request.user, request.data.get("endpoint", "")))

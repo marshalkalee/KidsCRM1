@@ -4,13 +4,15 @@ import { Card, CardHeader, ErrorState, Skeleton, cn, formatPhone, money, plural 
 import { locale, t } from '../../i18n'
 import { usePortalData } from '../api'
 import { useParent } from '../useParent'
+import { PushPrompt } from '../Notifications'
 
 /*
  * Абонемент и оплаты в кабинете (TRU-139), только просмотр.
  * Остаток объясняется журналом: какое занятие списалось и когда — тот же
  * журнал, что у администратора (portal/money.py). Онлайн-оплаты нет
- * (ТЗ п. 12): вместо кнопки «оплатить» — реквизиты Kaspi и телефон
- * филиала с WhatsApp, чтобы не пришлось звонить и спрашивать.
+ * (ТЗ п. 12): вместо кнопки «оплатить» — телефон филиала с WhatsApp,
+ * чтобы не пришлось звонить и спрашивать (удалённую оплату Kaspi убрали
+ * 05.10.2026).
  */
 
 const SHOWN_ENTRIES = 6
@@ -36,6 +38,7 @@ export default function ParentSubscription() {
   return (
     <div className="space-y-3">
       <Current subscription={data.current} />
+      <PushPrompt />
       <HowToPay amount={Number(data.to_pay)} howToPay={data.how_to_pay} />
       {data.current && data.ledger.length > 0 && <Ledger entries={data.ledger} unlimited={data.current.is_unlimited} />}
       <Payments rows={data.payments} />

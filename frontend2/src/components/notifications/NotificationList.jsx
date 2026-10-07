@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ClipboardCheck, Inbox, ListTodo, MessageSquareText, Wallet, WalletCards } from 'lucide-react'
+import { ChevronRight, ClipboardCheck, Inbox, ListTodo, MessageSquareText, Sparkles, Wallet, WalletCards } from 'lucide-react'
 import api from '../../api/axios'
 import { cn, money, plural } from '../../ui'
 import { t } from '../../i18n'
@@ -43,6 +43,12 @@ const KINDS = {
     tone: 'bg-brand-50 text-brand-600',
     get title() { return t('Без абонемента') },
     text: item => `${item.count} ${plural(item.count, ['ребёнок занимается', 'ребёнка занимаются', 'детей занимаются'])} ${t('без действующего абонемента')}`,
+  },
+  ai_digest: {
+    icon: Sparkles,
+    tone: 'bg-[linear-gradient(135deg,#ede9fe,#fce7f3)] text-[#7c3aed]',
+    get title() { return t('Дайджест недели') },
+    text: () => t('Готов: что сделать на этой неделе'),
   },
   overdue_tasks: {
     icon: ListTodo,

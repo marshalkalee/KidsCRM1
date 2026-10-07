@@ -12,6 +12,9 @@ urlpatterns = [
         views.dismiss_recommendation,
         name="dismiss-recommendation",
     ),
+    path("usage/", views.usage_summary, name="usage"),
+    path("digests/", views.digests, name="digests"),
+    path("digests/<uuid:digest_id>/", views.digest_detail, name="digest-detail"),
     path("chat/", views.chat_view, name="chat"),
     path("conversations/", views.conversations, name="conversations"),
     path(
