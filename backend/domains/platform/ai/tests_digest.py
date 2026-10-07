@@ -319,3 +319,48 @@ class DigestSettingsTests(AIFixtures):
         self.assertEqual(
             (self.org.settings["digest_weekday"], self.org.settings["digest_hour"]), (4, 18)
         )
+
+
+class GroupPromotionBlockTests(AIFixtures):
+    ROW = {
+        "candidate_key": "g1",
+        "group": "Растяжка 5–10",
+        "branch": "Орбита",
+        "direction": "Растяжка",
+        "case": "underfilled",
+        "systemic": False,
+        "season": {},
+        "title": "Наберите детей в растяжку",
+        "rationale": "Мест много, спрос есть",
+        "action": "Пост про пробное в Instagram",
+        "basis": {"available_places": 13, "occupancy_percent": 13, "conversion_percent": 20.0},
+    }
+
+    def test_block_becomes_digest_advice_with_numbers(self):
+        block = ("group_promotion", "Какие группы продвигать", {"recommendations": [self.ROW]})
+        content = digest.compose(self.org, [block], snapshot(), None)
+        item = content["highlights"][0]
+        self.assertEqual(item["title"], "Наберите детей в растяжку")
+        self.assertEqual(
+            [(e["label"], e["value"]) for e in item["evidence"]],
+            [
+                ("Растяжка 5–10, Орбита: свободных мест", 13),
+                ("Растяжка 5–10, Орбита: заполняемость, %", 13),
+                ("Растяжка 5–10, Орбита: конверсия заявок направления, %", 20.0),
+            ],
+        )
+
+    def test_same_group_next_week_is_the_same_advice(self):
+        block = [("group_promotion", "", {"recommendations": [self.ROW]})]
+        first = digest.compose(self.org, block, snapshot(), None)
+        previous = AIDigest(
+            organization=self.org, week_start=datetime.date(2026, 9, 28), content=first
+        )
+        reworded = {**self.ROW, "title": "Растяжке нужны дети"}
+        second = digest.compose(
+            self.org,
+            [("group_promotion", "", {"recommendations": [reworded]})],
+            snapshot(),
+            previous,
+        )
+        self.assertTrue(second["changes"]["unchanged"])

@@ -2405,5 +2405,20 @@
  "заявок": "leads",
  "этапы": "stages",
  "кандидаты": "candidates",
- "приоритет": "priority"
+ "приоритет": "priority",
+ "Какие группы продвигать": "Which groups to promote",
+ "свободных мест": "available spots",
+ "заполняемость, %": "occupancy, %",
+ "конверсия заявок направления, %": "direction lead conversion, %",
+ "Показывать в публичном каталоге": "Show in the public catalogue",
+ "Название, возраст, расписание и свободные места — для будущего каталога кружков. Детей и родителей каталог не видит.": "Name, age, schedule and free spots — for the future activity catalogue. The catalogue never sees children or parents.",
+ "Показывать цену в публичном каталоге": "Show the price in the public catalogue",
+ "По умолчанию цена видна только внутри CRM.": "By default the price is only visible inside the CRM.",
+ "Сверка остатков": "Balance check",
+ "Каждую ночь система пересчитывает остаток занятий каждого абонемента по журналу списаний. Если сохранённый остаток разошёлся с пересчётом, он сразу исправляется, а случай записывается сюда.": "Every night the system recalculates each subscription's remaining classes from the deduction log. If the stored balance differs, it's fixed immediately and the case is recorded here.",
+ "Расхождений нет": "No discrepancies",
+ "Остатки занятий совпадают с журналом списаний. Для приёмки: две недели без строк здесь и сверка нескольких абонементов с ручным подсчётом администратора.": "Remaining classes match the deduction log. For acceptance: two weeks with no rows here plus a manual check of several subscriptions by the administrator.",
+ "Когда найдено": "Found at",
+ "Было → стало": "Before → after",
+ "Если строки появляются регулярно — это ошибка в системе, а не случайность: сообщите разработчикам.": "If rows keep appearing, it's a system bug rather than a fluke — tell the developers."
 }

@@ -26,7 +26,7 @@ from domains.platform.tenants.org_settings import DEBT_OVERDUE_DAYS_THRESHOLD, g
 from domains.scheduling.groups.models import Group, GroupMembership
 
 from .debt import debtor_subscriptions
-from .debt_report import build_debtors_workbook
+from .debt_report import build_debtors_workbook, build_renewals_workbook
 from .models import RenewalContact, Subscription
 from .renewals import expiring_subscriptions, mark_contacted
 
@@ -320,6 +320,24 @@ def renewals_api(request):
         show_phones=can_view_phone(request.user),
     )
     return Response({"results": rows, "count": qs.count()})
+
+
+@api_view(["GET"])
+@permission_classes([CanViewClientMoney])
+def renewals_export_api(request):
+    """Та же выборка «Продлений» файлом .xlsx — для сверки (TRU-152)."""
+    organization = request.user.organization
+    qs = _renewals_queryset(request).order_by("ends_on", "sessions_remaining_cache", "pk")
+    show_phones = can_view_phone(request.user)
+    rows = renewal_rows(organization, qs, show_phones=show_phones)
+    workbook = build_renewals_workbook(rows, show_phones=show_phones)
+    response = HttpResponse(
+        workbook.read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    name = f"renewals-{today_for_org(organization):%Y-%m-%d}.xlsx"
+    response["Content-Disposition"] = f'attachment; filename="{name}"'
+    return response
 
 
 @api_view(["POST"])

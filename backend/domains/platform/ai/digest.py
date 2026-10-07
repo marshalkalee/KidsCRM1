@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 # одна строка здесь, если его шаблон отдаёт {"recommendations": [...]}.
 BLOCKS = [
     ("marketing_recommendations", "Что сделать на этой неделе"),
+    ("group_promotion", "Какие группы продвигать"),
 ]
 
 # Меньше активных детей — советы были бы догадками, честнее сказать, что
@@ -92,6 +93,9 @@ LABELS = {
         "конверсия, %": "конверсия, %",
         "весь центр": "бүкіл орталық",
         "Что сделать на этой неделе": "Осы аптада не істеу керек",
+        "Какие группы продвигать": "Қай топтарды жарнамалау керек",
+        "свободных мест": "бос орын",
+        "конверсия заявок направления, %": "бағыт өтінімдерінің конверсиясы, %",
         "прошлый месяц": "өткен ай",
         "этот месяц": "осы ай",
         "заявок": "өтінім",
@@ -118,6 +122,9 @@ LABELS = {
         "конверсия, %": "conversion, %",
         "весь центр": "whole centre",
         "Что сделать на этой неделе": "What to do this week",
+        "Какие группы продвигать": "Which groups to promote",
+        "свободных мест": "available spots",
+        "конверсия заявок направления, %": "direction lead conversion, %",
         "прошлый месяц": "last month",
         "этот месяц": "this month",
         "заявок": "leads",
@@ -202,9 +209,48 @@ def _signature(item: dict) -> str:
     return "|".join(sorted(e["key"] for e in item["evidence"]))
 
 
-def _items(result: dict, snapshot: dict, language="ru") -> list:
+def _from_group_promotion(row: dict, language="ru") -> dict:
+    """Блок TRU-161 отдаёт группу-кандидата и её цифры (basis), а не ключи
+    фактов: приводим к общему виду совета. Цифры — те же, что посчитал код
+    шаблона из агрегатов, модель их не пишет."""
+    key = row["candidate_key"]
+    place = f"{row['group']}, {row['branch']}"
+    basis = row.get("basis") or {}
+    facts = [
+        ("available_places", "свободных мест"),
+        ("occupancy_percent", "заполняемость, %"),
+        ("conversion_percent", "конверсия заявок направления, %"),
+    ]
+    return {
+        "title": row["title"],
+        "rationale": row["rationale"],
+        "action": row["action"],
+        "priority": "high" if row.get("systemic") else "medium",
+        "evidence": [
+            {
+                "key": f"group_promotion.{key}.{name}",
+                "label": f"{place}: {_label(label, language)}",
+                "value": basis[name],
+            }
+            for name, label in facts
+            if isinstance(basis.get(name), int | float)
+        ],
+    }
+
+
+# Блоки со своим форматом ответа → общий вид совета дайджеста.
+ADAPTERS = {"group_promotion": _from_group_promotion}
+
+
+def _items(result: dict, snapshot: dict, block: str = "", language="ru") -> list:
     rows = []
+    adapt = ADAPTERS.get(block)
     for row in result.get("recommendations", []):
+        if adapt:
+            row = adapt(row, language)
+            item = {**row, "id": _signature(row)}
+            rows.append(item)
+            continue
         evidence = [
             {**e, "label": fact_label(snapshot, e["key"], language)}
             for e in row.get("evidence", [])
@@ -241,7 +287,7 @@ def compare(content: dict, previous: AIDigest | None) -> dict:
 def compose(organization, results: list, snapshot: dict, previous, language="ru") -> dict:
     blocks, items = [], []
     for key, title, result in results:
-        rows = _items(result, snapshot, language)
+        rows = _items(result, snapshot, key, language)
         blocks.append({"key": key, "title": _label(title, language), "items": rows})
         items.extend(rows)
     highlights = sorted(items, key=lambda r: PRIORITY_RANK.get(r.get("priority"), 3))[:HIGHLIGHTS]

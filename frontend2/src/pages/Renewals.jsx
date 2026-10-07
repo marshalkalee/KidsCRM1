@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { CalendarClock, Check, Inbox, MessageCircle, Phone, RefreshCw, Search } from 'lucide-react'
+import { CalendarClock, Check, Download, Inbox, MessageCircle, Phone, RefreshCw, Search } from 'lucide-react'
 import api from '../api/axios'
 import RenewModal from '../components/money/RenewModal'
 import { useSession } from '../session/SessionContext'
@@ -28,6 +28,7 @@ function whenLabel(row) {
 export default function Renewals() {
   const navigate = useNavigate()
   const toast = useToast()
+  const [exporting, setExporting] = useState(false)
   const { can, activeBranch, activeBranchId, branches } = useSession()
   const canLeads = can('can_manage_leads')
   // Преподаватель с открытыми финансами (TRU-153) список видит, но не меняет.
@@ -198,11 +199,28 @@ export default function Renewals() {
 
   const countLabel = `${data.count} ${plural(data.count, ['абонемент', 'абонемента', 'абонементов'])}`
 
+  // Та же выборка файлом — сверка с бухгалтерией (TRU-152).
+  async function exportExcel() {
+    setExporting(true)
+    try {
+      const res = await api.get('subscriptions/renewals/export/', { params: Object.fromEntries(new URLSearchParams(query)), responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const link = Object.assign(document.createElement('a'), { href: url, download: `renewals-${new Date().toISOString().slice(0, 10)}.xlsx` })
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title={t('Продления')}
         description={loading && !data.count ? t('Загрузка…') : `${countLabel} ${t('скоро заканчиваются')}${hasAnyFilter ? ` ${t('по фильтрам')}` : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
+        actions={<Button icon={Download} loading={exporting} onClick={exportExcel} disabled={!data.count}>{t('Скачать Excel')}</Button>}
       />
 
       <div className="mb-4 space-y-3">
