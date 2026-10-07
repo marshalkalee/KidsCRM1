@@ -15,6 +15,7 @@ urlpatterns = [
     path("debtors/", lists_api.debtors_api, name="api-debtors"),
     path("debtors/export/", lists_api.debtors_export_api, name="api-debtors-export"),
     path("renewals/", lists_api.renewals_api, name="api-renewals"),
+    path("renewals/export/", lists_api.renewals_export_api, name="api-renewals-export"),
     path(
         "renewals/<uuid:subscription_id>/contacted/",
         lists_api.renewal_contacted_api,

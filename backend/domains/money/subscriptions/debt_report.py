@@ -49,3 +49,50 @@ def build_debtors_workbook(rows, *, show_phones=False) -> io.BytesIO:
     workbook.save(buffer)
     buffer.seek(0)
     return buffer
+
+
+def build_renewals_workbook(rows, *, show_phones=False) -> io.BytesIO:
+    """«Продления» файлом — для сверки с бухгалтерией (ТЗ п. 11, критерий № 4;
+    TRU-152). Те же строки, что на экране, в том же порядке."""
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Продления"
+    header = ["Ребёнок", "Плательщик"]
+    if show_phones:
+        header.append("Телефон")
+    header += [
+        "Абонемент",
+        "Направление",
+        "Филиал",
+        "Группа",
+        "Осталось занятий",
+        "Заканчивается",
+        "Дней до конца",
+        "Связались",
+    ]
+    sheet.append(header)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    for row in rows:
+        values = [row["child_name"], row.get("parent_name", "")]
+        if show_phones:
+            values.append(row.get("phone") or "")
+        contacted = (row.get("last_contacted_at") or "")[:10]
+        values += [
+            row["subscription_name"],
+            row["direction_name"],
+            row["branch_name"],
+            row["group_name"],
+            row["sessions_remaining"] if row["sessions_remaining"] is not None else "безлимит",
+            row["ends_on"],
+            row["days_left"],
+            contacted,
+        ]
+        sheet.append(values)
+    for column_cells in sheet.columns:
+        longest = max(len(str(cell.value or "")) for cell in column_cells)
+        sheet.column_dimensions[column_cells[0].column_letter].width = min(longest + 2, 60)
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer
