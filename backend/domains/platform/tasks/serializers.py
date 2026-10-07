@@ -47,6 +47,20 @@ class TaskSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["source", "created_by", "closing_comment"]
 
+    def validate(self, attrs):
+        """Связанные объекты — только своей организации: без этого по чужому
+        UUID можно было бы привязать задачу к ребёнку, заявке, филиалу или
+        сотруднику другого центра."""
+        request = self.context.get("request")
+        if request is None:
+            return attrs
+        organization_id = request.user.organization_id
+        for field in ("assigned_to", "lead", "child", "branch"):
+            related = attrs.get(field)
+            if related is not None and related.organization_id != organization_id:
+                raise serializers.ValidationError({field: "Объект не найден."})
+        return attrs
+
     def get_contact_phone(self, obj):
         contact = self._payer_contact(obj)
         if contact is None:
@@ -78,3 +92,43 @@ class TaskSerializer(serializers.ModelSerializer):
             .first()
         )
         return link.parent_contact if link else None
+
+
+class TaskHistorySerializer(serializers.ModelSerializer):
+    """Лёгкий сериализатор для списков (вкладка «Задачи» карточки ребёнка,
+    TRU-112): без контакта и долга — TaskSerializer считает их отдельным
+    запросом на каждую задачу."""
+
+    assigned_to_name = serializers.CharField(
+        source="assigned_to.full_name", read_only=True, default=None
+    )
+    created_by_name = serializers.CharField(
+        source="created_by.full_name", read_only=True, default=None
+    )
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    lead_name = serializers.CharField(source="lead.parent_name", read_only=True, default=None)
+
+    class Meta:
+        model = Task
+        fields = [
+            "id",
+            "type",
+            "type_display",
+            "status",
+            "status_display",
+            "source",
+            "title",
+            "description",
+            "closing_comment",
+            "due_at",
+            "assigned_to",
+            "assigned_to_name",
+            "created_by_name",
+            "lead",
+            "lead_name",
+            "child",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields

@@ -33,7 +33,7 @@ from django.urls import Resolver404, resolve
 from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from . import services
+from . import services, usage
 from .models import AIConversation, AIMessage
 from .pseudonyms import INSTRUCTION as PSEUDONYM_INSTRUCTION
 from .pseudonyms import Pseudonymizer
@@ -682,8 +682,19 @@ def ask(user, messages, *, host="localhost", pseudonyms=None) -> dict:
     history = _clean_history(messages)
     names = Pseudonymizer(user.organization, pseudonyms)
     used: list[str] = []
+    usage.ensure_within_limit(user.organization)
+
+    def meter(model, input_tokens, output_tokens):
+        usage.record(
+            user.organization,
+            feature="chat",
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
     run = _ask_openai if services.provider() == "openai" else _ask_anthropic
-    answer = names.unmask(run(Viewer(user, host, names), names.mask(history), used))
+    answer = names.unmask(run(Viewer(user, host, names), names.mask(history), used, meter))
     sources = list(dict.fromkeys(TOOL_LABELS.get(n, n) for n in used))
     return {
         "answer": answer.strip() or "Не получилось ответить — переформулируйте вопрос.",
@@ -696,7 +707,7 @@ def _too_long():
     return AIError("Вопрос потребовал слишком много данных — уточните: филиал, период или имя.")
 
 
-def _ask_anthropic(viewer, history, used) -> str:
+def _ask_anthropic(viewer, history, used, meter) -> str:
     import anthropic
 
     tools = [
@@ -724,6 +735,8 @@ def _ask_anthropic(viewer, history, used) -> str:
         except anthropic.APIConnectionError as exc:
             raise AIError("Нет связи с ИИ — проверьте интернет.") from exc
 
+        # Каждый круг с инструментами — отдельный оплаченный запрос.
+        meter(settings.AI_MODEL, *usage.anthropic_tokens(response))
         if response.stop_reason == "refusal":
             raise AIError("ИИ не стал отвечать на этот вопрос.")
         if response.stop_reason != "tool_use":
@@ -752,7 +765,7 @@ def _block(block) -> dict:
     return {k: v for k, v in vars(block).items() if v is not None}
 
 
-def _ask_openai(viewer, history, used) -> str:
+def _ask_openai(viewer, history, used, meter) -> str:
     import openai
 
     tools = [
@@ -767,10 +780,11 @@ def _ask_openai(viewer, history, used) -> str:
         for t in TOOLS
     ]
     messages = [{"role": "system", "content": _system(viewer)}, *history]
+    model = settings.OPENAI_CHAT_MODEL or settings.OPENAI_MODEL
     for _ in range(MAX_TOOL_ROUNDS):
         try:
             response = services._openai_client().chat.completions.create(
-                model=settings.OPENAI_CHAT_MODEL or settings.OPENAI_MODEL,
+                model=model,
                 max_completion_tokens=2500,
                 temperature=0.2,
                 messages=messages,
@@ -786,6 +800,7 @@ def _ask_openai(viewer, history, used) -> str:
         except openai.APIConnectionError as exc:
             raise AIError("Нет связи с ИИ — проверьте интернет.") from exc
 
+        meter(model, *usage.openai_tokens(response))
         message = response.choices[0].message
         if getattr(message, "refusal", None):
             raise AIError("ИИ не стал отвечать на этот вопрос.")

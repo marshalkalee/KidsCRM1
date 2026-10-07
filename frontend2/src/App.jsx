@@ -6,6 +6,8 @@ import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Assistant from './pages/Assistant'
 import ContentStudio from './pages/ContentStudio'
+import Digest from './pages/Digest'
+import { MessagingJournal, MessagingSettings, MessagingTemplates } from './pages/Messaging'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LegacyRedirect from './pages/LegacyRedirect'
@@ -26,6 +28,7 @@ import Directions from './pages/Directions'
 import SubscriptionTypes from './pages/SubscriptionTypes'
 import OrganizationSettings from './pages/OrganizationSettings'
 import AccessSettings from './pages/AccessSettings'
+import ApiKeys from './pages/ApiKeys'
 import LeadDictionaries from './pages/LeadDictionaries'
 import Leads from './pages/Leads'
 import Notifications from './pages/Notifications'
@@ -97,6 +100,12 @@ function StaffApp() {
                   { key: 'chat', label: t('Чат'), element: <Assistant /> },
                   { key: 'content', label: t('Контент'), element: <ContentStudio /> },
                 ]} /></RequirePermission>} />
+                <Route path="digest" element={<RequirePermission permission="can_view_ai_digest"><Digest /></RequirePermission>} />
+                <Route path="messaging" element={<PageGroup title={t('Рассылки родителям')} tabs={[
+                  { key: 'journal', label: t('Журнал'), permission: 'can_manage_children', element: <MessagingJournal /> },
+                  { key: 'templates', label: t('Тексты писем'), permission: 'can_manage_org_settings', element: <MessagingTemplates /> },
+                  { key: 'settings', label: t('Настройки'), permission: 'can_manage_org_settings', element: <MessagingSettings /> },
+                ]} />} />
                 <Route path="announcements" element={<RequirePermission permission="can_manage_announcements"><Announcements /></RequirePermission>} />
                 <Route path="parent-requests" element={<RequirePermission permission="can_manage_parent_requests"><ParentRequests /></RequirePermission>} />
                 <Route path="notifications" element={<Notifications />} />
@@ -142,6 +151,7 @@ function StaffApp() {
                 <Route path="settings/staff" element={<RequirePermission permission="can_manage_staff"><Staff /></RequirePermission>} />
                 <Route path="settings/organization" element={<RequirePermission permission="can_manage_org_settings"><OrganizationSettings /></RequirePermission>} />
                 <Route path="settings/access" element={<RequirePermission permission="can_manage_org_settings"><AccessSettings /></RequirePermission>} />
+                <Route path="settings/api-keys" element={<RequirePermission permission="can_manage_org_settings"><ApiKeys /></RequirePermission>} />
                 <Route path="*" element={<LegacyRedirect />} />
               </Route>
             </Routes>

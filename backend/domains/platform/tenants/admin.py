@@ -5,7 +5,19 @@ from .models import Branch, Organization, Room
 
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
-    list_display = ["name", "slug", "subscription_status", "plan", "is_active", "created_at"]
+    list_display = [
+        "name",
+        "slug",
+        "subscription_status",
+        "plan",
+        "ai_enabled",
+        "ai_monthly_limit_kzt",
+        "is_active",
+        "created_at",
+    ]
+    list_filter = ["ai_enabled", "subscription_status"]
+    # Опцию ИИ и её лимит включает платформа (TRU-160) — правка прямо в списке.
+    list_editable = ["ai_enabled", "ai_monthly_limit_kzt"]
     search_fields = ["name", "slug"]
 
 

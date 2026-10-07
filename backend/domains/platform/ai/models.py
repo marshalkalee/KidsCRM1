@@ -136,3 +136,66 @@ class AIContentDraft(TenantModel):
     class Meta:
         ordering = ["-updated_at"]
         indexes = [models.Index(fields=["organization", "language", "-updated_at"])]
+
+
+class AIUsage(TenantModel):
+    """Одно обращение к модели (TRU-160, ADR-0009 раздел 5): на этих строках
+    стоят счётчик месяца, лимит центра и сводка платформы. Пишется сразу
+    после ответа провайдера — что бы ни случилось дальше, токены учтены."""
+
+    feature = models.CharField(max_length=64)
+    model = models.CharField(max_length=100)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    # Стоимость по таблице AI_PRICES_USD на момент вызова — цены меняются,
+    # прошлые месяцы пересчитывать не нужно.
+    cost_usd = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    generation = models.ForeignKey(
+        AIGeneration, null=True, blank=True, on_delete=models.SET_NULL, related_name="usage"
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["organization", "created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.feature} {self.model}: {self.input_tokens}/{self.output_tokens}"
+
+
+class AIDigest(TenantModel):
+    """Еженедельный дайджест владельцу (TRU-163): что сделать на этой неделе.
+
+    Собирается фоновой задачей из блоков — шаблонов слоя генераций
+    (digest.BLOCKS). content — готовая для экрана структура: главное с
+    цифрами, блоки целиком, что изменилось с прошлого. Прошлые не
+    удаляются: по архиву видно, что советовали и сработало ли."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "В очереди"
+        RUNNING = "running", "Собирается"
+        READY = "ready", "Готов"
+        INSUFFICIENT_DATA = "insufficient_data", "Данных пока мало"
+        LIMIT_EXHAUSTED = "limit_exhausted", "Лимит исчерпан"
+        FAILED = "failed", "Не собрался"
+
+    class Trigger(models.TextChoices):
+        SCHEDULE = "schedule", "По расписанию"
+        MANUAL = "manual", "Кнопка «Обновить»"
+
+    # Понедельник недели по времени центра: к какой неделе относится.
+    week_start = models.DateField()
+    status = models.CharField(max_length=32, choices=Status.choices, default=Status.QUEUED)
+    trigger = models.CharField(max_length=16, choices=Trigger.choices)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    content = models.JSONField(default=dict, blank=True)
+    error_detail = models.CharField(max_length=500, blank=True)
+    ready_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["organization", "status", "-created_at"])]
+
+    def __str__(self) -> str:
+        return f"Дайджест {self.week_start}: {self.status}"

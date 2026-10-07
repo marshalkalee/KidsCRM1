@@ -1,6 +1,7 @@
 import AttendanceTab from './AttendanceTab'
 import CommunicationsTab from './CommunicationsTab'
 import ContactsTab from './ContactsTab'
+import TasksTab from './TasksTab'
 import { t } from '../../i18n'
 import PaymentsTab from '../money/PaymentsTab'
 import SubscriptionsTab from '../money/SubscriptionsTab'
@@ -35,6 +36,9 @@ export const CHILD_CARD_TABS = [
   // TRU-54: пока только доступные отработки. Полная история посещений —
   // TRU-55, расширит этот же компонент (AttendanceTab), не новую вкладку.
   { key: 'attendance', label: 'Посещения', order: 50, component: AttendanceTab },
+  // Задачи (TRU-112): по ребёнку и по его заявкам. Видят те, кто работает с
+  // карточкой (владелец, управляющий, администратор) — преподавателю задач нет.
+  { key: 'tasks', get label() { return t('Задачи') }, order: 60, component: TasksTab, permission: 'can_manage_children' },
 ]
 
 export function visibleChildCardTabs(can) {

@@ -1,4 +1,6 @@
-from django.db.models import Count
+import uuid
+
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -12,8 +14,11 @@ from domains.platform.core.permissions import (
 )
 
 from .models import Task
-from .serializers import TaskSerializer
+from .serializers import TaskHistorySerializer, TaskSerializer
 from .services import cancel_task, complete_task, visible_tasks
+
+# Сколько закрытых задач отдаём во вкладку «Задачи» карточки ребёнка.
+CLOSED_HISTORY_LIMIT = 100
 
 
 class TaskViewSet(
@@ -146,5 +151,39 @@ class TaskViewSet(
                 "by_employee": sorted(by_employee.values(), key=lambda r: r["name"]),
                 "by_type": by_type,
                 "total_overdue": overdue.count(),
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="for-child")
+    def for_child(self, request):
+        """Вкладка «Задачи» карточки ребёнка (ТЗ п. 4.1, TRU-112): задачи по
+        самому ребёнку и по его заявкам — до конвертации работа велась по
+        заявке, и обрывать историю на этой границе неправильно. Права те же,
+        что у списка задач: только то, что пользователь видит (филиалы)."""
+        try:
+            child_id = uuid.UUID(request.query_params.get("child", ""))
+        except ValueError:
+            return Response({"detail": "Укажите child."}, status=400)
+
+        tasks = (
+            visible_tasks(request.user)
+            .filter(
+                Q(child_id=child_id)
+                | Q(lead__converted_child_id=child_id)
+                | Q(lead__child_id=child_id)
+            )
+            .select_related("assigned_to", "created_by", "lead")
+        )
+        open_tasks = tasks.filter(status=Task.Status.OPEN).order_by(
+            F("due_at").asc(nulls_last=True), "created_at"
+        )
+        closed_tasks = tasks.exclude(status=Task.Status.OPEN)
+        return Response(
+            {
+                "open": TaskHistorySerializer(open_tasks, many=True).data,
+                "closed": TaskHistorySerializer(
+                    closed_tasks.order_by("-updated_at")[:CLOSED_HISTORY_LIMIT], many=True
+                ).data,
+                "closed_total": closed_tasks.count(),
             }
         )

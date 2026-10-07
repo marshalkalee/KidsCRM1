@@ -8,6 +8,7 @@ import LanguageSwitcher from './LanguageSwitcher'
 import { QuickLeadLauncher } from '../leads/QuickLead'
 import { NotificationList, useNotifications } from '../notifications/NotificationList'
 import { visibleSections } from './navigation'
+import { useAI } from '../ai/ai'
 import { t } from '../../i18n'
 
 const COLLAPSED_KEY = 'kc:sidebar-collapsed'
@@ -88,6 +89,7 @@ export default function Layout() {
 
 function Sidebar({ onNavigate, collapsed = false }) {
   const { can } = useSession()
+  const ai = useAI()
   return (
     <>
       <div className={cn('flex h-16 shrink-0 items-center gap-2.5 border-b border-line', collapsed ? 'justify-center' : 'px-5')}>
@@ -100,7 +102,7 @@ function Sidebar({ onNavigate, collapsed = false }) {
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-        {visibleSections(can).map(section => (
+        {visibleSections(can, ai.enabled).map(section => (
           <div key={section.label}>
             {collapsed
               ? <div className="mx-2 mb-2 h-px bg-line" aria-hidden="true" />
