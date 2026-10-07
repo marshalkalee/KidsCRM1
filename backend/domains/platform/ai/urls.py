@@ -12,6 +12,18 @@ urlpatterns = [
         views.dismiss_recommendation,
         name="dismiss-recommendation",
     ),
+    path("content/", views.content_studio, name="content-studio"),
+    path(
+        "content/<uuid:generation_id>/cancel/",
+        views.cancel_content_generation,
+        name="content-generation-cancel",
+    ),
+    path("content/drafts/", views.content_drafts, name="content-drafts"),
+    path(
+        "content/drafts/<uuid:draft_id>/",
+        views.content_draft_detail,
+        name="content-draft-detail",
+    ),
     path("chat/", views.chat_view, name="chat"),
     path("conversations/", views.conversations, name="conversations"),
     path(

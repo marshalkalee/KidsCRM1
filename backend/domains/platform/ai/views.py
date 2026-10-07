@@ -1,5 +1,8 @@
 import base64
+import re
 
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.response import Response
@@ -16,7 +19,7 @@ from domains.platform.tenants.org_settings import (
 )
 
 from . import assist, chat, generations, recommendations, services
-from .models import AIGeneration, AIRecommendationState
+from .models import AIContentDraft, AIGeneration, AIRecommendationState
 
 
 def _uuid_list(value):
@@ -33,6 +36,44 @@ class CanUseAIChat(IsStaffOfOrganization):
 
     def has_permission(self, request, view):
         return super().has_permission(request, view) and can_use_ai_chat(request.user)
+
+
+def _content_language(language, instructions):
+    text = instructions.casefold()
+    if any(
+        phrase in text for phrase in ("на казахском", "казахский язык", "қазақша", "қазақ тілінде")
+    ):
+        return "kk"
+    if any(phrase in text for phrase in ("на русском", "русский язык", "орысша", "орыс тілінде")):
+        return "ru"
+    return language
+
+
+def _content_count(instructions):
+    """Количество берём из пожелания; без него генерируем три варианта."""
+    text = instructions.casefold()
+    subject = r"(?:пост\w*|публикаци\w*|рилс\w*|reels|иде\w*|вариант\w*|штук\w*)"
+    match = re.search(rf"\b(\d+)\s*{subject}", text)
+    if match:
+        return min(max(int(match.group(1)), 1), 5)
+    words = {
+        "один": 1,
+        "одну": 1,
+        "бір": 1,
+        "два": 2,
+        "две": 2,
+        "екі": 2,
+        "три": 3,
+        "үш": 3,
+        "четыре": 4,
+        "төрт": 4,
+        "пять": 5,
+        "бес": 5,
+    }
+    for word, count in words.items():
+        if re.search(rf"\b{word}\s+{subject}", text):
+            return count
+    return 3
 
 
 class AIThrottle(UserRateThrottle):
@@ -103,6 +144,175 @@ def dismiss_recommendation(request, recommendation_id, version=None):
     except AIRecommendationState.DoesNotExist:
         return Response({"detail": "Рекомендация не найдена."}, status=404)
     return Response({"id": str(state.id), "status": state.status})
+
+
+def _draft_data(draft):
+    return {
+        "id": str(draft.id),
+        "title": draft.title,
+        "language": draft.language,
+        "payload": draft.payload,
+        "updated_at": draft.updated_at,
+    }
+
+
+def _generation_history_data(generation):
+    return {
+        "id": str(generation.id),
+        "created_at": generation.created_at,
+        "language": generation.result.get("language")
+        or generation.parameters.get("language", "ru"),
+        "content_type": generation.result.get("content_type")
+        or generation.parameters.get("content_type", "both"),
+        "content_count": generation.result.get("content_count")
+        or generation.parameters.get("content_count", 3),
+        "instructions": generation.parameters.get("instructions", ""),
+        "content": generation.result,
+    }
+
+
+@api_view(["GET", "POST"])
+@permission_classes([CanUseAIChat])
+def content_studio(request, version=None):
+    """Запуск в фоне и последний готовый контент-блок организации."""
+    organization = request.user.organization
+    if request.method == "POST":
+        language = request.data.get("language", "ru")
+        instructions = str(request.data.get("instructions", "")).strip()
+        language = _content_language(language, instructions)
+        content_type = request.data.get("content_type", "both")
+        content_count = _content_count(instructions)
+        if language not in {"ru", "kk"}:
+            return Response({"language": ["Поддерживаются русский и казахский."]}, status=400)
+        if content_type not in {"post", "reel", "both"}:
+            return Response({"content_type": ["Выберите формат результата."]}, status=400)
+        if len(instructions) > 1000:
+            return Response(
+                {"instructions": ["Пожелания должны быть не длиннее 1000 символов."]},
+                status=400,
+            )
+        generation = generations.enqueue(
+            organization,
+            "content_studio",
+            {
+                "language": language,
+                "content_type": content_type,
+                "content_count": content_count,
+                "instructions": instructions,
+            },
+        )
+        return Response({"id": str(generation.id), "status": generation.status}, status=202)
+    generation = (
+        AIGeneration.objects.for_tenant(organization).filter(function="content_studio").first()
+    )
+    history = AIGeneration.objects.for_tenant(organization).filter(
+        function="content_studio",
+        status=AIGeneration.Status.SUCCEEDED,
+    )[:20]
+    drafts = AIContentDraft.objects.for_tenant(organization)[:20]
+    return Response(
+        {
+            "generation": (
+                {
+                    "id": str(generation.id),
+                    "status": generation.status,
+                    "created_at": generation.created_at,
+                    "error": generation.error_detail,
+                    "parameters": generation.parameters,
+                }
+                if generation
+                else None
+            ),
+            "content": generation.result if generation else {},
+            "history": [_generation_history_data(item) for item in history],
+            "drafts": [_draft_data(draft) for draft in drafts],
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([CanUseAIChat])
+def cancel_content_generation(request, generation_id, version=None):
+    with transaction.atomic():
+        generation = (
+            AIGeneration.objects.select_for_update()
+            .for_tenant(request.user.organization)
+            .filter(pk=generation_id, function="content_studio")
+            .first()
+        )
+        if generation is None:
+            return Response({"detail": "Генерация не найдена."}, status=404)
+        if generation.status not in {
+            AIGeneration.Status.QUEUED,
+            AIGeneration.Status.RUNNING,
+        }:
+            return Response({"detail": "Эта генерация уже завершена."}, status=409)
+        generation.status = AIGeneration.Status.CANCELLED
+        generation.finished_at = timezone.now()
+        generation.error_code = "cancelled"
+        generation.error_detail = "Генерация отменена пользователем."
+        generation.save(
+            update_fields=[
+                "status",
+                "finished_at",
+                "error_code",
+                "error_detail",
+                "updated_at",
+            ]
+        )
+    return Response({"id": str(generation.id), "status": generation.status})
+
+
+@api_view(["POST"])
+@permission_classes([CanUseAIChat])
+def content_drafts(request, version=None):
+    title = str(request.data.get("title", "")).strip()
+    language = request.data.get("language", "ru")
+    payload = request.data.get("payload")
+    if len(title) < 3 or len(title) > 120:
+        return Response({"title": ["Название должно содержать от 3 до 120 символов."]}, status=400)
+    if language not in {"ru", "kk"}:
+        return Response({"language": ["Выберите язык."]}, status=400)
+    if not isinstance(payload, dict) or not payload:
+        return Response({"payload": ["Нет контента для сохранения."]}, status=400)
+    generation = None
+    generation_id = request.data.get("generation")
+    if generation_id:
+        generation = (
+            AIGeneration.objects.for_tenant(request.user.organization)
+            .filter(pk=generation_id, function="content_studio")
+            .first()
+        )
+    draft = AIContentDraft.objects.create(
+        organization=request.user.organization,
+        language=language,
+        title=title,
+        payload=payload,
+        generation=generation,
+        created_by=request.user,
+    )
+    return Response(_draft_data(draft), status=201)
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([CanUseAIChat])
+def content_draft_detail(request, draft_id, version=None):
+    draft = AIContentDraft.objects.for_tenant(request.user.organization).filter(pk=draft_id).first()
+    if draft is None:
+        return Response({"detail": "Вариант не найден."}, status=404)
+    if request.method == "DELETE":
+        draft.delete()
+        return Response(status=204)
+    title = str(request.data.get("title", draft.title)).strip()
+    payload = request.data.get("payload", draft.payload)
+    if len(title) < 3 or len(title) > 120:
+        return Response({"title": ["Название должно содержать от 3 до 120 символов."]}, status=400)
+    if not isinstance(payload, dict) or not payload:
+        return Response({"payload": ["Нет контента для сохранения."]}, status=400)
+    draft.title = title
+    draft.payload = payload
+    draft.save(update_fields=["title", "payload", "updated_at"])
+    return Response(_draft_data(draft))
 
 
 @api_view(["POST"])

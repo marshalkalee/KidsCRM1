@@ -2,6 +2,7 @@
 
 import copy
 import json
+from decimal import Decimal
 
 from django.conf import settings
 from django.db import transaction
@@ -38,12 +39,14 @@ def numeric_facts(value, prefix="") -> dict:
     elif isinstance(value, list):
         for index, item in enumerate(value):
             result.update(numeric_facts(item, f"{prefix}[{index}]"))
+    elif isinstance(value, Decimal):
+        result[prefix] = int(value) if value == value.to_integral_value() else float(value)
     elif isinstance(value, int | float) and not isinstance(value, bool):
         result[prefix] = value
     return result
 
 
-def enqueue(organization, template_key: str) -> AIGeneration:
+def enqueue(organization, template_key: str, parameters=None) -> AIGeneration:
     """Веб-слой только ставит задачу в очередь и сразу возвращает id."""
     template = get_template(template_key)
     generation = AIGeneration.objects.create(
@@ -52,6 +55,7 @@ def enqueue(organization, template_key: str) -> AIGeneration:
         prompt_version=template.version,
         provider=services.provider(),
         model=generation_provider.model_name(),
+        parameters=parameters or {},
     )
     from .tasks import run_ai_generation
 
@@ -62,6 +66,8 @@ def enqueue(organization, template_key: str) -> AIGeneration:
 def _finish(generation_id, *, status, **fields):
     with transaction.atomic():
         generation = AIGeneration.objects.select_for_update().get(pk=generation_id)
+        if generation.status == AIGeneration.Status.CANCELLED:
+            return generation
         generation.status = status
         generation.finished_at = timezone.now()
         for name, value in fields.items():
@@ -70,7 +76,7 @@ def _finish(generation_id, *, status, **fields):
     return generation
 
 
-def _fixture_payload(template, facts, snapshot):
+def _fixture_payload(template, facts, snapshot, parameters=None):
     payload = copy.deepcopy(template.fixture)
     first_key = next(iter(facts), None)
     if first_key:
@@ -83,13 +89,54 @@ def _fixture_payload(template, facts, snapshot):
     if candidates:
         for row in payload.get("recommendations", []):
             row["candidate_key"] = candidates[0]
+        for section in ("campaigns", "plan", "posts", "videos"):
+            for row in payload.get(section, []):
+                row["candidate_key"] = candidates[0]
+        if template.key == "content_studio":
+            parameters = parameters or {}
+            content_type = parameters.get("content_type", "both")
+            if content_type in {"full", "week"}:
+                content_type = "both"
+            count = int(parameters.get("content_count", 3))
+            for section in ("campaigns", "plan"):
+                payload[section] = []
+            for section, enabled in (
+                ("posts", content_type in {"post", "both"}),
+                ("videos", content_type in {"reel", "both"}),
+            ):
+                seed = payload[section][0] if payload[section] and enabled else None
+                payload[section] = [copy.deepcopy(seed) for _ in range(count)] if seed else []
+    elif template.key in {"group_promotion", "content_studio"}:
+        for section in ("recommendations", "campaigns", "plan", "posts", "videos"):
+            if section in payload:
+                payload[section] = []
     return payload
 
 
+def _snapshot_for_provider(snapshot, function):
+    """Keep CRM labels that must be rendered by code out of the model request."""
+    prepared = copy.deepcopy(snapshot)
+    if function == "content_studio":
+        candidates = prepared.get("promotion_opportunities", {}).get("кандидаты", [])
+        for candidate in candidates:
+            candidate.pop("группа", None)
+            candidate.pop("филиал", None)
+            candidate.pop("расписание", None)
+    return prepared
+
+
 def run(generation_id) -> AIGeneration:
-    generation = AIGeneration.objects.select_related("organization").get(pk=generation_id)
+    with transaction.atomic():
+        generation = (
+            AIGeneration.objects.select_for_update()
+            .select_related("organization")
+            .get(pk=generation_id)
+        )
+        if generation.status == AIGeneration.Status.CANCELLED:
+            return generation
+        generation.status = AIGeneration.Status.RUNNING
+        generation.save(update_fields=["status", "updated_at"])
     template = get_template(generation.function)
-    AIGeneration.objects.filter(pk=generation.id).update(status=AIGeneration.Status.RUNNING)
 
     fixture_mode = settings.AI_FIXTURE_MODE and not services.is_enabled()
     if not services.is_enabled() and not fixture_mode:
@@ -112,7 +159,17 @@ def run(generation_id) -> AIGeneration:
 
     snapshot = aggregates.snapshot(generation.organization)
     facts = numeric_facts(snapshot)
-    user = json.dumps({"aggregates": snapshot, "facts": facts}, ensure_ascii=False, sort_keys=True)
+    provider_snapshot = _snapshot_for_provider(snapshot, generation.function)
+    user = json.dumps(
+        {
+            "aggregates": provider_snapshot,
+            "facts": facts,
+            "parameters": generation.parameters,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
     request_chars = len(template.system) + len(user)
     if request_chars > settings.AI_GENERATION_MAX_INPUT_CHARS:
         return _finish(
@@ -124,15 +181,15 @@ def run(generation_id) -> AIGeneration:
         )
 
     input_tokens = output_tokens = 0
-    last_error = None
+    provider_user = user
     for attempt in range(1, 3):
         try:
             if fixture_mode:
-                payload = _fixture_payload(template, facts, snapshot)
+                payload = _fixture_payload(template, facts, snapshot, generation.parameters)
             else:
                 response = generation_provider.call(
                     system=template.system,
-                    user=user,
+                    user=provider_user,
                     schema=template.schema,
                     model=generation.model,
                     max_tokens=template.max_tokens,
@@ -140,9 +197,15 @@ def run(generation_id) -> AIGeneration:
                 payload = response.payload
                 input_tokens += response.input_tokens
                 output_tokens += response.output_tokens
-            result = template.validate(payload, facts, snapshot)
-        except ValueError as exc:
-            last_error = exc
+            result = template.validate(payload, facts, snapshot, generation.parameters)
+        except ValueError:
+            provider_user = (
+                f"{user}\n\n"
+                "Предыдущий ответ не прошёл проверку. Создай новый JSON с нуля. "
+                "Не используй цифры, проценты, цены, размеры скидок, сроки акции "
+                "или другие неподтверждённые условия в текстовых полях. "
+                "Не повторяй названия группы и филиала — приложение подставит их само."
+            )
             continue
         except services.AIError as exc:
             return _finish(
@@ -176,7 +239,7 @@ def run(generation_id) -> AIGeneration:
         output_tokens=output_tokens,
         request_chars=request_chars,
         error_code="schema_error",
-        error_detail=str(last_error)[:500],
+        error_detail=DEGRADATION_MESSAGES[AIGeneration.Status.SCHEMA_ERROR],
     )
 
 

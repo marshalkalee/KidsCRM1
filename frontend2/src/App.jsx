@@ -5,6 +5,7 @@ import { RequireAuth, RequirePermission, SessionProvider, useSession } from './s
 import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Assistant from './pages/Assistant'
+import ContentStudio from './pages/ContentStudio'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LegacyRedirect from './pages/LegacyRedirect'
@@ -92,7 +93,10 @@ function StaffApp() {
                 <Route path="onboarding" element={<RequirePermission permission="can_manage_org_settings"><Onboarding /></RequirePermission>} />
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
-                <Route path="assistant" element={<RequirePermission permission="can_use_ai_chat"><Assistant /></RequirePermission>} />
+                <Route path="assistant" element={<RequirePermission permission="can_use_ai_chat"><PageGroup title={t('ИИ-помощник')} tabs={[
+                  { key: 'chat', label: t('Чат'), element: <Assistant /> },
+                  { key: 'content', label: t('Контент'), element: <ContentStudio /> },
+                ]} /></RequirePermission>} />
                 <Route path="announcements" element={<RequirePermission permission="can_manage_announcements"><Announcements /></RequirePermission>} />
                 <Route path="parent-requests" element={<RequirePermission permission="can_manage_parent_requests"><ParentRequests /></RequirePermission>} />
                 <Route path="notifications" element={<Notifications />} />

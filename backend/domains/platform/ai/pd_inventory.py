@@ -125,6 +125,27 @@ INVENTORY = {
         "sends": set(),
         "what": "Локально скрывает рекомендацию; внешняя модель не вызывается.",
     },
+    "content_studio": {
+        "route": "content-studio",
+        "who": LEADS,
+        "calls": "1 в фоновой задаче",
+        "sends": set(),
+        "what": "Обезличенные агрегаты и названия групп, направлений и филиалов. Имена детей, контакты, фотографии и внутренние заметки не отправляются.",
+    },
+    "content_drafts": {
+        "route": "content-drafts",
+        "who": LEADS,
+        "calls": "0",
+        "sends": set(),
+        "what": "Сохраняет отредактированный сотрудником вариант внутри CRM; внешняя модель не вызывается.",
+    },
+    "content_draft_detail": {
+        "route": "content-draft-detail",
+        "who": LEADS,
+        "calls": "0",
+        "sends": set(),
+        "what": "Изменяет или удаляет сохранённый вариант внутри CRM; внешняя модель не вызывается.",
+    },
     "chat": {
         "route": "chat",
         "who": CHAT,
