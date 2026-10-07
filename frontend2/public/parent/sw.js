@@ -6,7 +6,8 @@
  * - /assets/… (имена с хешем, не меняются) — из кэша, если уже есть.
  * API не кэшируется здесь: данные детей — только в памяти экрана и
  * localStorage, который чистится при выходе.
- * Push-уведомления — V3, здесь не обрабатываются.
+ * Push (TRU-172): показать уведомление от центра рассылок и по нажатию
+ * открыть нужный раздел кабинета (уже открытую вкладку — переключить).
  */
 const SHELL = 'kc-parent-shell-v1'
 
@@ -51,4 +52,31 @@ self.addEventListener('fetch', event => {
       })),
     )
   }
+})
+
+self.addEventListener('push', event => {
+  let data = {}
+  try { data = event.data ? event.data.json() : {} } catch { data = { body: event.data && event.data.text() } }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'KidsCRM', {
+      body: data.body || '',
+      icon: '/parent/icon-192.png',
+      badge: '/parent/icon-192.png',
+      // Новое «абонемент заканчивается» заменяет старое, а не копится стопкой.
+      tag: data.tag || undefined,
+      data: { url: data.url || '/parent' },
+    }),
+  )
+})
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close()
+  const url = new URL(event.notification.data?.url || '/parent', self.location.origin).href
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windows => {
+      const open = windows.find(w => w.url.startsWith(self.location.origin + '/parent'))
+      if (open) return open.navigate(url).then(w => (w || open).focus())
+      return self.clients.openWindow(url)
+    }),
+  )
 })

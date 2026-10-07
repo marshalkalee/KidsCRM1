@@ -341,3 +341,10 @@ else:
 MESSAGING_FROM_EMAIL = env("MESSAGING_FROM_EMAIL", default="noreply@kidscrm.kz")
 # Публичный адрес сайта — для ссылки «отписаться» в письме.
 PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="http://localhost")
+
+# Web Push в кабинете родителя (TRU-172). Ключи VAPID — пара на платформу,
+# генерируется командой `manage.py generate_vapid_keys`. Без ключей канал
+# push «не подключён» и пропускается.
+WEBPUSH_VAPID_PUBLIC_KEY = env("WEBPUSH_VAPID_PUBLIC_KEY", default="")
+WEBPUSH_VAPID_PRIVATE_KEY = env("WEBPUSH_VAPID_PRIVATE_KEY", default="")
+WEBPUSH_CONTACT = env("WEBPUSH_CONTACT", default="mailto:support@kidscrm.kz")

@@ -23,6 +23,7 @@ import { LANGUAGES, lang, setLang, t } from '../../i18n'
 import { phoneDigits, phoneInputProps } from '../../utils/formValidation'
 import portal, { portalError, usePortalData } from '../api'
 import { useParent } from '../useParent'
+import { NotificationSettings } from '../Notifications'
 
 /*
  * Профиль родителя (TRU-136): контакты, язык кабинета, смена номера через
@@ -125,6 +126,8 @@ export default function ParentProfile() {
           </div>
         </Card>
       </div>
+
+      <NotificationSettings />
 
       <Devices />
 
