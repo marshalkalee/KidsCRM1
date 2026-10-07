@@ -3,6 +3,7 @@ from rest_framework import serializers
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.text_validation import normalize_entity_name
 
+from .cities import KZ_CITIES
 from .models import Branch, Direction, Organization, Room
 from .working_hours import default_working_hours, normalize_working_hours
 
@@ -54,6 +55,11 @@ class BranchSerializer(serializers.ModelSerializer):
             "organization",
             "name",
             "address",
+            "city",
+            "district",
+            "latitude",
+            "longitude",
+            "coordinates_source",
             "phone",
             "working_hours",
             "is_active",
@@ -67,7 +73,31 @@ class BranchSerializer(serializers.ModelSerializer):
         # экран "Настройки организации") — это PATCH is_active, а не DELETE
         # (тот делает soft-delete через deleted_at и убирает филиал из
         # for_tenant() совсем — архивный филиал должен там оставаться).
-        read_only_fields = ["id", "organization", "created_at", "updated_at"]
+        read_only_fields = ["id", "organization", "coordinates_source", "created_at", "updated_at"]
+
+    def validate_city(self, value):
+        if value and value not in KZ_CITIES:
+            raise serializers.ValidationError("Выберите город из списка.")
+        return value
+
+    def validate(self, attrs):
+        # Город обязателен для нового филиала (TRU-178): без него не будет
+        # поиска «рядом» в каталоге. Старые филиалы не ломаем.
+        if self.instance is None and not attrs.get("city"):
+            raise serializers.ValidationError({"city": ["Выберите город."]})
+        lat = attrs.get("latitude", getattr(self.instance, "latitude", None))
+        lng = attrs.get("longitude", getattr(self.instance, "longitude", None))
+        if (lat is None) != (lng is None):
+            raise serializers.ValidationError({"latitude": ["Нужны и широта, и долгота."]})
+        if lat is not None and not (40 <= lat <= 56 and 46 <= lng <= 88):
+            raise serializers.ValidationError({"latitude": ["Точка не в Казахстане."]})
+        return attrs
+
+    def save(self, **kwargs):
+        # Точку поправили руками — дальше её не пересчитываем по адресу.
+        if "latitude" in self.validated_data or "longitude" in self.validated_data:
+            kwargs.setdefault("coordinates_source", Branch.CoordinatesSource.MANUAL)
+        return super().save(**kwargs)
 
     def validate_working_hours(self, value):
         working_hours, errors = normalize_working_hours(value)

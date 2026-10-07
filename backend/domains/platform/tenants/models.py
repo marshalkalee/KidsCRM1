@@ -64,8 +64,22 @@ class Organization(TimestampedSoftDeleteModel):
 
 
 class Branch(TenantModel):
+    class CoordinatesSource(models.TextChoices):
+        AUTO = "auto", "По адресу"
+        MANUAL = "manual", "Вручную"
+
     name = models.CharField(max_length=255)
     address = models.TextField(blank=True)
+    # Для поиска «рядом» в будущем каталоге (TRU-178): город из справочника
+    # (cities.KZ_CITIES), район и точка. Точку ставит геокодер по адресу,
+    # сотрудник может поправить — тогда автоматика её не трогает.
+    city = models.CharField(max_length=64, blank=True)
+    district = models.CharField(max_length=100, blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    coordinates_source = models.CharField(
+        max_length=8, choices=CoordinatesSource.choices, blank=True
+    )
     phone = models.CharField(max_length=20, blank=True)
     working_hours = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
