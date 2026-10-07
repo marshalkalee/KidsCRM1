@@ -40,6 +40,7 @@ class GroupSerializer(serializers.ModelSerializer):
             "age_min",
             "age_max",
             "status",
+            "is_public",
             "teachers_count",
             "members_count",
             "fill_percent",

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/axios'
-import { Button, Field, Input, Modal, MultiSelect, Select, apiErrorMessage, useToast } from '../ui'
+import { Button, Checkbox, Field, Input, Modal, MultiSelect, Select, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
 import { entityNameInputProps } from '../utils/formValidation'
 
@@ -23,6 +23,7 @@ export default function GroupModal({ group, onClose, onSaved }) {
     age_min: group?.age_min ?? '',
     age_max: group?.age_max ?? '',
     status: group?.status || 'active',
+    is_public: group?.is_public || false,
   })
   const [options, setOptions] = useState({ branches: [], directions: [], teachers: [] })
   const [errors, setErrors] = useState({})
@@ -134,6 +135,14 @@ export default function GroupModal({ group, onClose, onSaved }) {
             </Select>
           )}
         </Field>
+        <div className="sm:col-span-2">
+          <Checkbox
+            checked={form.is_public}
+            onChange={e => set('is_public', e.target.checked)}
+            label={<span className="text-sm text-ink">{t('Показывать в публичном каталоге')}</span>}
+          />
+          <p className="mt-1 pl-7 text-[12px] text-ink-muted">{t('Название, возраст, расписание и свободные места — для будущего каталога кружков. Детей и родителей каталог не видит.')}</p>
+        </div>
       </form>
     </Modal>
   )

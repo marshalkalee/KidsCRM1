@@ -2310,5 +2310,9 @@
  "Чтение и запись": "Read and write",
  "Чтобы потом узнать: «Сайт», «1С», «Отчёты»": "So you'll recognise it: “Website”, “1C”, “Reports”",
  "Я сохранил ключ": "I've saved the key",
- "API-ключи": "API keys"
+ "API-ключи": "API keys",
+ "Показывать в публичном каталоге": "Show in the public catalogue",
+ "Название, возраст, расписание и свободные места — для будущего каталога кружков. Детей и родителей каталог не видит.": "Name, age, schedule and free spots — for the future activity catalogue. The catalogue never sees children or parents.",
+ "Показывать цену в публичном каталоге": "Show the price in the public catalogue",
+ "По умолчанию цена видна только внутри CRM.": "By default the price is only visible inside the CRM."
 }
