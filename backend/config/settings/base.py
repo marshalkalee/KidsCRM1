@@ -354,3 +354,8 @@ PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="http://localhost")
 WEBPUSH_VAPID_PUBLIC_KEY = env("WEBPUSH_VAPID_PUBLIC_KEY", default="")
 WEBPUSH_VAPID_PRIVATE_KEY = env("WEBPUSH_VAPID_PRIVATE_KEY", default="")
 WEBPUSH_CONTACT = env("WEBPUSH_CONTACT", default="mailto:support@kidscrm.kz")
+
+# Координаты филиала по адресу (TRU-178): nominatim (OpenStreetMap, без
+# ключа) или "" — выключено. Nominatim требует понятный User-Agent.
+GEOCODER = env("GEOCODER", default="nominatim")
+GEOCODER_USER_AGENT = env("GEOCODER_USER_AGENT", default="KidsCRM/1.0 (support@kidscrm.kz)")

@@ -54,7 +54,7 @@ export default function Branches() {
 
   const columns = [
     { key: 'name', header: t('Название'), primary: true, render: b => <span className={cn('font-semibold', b.is_active ? 'text-ink' : 'text-ink-muted')}>{b.name}</span> },
-    { key: 'address', header: t('Адрес'), className: 'text-ink-muted', render: b => b.address || '—' },
+    { key: 'address', header: t('Адрес'), className: 'text-ink-muted', render: b => [b.city, b.address].filter(Boolean).join(', ') || '—' },
     { key: 'phone', header: t('Телефон'), hideOnMobile: true, className: 'text-ink-muted whitespace-nowrap', render: b => b.phone || '—' },
     { key: 'hours', header: t('Часы работы'), hideOnMobile: true, className: 'text-ink-muted', render: b => hoursSummary(b.working_hours) },
     {
