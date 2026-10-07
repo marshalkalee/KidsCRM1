@@ -6,8 +6,8 @@ import { KeyRound, Store } from 'lucide-react'
 import { Button, PageHeader } from '../ui'
 import { t } from '../i18n'
 
-/** Настройки организации (TRU-85) — только владелец. Ниже — расход ИИ-помощника
- * за месяц (TRU-160), если опция подключена. */
+/** Настройки организации (TRU-85) — только владелец. Среди карточек — расход
+ * ИИ-помощника за месяц (TRU-160), если опция подключена. */
 export default function OrganizationSettings() {
   const { reload } = useSession()
   const navigate = useNavigate()
@@ -23,8 +23,7 @@ export default function OrganizationSettings() {
           </>
         }
       />
-      <OrganizationForm wide onSaved={() => reload()} />
-      <AIUsageCard />
+      <OrganizationForm wide onSaved={() => reload()} aside={<AIUsageCard />} />
     </div>
   )
 }

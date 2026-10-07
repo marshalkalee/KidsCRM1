@@ -138,6 +138,20 @@ class DigestBuildTests(AIFixtures):
             "Сезонность · Новых заявок · 2026-09",
         )
 
+    def test_fact_label_for_promotion_candidates_has_no_ids(self):
+        snap = {
+            "promotion_opportunities": {
+                "кандидаты": [
+                    {"ref": "d397137c375b6e8c", "группа": "Растяжка 5–10", "филиал": "Орбита",
+                     "заполняемость_процент": 13},
+                ]
+            }
+        }  # fmt: skip
+        self.assertEqual(
+            digest.fact_label(snap, "promotion_opportunities.кандидаты[0].заполняемость_процент"),
+            "Продвижение · Растяжка 5–10, Орбита: заполняемость, %",
+        )
+
     def test_fact_label_for_nested_keys(self):
         self.assertEqual(
             digest.fact_label(snapshot(), "occupancy.итого.occupied"),
@@ -164,6 +178,18 @@ class DigestApiTests(AIFixtures):
         self.assertFalse(second.data["created"])
         self.assertEqual(second.data["building"]["id"], first.data["building"]["id"])
         self.assertEqual(self.delay.call_count, 1)
+
+    def test_stuck_build_is_failed_and_refresh_starts_a_new_one(self):
+        stuck = self.refresh().data["building"]["id"]
+        AIDigest.objects.filter(pk=stuck).update(
+            created_at=datetime.datetime.now(datetime.UTC) - digest.STUCK_AFTER * 2
+        )
+        data = self.client_api.get("/api/v1/ai/digests/").data
+        self.assertIsNone(data["building"])
+        self.assertEqual(data["notice"]["status"], AIDigest.Status.FAILED)
+        again = self.refresh()
+        self.assertTrue(again.data["created"])
+        self.assertNotEqual(again.data["building"]["id"], stuck)
 
     def test_refresh_right_after_previous_is_refused_with_text(self):
         self.refresh()

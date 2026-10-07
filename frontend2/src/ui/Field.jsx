@@ -100,6 +100,7 @@ export function Select({ id, value, onChange, children, invalid, disabled, requi
         disabled={disabled}
         ariaLabel={ariaLabel}
         size={className?.includes('h-9') ? 'sm' : 'md'}
+        tone="field"
       />
       {/* Для проверки формы браузером: обязательный список без значения не даст отправить. */}
       {required && (

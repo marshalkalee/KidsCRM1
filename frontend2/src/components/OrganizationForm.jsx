@@ -34,8 +34,10 @@ const RULES = [
  * wide — экран «Организация»: карточки в две колонки на всю ширину и
  * панель «Сохранить» всегда внизу экрана; в мастере — одна колонка.
  * secondaryAction — дополнительная кнопка слева от «Сохранить» (в мастере — «Пропустить»).
+ * aside — карточка не из формы под «Автоправилами» (расход ИИ), чтобы колонки
+ * были ровнее, а панель «Сохранить» оставалась последней на экране.
  */
-export default function OrganizationForm({ onSaved, submitLabel = t('Сохранить'), secondaryAction, wide = false }) {
+export default function OrganizationForm({ onSaved, submitLabel = t('Сохранить'), secondaryAction, wide = false, aside }) {
   const toast = useToast()
   const ai = useAI()
   const [form, setForm] = useState(null)
@@ -266,7 +268,10 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
       </div>
       {thresholds}
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-        {rules}
+        <div className="space-y-4">
+          {rules}
+          {aside}
+        </div>
         <div className="space-y-4">
           {site}
           {digest}

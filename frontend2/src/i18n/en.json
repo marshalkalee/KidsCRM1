@@ -2429,5 +2429,7 @@
  "Поправить точку": "Adjust the point",
  "Широта": "Latitude",
  "Долгота": "Longitude",
- "Откройте место на карте, скопируйте координаты. Поставленную вручную точку система больше не пересчитывает.": "Open the place on a map and copy the coordinates. A manually set point is no longer recalculated."
+ "Откройте место на карте, скопируйте координаты. Поставленную вручную точку система больше не пересчитывает.": "Open the place on a map and copy the coordinates. A manually set point is no longer recalculated.",
+  "Подстановки — нажмите, чтобы вставить в текст:": "Placeholders — click to insert into the text:",
+  "Текст по умолчанию": "Default text"
 }
