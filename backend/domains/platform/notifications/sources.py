@@ -168,6 +168,26 @@ def parent_requests(user, branch_ids):
     return Item("parent_requests", qs.count(), latest, "/parent-requests")
 
 
+def ai_digest(user, branch_ids):
+    """Готов дайджест недели (TRU-163): до рассылок M6 это и есть доставка.
+    Владелец и управляющий; только у центров с подключённым ИИ."""
+    if user.role not in (User.Role.OWNER, User.Role.MANAGER):
+        return None
+    if not getattr(user.organization, "ai_enabled", False):
+        return None
+    from domains.platform.ai.models import AIDigest
+
+    latest = (
+        AIDigest.objects.for_tenant(user.organization)
+        .filter(
+            status=AIDigest.Status.READY, ready_at__gte=timezone.now() - datetime.timedelta(days=8)
+        )
+        .values_list("ready_at", flat=True)
+        .first()
+    )
+    return Item("ai_digest", 1 if latest else 0, latest, "/digest")
+
+
 SOURCES = [
     new_leads,
     parent_requests,
@@ -175,4 +195,5 @@ SOURCES = [
     overdue_debts,
     no_subscription,
     overdue_tasks,
+    ai_digest,
 ]

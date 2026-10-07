@@ -214,6 +214,7 @@ class NotificationRolesAndBranchesTests(NotificationFixtures):
                 "overdue_debts",
                 "no_subscription",
                 "overdue_tasks",
+                "ai_digest",
             },
         )
         self.assertEqual(set(by_kind(client_for(self.teacher).get(URL))), {"unmarked_lessons"})

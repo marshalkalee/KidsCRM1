@@ -12,6 +12,8 @@ from domains.platform.tenants.models import Branch, Direction, Room
 from domains.platform.tenants.org_settings import (
     DEBT_OVERDUE_DAYS_THRESHOLD,
     DEFAULT_ORG_SETTINGS,
+    DIGEST_HOUR,
+    DIGEST_WEEKDAY,
     GROUP_UNDERFILLED_PERCENT_THRESHOLD,
     LEAD_STALE_DAYS_THRESHOLD,
     PARENT_CANCEL_CHARGE_ON_TIME,
@@ -149,6 +151,12 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
         required=False,
         label="Списывать занятие при своевременном предупреждении",
     )
+    digest_weekday = forms.IntegerField(
+        min_value=0, max_value=6, required=False, label="День дайджеста ИИ (0 — понедельник)"
+    )
+    digest_hour = forms.IntegerField(
+        min_value=0, max_value=23, required=False, label="Час дайджеста ИИ"
+    )
 
     def clean_timezone(self):
         tz_name = self.cleaned_data["timezone"]
@@ -222,6 +230,12 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
                 if PARENT_CANCEL_CHARGE_ON_TIME in self.data
                 else get_org_setting(organization, PARENT_CANCEL_CHARGE_ON_TIME)
             ),
+            **{
+                key: self.cleaned_data[key]
+                if self.cleaned_data.get(key) is not None
+                else get_org_setting(organization, key)
+                for key in (DIGEST_WEEKDAY, DIGEST_HOUR)
+            },
         }
         organization.save(
             update_fields=["name", "timezone", "settings", "website_domain", "updated_at"]
