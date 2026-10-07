@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/axios'
-import { Button, Checkbox, Field, Input, Modal, MultiSelect, Select, apiErrorMessage, useToast } from '../ui'
+import { Button, Checkbox, Field, Input, Modal, MultiSelect, Select, Textarea, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
 import { entityNameInputProps } from '../utils/formValidation'
 
@@ -24,6 +24,7 @@ export default function GroupModal({ group, onClose, onSaved }) {
     age_max: group?.age_max ?? '',
     status: group?.status || 'active',
     is_public: group?.is_public || false,
+    description: group?.description || '',
     exclude_from_ai_recommendations: group?.exclude_from_ai_recommendations || false,
   })
   const [options, setOptions] = useState({ branches: [], directions: [], teachers: [] })
@@ -135,6 +136,9 @@ export default function GroupModal({ group, onClose, onSaved }) {
               <option value="closed">{t('Закрыта')}</option>
             </Select>
           )}
+        </Field>
+        <Field label={t('Описание для каталога')} className="sm:col-span-2" hint={t('Коротко для родителей: что делают на занятиях, что взять с собой.')}>
+          {({ id }) => <Textarea id={id} rows={2} maxLength={500} value={form.description} onChange={e => set('description', e.target.value)} />}
         </Field>
         <div className="rounded-lg border border-line bg-surface-muted p-3 sm:col-span-2">
           <Checkbox

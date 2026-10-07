@@ -66,3 +66,26 @@ class ApiRequestLog(UUIDPrimaryKeyModel):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["organization", "-created_at"])]
+
+
+class CenterProfile(TenantModel):
+    """Публичный профиль центра для будущего каталога (TRU-179) — отдельно от
+    рабочих полей CRM: что видит родитель в карточке центра. Пока не
+    опубликован, в публичный срез не попадает ничего."""
+
+    MAX_PHOTOS = 5
+
+    description = models.TextField(blank=True)
+    logo_url = models.URLField(max_length=500, blank=True)
+    photo_urls = models.JSONField(default=list, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    instagram = models.CharField(max_length=100, blank=True)
+    is_published = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["organization"], name="center_profile_one_per_org")
+        ]
+
+    def __str__(self) -> str:
+        return f"Профиль {self.organization_id}"
