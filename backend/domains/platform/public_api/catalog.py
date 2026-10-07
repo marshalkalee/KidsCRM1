@@ -115,6 +115,7 @@ def offer(organization, date_from: datetime.date, date_to: datetime.date, *, inc
                 "group": {
                     "id": str(group.id),
                     "name": group.name,
+                    "description": group.description,
                     "direction": group.direction.name if group.direction_id else "",
                     "age_min": group.age_min,
                     "age_max": group.age_max,
@@ -141,4 +142,21 @@ def offer(organization, date_from: datetime.date, date_to: datetime.date, *, inc
     return result
 
 
-__all__ = ["LESSON_FIELDS", "offer"]
+def center_profile(organization) -> dict | None:
+    """Карточка центра для каталога (TRU-179) — только опубликованная."""
+    from .models import CenterProfile
+
+    profile = CenterProfile.objects.for_tenant(organization).filter(is_published=True).first()
+    if profile is None:
+        return None
+    return {
+        "name": organization.name,
+        "description": profile.description,
+        "logo_url": profile.logo_url,
+        "photo_urls": profile.photo_urls,
+        "phone": profile.phone,
+        "instagram": profile.instagram,
+    }
+
+
+__all__ = ["LESSON_FIELDS", "center_profile", "offer"]

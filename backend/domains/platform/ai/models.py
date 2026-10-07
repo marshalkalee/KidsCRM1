@@ -184,6 +184,11 @@ class AIDigest(TenantModel):
 
     # Понедельник недели по времени центра: к какой неделе относится.
     week_start = models.DateField()
+    language = models.CharField(
+        max_length=2,
+        choices=(("ru", "Русский"), ("kk", "Қазақша"), ("en", "English")),
+        default="ru",
+    )
     status = models.CharField(max_length=32, choices=Status.choices, default=Status.QUEUED)
     trigger = models.CharField(max_length=16, choices=Trigger.choices)
     requested_by = models.ForeignKey(

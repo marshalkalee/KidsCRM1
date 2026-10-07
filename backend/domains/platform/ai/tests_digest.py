@@ -6,6 +6,7 @@ from unittest import mock
 from zoneinfo import ZoneInfo
 
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from domains.platform.users.models import User
@@ -52,9 +53,12 @@ STRETCH = "occupancy.группы[1].процент"
 
 @override_settings(**OPENAI)
 class DigestBuildTests(AIFixtures):
-    def build(self, provider_answer, snap=None):
+    def build(self, provider_answer, snap=None, language="ru"):
         item = AIDigest.objects.create(
-            organization=self.org, week_start=datetime.date(2026, 10, 5), trigger="schedule"
+            organization=self.org,
+            week_start=datetime.date(2026, 10, 5),
+            trigger="schedule",
+            language=language,
         )
         with (
             mock.patch("domains.platform.ai.aggregates.snapshot", return_value=snap or snapshot()),
@@ -91,6 +95,15 @@ class DigestBuildTests(AIFixtures):
         item, _ = self.build(answer(recommendation("Выручка", ["money.Выручка.было"])))
         self.assertEqual(item.status, AIDigest.Status.READY)
         self.assertEqual(item.content["highlights"][0]["evidence"][0]["value"], 125000)
+
+    def test_digest_language_reaches_model_and_localizes_fact_labels(self):
+        item, call = self.build(answer(recommendation("Топты толтырыңыз", [BALLET])), language="kk")
+        self.assertEqual(item.language, "kk")
+        self.assertEqual(item.content["language"], "kk")
+        self.assertTrue(
+            item.content["highlights"][0]["evidence"][0]["label"].startswith("Толымдылық")
+        )
+        self.assertIn("қазақ тілінде", call.call_args.kwargs["user"])
 
     def test_small_center_gets_honest_empty_state_without_model(self):
         item, call = self.build(
@@ -144,6 +157,30 @@ class DigestBuildTests(AIFixtures):
             "Заполняемость · весь центр: занято мест",
         )
 
+    def test_fact_label_never_exposes_internal_candidate_key(self):
+        candidate_key = "edf921beb0c2995b"
+        snap = {
+            "promotion_opportunities": {
+                "кандидаты": [
+                    {
+                        "candidate_key": candidate_key,
+                        "группа": "Хореография 6–10",
+                        "филиал": "Алмалы",
+                        "приоритет": "high",
+                    }
+                ]
+            }
+        }
+
+        label = digest.fact_label(
+            snap,
+            "promotion_opportunities.кандидаты[0].приоритет",
+        )
+
+        self.assertNotIn(candidate_key, label)
+        self.assertIn("Хореография 6–10", label)
+        self.assertIn("Алмалы", label)
+
 
 @override_settings(**OPENAI)
 class DigestApiTests(AIFixtures):
@@ -152,9 +189,35 @@ class DigestApiTests(AIFixtures):
         self.delay = mock.patch("domains.platform.ai.tasks.build_ai_digest.delay").start()
         self.addCleanup(mock.patch.stopall)
 
-    def refresh(self, client=None):
+    def refresh(self, client=None, data=None):
         with self.captureOnCommitCallbacks(execute=True):
-            return (client or self.client_api).post("/api/v1/ai/digests/")
+            return (client or self.client_api).post(
+                "/api/v1/ai/digests/", data or {}, format="json"
+            )
+
+    def test_refresh_saves_current_interface_language(self):
+        response = self.refresh(data={"language": "kk"})
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(AIDigest.objects.get().language, "kk")
+        self.assertEqual(response.data["building"]["language"], "kk")
+
+    def test_refresh_rejects_unknown_language(self):
+        response = self.refresh(data={"language": "de"})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AIDigest.objects.exists())
+
+    def test_list_only_returns_digest_in_requested_language(self):
+        AIDigest.objects.create(
+            organization=self.org,
+            week_start=datetime.date(2026, 10, 5),
+            trigger=AIDigest.Trigger.SCHEDULE,
+            language="ru",
+            status=AIDigest.Status.READY,
+            ready_at=timezone.now(),
+        )
+        response = self.client_api.get("/api/v1/ai/digests/", {"language": "kk"})
+        self.assertIsNone(response.data["latest"])
+        self.assertEqual(response.data["archive"], [])
 
     def test_repeated_refresh_does_not_multiply_generations(self):
         first = self.refresh()

@@ -2,7 +2,7 @@ import OrganizationForm from '../components/OrganizationForm'
 import AIUsageCard from '../components/ai/AIUsageCard'
 import { useSession } from '../session/SessionContext'
 import { useNavigate } from 'react-router-dom'
-import { KeyRound } from 'lucide-react'
+import { KeyRound, Store } from 'lucide-react'
 import { Button, PageHeader } from '../ui'
 import { t } from '../i18n'
 
@@ -16,7 +16,12 @@ export default function OrganizationSettings() {
       <PageHeader
         title={t('Организация')}
         description={t('Название, часовой пояс и когда подсвечивать продления, долги и пустые группы.')}
-        actions={<Button icon={KeyRound} onClick={() => navigate('/settings/api-keys')}>{t('API-ключи')}</Button>}
+        actions={
+          <>
+            <Button icon={Store} onClick={() => navigate('/settings/center-profile')}>{t('Профиль центра')}</Button>
+            <Button icon={KeyRound} onClick={() => navigate('/settings/api-keys')}>{t('API-ключи')}</Button>
+          </>
+        }
       />
       <OrganizationForm wide onSaved={() => reload()} />
       <AIUsageCard />

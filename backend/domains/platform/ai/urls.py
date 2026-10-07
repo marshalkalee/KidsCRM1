@@ -27,6 +27,21 @@ urlpatterns = [
     path("usage/", views.usage_summary, name="usage"),
     path("digests/", views.digests, name="digests"),
     path("digests/<uuid:digest_id>/", views.digest_detail, name="digest-detail"),
+    path(
+        "digests/<uuid:digest_id>/task-preview/",
+        views.digest_task_preview,
+        name="digest-task-preview",
+    ),
+    path(
+        "digests/<uuid:digest_id>/tasks/",
+        views.digest_task_create,
+        name="digest-task-create",
+    ),
+    path(
+        "digests/<uuid:digest_id>/dismiss/",
+        views.dismiss_digest_recommendation,
+        name="digest-recommendation-dismiss",
+    ),
     path("chat/", views.chat_view, name="chat"),
     path("conversations/", views.conversations, name="conversations"),
     path(

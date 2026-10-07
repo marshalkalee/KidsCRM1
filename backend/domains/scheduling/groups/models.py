@@ -36,6 +36,8 @@ class Group(TenantModel, TimestampedSoftDeleteModel):
     # Показывать ли группу во внешнем каталоге (будущий маркетплейс, TRU-177).
     # По умолчанию нет: публикует только сам центр.
     is_public = models.BooleanField(_("Показывать в публичном каталоге"), default=False)
+    # Коротко для родителя в каталоге: что делают, что взять с собой (TRU-179).
+    description = models.TextField(_("Описание для каталога"), blank=True)
     status = models.CharField(
         _("Статус"),
         max_length=16,
