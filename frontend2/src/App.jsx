@@ -28,6 +28,7 @@ import Directions from './pages/Directions'
 import SubscriptionTypes from './pages/SubscriptionTypes'
 import OrganizationSettings from './pages/OrganizationSettings'
 import AccessSettings from './pages/AccessSettings'
+import BalanceCheck from './pages/BalanceCheck'
 import ApiKeys from './pages/ApiKeys'
 import LeadDictionaries from './pages/LeadDictionaries'
 import Leads from './pages/Leads'
@@ -122,6 +123,7 @@ function StaffApp() {
                 <Route path="money" element={<RequirePermission permission="can_view_client_money"><PageGroup title={t('Деньги')} tabs={[
                   { key: 'debts', label: t('Долги'), element: <Debts /> },
                   { key: 'renewals', label: t('Продления'), element: <Renewals /> },
+                  { key: 'balances', label: t('Сверка остатков'), permission: 'can_reconcile_balances', element: <BalanceCheck /> },
                 ]} /></RequirePermission>} />
                 <Route path="debts" element={<TabRedirect to="/money" tab="debts" />} />
                 <Route path="renewals" element={<TabRedirect to="/money" tab="renewals" />} />
