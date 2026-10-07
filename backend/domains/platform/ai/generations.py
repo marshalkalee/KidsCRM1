@@ -2,6 +2,7 @@
 
 import copy
 import json
+from decimal import Decimal
 
 from django.conf import settings
 from django.db import transaction
@@ -9,13 +10,12 @@ from django.utils import timezone
 
 from domains.platform.tenants.models import Organization
 
-from . import aggregates, generation_provider, services
+from . import aggregates, generation_provider, services, usage
 from .models import AIGeneration
 from .prompts import get_template
 
-
-class AILimitExceeded(Exception):
-    """Точка интеграции TRU-160: лимит проверяется до вызова провайдера."""
+# Лимит месяца — общий для всех функций помощника (usage.py, TRU-160).
+AILimitExceeded = usage.AILimitExceeded
 
 
 DEGRADATION_MESSAGES = {
@@ -40,19 +40,41 @@ def numeric_facts(value, prefix="") -> dict:
             result.update(numeric_facts(item, f"{prefix}[{index}]"))
     elif isinstance(value, int | float) and not isinstance(value, bool):
         result[prefix] = value
+    elif isinstance(value, Decimal):
+        # Деньги в агрегатах — Decimal: тоже факт, в JSON — числом.
+        result[prefix] = int(value) if value == value.to_integral_value() else float(value)
     return result
 
 
-def enqueue(organization, template_key: str) -> AIGeneration:
-    """Веб-слой только ставит задачу в очередь и сразу возвращает id."""
+def create(organization, template_key: str) -> AIGeneration:
+    """Запись журнала в очереди, без запуска: enqueue ставит её в Celery,
+    дайджест (digest.py) прогоняет блоки сам — он уже фоновая задача."""
     template = get_template(template_key)
-    generation = AIGeneration.objects.create(
+    return AIGeneration.objects.create(
         organization=organization,
         function=template.key,
         prompt_version=template.version,
         provider=services.provider(),
         model=generation_provider.model_name(),
     )
+
+
+def enqueue(organization, template_key: str) -> AIGeneration:
+    """Веб-слой только ставит задачу в очередь и сразу возвращает id.
+
+    Лимит проверяется здесь, до очереди (TRU-160): исчерпан — запись сразу
+    получает своё состояние, задача не ставится. Начатая генерация
+    доводится до конца, даже если вышла за лимит."""
+    generation = create(organization, template_key)
+    try:
+        ensure_within_limit(organization)
+    except AILimitExceeded as exc:
+        return _finish(
+            generation.id,
+            status=AIGeneration.Status.LIMIT_EXHAUSTED,
+            error_code="limit_exhausted",
+            error_detail=str(exc),
+        )
     from .tasks import run_ai_generation
 
     transaction.on_commit(lambda: run_ai_generation.delay(str(generation.id)))
@@ -102,17 +124,19 @@ def run(generation_id) -> AIGeneration:
 
     try:
         ensure_within_limit(generation.organization)
-    except AILimitExceeded:
+    except AILimitExceeded as exc:
         return _finish(
             generation.id,
             status=AIGeneration.Status.LIMIT_EXHAUSTED,
             error_code="limit_exhausted",
-            error_detail=DEGRADATION_MESSAGES[AIGeneration.Status.LIMIT_EXHAUSTED],
+            error_detail=str(exc),
         )
 
     snapshot = aggregates.snapshot(generation.organization)
     facts = numeric_facts(snapshot)
-    user = json.dumps({"aggregates": snapshot, "facts": facts}, ensure_ascii=False, sort_keys=True)
+    user = json.dumps(
+        {"aggregates": snapshot, "facts": facts}, ensure_ascii=False, sort_keys=True, default=str
+    )
     request_chars = len(template.system) + len(user)
     if request_chars > settings.AI_GENERATION_MAX_INPUT_CHARS:
         return _finish(
@@ -136,6 +160,16 @@ def run(generation_id) -> AIGeneration:
                     schema=template.schema,
                     model=generation.model,
                     max_tokens=template.max_tokens,
+                )
+                # Учёт — сразу после ответа, отдельной строкой на каждую попытку:
+                # невалидный ответ тоже оплачен.
+                usage.record(
+                    generation.organization,
+                    feature=generation.function,
+                    model=generation.model,
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                    generation=generation,
                 )
                 payload = response.payload
                 input_tokens += response.input_tokens
@@ -181,4 +215,4 @@ def run(generation_id) -> AIGeneration:
 
 
 def ensure_within_limit(organization: Organization) -> None:
-    """TRU-160 заменит тело проверкой месячного лимита организации."""
+    usage.ensure_within_limit(organization)

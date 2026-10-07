@@ -43,6 +43,8 @@ CASES = {
     "me": ("own", "get"),
     "profile": ("own", "get"),
     "phone-change": ("own", "post"),
+    "notifications": ("own", "get"),
+    "push": ("own", "post"),
     "announcements": ("own", "get"),
     "child": ("child", "get"),
     "child-attendance": ("child", "get"),

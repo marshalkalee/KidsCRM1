@@ -27,6 +27,8 @@ api_v1_patterns = [
     path("subscriptions/", include("domains.money.subscriptions.urls")),
     path("payments/", include("domains.money.payments.urls")),
     path("notifications/", include("domains.platform.notifications.urls")),
+    # Центр рассылок родителям (TRU-168): тексты, журнал, согласие, отписка.
+    path("messaging/", include("domains.platform.notifications.messaging.urls")),
     path("tasks/", include("domains.platform.tasks.urls")),
     path("leads/", include("domains.platform.leads.urls")),
     path("public/leads/", include("domains.platform.leads.public_urls")),

@@ -40,6 +40,7 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "drf_spectacular",
     "rest_framework_simplejwt.token_blacklist",
+    "anymail",
 ]
 
 DOMAIN_APPS = [
@@ -195,6 +196,11 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
+    # Допуск расхождения часов: PyJWT отклоняет токен, у которого время выпуска
+    # «в будущем». Часы в Docker на Windows (WSL2) прыгают назад до ~1,2 с —
+    # отсюда были случайные 401 в тестах; на проде то же даёт разница часов
+    # между серверами.
+    "LEEWAY": timedelta(seconds=30),
     "TOKEN_OBTAIN_SERIALIZER": "domains.platform.users.serializers.CustomTokenObtainSerializer",
 }
 
@@ -264,6 +270,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "domains.platform.tasks.tasks.create_debt_reminder_tasks_task",
         "schedule": crontab(hour=2, minute=15),
     },
+    # Еженедельный дайджест ИИ (TRU-163): раз в час проверяем, у каких центров
+    # наступили их день и час по местному времени.
+    "dispatch-ai-digests": {
+        "task": "domains.platform.ai.tasks.dispatch_ai_digests",
+        "schedule": crontab(minute=10),
+    },
 }
 
 # ИИ-помощник (эксперимент): без ключа функции выключены, экраны их не показывают.
@@ -285,6 +297,21 @@ OPENAI_DIGEST_MODEL = env("OPENAI_DIGEST_MODEL", default="gpt-5.4")
 AI_FIXTURE_MODE = env.bool("AI_FIXTURE_MODE", default=False)
 AI_GENERATION_MAX_INPUT_CHARS = env.int("AI_GENERATION_MAX_INPUT_CHARS", default=120_000)
 
+# Учёт расхода ИИ (TRU-160, ADR-0009 раздел 5). Цены — $ за 1 млн токенов
+# (вход, выход), октябрь 2026. Модель без цены считается по нулям и пишется
+# в лог: расход в токенах всё равно учтён, дописать цену и пересчитать.
+AI_PRICES_USD = {
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-5.4": (2.50, 15.00),
+    "gpt-5.4-mini": (0.75, 4.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+}
+# Курс только для показа в тенге: учёт ведётся в $, как выставляет провайдер.
+AI_USD_KZT = env.float("AI_USD_KZT", default=500.0)
+# Лимит месяца на центр, ₸, если у организации свой не задан (ai_monthly_limit_kzt).
+AI_MONTHLY_LIMIT_KZT = env.int("AI_MONTHLY_LIMIT_KZT", default=10_000)
+
 # Код входа родителя (ADR-0007, otp/senders.py): каналы по порядку, через
 # запятую — первый не доставил, пробуем следующий. console — код в лог.
 OTP_CHANNELS = env("OTP_CHANNELS", default="console")
@@ -292,3 +319,37 @@ OTP_CODE_TTL_SECONDS = env.int("OTP_CODE_TTL_SECONDS", default=300)
 OTP_TELEGRAM_TOKEN = env("OTP_TELEGRAM_TOKEN", default="")
 OTP_MOBIZON_API_KEY = env("OTP_MOBIZON_API_KEY", default="")
 OTP_MOBIZON_SENDER = env("OTP_MOBIZON_SENDER", default="")
+
+# Центр рассылок (TRU-168): сообщения родителям — только через
+# domains.platform.notifications.messaging. Email — через django-anymail:
+# провайдер (Amazon SES, Unisender Go, Mailgun…) меняется в .env, недоставка
+# и жалобы приходят одинаково на вебхук anymail/<esp>/tracking/.
+# Без EMAIL_ESP письма пишутся в лог (как OTP-канал console).
+EMAIL_ESP = env("EMAIL_ESP", default="")
+if EMAIL_ESP:
+    EMAIL_BACKEND = f"anymail.backends.{EMAIL_ESP}.EmailBackend"
+    ANYMAIL = {
+        key: value
+        for key, value in {
+            "AMAZON_SES_CLIENT_PARAMS": {"region_name": env("AWS_REGION", default="eu-central-1")},
+            "UNISENDER_GO_API_KEY": env("UNISENDER_GO_API_KEY", default=""),
+            "MAILGUN_API_KEY": env("MAILGUN_API_KEY", default=""),
+            "WEBHOOK_SECRET": env("ANYMAIL_WEBHOOK_SECRET", default=""),
+        }.items()
+        if value
+    }
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# Адрес отправителя — домен платформы; имя — название центра, ответ — на
+# адрес центра (настройка рассылок). Свой домен у каждого центра — это DNS
+# (SPF, DKIM) на центр, на старте не нужно.
+MESSAGING_FROM_EMAIL = env("MESSAGING_FROM_EMAIL", default="noreply@kidscrm.kz")
+# Публичный адрес сайта — для ссылки «отписаться» в письме.
+PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="http://localhost")
+
+# Web Push в кабинете родителя (TRU-172). Ключи VAPID — пара на платформу,
+# генерируется командой `manage.py generate_vapid_keys`. Без ключей канал
+# push «не подключён» и пропускается.
+WEBPUSH_VAPID_PUBLIC_KEY = env("WEBPUSH_VAPID_PUBLIC_KEY", default="")
+WEBPUSH_VAPID_PRIVATE_KEY = env("WEBPUSH_VAPID_PRIVATE_KEY", default="")
+WEBPUSH_CONTACT = env("WEBPUSH_CONTACT", default="mailto:support@kidscrm.kz")
