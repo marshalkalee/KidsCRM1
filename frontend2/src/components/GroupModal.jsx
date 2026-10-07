@@ -24,6 +24,7 @@ export default function GroupModal({ group, onClose, onSaved }) {
     age_max: group?.age_max ?? '',
     status: group?.status || 'active',
     is_public: group?.is_public || false,
+    exclude_from_ai_recommendations: group?.exclude_from_ai_recommendations || false,
   })
   const [options, setOptions] = useState({ branches: [], directions: [], teachers: [] })
   const [errors, setErrors] = useState({})
@@ -135,13 +136,25 @@ export default function GroupModal({ group, onClose, onSaved }) {
             </Select>
           )}
         </Field>
-        <div className="sm:col-span-2">
+        <div className="rounded-lg border border-line bg-surface-muted p-3 sm:col-span-2">
           <Checkbox
             checked={form.is_public}
             onChange={e => set('is_public', e.target.checked)}
-            label={<span className="text-sm text-ink">{t('Показывать в публичном каталоге')}</span>}
+            label={t('Показывать в публичном каталоге')}
           />
-          <p className="mt-1 pl-7 text-[12px] text-ink-muted">{t('Название, возраст, расписание и свободные места — для будущего каталога кружков. Детей и родителей каталог не видит.')}</p>
+          <p className="mt-1 pl-6 text-xs text-ink-subtle">
+            {t('Название, возраст, расписание и свободные места — для будущего каталога кружков. Детей и родителей каталог не видит.')}
+          </p>
+        </div>
+        <div className="rounded-lg border border-line bg-surface-muted p-3 sm:col-span-2">
+          <Checkbox
+            checked={form.exclude_from_ai_recommendations}
+            onChange={e => set('exclude_from_ai_recommendations', e.target.checked)}
+            label={t('Не предлагать продвижение этой группы')}
+          />
+          <p className="mt-1 pl-6 text-xs text-ink-subtle">
+            {t('Для индивидуальных, конкурсных и других намеренно малых групп.')}
+          </p>
         </div>
       </form>
     </Modal>

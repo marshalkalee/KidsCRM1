@@ -53,7 +53,7 @@ FIXTURE = {
 }
 
 
-def validate(payload: dict, facts: dict) -> dict:
+def validate(payload: dict, facts: dict, _snapshot: dict, _parameters=None) -> dict:
     if not isinstance(payload, dict) or set(payload) != {"recommendations"}:
         raise ValueError("recommendations is required")
     rows = payload["recommendations"]

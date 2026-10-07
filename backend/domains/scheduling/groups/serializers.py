@@ -41,6 +41,7 @@ class GroupSerializer(serializers.ModelSerializer):
             "age_max",
             "status",
             "is_public",
+            "exclude_from_ai_recommendations",
             "teachers_count",
             "members_count",
             "fill_percent",

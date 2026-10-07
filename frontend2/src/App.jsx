@@ -5,6 +5,7 @@ import { RequireAuth, RequirePermission, SessionProvider, useSession } from './s
 import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Assistant from './pages/Assistant'
+import ContentStudio from './pages/ContentStudio'
 import Digest from './pages/Digest'
 import { MessagingJournal, MessagingSettings, MessagingTemplates } from './pages/Messaging'
 import Login from './pages/Login'
@@ -95,7 +96,10 @@ function StaffApp() {
                 <Route path="onboarding" element={<RequirePermission permission="can_manage_org_settings"><Onboarding /></RequirePermission>} />
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
-                <Route path="assistant" element={<RequirePermission permission="can_use_ai_chat"><Assistant /></RequirePermission>} />
+                <Route path="assistant" element={<RequirePermission permission="can_use_ai_chat"><PageGroup title={t('ИИ-помощник')} tabs={[
+                  { key: 'chat', label: t('Чат'), element: <Assistant /> },
+                  { key: 'content', label: t('Контент'), element: <ContentStudio /> },
+                ]} /></RequirePermission>} />
                 <Route path="digest" element={<RequirePermission permission="can_view_ai_digest"><Digest /></RequirePermission>} />
                 <Route path="messaging" element={<PageGroup title={t('Рассылки родителям')} tabs={[
                   { key: 'journal', label: t('Журнал'), permission: 'can_manage_children', element: <MessagingJournal /> },

@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('groups', '0001_initial'),
+        ('groups', '0002_group_exclude_from_ai_recommendations'),
     ]
 
     operations = [

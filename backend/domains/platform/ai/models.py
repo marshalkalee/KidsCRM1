@@ -62,6 +62,7 @@ class AIGeneration(TenantModel):
         LIMIT_EXHAUSTED = "limit_exhausted", "Лимит исчерпан"
         NO_KEY = "no_key", "ИИ не настроен"
         INPUT_TOO_LARGE = "input_too_large", "Слишком большой запрос"
+        CANCELLED = "cancelled", "Отменено пользователем"
 
     function = models.CharField(max_length=64)
     prompt_version = models.CharField(max_length=32)
@@ -72,6 +73,7 @@ class AIGeneration(TenantModel):
     input_tokens = models.PositiveIntegerField(default=0)
     output_tokens = models.PositiveIntegerField(default=0)
     request_chars = models.PositiveIntegerField(default=0)
+    parameters = models.JSONField(default=dict, blank=True)
     result = models.JSONField(default=dict, blank=True)
     error_code = models.CharField(max_length=64, blank=True)
     error_detail = models.CharField(max_length=500, blank=True)
@@ -86,6 +88,54 @@ class AIGeneration(TenantModel):
 
     def __str__(self) -> str:
         return f"{self.function}@{self.prompt_version}: {self.status}"
+
+
+class AIRecommendationState(TenantModel):
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Активна"
+        DISMISSED = "dismissed", "Отклонена"
+
+    function = models.CharField(max_length=64)
+    candidate_key = models.CharField(max_length=64)
+    fingerprint = models.CharField(max_length=64)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
+    times_shown = models.PositiveSmallIntegerField(default=0)
+    payload = models.JSONField(default=dict, blank=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "function", "fingerprint"],
+                name="unique_ai_recommendation_fingerprint",
+            )
+        ]
+        indexes = [models.Index(fields=["organization", "function", "status"])]
+
+
+class AIContentDraft(TenantModel):
+    """Отредактированный сотрудником контент — образец для повторного использования."""
+
+    language = models.CharField(max_length=2, choices=(("ru", "Русский"), ("kk", "Қазақша")))
+    title = models.CharField(max_length=120)
+    payload = models.JSONField(default=dict)
+    generation = models.ForeignKey(
+        AIGeneration,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="content_drafts",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="ai_content_drafts",
+    )
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [models.Index(fields=["organization", "language", "-updated_at"])]
 
 
 class AIUsage(TenantModel):

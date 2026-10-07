@@ -42,6 +42,11 @@ class Group(TenantModel, TimestampedSoftDeleteModel):
         choices=Status.choices,
         default=Status.ACTIVE,
     )
+    exclude_from_ai_recommendations = models.BooleanField(
+        _("Не предлагать продвижение"),
+        default=False,
+        help_text=_("Для индивидуальных, конкурсных и других намеренно малых групп."),
+    )
 
     class Meta:
         verbose_name = _("Группа")
