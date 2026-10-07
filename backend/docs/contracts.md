@@ -35,6 +35,7 @@
 | 6   | Люди → всем: вкладки карточки ребёнка (frontend2) | Анель | Bekzat («Абонементы», «Оплаты»), Дарья («Посещения») | [`frontend2/src/components/child-card/tabs.js`](../../frontend2/src/components/child-card/tabs.js) |
 | 7   | Продажи → всем: `create_lead` / `change_status` | Анель | Дарья (пробные, TRU-100), Bekzat (задачи, продления), приём с сайта | [`backend/domains/platform/leads/services.py`](../domains/platform/leads/services.py) |
 | 8   | Аналитика → все отчёты M3: `register` / `compute`, `/api/v1/analytics/metrics/` | Анель | Дарья, Bekzat (отчёты TRU-114–128, дашборд TRU-129), каркас дашборда TRU-113 | [`backend/domains/platform/analytics/registry.py`](../domains/platform/analytics/registry.py) |
+| 10  | Рассылки → всем: `notify(parent, event, context, dedup_key)` | Анель | Дарья (WhatsApp TRU-169, автоуведомления TRU-171), Bekzat (напоминания о долге и продлении) | [`backend/domains/platform/notifications/messaging/service.py`](../domains/platform/notifications/messaging/service.py) |
 
 
 
@@ -361,3 +362,29 @@ source: "manual" (человек, через API) или "auto" (правило/
 
 Владелец: Bekzat. Потребители: Анель (TRU-71 — нет абонемента), Дарья
 (TRU-108 — предложить продление, TRU-72 — центр уведомлений).
+## 10. Рассылки → всем (TRU-168, ADR-0010)
+
+    notify(parent, event, context, *, dedup_key, user=None) -> OutboundMessage
+    # domains.platform.notifications.messaging
+
+Единственный способ написать родителю. Вызывающий код говорит **что**
+случилось (событие из `messaging/events.py` и подстановки), а не **как**:
+канал, язык, текст, согласие, тихие часы — забота сервиса.
+
+- `dedup_key` обязателен: одно событие — одно сообщение, повторный вызов
+  (или повторный запуск задачи) возвращает ту же строку журнала. Ключ
+  строить из события и его объекта: `payment_due:{subscription.id}:{месяц}`.
+- Отправка — в очереди (Celery), веб-запрос не ждёт.
+- Без согласия (`MessagingConsent`) не уходит ничего; отписка сильнее всего.
+- Ночью (тихие часы центра) сообщение ждёт утра.
+- Каналы — по порядку из настроек центра, до первого отправившего.
+- Журнал (`OutboundMessage`) — что, кому, когда, каким каналом, что вышло.
+
+Новое событие — запись в `EVENTS` с категорией (utility / marketing),
+подстановками и текстами на ru и kk. Новый канал (WhatsApp — TRU-169,
+push — TRU-172) — класс в `messaging/channels.py`. Прямых вызовов почты и
+провайдеров вне `notifications/messaging/` нет — проверяет
+`tests_messaging.ContractTests`.
+
+Владелец: Анель. Потребители: Дарья (TRU-169 WhatsApp, TRU-171
+автоуведомления), Bekzat (напоминания о долге и продлении).
