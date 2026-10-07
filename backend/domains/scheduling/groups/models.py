@@ -33,6 +33,9 @@ class Group(TenantModel, TimestampedSoftDeleteModel):
     capacity = models.PositiveSmallIntegerField(_("Вместимость"))
     age_min = models.PositiveSmallIntegerField(_("Возраст от"), null=True, blank=True)
     age_max = models.PositiveSmallIntegerField(_("Возраст до"), null=True, blank=True)
+    # Показывать ли группу во внешнем каталоге (будущий маркетплейс, TRU-177).
+    # По умолчанию нет: публикует только сам центр.
+    is_public = models.BooleanField(_("Показывать в публичном каталоге"), default=False)
     status = models.CharField(
         _("Статус"),
         max_length=16,
