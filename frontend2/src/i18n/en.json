@@ -2611,5 +2611,7 @@
  "Продления на {month}: только диапазон, данных пока мало": "Renewals for {month}: range only, not enough data yet",
  "Продления на {month}, скорее всего {low} – {high} ₸": "Renewals for {month}, most likely {low} – {high} ₸",
  "Скрыть графики": "Hide charts",
- "За прошлый период: окно продления текущего ещё идёт ({n})": "Previous period: the current renewal window is still open ({n})"
+ "За прошлый период: окно продления текущего ещё идёт ({n})": "Previous period: the current renewal window is still open ({n})",
+  "Подстановки — нажмите, чтобы вставить в текст:": "Placeholders — click to insert into the text:",
+  "Текст по умолчанию": "Default text"
 }

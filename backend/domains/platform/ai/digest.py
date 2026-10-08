@@ -45,6 +45,10 @@ HIGHLIGHTS = 4
 REFRESH_COOLDOWN = datetime.timedelta(minutes=10)
 # Не собрался по расписанию — следующая попытка не раньше чем через сутки.
 RETRY_AFTER = datetime.timedelta(hours=20)
+# Сборка — два вызова модели, обычно меньше минуты. Висит дольше — задача
+# потерялась (воркер лежал, брокер перезапустился): считаем «не собрался»,
+# иначе «Обновить» вечно отдавал бы этот же и новый не ставился.
+STUCK_AFTER = datetime.timedelta(minutes=15)
 
 DONE = (AIDigest.Status.READY, AIDigest.Status.INSUFFICIENT_DATA)
 PENDING = (AIDigest.Status.QUEUED, AIDigest.Status.RUNNING)
@@ -58,6 +62,7 @@ SECTIONS = {
     "ages": "Дети по возрасту",
     "money": "Деньги",
     "seasonality": "Сезонность",
+    "promotion_opportunities": "Продвижение",
 }
 METRICS = {
     "процент": "заполняемость, %",
@@ -69,11 +74,21 @@ METRICS = {
     "groups_count": "групп",
     "underfilled_count": "групп с недобором",
     "конверсия_процент": "конверсия, %",
+    "заполняемость_процент": "заполняемость, %",
+    "свободных_мест": "свободных мест",
+    "вместимость": "мест всего",
+    "заявок_на_направление": "заявок на направление",
+    "возраст_от": "возраст от",
+    "возраст_до": "возраст до",
     "итого": "весь центр",
     "значение": "",
 }
 # Списки, у элементов которых своё имя: само имя списка в подписи лишнее.
-COLLECTIONS = {"группы"}
+COLLECTIONS = {"группы", "кандидаты"}
+# Поля элемента, из которых его имя, — по порядку; иначе первые строковые поля.
+NAME_FIELDS = ("группа", "филиал", "источник", "месяц", "причина")
+# Служебный идентификатор (псевдоним группы) — в подпись не попадает.
+_REF = re.compile(r"^[0-9a-f]{12,}$")
 
 LABELS = {
     "kk": {
@@ -104,6 +119,10 @@ LABELS = {
         "Новая": "Жаңа",
         "кандидаты": "үміткерлер",
         "приоритет": "басымдық",
+        "Продвижение": "Жарнамалау",
+        "заявок на направление": "бағытқа өтінім",
+        "возраст от": "жасы бастап",
+        "возраст до": "жасы дейін",
     },
     "en": {
         "Заполняемость": "Occupancy",
@@ -133,6 +152,10 @@ LABELS = {
         "Новая": "New",
         "кандидаты": "candidates",
         "приоритет": "priority",
+        "Продвижение": "Promotion",
+        "заявок на направление": "leads for the direction",
+        "возраст от": "age from",
+        "возраст до": "age to",
     },
 }
 
@@ -155,13 +178,18 @@ def _label(value: str, language: str) -> str:
 
 
 def _display_names(row: dict) -> list[str]:
-    """Human-readable row values, never internal ids or stable keys."""
-    names = []
+    """Human-readable row values, never internal ids or stable keys:
+    сначала поля-имена (группа, филиал…), иначе первые строковые поля."""
+    names = [str(row[f]) for f in NAME_FIELDS if isinstance(row.get(f), str) and row[f].strip()]
+    if names:
+        return names[:2]
     for key, value in row.items():
         normalized = str(key).lower()
         if normalized == "id" or normalized.endswith(("_id", "_key")):
             continue
-        if isinstance(value, str) and value.strip() and value not in names:
+        if not isinstance(value, str) or not value.strip() or _REF.match(value):
+            continue
+        if value not in names:
             names.append(value)
         if len(names) == 2:
             break
@@ -393,9 +421,25 @@ def _schedule(digest):
     return digest
 
 
+def expire_stuck(organization, now=None) -> int:
+    """Сборка висит дольше STUCK_AFTER — «не собрался»: экран покажет прошлый
+    с пояснением, «Обновить» и расписание поставят новый."""
+    border = (now or timezone.now()) - STUCK_AFTER
+    return (
+        AIDigest.objects.for_tenant(organization)
+        .filter(status__in=PENDING, created_at__lt=border)
+        .update(
+            status=AIDigest.Status.FAILED,
+            error_detail="Дайджест не собрался — нажмите «Обновить», чтобы собрать заново.",
+            updated_at=timezone.now(),
+        )
+    )
+
+
 def request_refresh(organization, user, language="ru") -> tuple[AIDigest, bool]:
     """Кнопка «Обновить». Уже собирается — тот же дайджест; недавно
     обновляли — текст; лимит исчерпан — текст. (дайджест, создан ли новый)."""
+    expire_stuck(organization)
     digests = AIDigest.objects.for_tenant(organization)
     pending = digests.filter(status__in=PENDING, language=language).first()
     if pending:
@@ -429,6 +473,7 @@ def due(organization, now=None) -> bool:
     )
     if now < moment:
         return False
+    expire_stuck(organization, now)
     digests = AIDigest.objects.for_tenant(organization)
     if digests.filter(created_at__gte=moment, status__in=(*DONE, *PENDING)).exists():
         return False

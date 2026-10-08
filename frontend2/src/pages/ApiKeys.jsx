@@ -70,7 +70,7 @@ export default function ApiKeys() {
         )}
 
         <Card padded={false}>
-          <CardHeader className="mb-0 px-5 pt-5" title={t('Действующие ключи')} />
+          <CardHeader className="mb-0 border-b border-line px-5 py-4" title={t('Действующие ключи')} />
           {active.length === 0 ? (
             <EmptyState icon={KeyRound} title={t('Ключей нет')} description={t('Выпустите ключ для программы, которой нужны данные центра.')} />
           ) : (
@@ -81,9 +81,9 @@ export default function ApiKeys() {
         </Card>
 
         <Card padded={false}>
-          <CardHeader className="mb-0 px-5 pt-5" title={t('Последние обращения')} description={t('Кто и что запрашивал — для разбора проблем.')} />
+          <CardHeader className="mb-0 border-b border-line px-5 py-4" title={t('Последние обращения')} description={t('Кто и что запрашивал — для разбора проблем.')} />
           {log.length === 0 ? (
-            <p className="px-5 pb-5 text-[13px] text-ink-muted">{t('Обращений пока не было.')}</p>
+            <p className="px-5 py-4 text-[13px] text-ink-muted">{t('Обращений пока не было.')}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[34rem] text-[13px]">
@@ -106,7 +106,7 @@ export default function ApiKeys() {
 
         {revoked.length > 0 && (
           <Card padded={false}>
-            <CardHeader className="mb-0 px-5 pt-5" title={t('Отозванные')} />
+            <CardHeader className="mb-0 border-b border-line px-5 py-4" title={t('Отозванные')} />
             <ul className="divide-y divide-line opacity-70">
               {revoked.map(key => <KeyRow key={key.id} row={key} />)}
             </ul>
@@ -127,16 +127,22 @@ export default function ApiKeys() {
 }
 
 function KeyRow({ row, onRevoke }) {
+  const used = row.revoked_at
+    ? t('отозван {when}', { when: formatDateTime(row.revoked_at) })
+    : row.last_used_at ? t('использован {when}', { when: formatDateTime(row.last_used_at) }) : t('ещё не использовался')
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3.5">
+      <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', row.revoked_at ? 'bg-surface-muted text-ink-subtle' : 'bg-brand-50 text-brand-600')}>
+        <KeyRound className="size-[18px]" />
+      </span>
       <div className="min-w-[12rem] flex-1">
-        <p className="text-sm font-semibold text-ink">{row.name} <code className="ml-1 text-[12px] font-normal text-ink-muted">{row.prefix}…</code></p>
-        <p className="text-[12px] text-ink-muted">
-          {t(row.scope_label)} · {row.branches.length ? row.branches.map(b => b.name).join(', ') : t('все филиалы')}
-          {' · '}
-          {row.revoked_at
-            ? t('отозван {when}', { when: formatDateTime(row.revoked_at) })
-            : row.last_used_at ? t('использован {when}', { when: formatDateTime(row.last_used_at) }) : t('ещё не использовался')}
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-ink">
+          {row.name}
+          <code className="rounded bg-surface-muted px-1.5 py-0.5 text-[12px] font-normal text-ink-muted">{row.prefix}…</code>
+          <Badge tone={row.scope === 'read' ? 'info' : 'warning'}>{t(row.scope_label)}</Badge>
+        </p>
+        <p className="mt-0.5 text-[12px] text-ink-muted">
+          {row.branches.length ? row.branches.map(b => b.name).join(', ') : t('все филиалы')} · {used}
         </p>
       </div>
       {onRevoke && <Button size="sm" variant="danger-ghost" icon={ShieldOff} onClick={onRevoke}>{t('Отозвать')}</Button>}

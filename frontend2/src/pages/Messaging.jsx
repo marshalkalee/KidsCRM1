@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ChevronDown, Moon, Send, Undo2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, Mail, Moon, Send, Undo2 } from 'lucide-react'
 import api from '../api/axios'
 import { STATUS_TONE } from '../components/messaging/status'
 import {
@@ -105,27 +105,60 @@ export function MessagingJournal() {
 export function MessagingTemplates() {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState(false)
+  const [params, setParams] = useSearchParams()
   const load = useCallback(() => api.get('messaging/templates/').then(res => setRows(res.data)).catch(() => setError(true)), [])
   useEffect(() => { load() }, [load])
 
   if (error) return <Card><ErrorState onRetry={load} /></Card>
   if (!rows) return <Skeleton className="h-96" />
+  const row = rows.find(r => r.event === params.get('event')) || rows[0]
+  function choose(event) {
+    const next = new URLSearchParams(params)
+    next.set('event', event)
+    setParams(next, { replace: true })
+  }
   return (
     <div>
       <PageHeader description={t('Тексты писем родителям на двух языках — под тон вашего центра. Язык выбирается по кабинету родителя, иначе русский. Ссылка «отписаться» добавляется сама.')} />
-      <div className="space-y-4">
-        {rows.map(row => <TemplateCard key={row.event} row={row} onSaved={load} />)}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+        {/* Список писем; на телефоне — строкой с прокруткой. */}
+        <Card padded={false} className="lg:sticky lg:top-24">
+          <ul className="flex gap-1 overflow-x-auto p-2 lg:flex-col lg:overflow-visible">
+            {rows.map(r => {
+              const custom = r.email.ru.customized || r.email.kk.customized
+              return (
+                <li key={r.event} className="shrink-0 lg:shrink">
+                  <button
+                    type="button"
+                    onClick={() => choose(r.event)}
+                    aria-current={r.event === row.event || undefined}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors',
+                      r.event === row.event ? 'bg-brand-50 font-semibold text-brand-700' : 'text-ink hover:bg-surface-muted',
+                    )}
+                  >
+                    <Mail className="size-4 shrink-0 opacity-70" />
+                    <span className="min-w-0 flex-1 whitespace-nowrap lg:whitespace-normal">{t(r.label)}</span>
+                    {custom && <span className="size-1.5 shrink-0 rounded-full bg-brand-500" title={t('Свой текст центра')} />}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </Card>
+        <TemplateEditor key={row.event} row={row} onSaved={load} />
       </div>
     </div>
   )
 }
 
-function TemplateCard({ row, onSaved }) {
+function TemplateEditor({ row, onSaved }) {
   const toast = useToast()
   const [lang, setLang] = useState('ru')
   const current = row.email[lang]
   const [draft, setDraft] = useState(current)
   const [saving, setSaving] = useState(false)
+  const bodyRef = useRef(null)
   // Сменили язык или пришли новые данные — черновик заново.
   const [shown, setShown] = useState({ lang, current })
   if (shown.lang !== lang || shown.current !== current) {
@@ -133,6 +166,20 @@ function TemplateCard({ row, onSaved }) {
     setDraft(current)
   }
   const dirty = draft.subject !== current.subject || draft.body !== current.body
+
+  // Подстановка — в текст, туда, где стоит курсор.
+  function insert(key) {
+    const el = bodyRef.current
+    const token = `{${key}}`
+    const at = el ? el.selectionStart : draft.body.length
+    const end = el ? el.selectionEnd : at
+    setDraft({ ...draft, body: draft.body.slice(0, at) + token + draft.body.slice(end) })
+    requestAnimationFrame(() => {
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(at + token.length, at + token.length)
+    })
+  }
 
   async function save() {
     setSaving(true)
@@ -165,7 +212,7 @@ function TemplateCard({ row, onSaved }) {
         actions={
           <div className="inline-flex rounded-lg border border-line p-0.5">
             {LANGS.map(l => (
-              <button key={l.key} type="button" onClick={() => setLang(l.key)} className={cn('rounded-md px-3 py-1 text-[13px] font-semibold', lang === l.key ? 'bg-brand-50 text-brand-700' : 'text-ink-muted')}>
+              <button key={l.key} type="button" onClick={() => setLang(l.key)} aria-pressed={lang === l.key} className={cn('rounded-md px-3 py-1 text-[13px] font-semibold', lang === l.key ? 'bg-brand-50 text-brand-700' : 'text-ink-muted')}>
                 {l.label}
               </button>
             ))}
@@ -177,17 +224,23 @@ function TemplateCard({ row, onSaved }) {
           {({ id }) => <Input id={id} value={draft.subject} onChange={e => setDraft({ ...draft, subject: e.target.value })} maxLength={200} />}
         </Field>
         <Field label={t('Текст')}>
-          {({ id }) => <Textarea id={id} rows={6} value={draft.body} onChange={e => setDraft({ ...draft, body: e.target.value })} />}
+          {({ id }) => <Textarea ref={bodyRef} id={id} rows={8} value={draft.body} onChange={e => setDraft({ ...draft, body: e.target.value })} />}
         </Field>
-        <p className="text-[12px] text-ink-muted">
-          {t('Подстановки')}: {Object.entries(row.variables).map(([key, label]) => (
-            <span key={key} className="mr-2 inline-block"><code className="rounded bg-surface-muted px-1">{`{${key}}`}</code> {t(label)}</span>
-          ))}
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          {current.customized && <Badge tone="brand">{t('Свой текст центра')}</Badge>}
+        <div>
+          <p className="mb-1.5 text-[12px] text-ink-muted">{t('Подстановки — нажмите, чтобы вставить в текст:')}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(row.variables).map(([key, label]) => (
+              <button key={key} type="button" onClick={() => insert(key)} className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-muted px-2 py-1 text-[12px] text-ink-muted transition-colors hover:border-brand-400 hover:text-ink">
+                <code className="font-semibold text-brand-600">{`{${key}}`}</code>{t(label)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
+          {current.customized ? <Badge tone="brand">{t('Свой текст центра')}</Badge> : <span className="text-[12px] text-ink-subtle">{t('Текст по умолчанию')}</span>}
           <span className="ml-auto flex gap-2">
-            {current.customized && <Button variant="ghost" icon={Undo2} onClick={reset}>{t('Вернуть по умолчанию')}</Button>}
+            {dirty && <Button variant="ghost" onClick={() => setDraft(current)}>{t('Отменить')}</Button>}
+            {!dirty && current.customized && <Button variant="ghost" icon={Undo2} onClick={reset}>{t('Вернуть по умолчанию')}</Button>}
             <Button variant="primary" onClick={save} loading={saving} disabled={!dirty}>{t('Сохранить')}</Button>
           </span>
         </div>
@@ -199,15 +252,18 @@ function TemplateCard({ row, onSaved }) {
 export function MessagingSettings() {
   const toast = useToast()
   const [form, setForm] = useState(null)
+  const [saved, setSaved] = useState(null)
   const [error, setError] = useState(false)
   const [saving, setSaving] = useState(false)
-  const load = useCallback(() => api.get('messaging/settings/').then(res => setForm(res.data)).catch(() => setError(true)), [])
+  const apply = data => { setForm(data); setSaved(data) }
+  const load = useCallback(() => api.get('messaging/settings/').then(res => apply(res.data)).catch(() => setError(true)), [])
   useEffect(() => { load() }, [load])
 
   if (error) return <Card><ErrorState onRetry={load} /></Card>
   if (!form) return <Skeleton className="h-64" />
 
   const hours = Array.from({ length: 24 }, (_, h) => h)
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved)
   // Включённые — в порядке попыток, выключенные — ниже.
   const byKey = Object.fromEntries(form.available_channels.map(c => [c.key, c]))
   const ordered = [...form.channels, ...form.available_channels.map(c => c.key).filter(k => !form.channels.includes(k))]
@@ -227,7 +283,7 @@ export function MessagingSettings() {
     setSaving(true)
     try {
       const res = await api.put('messaging/settings/', form)
-      setForm(res.data)
+      apply(res.data)
       toast.success(t('Настройки сохранены'))
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -244,11 +300,11 @@ export function MessagingSettings() {
         <Card>
           <CardHeader title={t('Тихие часы')} description={t('Ночью не пишем — сообщение уйдёт утром. По времени центра.')} />
           <div className="flex flex-wrap items-end gap-3">
-            <Moon className="mb-2.5 size-5 text-ink-subtle" />
-            <Field label={t('С')}>
+            <span className="flex size-[38px] items-center justify-center rounded-md bg-surface-muted text-ink-subtle"><Moon className="size-[18px]" /></span>
+            <Field label={t('С')} className="w-28">
               {({ id }) => <Select id={id} value={form.quiet_from} onChange={e => setForm({ ...form, quiet_from: Number(e.target.value) })}>{hours.map(h => <option key={h} value={h}>{h}:00</option>)}</Select>}
             </Field>
-            <Field label={t('До')}>
+            <Field label={t('До')} className="w-28">
               {({ id }) => <Select id={id} value={form.quiet_to} onChange={e => setForm({ ...form, quiet_to: Number(e.target.value) })}>{hours.map(h => <option key={h} value={h}>{h}:00</option>)}</Select>}
             </Field>
           </div>
@@ -289,8 +345,12 @@ export function MessagingSettings() {
           </ul>
         </Card>
       </div>
-      <div className="mt-4 flex justify-end">
-        <Button variant="primary" onClick={save} loading={saving}>{t('Сохранить')}</Button>
+      <div className="sticky bottom-3 z-10 mt-4 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-pop backdrop-blur">
+        <p className={cn('mr-auto text-[13px]', dirty ? 'font-semibold text-warning-600' : 'text-ink-subtle')}>
+          {dirty ? t('Есть несохранённые изменения') : t('Все изменения сохранены')}
+        </p>
+        {dirty && <Button variant="ghost" onClick={() => setForm(saved)}>{t('Отменить')}</Button>}
+        <Button variant="primary" onClick={save} loading={saving} disabled={!dirty}>{t('Сохранить')}</Button>
       </div>
     </div>
   )
