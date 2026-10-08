@@ -11,6 +11,13 @@ from .serializers import PaymentSerializer
 from .services import cancel_payment, record_payment
 
 
+def _uuid_or_none(value):
+    try:
+        return uuid.UUID(str(value))
+    except ValueError:
+        return None
+
+
 def _debts(organization, subscription):
     """Экрану — итог сразу: что осталось по абонементу и по ребёнку."""
     from domains.money.subscriptions.debt import debt_by_child, subscription_debt
@@ -39,15 +46,25 @@ class PaymentViewSet(
     def get_queryset(self):
         # all_with_deleted() намеренно — отменённые оплаты обязаны быть видны в истории
         qs = Payment.objects.all_with_deleted().filter(organization=self.request.user.organization)
-        subscription_id = self.request.query_params.get("subscription_id")
-        child_id = self.request.query_params.get("child_id")
-        parent_id = self.request.query_params.get("parent_id")
-        if subscription_id:
-            qs = qs.filter(subscription_id=subscription_id)
-        if child_id:
-            qs = qs.filter(subscription__child_id=child_id)
-        if parent_id:
-            qs = qs.filter(subscription__child__contacts__id=parent_id)
+        lookups = {
+            "subscription_id": "subscription_id",
+            "child_id": "subscription__child_id",
+            # parent_id — id родителя (ParentContact), а не связи ChildContact.
+            "parent_id": "subscription__child__contacts__parent_contact_id",
+        }
+        for param, lookup in lookups.items():
+            raw = self.request.query_params.get(param)
+            if not raw:
+                continue
+            value = _uuid_or_none(raw)
+            if value is None:
+                # Мусор в фильтре — пустой список, а не 500 (TRU-131).
+                return qs.none()
+            conditions = {lookup: value}
+            if param == "parent_id":
+                # В одном filter() — та же связь: отвязанный родитель не видит оплат.
+                conditions["subscription__child__contacts__deleted_at__isnull"] = True
+            qs = qs.filter(**conditions)
         return qs.select_related("subscription", "received_by").distinct()
 
     def create(self, request, *args, **kwargs):
@@ -74,6 +91,7 @@ class PaymentViewSet(
                 payer=payer,
                 comment=data.get("comment", ""),
                 idempotency_key=data.get("idempotency_key"),
+                paid_on=data.get("paid_on"),
             )
         except (ValueError, ArithmeticError) as exc:
             return Response({"detail": str(exc) or "Некорректная сумма"}, status=400)
@@ -87,7 +105,10 @@ class PaymentViewSet(
         reason = request.data.get("reason", "")
         if not reason:
             return Response({"detail": "Укажите причину отмены"}, status=400)
-        cancel_payment(payment, actor=request.user, reason=reason)
+        try:
+            cancel_payment(payment, actor=request.user, reason=reason)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
         return Response(PaymentSerializer(payment).data)
 
     @action(detail=False, methods=["get"])
