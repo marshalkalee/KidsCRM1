@@ -2527,5 +2527,11 @@
   "Риск ухода": "Churn risk",
   "Один родитель": "One parent",
   "Родитель: {name}": "Parent: {name}",
-  "Сообщения": "Messages"
+  "Сообщения": "Messages",
+  "Исполнитель: {name}": "Assignee: {name}",
+  "На завтра": "Tomorrow",
+  "Передать": "Hand over",
+  "Просрочено: {when}": "Overdue: {when}",
+  "Здравствуйте! Это {center}, перезваниваем по вашей заявке.": "Hello! This is {center}, calling back about your request.",
+  "Здравствуйте! Хотим предложить записаться на пробное занятие в {center}.": "Hello! We would like to invite you to a trial class at {center}."
 }

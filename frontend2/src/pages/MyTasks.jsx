@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, CalendarClock, CheckCircle2, MessageCircle, Phone, UserCheck } from 'lucide-react'
+import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, MessageCircle, Phone, UserRoundPlus } from 'lucide-react'
 import api from '../api/axios'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
 import { SellModal } from '../components/money/SubscriptionsTab'
 import { useSession } from '../session/SessionContext'
-import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, PageHeader, Select, Skeleton, Tabs, apiErrorMessage, useToast } from '../ui'
-import { t } from '../i18n'
+import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, PageHeader, Select, Skeleton, Tabs, apiErrorMessage, cn, money, useToast } from '../ui'
+import { locale, t } from '../i18n'
 
 function waLink(phone, text) {
   return `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
@@ -38,9 +38,36 @@ function taskDescription(value) {
 
 const REMINDER_TEMPLATES = {
   payment_reminder: task => t('Здравствуйте! Напоминаем об оплате абонемента для {child}. Сумма к оплате: {debt} ₸.', { child: task.child_name, debt: task.child_debt }),
-  call_back: task => t('Здравствуйте! Это True Ballet, перезваниваем по вашей заявке.'),
-  trial_signup: task => t('Здравствуйте! Хотим предложить записаться на пробное занятие в True Ballet.'),
+  call_back: (task, center) => t('Здравствуйте! Это {center}, перезваниваем по вашей заявке.', { center }),
+  trial_signup: (task, center) => t('Здравствуйте! Хотим предложить записаться на пробное занятие в {center}.', { center }),
   renewal_offer: task => t('Здравствуйте! Абонемент для {child} скоро закончится — предлагаем продлить заранее.', { child: task.child_name }),
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Заголовок без повтора имени: имя ребёнка и так стоит строкой ниже. */
+function taskTitle(task) {
+  const name = task.child_name || task.lead_name
+  if (!name) return task.title
+  const trimmed = task.title.replace(new RegExp(`\\s*[:—–-]\\s*${escapeRegExp(name)}\\s*$`), '').trim()
+  return trimmed || task.title
+}
+
+/** «Сегодня, 13:22» / «Вчера, 14:22» / «7 окт., 14:22»; конец дня — без времени. */
+function dueLabel(iso) {
+  const due = new Date(iso)
+  const today = new Date()
+  const yesterday = new Date(); yesterday.setDate(today.getDate() - 1)
+  const tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1)
+  const endOfDay = due.getHours() === 23 && due.getMinutes() === 59
+  const time = due.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+  const day = due.toDateString() === today.toDateString() ? t('Сегодня')
+    : due.toDateString() === yesterday.toDateString() ? t('Вчера')
+      : due.toDateString() === tomorrow.toDateString() ? t('Завтра')
+        : due.toLocaleDateString(locale, { day: 'numeric', month: 'short' })
+  return endOfDay ? day : `${day}, ${time}`
 }
 
 export default function MyTasks() {
@@ -178,6 +205,8 @@ export default function MyTasks() {
                 closed={tab === 'history'}
                 overdue={isOverdue(task.due_at)}
                 closing={closing === task.id}
+                center={user?.organization_name}
+                me={user?.id}
                 onComplete={() => complete(task)}
                 onPostpone={() => postpone(task)}
                 onReassign={() => setReassigning(task)}
@@ -225,54 +254,64 @@ export default function MyTasks() {
   )
 }
 
-function TaskCard({ task, overdue, closed, closing, onComplete, onPostpone, onReassign, onPay, onSell, onOpen }) {
+function TaskCard({ task, overdue: late, closed, closing, center, me, onComplete, onPostpone, onReassign, onPay, onSell, onOpen }) {
+  // Закрытая задача не «просрочена», даже если срок давно прошёл.
+  const overdue = late && !closed
   const template = REMINDER_TEMPLATES[task.type]
   const digestLink = task.description?.match(/\/digest\?id=[0-9a-f-]+/i)?.[0]
   const description = taskDescription(task.description)
+  const who = task.child_name || task.lead_name
+  const debt = Number(task.child_debt) > 0 ? Number(task.child_debt) : 0
+  const someoneElse = task.assigned_to && String(task.assigned_to) !== String(me)
   return (
-    <Card className={overdue ? 'border-danger-600' : undefined}>
-      <div className="flex items-start justify-between gap-3">
-        <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={overdue ? 'danger' : 'neutral'}>{task.type_display}</Badge>
+    <Card padded={false} className={cn('overflow-hidden', overdue && 'border-danger-600/40')}>
+      <div className={cn('flex gap-3 px-5 py-4', overdue && 'border-l-4 border-danger-600 pl-4')}>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-[15px] font-bold text-ink">{taskTitle(task)}</p>
             {closed && <Badge tone={task.status === 'done' ? 'success' : 'neutral'}>{task.status_display}</Badge>}
-            {task.due_at && (
-              <span className="inline-flex items-center gap-1 text-[13px] text-ink-muted">
-                <CalendarClock className="size-3.5" />
-                {new Date(task.due_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+            {task.due_at && !closed && (
+              <span className={cn('inline-flex items-center gap-1', overdue ? 'font-semibold text-danger-600' : 'text-ink-muted')}>
+                {overdue ? <AlertTriangle className="size-3.5" /> : <CalendarClock className="size-3.5" />}
+                {overdue ? t('Просрочено: {when}', { when: dueLabel(task.due_at) }) : dueLabel(task.due_at)}
               </span>
             )}
+            {closed && task.updated_at && (
+              <span className="inline-flex items-center gap-1 text-success-700">
+                <CheckCircle2 className="size-3.5" />
+                {t('Завершено {date}', { date: dueLabel(task.updated_at) })}
+              </span>
+            )}
+            {who && (
+              <button type="button" onClick={onOpen} className="inline-flex items-center gap-0.5 font-semibold text-ink hover:text-brand-600">
+                {who}
+                {debt > 0 && task.type === 'payment_reminder' && <span className="ml-1 font-normal text-danger-600">· {t('долг {sum}', { sum: money(debt) })}</span>}
+                <ChevronRight className="size-3.5 text-ink-subtle" />
+              </button>
+            )}
+            {someoneElse && task.assigned_to_name && <span className="text-ink-subtle">{t('Исполнитель: {name}', { name: task.assigned_to_name })}</span>}
           </div>
-          <p className="mt-1 font-semibold text-ink">{task.title}</p>
-          <p className="truncate text-[13px] text-ink-muted">
-            {task.child_name || task.lead_name}
-            {task.type === 'payment_reminder' && task.child_debt ? ` · ${task.child_debt} ₸` : ''}
-          </p>
-          {task.assigned_to_name && <p className="text-xs text-ink-subtle">{t('Назначено: {name}', { name: task.assigned_to_name })}</p>}
-          {closed && task.updated_at && (
-            <p className="mt-1 inline-flex items-center gap-1 text-xs text-success-700">
-              <CheckCircle2 className="size-3.5" />
-              {t('Завершено {date}', { date: new Date(task.updated_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) })}
-            </p>
-          )}
-          {description && <p className="mt-2 whitespace-pre-line text-[13px] text-ink-muted">{description}</p>}
-        </button>
+          {description && <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-ink-muted">{description}</p>}
+        </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-line bg-surface-muted/40 px-5 py-2.5">
         {task.contact_phone && (
-          <a href={`tel:${task.contact_phone}`} className="flex size-9 items-center justify-center rounded-md text-ink-muted hover:bg-surface-muted hover:text-ink" title={t('Позвонить')} aria-label={t('Позвонить')}>
+          <a href={`tel:${task.contact_phone}`} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-semibold text-ink-muted hover:bg-surface hover:text-ink">
             <Phone className="size-4" />
+            <span className="hidden sm:inline">{t('Позвонить')}</span>
           </a>
         )}
         {(task.contact_whatsapp || task.contact_phone) && template && (
           <a
-            href={waLink(task.contact_whatsapp || task.contact_phone, template(task))}
+            href={waLink(task.contact_whatsapp || task.contact_phone, template(task, center))}
             target="_blank" rel="noreferrer"
-            className="flex size-9 items-center justify-center rounded-md text-success-600 hover:bg-success-50"
-            title={t('WhatsApp')} aria-label={t('WhatsApp')}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-semibold text-success-600 hover:bg-success-50"
           >
             <MessageCircle className="size-4" />
+            <span className="hidden sm:inline">{t('WhatsApp')}</span>
           </a>
         )}
         {task.type === 'payment_reminder' && task.child && (
@@ -283,10 +322,10 @@ function TaskCard({ task, overdue, closed, closing, onComplete, onPostpone, onRe
         )}
         {digestLink && <a href={digestLink} className="inline-flex items-center text-sm font-semibold text-brand-600 hover:underline">{t('Открыть дайджест')}</a>}
         {!closed && (
-          <div className="ml-auto flex gap-1.5">
-            <Button size="sm" variant="ghost" icon={UserCheck} onClick={onReassign} aria-label={t('Передать коллеге')} />
-            <Button size="sm" variant="ghost" onClick={onPostpone}>{t('Завтра')}</Button>
-            <Button size="sm" variant="primary" loading={closing} onClick={onComplete}>{t('Выполнено')}</Button>
+          <div className="flex w-full items-center gap-1.5 sm:ml-auto sm:w-auto">
+            <Button size="sm" variant="ghost" icon={UserRoundPlus} onClick={onReassign}>{t('Передать')}</Button>
+            <Button size="sm" variant="ghost" icon={CalendarClock} onClick={onPostpone}>{t('На завтра')}</Button>
+            <Button size="sm" variant="primary" loading={closing} onClick={onComplete} className="ml-auto sm:ml-0">{t('Выполнено')}</Button>
           </div>
         )}
       </div>
