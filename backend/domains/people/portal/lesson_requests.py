@@ -99,20 +99,46 @@ def _assignee(organization):
     )
 
 
+def task_text(parent_request) -> tuple[str, str]:
+    """Заголовок и описание задачи по запросу родителя — человеческим языком:
+    группа, филиал, время по часовому поясу центра, причина и комментарий
+    родителя. Без служебных идентификаторов и строк моделей."""
+    lesson = parent_request.lesson
+    branch = lesson.group.branch if lesson.group_id else getattr(lesson.room, "branch", None)
+    tz = timezone.zoneinfo.ZoneInfo(parent_request.organization.timezone or "Asia/Almaty")
+    start = timezone.localtime(lesson.starts_at, tz)
+    if parent_request.type == ParentLessonRequest.Type.ENROLL:
+        title = (
+            "Запись на отработку"
+            if parent_request.kind == ParentLessonRequest.Kind.MAKEUP
+            else "Запись на занятие"
+        )
+    else:
+        title = "Отмена занятия"
+    group_name = lesson.group.name if lesson.group_id else ""
+    place = ", ".join(part for part in (group_name, branch.name if branch else "") if part)
+    when = f"{start:%d.%m} в {start:%H:%M}"
+    lines = [f"{place} — {when}" if place else when]
+    if parent_request.type == ParentLessonRequest.Type.CANCEL:
+        lines.append(f"Причина: {parent_request.get_cancel_reason_display().lower()}.")
+        lines.append(
+            "Предупредили вовремя — занятие не спишется."
+            if not parent_request.will_be_charged
+            else (
+                "Предупредили позже срока — занятие спишется."
+                if not parent_request.notice_is_timely
+                else "Занятие спишется по правилам центра."
+            )
+        )
+    if parent_request.comment:
+        lines.append(f"Комментарий родителя: «{parent_request.comment.strip()}»")
+    return title, "\n".join(lines)
+
+
 def _create_task(parent_request):
     lesson = parent_request.lesson
     branch = lesson.group.branch if lesson.group_id else getattr(lesson.room, "branch", None)
-    local_start = timezone.localtime(lesson.starts_at)
-    action = "запись" if parent_request.type == ParentLessonRequest.Type.ENROLL else "отмена"
-    kind = " на отработку" if parent_request.kind == ParentLessonRequest.Kind.MAKEUP else ""
-    cancel_details = ""
-    if parent_request.type == ParentLessonRequest.Type.CANCEL:
-        timing = "в срок" if parent_request.notice_is_timely else "позднее установленного срока"
-        charge = "занятие спишется" if parent_request.will_be_charged else "занятие не спишется"
-        cancel_details = (
-            f" Причина: {parent_request.get_cancel_reason_display()}. "
-            f"Предупреждение {timing}; {charge}."
-        )
+    title, description = task_text(parent_request)
     Task.objects.get_or_create(
         organization=parent_request.organization,
         type=Task.Type.PARENT_REQUEST,
@@ -123,11 +149,8 @@ def _create_task(parent_request):
             "branch": branch,
             "source": Task.Source.AUTO,
             "due_at": timezone.now() + datetime.timedelta(hours=4),
-            "title": f"Запрос родителя: {action}{kind}",
-            "description": (
-                f"{parent_request.child.full_name}: {lesson} ({local_start:%d.%m.%Y %H:%M}). "
-                f"Комментарий: {parent_request.comment or 'нет'}.{cancel_details}"
-            ),
+            "title": title,
+            "description": description,
         },
     )
 
