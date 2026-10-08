@@ -16,6 +16,7 @@
 import datetime
 import logging
 import string
+import uuid
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -223,6 +224,26 @@ def notify(parent, event_key, context=None, *, dedup_key, user=None) -> Outbound
     return message
 
 
+def notify_whatsapp_reply(parent, body, *, user=None) -> OutboundMessage:
+    """Queue an operator's free-text reply; the channel rechecks the 24-hour window."""
+    text = (body or "").strip()
+    if not text:
+        raise MessagingError("Введите текст ответа.")
+    if len(text) > 4096:
+        raise MessagingError("Ответ не должен быть длиннее 4096 символов.")
+    message = OutboundMessage.objects.create(
+        organization=parent.organization,
+        parent=parent,
+        event="whatsapp_reply",
+        category=MessageCategory.UTILITY,
+        dedup_key=f"whatsapp-reply:{uuid.uuid4()}",
+        context={"_channel": "whatsapp", "_free_text": text},
+        created_by=user,
+    )
+    _enqueue(message)
+    return message
+
+
 def _enqueue(message, eta=None):
     from .tasks import deliver_message
 
@@ -280,7 +301,11 @@ def deliver(message_id, now=None) -> OutboundMessage:
         **message.context,
     }
     attempts = []
-    for key in get_org_setting(organization, MESSAGING_CHANNELS):
+    forced_channel = message.context.get("_channel")
+    channel_keys = (
+        [forced_channel] if forced_channel else get_org_setting(organization, MESSAGING_CHANNELS)
+    )
+    for key in channel_keys:
         channel = CHANNELS.get(key)
         if channel is None:
             continue
@@ -288,11 +313,15 @@ def deliver(message_id, now=None) -> OutboundMessage:
         if recipient is None:
             attempts.append({"channel": key, "result": "skipped", "reason": reason})
             continue
-        subject, body = template_for(organization, message.event, key, language)
         message.channel, message.recipient, message.language = key, recipient, language
-        message.subject = render(subject, values)[:200]
         link = unsubscribe_url(message)
-        message.body = render(body, values)
+        if key == "whatsapp" and message.event == "whatsapp_reply":
+            message.subject = ""
+            message.body = message.context.get("_free_text", "")
+        else:
+            subject, body = template_for(organization, message.event, key, language)
+            message.subject = render(subject, values)[:200]
+            message.body = render(body, values)
         if key == "email":
             message.body += UNSUBSCRIBE_FOOTER[language].format(
                 center=organization.name, unsubscribe_url=link
@@ -346,6 +375,7 @@ __all__ = [
     "consent_status",
     "deliver",
     "notify",
+    "notify_whatsapp_reply",
     "set_consent",
     "unsubscribe",
 ]

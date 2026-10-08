@@ -90,6 +90,19 @@ class MessageTemplate(TenantModel):
     language = models.CharField(max_length=5)
     subject = models.CharField(max_length=200, blank=True)
     body = models.TextField()
+    provider_template_id = models.CharField(max_length=255, blank=True)
+
+    class ProviderStatus(models.TextChoices):
+        DRAFT = "draft", "Черновик"
+        PENDING = "pending", "На проверке"
+        APPROVED = "approved", "Одобрен"
+        REJECTED = "rejected", "Отклонён"
+
+    provider_status = models.CharField(
+        max_length=16, choices=ProviderStatus.choices, default=ProviderStatus.DRAFT
+    )
+    rejection_reason = models.CharField(max_length=500, blank=True)
+    synced_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -111,6 +124,7 @@ class OutboundMessage(TenantModel):
         SENDING = "sending", "Отправляется"
         SENT = "sent", "Отправлено"
         DELIVERED = "delivered", "Доставлено"
+        READ = "read", "Прочитано"
         FAILED = "failed", "Не дошло"
         NO_CONSENT = "no_consent", "Нет согласия"
         OPTED_OUT = "opted_out", "Родитель отписался"
@@ -150,4 +164,48 @@ class OutboundMessage(TenantModel):
             models.Index(fields=["organization", "parent", "-created_at"]),
             models.Index(fields=["organization", "status", "-created_at"]),
             models.Index(fields=["provider_id"]),
+        ]
+
+
+class WhatsAppConnection(TenantModel):
+    """WABA конкретного центра. Токен никогда не возвращается через API."""
+
+    class Mode(models.TextChoices):
+        CONSOLE = "console", "Тестовый режим"
+        META = "meta", "Meta Cloud API"
+
+    class Status(models.TextChoices):
+        DISCONNECTED = "disconnected", "Не подключён"
+        CONNECTED = "connected", "Подключён"
+        ERROR = "error", "Ошибка"
+
+    mode = models.CharField(max_length=16, choices=Mode.choices, default=Mode.CONSOLE)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DISCONNECTED)
+    waba_id = models.CharField(max_length=100, blank=True)
+    phone_number_id = models.CharField(max_length=100, blank=True)
+    business_phone = models.CharField(max_length=20, blank=True)
+    access_token = models.TextField(blank=True)
+    webhook_verify_token = models.CharField(max_length=100, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["organization"], name="whatsapp_connection_unique_org")
+        ]
+
+
+class WhatsAppContactWindow(TenantModel):
+    """Последнее входящее сообщение — только для правила 24-часового окна Meta."""
+
+    parent = models.ForeignKey(
+        "clients.ParentContact", on_delete=models.CASCADE, related_name="whatsapp_windows"
+    )
+    last_inbound_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "parent"], name="whatsapp_window_unique_parent"
+            )
         ]
