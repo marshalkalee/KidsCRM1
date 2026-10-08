@@ -145,6 +145,10 @@ class TaskViewSet(
             )
 
         by_type = list(overdue.values("type").annotate(count=Count("id")).order_by("-count"))
+        # Название типа — с сервера: новый тип не покажется сырым ключом.
+        labels = dict(Task.Type.choices)
+        for row in by_type:
+            row["label"] = labels.get(row["type"], row["type"])
 
         return Response(
             {

@@ -72,10 +72,24 @@ class Command(DemoCommand):
         parser.add_argument(
             "--reset", action="store_true", help="Старую витрину в архив и собрать заново."
         )
+        parser.add_argument(
+            "--extras",
+            action="store_true",
+            help="Дополнить готовую витрину: задачи, объявления, запросы родителей, "
+            "рассылки, профиль центра, импорт (showcase_extras.py).",
+        )
 
-    def handle(self, *args, children, seed, reset, **options):
+    def handle(self, *args, children, seed, reset, extras=False, **options):
         if not settings.DEBUG:
             raise CommandError("seed_showcase — только для разработки (DEBUG=True).")
+        if extras:
+            from domains.platform.core.showcase_extras import Extras
+
+            org = Organization.objects.filter(slug=ORG_SLUG).first()
+            if org is None:
+                raise CommandError("Витрины нет — сначала seed_showcase без --extras.")
+            Extras(org, self.stdout.write).run()
+            return
         phones = [OWNER[0], *(phone for phone, *_ in STAFF)]
         existing = Organization.objects.filter(slug=ORG_SLUG).first()
         if existing and not reset:

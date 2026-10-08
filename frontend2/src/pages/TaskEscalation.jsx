@@ -97,7 +97,7 @@ export default function TaskEscalation() {
             <div key={row.type} className="flex items-center justify-between py-2">
               <span className="flex items-center gap-2 text-ink">
                 <AlertTriangle className="size-4 text-danger-600" />
-                {TYPE_LABELS[row.type] || row.type}
+                {t(row.label || TYPE_LABELS[row.type] || row.type)}
               </span>
               <Badge tone="danger">{row.count}</Badge>
             </div>
