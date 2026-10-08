@@ -9,6 +9,7 @@
 import uuid
 from dataclasses import dataclass, field
 
+from domains.platform.analytics.epoch import epoch_of
 from domains.platform.core.active_branch import get_active_branch
 from domains.platform.tenants.models import Branch
 from domains.platform.users.models import User
@@ -29,7 +30,7 @@ class Scope:
     @property
     def cache_key(self) -> str:
         ids = "all" if self.branch_ids is None else ",".join(sorted(map(str, self.branch_ids)))
-        return f"{self.organization.pk}:{ids}"
+        return f"{self.organization.pk}:{epoch_of(self.organization.pk)}:{ids}"
 
     def filter(self, qs, branch_field: str):
         """Фильтр по филиалу для любого queryset: `branch_field` — путь до

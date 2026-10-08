@@ -5,6 +5,7 @@ export const STATUS_TONE = {
   deferred: 'info',
   sent: 'success',
   delivered: 'success',
+  read: 'success',
   failed: 'danger',
   no_consent: 'warning',
   opted_out: 'neutral',

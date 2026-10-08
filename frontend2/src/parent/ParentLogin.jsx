@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { Button, Card, Field, Input } from '../ui'
 import { t, useLang } from '../i18n'
+import LanguageSwitcher from '../components/shell/LanguageSwitcher'
 import { formatPhone } from '../ui'
 import { phoneDigits, phoneInputProps } from '../utils/formValidation'
 import portal, { portalError } from './api'
@@ -79,7 +80,10 @@ export default function ParentLogin() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-10">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-20 sm:py-10">
+      <div className="absolute right-4 top-4 z-20 sm:right-6 sm:top-6">
+        <LanguageSwitcher />
+      </div>
       <div className="mb-6 flex flex-col items-center text-center">
         <img src="/parent/icon-192.png" alt="" className="mb-4 size-16 rounded-[18px] shadow-brand" />
         <h1 className="text-[22px] font-bold text-ink">{t('Кабинет родителя')}</h1>
@@ -112,6 +116,9 @@ export default function ParentLogin() {
             <Button type="submit" variant="primary" className="h-12 w-full text-base" loading={busy} icon={ArrowRight}>
               {t('Получить код')}
             </Button>
+            <p className="rounded-lg bg-surface-muted px-3 py-2.5 text-center text-[13px] leading-relaxed text-ink-muted">
+              {t('Впервые входите? Обратитесь в центр и попросите привязать ваш номер к ребёнку.')}
+            </p>
           </form>
         ) : (
           <form onSubmit={verify} className="space-y-4">
