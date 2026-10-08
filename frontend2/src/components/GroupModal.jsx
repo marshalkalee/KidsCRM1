@@ -25,6 +25,8 @@ export default function GroupModal({ group, onClose, onSaved }) {
     status: group?.status || 'active',
     is_public: group?.is_public || false,
     description: group?.description || '',
+    trial_available: group?.trial_available ?? true,
+    trial_price: group?.trial_price ?? '',
     exclude_from_ai_recommendations: group?.exclude_from_ai_recommendations || false,
   })
   const [options, setOptions] = useState({ branches: [], directions: [], teachers: [] })
@@ -57,6 +59,7 @@ export default function GroupModal({ group, onClose, onSaved }) {
       capacity: Number(form.capacity),
       age_min: form.age_min === '' ? null : Number(form.age_min),
       age_max: form.age_max === '' ? null : Number(form.age_max),
+      trial_price: form.trial_price === '' ? null : Number(form.trial_price),
     }
     try {
       const response = isEdit ? await api.patch(`groups/${group.id}/`, payload) : await api.post('groups/', payload)
@@ -149,6 +152,19 @@ export default function GroupModal({ group, onClose, onSaved }) {
           <p className="mt-1 pl-6 text-xs text-ink-subtle">
             {t('Название, возраст, расписание и свободные места — для будущего каталога кружков. Детей и родителей каталог не видит.')}
           </p>
+          {/* Пробное из каталога (TRU-180): родитель бронирует место, центр подтверждает. */}
+          <div className="mt-3 border-t border-line pt-3">
+            <Checkbox
+              checked={form.trial_available}
+              onChange={e => set('trial_available', e.target.checked)}
+              label={t('Можно записаться на пробное')}
+            />
+            {form.trial_available && (
+              <Field label={t('Цена пробного, ₸')} hint={t('Пусто — бесплатно')} className="mt-2 w-48 pl-6">
+                {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={0} value={form.trial_price} onChange={e => set('trial_price', e.target.value)} placeholder="0" />}
+              </Field>
+            )}
+          </div>
         </div>
         <div className="rounded-lg border border-line bg-surface-muted p-3 sm:col-span-2">
           <Checkbox

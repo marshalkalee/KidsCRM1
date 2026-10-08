@@ -20,6 +20,7 @@ from django.db.models.functions import Coalesce
 
 from domains.money.subscriptions.models import SubscriptionType
 from domains.scheduling.groups.models import GroupMembership
+from domains.scheduling.schedule import holds
 from domains.scheduling.schedule.models import Lesson, LessonEnrollment
 
 # Поля ответа — белый список; тест следит, что сверх него ничего не уходит.
@@ -55,7 +56,9 @@ def _with_seats(lessons):
         .exclude(child_id__in=Subquery(in_group))
         .values("lesson_id")
     )
-    return lessons.annotate(taken=_count(members) + _count(enrolled))
+    # Брони из каталога (TRU-180) держат место, пока не истекли.
+    held = holds.active().filter(lesson_id=OuterRef("pk")).values("lesson_id")
+    return lessons.annotate(taken=_count(members) + _count(enrolled) + _count(held))
 
 
 def _coord(value):
@@ -119,6 +122,7 @@ def offer(organization, date_from: datetime.date, date_to: datetime.date, *, inc
                     "direction": group.direction.name if group.direction_id else "",
                     "age_min": group.age_min,
                     "age_max": group.age_max,
+                    "trial": {"available": group.trial_available, "price": group.trial_price},
                 },
                 "branch": {
                     "id": str(group.branch_id),

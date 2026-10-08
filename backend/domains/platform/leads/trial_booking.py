@@ -3,11 +3,13 @@
 import datetime
 
 from django.db import transaction
-from django.db.models import Count, ExpressionWrapper, F, IntegerField, Q
+from django.db.models import Count, ExpressionWrapper, F, IntegerField, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from domains.people.clients.models import Child
 from domains.scheduling.groups.models import Group
+from domains.scheduling.schedule import holds
 from domains.scheduling.schedule.enrollment_service import EnrollOutcome, LessonService
 from domains.scheduling.schedule.models import Lesson, LessonEnrollment
 
@@ -77,8 +79,24 @@ def trial_lesson_candidates(lead, *, for_reschedule=False):
             ),
         )
         .annotate(
+            # Чужие брони из каталога (TRU-180) тоже занимают места.
+            held_count=Coalesce(
+                Subquery(
+                    holds.active()
+                    .filter(lesson_id=OuterRef("pk"))
+                    .exclude(lead_id=lead.id)
+                    .values("lesson_id")
+                    .annotate(n=Count("id"))
+                    .values("n")[:1],
+                    output_field=IntegerField(),
+                ),
+                Value(0),
+            ),
+        )
+        .annotate(
             occupied_count=ExpressionWrapper(
-                F("base_count") + F("overlay_count"), output_field=IntegerField()
+                F("base_count") + F("overlay_count") + F("held_count"),
+                output_field=IntegerField(),
             )
         )
         .filter(occupied_count__lt=F("group__capacity"))
