@@ -2458,5 +2458,13 @@
  "Долгота": "Longitude",
  "Откройте место на карте, скопируйте координаты. Поставленную вручную точку система больше не пересчитывает.": "Open the place on a map and copy the coordinates. A manually set point is no longer recalculated.",
   "Подстановки — нажмите, чтобы вставить в текст:": "Placeholders — click to insert into the text:",
-  "Текст по умолчанию": "Default text"
+  "Текст по умолчанию": "Default text",
+  "Бронь истекла": "Hold expired",
+  "Бронь места из каталога": "Seat hold from the catalog",
+  "Бронь не подтвердили до {when}, место освободилось. Можно записать на это или другое занятие.": "The hold was not confirmed by {when} and the seat was released. You can book this or another class.",
+  "Место держится": "Seat on hold",
+  "Можно записаться на пробное": "Trial class available",
+  "Пусто — бесплатно": "Empty — free",
+  "Родитель выбрал это занятие в каталоге. Место держится до {when} — позвоните и запишите на пробное, иначе бронь снимется сама.": "The parent picked this class in the catalog. The seat is held until {when} — call and book the trial, otherwise the hold is released automatically.",
+  "Цена пробного, ₸": "Trial price, ₸"
 }
