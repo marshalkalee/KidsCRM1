@@ -22,7 +22,14 @@ _INSTAGRAM = re.compile(
 
 
 def _profile(organization) -> CenterProfile:
-    profile, _ = CenterProfile.objects.get_or_create(organization=organization)
+    # Мягко удалённый профиль обычный менеджер не видит, а второй не даст
+    # создать уникальность — такой поднимаем пустым, как новый.
+    profile, created = CenterProfile._base_manager.get_or_create(organization=organization)
+    if not created and profile.deleted_at:
+        for field in ("description", "logo_url", "phone", "instagram"):
+            setattr(profile, field, "")
+        profile.photo_urls, profile.is_published, profile.deleted_at = [], False, None
+        profile.save()
     return profile
 
 
