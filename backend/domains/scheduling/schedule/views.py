@@ -10,6 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from domains.people.clients.models import ChildContact, CommunicationLog, ParentContact
+from domains.platform.core.active_branch import branch_scope
 from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_view_phone
 from domains.platform.core.viewsets import TenantModelViewSet
@@ -153,9 +154,9 @@ class LessonViewSet(TenantModelViewSet):
 
         # Фильтр по филиалу — у занятия нет своего branch, берём либо из
         # группы, либо (для индивидуальных занятий без группы) из зала.
-        branch_id = self.request.query_params.get("branch")
-        if branch_id:
-            qs = qs.filter(Q(group__branch_id=branch_id) | Q(room__branch_id=branch_id))
+        scope = branch_scope(self.request, self.request.query_params.get("branch"))
+        if scope is not None:
+            qs = qs.filter(Q(group__branch_id__in=scope) | Q(room__branch_id__in=scope))
 
         # Фильтр по залу (TRU-45: дневной вид по залам)
         room_id = self.request.query_params.get("room")

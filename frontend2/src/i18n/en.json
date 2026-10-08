@@ -2533,5 +2533,8 @@
   "Передать": "Hand over",
   "Просрочено: {when}": "Overdue: {when}",
   "Здравствуйте! Это {center}, перезваниваем по вашей заявке.": "Hello! This is {center}, calling back about your request.",
-  "Здравствуйте! Хотим предложить записаться на пробное занятие в {center}.": "Hello! We would like to invite you to a trial class at {center}."
+  "Здравствуйте! Хотим предложить записаться на пробное занятие в {center}.": "Hello! We would like to invite you to a trial class at {center}.",
+  "Все мои филиалы": "All my branches",
+  "Выполненные и отменённые": "Done and cancelled",
+  "Просрочено": "Overdue"
 }

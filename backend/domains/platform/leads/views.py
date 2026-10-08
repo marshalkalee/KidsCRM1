@@ -171,6 +171,7 @@ class LeadViewSet(TenantModelViewSet):
         params = self.request.query_params
         # Новые и продления — разные воронки (TRU-98), по умолчанию — новые.
         qs = qs.filter(kind=_kind(params))
+        # Свои филиалы сотрудника уже учтены выше; здесь — выбранный в шапке.
         branch = get_active_branch(self.request)
         if branch is not None:
             qs = qs.filter(branch=branch)

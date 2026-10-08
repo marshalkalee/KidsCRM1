@@ -110,19 +110,21 @@ def filter_children(qs, organization, params):
         qs = qs.filter(full_name__icontains=query)
 
     branch_id = params.get("branch")
-    if branch_id:
+    # Один филиал строкой или список (все филиалы сотрудника).
+    branch_ids = branch_id if isinstance(branch_id, list) else [branch_id] if branch_id else []
+    if branch_ids:
         # Как branch_names: ребёнок в группе этого филиала — или с
         # направлением, доступным в нём. Коррелированные EXISTS сохраняют
         # эту логику без размножения строк Child и последующего DISTINCT.
         active_memberships = GroupMembership.objects.for_tenant(organization).filter(
             child_id=OuterRef("pk"), left_at__isnull=True
         )
-        in_branch_group = active_memberships.filter(group__branch_id=branch_id)
+        in_branch_group = active_memberships.filter(group__branch_id__in=branch_ids)
         # Направления — только для детей без текущей группы, как в branch_names.
         with_branch_direction = Child.directions.through.objects.filter(
             child_id=OuterRef("pk"),
             direction__organization=organization,
-            direction__branches__id=branch_id,
+            direction__branches__id__in=branch_ids,
         )
         # EXISTS не размножает строки Child и позволяет PostgreSQL использовать индексы
         # внешних ключей. Это заметно быстрее UNION + DISTINCT на больших списках.
