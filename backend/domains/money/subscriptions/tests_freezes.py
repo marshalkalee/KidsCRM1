@@ -97,7 +97,9 @@ class FreezeTests(TestCase):
 
         self.sub.refresh_from_db()
         self.assertEqual(self.sub.ends_on, original_end + timedelta(days=5))
-        self.assertEqual(self.sub.status, Subscription.Status.ACTIVE)
+        # Конец заморозки перенесён на 5-й день: до него абонемент заморожен,
+        # разморозит ночная задача (TRU-132).
+        self.assertEqual(self.sub.status, Subscription.Status.FROZEN)
 
     def test_freeze_recorded_in_audit_log(self):
         freeze_subscription(

@@ -15,6 +15,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from domains.money.subscriptions.debt import debt_by_child
+from domains.money.subscriptions.freezes import freezes_covering
 from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.renewals import is_ending_soon
 from domains.platform.core.utils import today_for_org
@@ -92,7 +93,9 @@ def subscription_row(subscription):
         return None
     freeze = None
     if subscription.status == Subscription.Status.FROZEN:
-        active = subscription.freezes.filter(deleted_at__isnull=True).order_by("-starts_on").first()
+        # Идущая заморозка, а не самая поздняя: та может быть оформлена на будущее.
+        today = today_for_org(subscription.organization)
+        active = freezes_covering(subscription.freezes.all(), today).order_by("-starts_on").first()
         freeze = active and {"starts_on": active.starts_on, "ends_on": active.ends_on}
     version = subscription.subscription_type_version
     return {
