@@ -345,6 +345,9 @@ else:
 # адрес центра (настройка рассылок). Свой домен у каждого центра — это DNS
 # (SPF, DKIM) на центр, на старте не нужно.
 MESSAGING_FROM_EMAIL = env("MESSAGING_FROM_EMAIL", default="noreply@kidscrm.kz")
+WHATSAPP_GRAPH_API_VERSION = env("WHATSAPP_GRAPH_API_VERSION", default="v23.0")
+WHATSAPP_HTTP_TIMEOUT = env.int("WHATSAPP_HTTP_TIMEOUT", default=15)
+WHATSAPP_APP_SECRET = env("WHATSAPP_APP_SECRET", default="")
 # Публичный адрес сайта — для ссылки «отписаться» в письме.
 PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="http://localhost")
 

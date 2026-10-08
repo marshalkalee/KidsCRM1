@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ChevronDown, Mail, Moon, Send, Undo2 } from 'lucide-react'
+import {
+  ArrowDown, ArrowUp, CheckCircle2, ChevronDown, Mail, MessageCircle, Moon, RefreshCw, Send, Undo2,
+} from 'lucide-react'
 import api from '../api/axios'
 import { STATUS_TONE } from '../components/messaging/status'
 import {
@@ -28,10 +30,13 @@ const LANGS = [
 ]
 
 export function MessagingJournal() {
+  const toast = useToast()
   const [params, setParams] = useSearchParams()
   const [data, setData] = useState(null)
   const [error, setError] = useState(false)
   const [open, setOpen] = useState(null)
+  const [reply, setReply] = useState('')
+  const [sendingReply, setSendingReply] = useState(false)
   const filters = { parent: params.get('parent') || '', status: params.get('status') || '', event: params.get('event') || '' }
 
   const load = useCallback(() => {
@@ -45,6 +50,23 @@ export function MessagingJournal() {
     if (value) next.set(key, value)
     else next.delete(key)
     setParams(next)
+  }
+
+  async function sendReply() {
+    setSendingReply(true)
+    try {
+      await api.post('messaging/whatsapp/reply/', {
+        parent_id: data.whatsapp_reply.parent_id,
+        body: reply,
+      })
+      setReply('')
+      toast.success(t('Ответ поставлен в очередь'))
+      load()
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setSendingReply(false)
+    }
   }
 
   if (error) return <Card><ErrorState onRetry={load} /></Card>
@@ -64,6 +86,30 @@ export function MessagingJournal() {
           </Button>
         )}
       </div>
+      {filters.parent && data.whatsapp_reply && (
+        <Card className="mt-4">
+          <CardHeader
+            title={t('Свободный ответ в WhatsApp')}
+            description={data.whatsapp_reply.available
+              ? t('Родитель написал менее 24 часов назад — можно ответить обычным текстом.')
+              : t(data.whatsapp_reply.reason)}
+          />
+          {data.whatsapp_reply.available ? (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <Field className="min-w-0 flex-1" label={t('Текст ответа')}>
+                {({ id }) => (
+                  <Textarea id={id} rows={3} maxLength={4096} value={reply} onChange={event => setReply(event.target.value)} />
+                )}
+              </Field>
+              <Button variant="primary" icon={MessageCircle} loading={sendingReply} disabled={!reply.trim()} onClick={sendReply}>
+                {t('Отправить')}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-ink-muted">{t('Свободный ответ сейчас недоступен. Для нового диалога используйте одобренный шаблон Meta.')}</p>
+          )}
+        </Card>
+      )}
       <Card padded={false} className="mt-4">
         {data.results.length === 0 ? (
           <EmptyState icon={Send} title={t('Сообщений пока нет')} description={t('Когда система напишет родителю, здесь будет видно, что ушло.')} />
@@ -345,6 +391,7 @@ export function MessagingSettings() {
           </ul>
         </Card>
       </div>
+      <WhatsAppSettings />
       <div className="sticky bottom-3 z-10 mt-4 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-pop backdrop-blur">
         <p className={cn('mr-auto text-[13px]', dirty ? 'font-semibold text-warning-600' : 'text-ink-subtle')}>
           {dirty ? t('Есть несохранённые изменения') : t('Все изменения сохранены')}
@@ -353,5 +400,94 @@ export function MessagingSettings() {
         <Button variant="primary" onClick={save} loading={saving} disabled={!dirty}>{t('Сохранить')}</Button>
       </div>
     </div>
+  )
+}
+
+function WhatsAppSettings() {
+  const toast = useToast()
+  const [data, setData] = useState(null)
+  const [busy, setBusy] = useState('')
+  const load = useCallback(() => api.get('messaging/whatsapp/').then(response => setData(response.data)), [])
+  useEffect(() => { load().catch(() => {}) }, [load])
+
+  async function action(name, request) {
+    setBusy(name)
+    try {
+      const response = await request()
+      setData(response.data)
+      toast.success(name === 'save' ? t('Подключение сохранено') : name === 'test' ? t('Подключение работает') : t('Шаблоны синхронизированы'))
+    } catch (error) {
+      toast.error(apiErrorMessage(error))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  if (!data) return <Skeleton className="mt-4 h-72" />
+  const connected = data.status === 'connected'
+  return (
+    <Card className="mt-4">
+      <CardHeader
+        title={t('WhatsApp Business')}
+        description={t('Подключение Meta Cloud API, проверка и статусы шаблонов.')}
+        actions={<Badge tone={connected ? 'success' : data.status === 'error' ? 'danger' : 'neutral'} dot>{t(connected ? 'Подключён' : data.status === 'error' ? 'Ошибка подключения' : 'Не подключён')}</Badge>}
+      />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-3">
+          <Field label={t('Режим')}>
+            {({ id }) => (
+              <Select id={id} value={data.mode} onChange={event => setData({ ...data, mode: event.target.value })}>
+                <option value="console">{t('Тестовый режим — без отправки')}</option>
+                <option value="meta">Meta Cloud API</option>
+              </Select>
+            )}
+          </Field>
+          {data.mode === 'meta' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="WABA ID">{({ id }) => <Input id={id} value={data.waba_id} onChange={event => setData({ ...data, waba_id: event.target.value })} />}</Field>
+              <Field label="Phone number ID">{({ id }) => <Input id={id} value={data.phone_number_id} onChange={event => setData({ ...data, phone_number_id: event.target.value })} />}</Field>
+              <Field label={t('Номер бизнеса')}>{({ id }) => <Input id={id} value={data.business_phone} onChange={event => setData({ ...data, business_phone: event.target.value })} placeholder="+7 700 000 00 00" />}</Field>
+              <Field label={t('Токен доступа')} hint={data.has_token ? t('Токен уже сохранён. Оставьте пустым, чтобы не менять.') : ''}>
+                {({ id }) => <Input id={id} type="password" value={data.access_token || ''} onChange={event => setData({ ...data, access_token: event.target.value })} autoComplete="new-password" />}
+              </Field>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => action('save', () => api.put('messaging/whatsapp/', data))} loading={busy === 'save'}>{t('Сохранить подключение')}</Button>
+            <Button variant="primary" icon={CheckCircle2} onClick={() => action('test', () => api.post('messaging/whatsapp/test/'))} loading={busy === 'test'}>{t('Проверить подключение')}</Button>
+          </div>
+          {data.last_error && <p className="text-sm text-danger-600">{data.last_error}</p>}
+          {data.webhook_verify_token && (
+            <div className="rounded-md bg-surface-muted p-3 text-xs text-ink-muted">
+              <p><b className="text-ink">Webhook:</b> {window.location.origin}/api/v1/messaging/whatsapp/webhook/</p>
+              <p className="mt-1 break-all"><b className="text-ink">Verify token:</b> {data.webhook_verify_token}</p>
+            </div>
+          )}
+        </div>
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-bold text-ink">{t('Шаблоны Meta')}</p>
+              <p className="text-xs text-ink-muted">{t('Неодобренные шаблоны отправить нельзя.')}</p>
+            </div>
+            <Button size="sm" icon={RefreshCw} disabled={!connected} loading={busy === 'sync'} onClick={() => action('sync', () => api.post('messaging/whatsapp/templates/sync/'))}>{t('Синхронизировать')}</Button>
+          </div>
+          {data.templates.length ? (
+            <ul className="max-h-72 divide-y divide-line overflow-y-auto rounded-lg border border-line">
+              {data.templates.map(template => (
+                <li key={`${template.event}-${template.language}`} className="flex items-start gap-3 px-3 py-2.5">
+                  <MessageCircle className="mt-0.5 size-4 shrink-0 text-success-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-ink">{t(template.event_label)} · {template.language.toUpperCase()}</p>
+                    {template.rejection_reason && <p className="mt-0.5 text-xs text-danger-600">{template.rejection_reason}</p>}
+                  </div>
+                  <Badge tone={template.status === 'approved' ? 'success' : template.status === 'rejected' ? 'danger' : template.status === 'pending' ? 'warning' : 'neutral'}>{t(template.status_label)}</Badge>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="rounded-lg border border-dashed border-line p-6 text-center text-sm text-ink-muted">{t('Проверьте подключение, чтобы загрузить шаблоны.')}</p>}
+        </div>
+      </div>
+    </Card>
   )
 }
