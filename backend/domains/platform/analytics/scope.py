@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from domains.platform.analytics.epoch import epoch_of
 from domains.platform.core.active_branch import get_active_branch
 from domains.platform.tenants.models import Branch
-from domains.platform.users.models import User
 
 
 class ScopeError(PermissionError):
@@ -41,11 +40,11 @@ class Scope:
 
 
 def allowed_branch_ids(user) -> list | None:
-    """None — все филиалы организации."""
-    if user.role == User.Role.OWNER:
-        return None
-    own = list(user.branches.values_list("id", flat=True))
-    return own or None
+    """None — все филиалы организации. Правило одно на всю систему —
+    core/active_branch.py."""
+    from domains.platform.core.active_branch import allowed_branch_ids as allowed
+
+    return allowed(user)
 
 
 def scope_for(request) -> Scope:

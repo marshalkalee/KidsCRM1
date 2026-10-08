@@ -8,7 +8,7 @@ from rest_framework.response import Response
 
 from domains.money.subscriptions.debt import debt_by_child
 from domains.money.subscriptions.models import Subscription
-from domains.platform.core.active_branch import get_active_branch
+from domains.platform.core.active_branch import branch_scope
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOfOrganization
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.role_permissions import (
@@ -383,10 +383,9 @@ def child_table_api(request):
     сервере — сервис child_list.
     Без ?branch= берётся активный филиал из шапки (X-Branch-Id)."""
     params = request.query_params.dict()
-    if not params.get("branch"):
-        active_branch = get_active_branch(request)
-        if active_branch:
-            params["branch"] = str(active_branch.pk)
+    scope = branch_scope(request, params.pop("branch", None))
+    if scope is not None:
+        params["branch"] = [str(b) for b in scope]
     show_money = can_view_client_money(request.user)
     rows, total = list_children(request.user.organization, params, show_money=show_money)
     return Response({"results": rows, "count": total, "show_money": show_money})

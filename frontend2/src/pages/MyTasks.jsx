@@ -161,6 +161,16 @@ export default function MyTasks() {
   if (tasks === null) return <Skeleton className="h-60" />
 
   const visible = tab === 'today' ? [...overdue, ...today] : tab === 'future' ? future : history
+  // Каждая группа — один блок с шапкой, а не подписи между карточками.
+  const groups = (tab === 'today'
+    ? [
+        { key: 'overdue', title: t('Просрочено'), icon: AlertTriangle, tone: 'text-danger-600', tasks: overdue },
+        { key: 'today', title: t('На сегодня'), icon: CalendarClock, tasks: today },
+      ]
+    : tab === 'future'
+      ? [{ key: 'future', title: t('Запланировано'), icon: CalendarClock, tasks: future }]
+      : [{ key: 'history', title: t('Выполненные и отменённые'), icon: CheckCircle2, tasks: history }]
+  ).filter(group => group.tasks.length > 0)
 
   return (
     <div>
@@ -189,35 +199,37 @@ export default function MyTasks() {
           />
         </Card>
       ) : (
-        <div className="mt-4 space-y-2">
-          {tab === 'today' && overdue.length > 0 && (
-            <p className="flex items-center gap-1.5 text-[13px] font-semibold text-danger-600">
-              <AlertTriangle className="size-4" /> {t('Просроченные')}
-            </p>
-          )}
-          {visible.map((task, i) => (
-            <div key={task.id}>
-              {tab === 'today' && i === overdue.length && overdue.length > 0 && (
-                <p className="mb-2 mt-3 text-[13px] font-semibold text-ink-muted">{t('На сегодня')}</p>
-              )}
-              <TaskCard
-                task={task}
-                closed={tab === 'history'}
-                overdue={isOverdue(task.due_at)}
-                closing={closing === task.id}
-                center={user?.organization_name}
-                me={user?.id}
-                onComplete={() => complete(task)}
-                onPostpone={() => postpone(task)}
-                onReassign={() => setReassigning(task)}
-                onPay={() => setPaying(task)}
-                onSell={() => setSelling(task)}
-                onOpen={() => {
-                  if (task.child) navigate(`/children/${task.child}`)
-                  else if (task.lead) navigate(`/leads/${task.lead}`)
-                }}
-              />
-            </div>
+        <div className="mt-4 space-y-4">
+          {groups.map(group => (
+            <Card key={group.key} padded={false} className="overflow-hidden">
+              <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+                {group.icon && <group.icon className={cn('size-4', group.tone)} />}
+                <p className={cn('text-[15px] font-bold', group.tone || 'text-ink')}>{group.title}</p>
+                <span className="text-[13px] font-semibold text-ink-subtle">{group.tasks.length}</span>
+              </div>
+              <div className="divide-y divide-line">
+                {group.tasks.map(task => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    closed={tab === 'history'}
+                    overdue={isOverdue(task.due_at)}
+                    closing={closing === task.id}
+                    center={user?.organization_name}
+                    me={user?.id}
+                    onComplete={() => complete(task)}
+                    onPostpone={() => postpone(task)}
+                    onReassign={() => setReassigning(task)}
+                    onPay={() => setPaying(task)}
+                    onSell={() => setSelling(task)}
+                    onOpen={() => {
+                      if (task.child) navigate(`/children/${task.child}`)
+                      else if (task.lead) navigate(`/leads/${task.lead}`)
+                    }}
+                  />
+                ))}
+              </div>
+            </Card>
           ))}
         </div>
       )}
@@ -264,8 +276,8 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, onComplete
   const debt = Number(task.child_debt) > 0 ? Number(task.child_debt) : 0
   const someoneElse = task.assigned_to && String(task.assigned_to) !== String(me)
   return (
-    <Card padded={false} className={cn('overflow-hidden', overdue && 'border-danger-600/40')}>
-      <div className={cn('flex gap-3 px-5 py-4', overdue && 'border-l-4 border-danger-600 pl-4')}>
+    <div>
+      <div className="flex gap-3 px-5 py-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <p className="text-[15px] font-bold text-ink">{taskTitle(task)}</p>
@@ -297,7 +309,7 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, onComplete
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-line bg-surface-muted/40 px-5 py-2.5">
+      <div className="flex flex-wrap items-center gap-1.5 px-5 pb-3">
         {task.contact_phone && (
           <a href={`tel:${task.contact_phone}`} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-semibold text-ink-muted hover:bg-surface hover:text-ink">
             <Phone className="size-4" />
@@ -329,6 +341,6 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, onComplete
           </div>
         )}
       </div>
-    </Card>
+    </div>
   )
 }
