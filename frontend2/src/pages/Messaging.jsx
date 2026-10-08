@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  ArrowDown, ArrowUp, CheckCircle2, ChevronDown, Mail, MessageCircle, Moon, RefreshCw, Send, Undo2,
+  ArrowDown, ArrowUp, CheckCircle2, ChevronDown, Mail, MessageCircle, Moon, RefreshCw, Send, Undo2, X,
 } from 'lucide-react'
 import api from '../api/axios'
 import { STATUS_TONE } from '../components/messaging/status'
 import {
-  Badge, Button, Card, CardHeader, Checkbox, EmptyState, ErrorState, Field, FilterSelect, Input, PageHeader,
+  Badge, Button, Card, CardHeader, Checkbox, Dropdown, EmptyState, ErrorState, Field, Input, PageHeader,
   Select, Skeleton, Textarea, apiErrorMessage, cn, formatDateTime, useToast,
 } from '../ui'
 import { t } from '../i18n'
@@ -77,15 +77,6 @@ export function MessagingJournal() {
   return (
     <div>
       <PageHeader description={t('Что система написала родителям: когда, каким каналом, что вышло. Отписка и отказы — здесь же.')} />
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-        <FilterSelect label={t('Событие')} value={filters.event} onChange={v => setFilter('event', v)} options={[['', t('Все события')], ...data.events.map(e => [e.key, t(e.label)])]} />
-        <FilterSelect label={t('Статус')} value={filters.status} onChange={v => setFilter('status', v)} options={[['', t('Все статусы')], ...data.statuses.map(s => [s.key, t(s.label)])]} />
-        {filters.parent && (
-          <Button size="sm" variant="ghost" onClick={() => setFilter('parent', '')}>
-            {parentName ? t('Родитель: {name} ✕', { name: parentName }) : t('Сбросить родителя ✕')}
-          </Button>
-        )}
-      </div>
       {filters.parent && data.whatsapp_reply && (
         <Card className="mt-4">
           <CardHeader
@@ -111,6 +102,42 @@ export function MessagingJournal() {
         </Card>
       )}
       <Card padded={false} className="mt-4">
+        {/* Шапка списка: сколько сообщений и фильтры — в одной строке. */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
+          <p className="mr-auto text-[15px] font-bold text-ink">
+            {t('Сообщения')} <span className="ml-1 text-[13px] font-semibold text-ink-subtle">{data.total}</span>
+          </p>
+          {filters.parent && (
+            <button
+              type="button"
+              onClick={() => setFilter('parent', '')}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-brand-50 px-3 text-xs font-semibold text-brand-600 hover:bg-brand-100"
+            >
+              {parentName ? t('Родитель: {name}', { name: parentName }) : t('Один родитель')}
+              <X className="size-3.5" />
+            </button>
+          )}
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+          <div className="min-w-0 sm:w-52">
+            <Dropdown
+              size="sm"
+              ariaLabel={t('Событие')}
+              value={filters.event}
+              onChange={v => setFilter('event', v)}
+              options={[{ value: '', label: t('Все события') }, ...data.events.map(e => ({ value: e.key, label: t(e.label) }))]}
+            />
+          </div>
+          <div className="min-w-0 sm:w-44">
+            <Dropdown
+              size="sm"
+              ariaLabel={t('Статус')}
+              value={filters.status}
+              onChange={v => setFilter('status', v)}
+              options={[{ value: '', label: t('Все статусы') }, ...data.statuses.map(st => ({ value: st.key, label: t(st.label) }))]}
+            />
+          </div>
+          </div>
+        </div>
         {data.results.length === 0 ? (
           <EmptyState icon={Send} title={t('Сообщений пока нет')} description={t('Когда система напишет родителю, здесь будет видно, что ушло.')} />
         ) : (

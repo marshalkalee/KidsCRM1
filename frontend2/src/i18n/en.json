@@ -2524,5 +2524,8 @@
   "Продления и долги": "Renewals and debts",
   "Разделы настроек": "Settings sections",
   "Расход ИИ": "AI spend",
-  "Риск ухода": "Churn risk"
+  "Риск ухода": "Churn risk",
+  "Один родитель": "One parent",
+  "Родитель: {name}": "Parent: {name}",
+  "Сообщения": "Messages"
 }
