@@ -392,12 +392,26 @@ export function MessagingSettings() {
         </Card>
       </div>
       <WhatsAppSettings />
-      <div className="sticky bottom-3 z-10 mt-4 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-pop backdrop-blur">
-        <p className={cn('mr-auto text-[13px]', dirty ? 'font-semibold text-warning-600' : 'text-ink-subtle')}>
-          {dirty ? t('Есть несохранённые изменения') : t('Все изменения сохранены')}
-        </p>
-        {dirty && <Button variant="ghost" onClick={() => setForm(saved)}>{t('Отменить')}</Button>}
-        <Button variant="primary" onClick={save} loading={saving} disabled={!dirty}>{t('Сохранить')}</Button>
+      {/* Место под панель, чтобы она не закрывала последнюю карточку. */}
+      {dirty && <div className="h-20" aria-hidden />}
+      {/* Как на «Организации»: панель — только когда есть что сохранить. */}
+      <div className="sticky bottom-4 z-20 h-0">
+        <div
+          className={cn(
+            'absolute bottom-0 left-0 flex w-full justify-center transition-all duration-200',
+            dirty ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-4 opacity-0',
+          )}
+          aria-hidden={!dirty}
+        >
+          <div className="flex w-full flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 shadow-pop sm:w-auto">
+            <span className="size-2 shrink-0 rounded-full bg-warning-600" />
+            <p className="text-[13px] font-semibold text-ink sm:mr-4">{t('Есть несохранённые изменения')}</p>
+            <span className="ml-auto flex gap-2">
+              <Button variant="ghost" tabIndex={dirty ? 0 : -1} onClick={() => setForm(saved)}>{t('Отменить')}</Button>
+              <Button variant="primary" onClick={save} loading={saving} tabIndex={dirty ? 0 : -1}>{t('Сохранить')}</Button>
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   )
