@@ -23,7 +23,7 @@ export default function OrganizationSettings() {
           </>
         }
       />
-      <OrganizationForm wide onSaved={() => reload()} aside={<AIUsageCard />} />
+      <OrganizationForm wide onSaved={() => reload()} aside={<AIUsageCard />} asideNav={{ id: 'org-ai', label: t('Расход ИИ') }} />
     </div>
   )
 }

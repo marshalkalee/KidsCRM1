@@ -2517,5 +2517,12 @@
  "Ответ поставлен в очередь": "The reply has been queued",
  "Свободный ответ сейчас недоступен. Для нового диалога используйте одобренный шаблон Meta.": "Free-form replies are unavailable now. Use an approved Meta template to start a new conversation.",
  "WhatsApp центра не подключён": "The centre's WhatsApp is not connected",
- "24-часовое окно ответа закрыто — используйте одобренный шаблон Meta": "The 24-hour reply window is closed — use an approved Meta template"
+ "24-часовое окно ответа закрыто — используйте одобренный шаблон Meta": "The 24-hour reply window is closed — use an approved Meta template",
+  "Группы и заявки": "Groups and leads",
+  "Заявки с сайта": "Website leads",
+  "Пороги": "Thresholds",
+  "Продления и долги": "Renewals and debts",
+  "Разделы настроек": "Settings sections",
+  "Расход ИИ": "AI spend",
+  "Риск ухода": "Churn risk"
 }
