@@ -419,6 +419,28 @@ def _trend(index, items_by_month, today):
     return result
 
 
+def renewal_summary(scope, period, *, compare=True) -> dict:
+    """Только итог отчёта — для плитки дашборда (TRU-129): та же формула,
+    что `summary` в renewal_conversion_report, без разрезов и динамики.
+    previous — итог за прошлый период той же длины."""
+    organization = scope.organization
+    today = today_for_org(organization)
+    previous = period.previous() if compare else None
+    index = _load_index(organization, (previous or period).start, today)
+
+    def summary_for(chosen):
+        counter = _Counter()
+        rows = _ended_rows(index, chosen.start, chosen.end, scope.branch_ids)
+        for item in _classify(index, rows, today):
+            counter.add(item)
+        return counter.as_dict()
+
+    result = summary_for(period)
+    result["grace_days"] = index.grace_days
+    result["previous"] = summary_for(previous) if previous else None
+    return result
+
+
 def renewal_conversion_report(scope, period) -> dict:
     organization = scope.organization
     today = today_for_org(organization)

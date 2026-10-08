@@ -429,6 +429,15 @@ compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, seri
   `<ExportButton report="имя" filters={filters} />`. Шапка листа, форматы
   чисел/дат и «Итого» формулами — общие (`analytics/export.py`),
   `GET /api/v1/analytics/export/?report=…` с теми же period/branch/фильтрами.
+- Главный экран дашборда (TRU-129): `analytics/dashboard.owner_dashboard(scope,
+  period)`, `GET /api/v1/analytics/dashboard/?period=…&branch=…` — семь плиток
+  (`tiles`): `revenue`, `debt`, `group_fill` (+ места, дети, недобор),
+  `lead_conversion`, `renewal_conversion` (изменение — `change_pp`, в п.п.),
+  `risk`, `forecast`. Своих формул нет: каждая цифра — из функции своего
+  отчёта или экрана (`compute`, `funnel`, `renewal_report.renewal_summary`,
+  `risk_list`, `revenue_forecast`). Упавшая плитка приходит `null`, остальные
+  считаются. Новая цифра на главный экран — только через эту функцию и тест
+  сверки в `tests_dashboard.py`. Excel — первый лист `report=overview`.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.
 

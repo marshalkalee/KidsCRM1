@@ -13,6 +13,7 @@ from .branches import compare_branches
 from .breakdowns import breakdown, visits_heatmap
 from .churn import DIMENSIONS as CHURN_DIMENSIONS
 from .churn import churn_report
+from .dashboard import owner_dashboard
 from .export import Column, Export, Section
 from .forecast import revenue_forecast
 from .funnel import BY as FUNNEL_BY
@@ -182,9 +183,92 @@ OVERVIEW = [
 ]
 
 
+def dashboard_section(scope, period):
+    """Семь цифр главного экрана дашборда (TRU-129) — как на экране."""
+    tiles = owner_dashboard(scope, period)["tiles"]
+    empty = {}
+    revenue = tiles["revenue"] or empty
+    debt = tiles["debt"] or empty
+    fill = tiles["group_fill"] or empty
+    leads = tiles["lead_conversion"] or empty
+    renewals = tiles["renewal_conversion"] or empty
+    risk = tiles["risk"] or empty
+    forecast = tiles["forecast"] or empty
+    low, high = forecast.get("low"), forecast.get("high")
+    rows = [
+        [
+            "Выручка",
+            (revenue.get("value"), "money"),
+            (revenue.get("previous"), "money"),
+            (revenue.get("change_percent"), "percent"),
+            "оплаты за период",
+        ],
+        [
+            "Задолженность",
+            (debt.get("value"), "money"),
+            (debt.get("previous"), "money"),
+            (debt.get("change_percent"), "percent"),
+            "сейчас; прошлое — снимок на конец прошлого периода",
+        ],
+        [
+            "Заполняемость групп",
+            (fill.get("value"), "percent"),
+            (fill.get("previous"), "percent"),
+            (fill.get("change_percent"), "percent"),
+            f"сейчас: {fill.get('members', '—')} детей на {fill.get('capacity', '—')} мест, "
+            f"с недобором: {fill.get('underfilled', '—')}",
+        ],
+        [
+            "Конверсия заявок",
+            (leads.get("value"), "percent"),
+            (leads.get("previous"), "percent"),
+            None,
+            f"купили {leads.get('purchased', '—')} из {leads.get('leads', '—')} новых заявок; "
+            "изменение в п.п.",
+        ],
+        [
+            "Конверсия продлений",
+            (renewals.get("value"), "percent"),
+            (renewals.get("previous"), "percent"),
+            None,
+            f"продлили {renewals.get('renewed', '—')} из {renewals.get('decided', '—')}; "
+            f"окно продления идёт ещё у {renewals.get('pending', '—')}",
+        ],
+        [
+            "Дети в зоне риска ухода",
+            (risk.get("value"), "count"),
+            None,
+            None,
+            f"срочно: {risk.get('urgent', '—')}",
+        ],
+        [
+            "Прогноз выручки",
+            (forecast.get("value"), "money"),
+            None,
+            None,
+            f"продления на месяц с {forecast.get('month', '—')}: "
+            f"{FORECAST_STATUS.get(forecast.get('status'), '—')}"
+            + (f", диапазон {low}–{high} ₸" if low is not None else ""),
+        ],
+    ]
+    return Section(
+        "Дашборд",
+        [
+            Column("Показатель", width=28),
+            Column("Значение", "decimal", 16, total=False),
+            Column("Прошлый период", "decimal", 16, total=False),
+            Column("Изменение, %", "percent", 14, total=False),
+            Column("Пояснение", width=60),
+        ],
+        rows,
+        note="Главный экран дашборда владельца. Деньги — в тенге, доли — в процентах.",
+    )
+
+
 @report("overview", "Аналитика — обзор")
 def overview(scope, period, params):
     return [
+        dashboard_section(scope, period),
         metrics_section(OVERVIEW, scope, period),
         series_section(["revenue", "visits", "attendance_rate", "new_leads"], scope, period),
         breakdown_section("Способы оплаты", "Способ оплаты", "revenue", "method", scope, period),

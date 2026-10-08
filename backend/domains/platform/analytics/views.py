@@ -35,6 +35,7 @@ from .attendance_trends import attendance_trends
 from .branches import branch_trends, compare_branches
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
 from .churn import churn_report
+from .dashboard import owner_dashboard
 from .export import filename, workbook
 from .forecast import revenue_forecast
 from .funnel import FILTERS as FUNNEL_FILTERS
@@ -109,6 +110,25 @@ def _period_and_scope(request):
         return None, None, Response({"period": [str(exc)]}, status=400)
     except ScopeError as exc:
         return None, None, Response({"detail": str(exc)}, status=403)
+
+
+@api_view(["GET"])
+@permission_classes([CanViewAnalytics])
+def dashboard_api(request, version=None):
+    """Главный экран дашборда владельца (TRU-129): семь цифр верхнего
+    уровня, каждая — из функции своего подробного отчёта."""
+    period, scope, error = _period_and_scope(request)
+    if error:
+        return error
+    return Response(
+        {
+            "period": period.as_dict(),
+            "previous_period": period.previous().as_dict(),
+            "branches": [{"id": str(b.id), "name": b.name} for b in scope.branches],
+            "all_branches": scope.branch_ids is None,
+            **owner_dashboard(scope, period),
+        }
+    )
 
 
 @api_view(["GET"])

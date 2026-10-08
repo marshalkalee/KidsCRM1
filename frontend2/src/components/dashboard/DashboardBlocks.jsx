@@ -103,7 +103,11 @@ export function KpiTiles({ data }) {
   }
   const groups = data.groups?.results
   if (groups?.length) {
-    const fill = Math.round(groups.reduce((sum, g) => sum + (g.fill_percent || 0), 0) / groups.length)
+    // Дети в группах / места — та же формула, что «Заполняемость групп» в
+    // аналитике (group_fill), а не среднее процентов групп (TRU-129).
+    const members = groups.reduce((sum, g) => sum + (g.members_count || 0), 0)
+    const capacity = groups.reduce((sum, g) => sum + (g.capacity || 0), 0)
+    const fill = capacity ? Math.round((members * 100) / capacity) : 0
     const under = groups.filter(g => g.is_underfilled).length
     tiles.push({
       key: 'groups',
