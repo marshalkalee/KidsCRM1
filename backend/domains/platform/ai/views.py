@@ -27,7 +27,17 @@ from domains.platform.tenants.org_settings import (
     get_org_setting,
 )
 
-from . import assist, chat, digest, digest_tasks, generations, recommendations, services, usage
+from . import (
+    assist,
+    chat,
+    digest,
+    digest_i18n,
+    digest_tasks,
+    generations,
+    recommendations,
+    services,
+    usage,
+)
 from .models import AIContentDraft, AIDigest, AIGeneration, AIRecommendationState
 
 
@@ -624,11 +634,11 @@ def _visible_digest_content(item):
     return content
 
 
-def _digest_full(item):
+def _digest_full(item, language="ru"):
     return {
         **_digest_brief(item),
         "trigger": item.trigger,
-        "content": _visible_digest_content(item),
+        "content": digest_i18n.localize(_visible_digest_content(item), language),
     }
 
 
@@ -657,7 +667,9 @@ def digests(request, version=None):
         )
 
     digest.expire_stuck(organization)
-    rows = AIDigest.objects.for_tenant(organization).filter(language=language)
+    # Один дайджест на все языки: собран по-русски, перевод — внутри
+    # (digest_i18n). Старые выпуски на других языках не показываем.
+    rows = AIDigest.objects.for_tenant(organization).filter(language=digest_i18n.SOURCE)
     latest = rows.filter(status__in=digest.DONE).first()
     last = rows.first()
     pending = rows.filter(status__in=digest.PENDING).first()
@@ -671,7 +683,7 @@ def digests(request, version=None):
                 "weekday": get_org_setting(organization, DIGEST_WEEKDAY),
                 "hour": get_org_setting(organization, DIGEST_HOUR),
             },
-            "latest": _digest_full(latest) if latest else None,
+            "latest": _digest_full(latest, language) if latest else None,
             "building": _digest_brief(pending) if pending else None,
             "notice": notice,
             "archive": [_digest_brief(d) for d in rows.filter(status=AIDigest.Status.READY)[:52]],
@@ -685,7 +697,8 @@ def digest_detail(request, digest_id, version=None):
     item = AIDigest.objects.for_tenant(request.user.organization).filter(pk=digest_id).first()
     if item is None:
         return Response({"detail": "Дайджест не найден."}, status=status.HTTP_404_NOT_FOUND)
-    return Response(_digest_full(item))
+    language = request.query_params.get("language", "ru")
+    return Response(_digest_full(item, language if language in digest_i18n.LANGUAGES else "ru"))
 
 
 def _digest_and_item(request, digest_id):

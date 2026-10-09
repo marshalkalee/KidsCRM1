@@ -24,7 +24,7 @@ from django.utils import timezone
 from domains.platform.tenants.models import Organization
 from domains.platform.tenants.org_settings import DIGEST_HOUR, DIGEST_WEEKDAY, get_org_setting
 
-from . import aggregates, generations, services, usage
+from . import aggregates, digest_i18n, generations, services, usage
 from .models import AIDigest, AIGeneration
 
 logger = logging.getLogger(__name__)
@@ -403,6 +403,8 @@ def _build(digest) -> AIDigest:
         return _set(digest, status=AIDigest.Status.FAILED, error_detail=text[:500])
     content = compose(organization, results, snapshot, _previous(digest), digest.language)
     content["failed_blocks"] = len(failed)
+    # Сразу на трёх языках: смена языка на экране ничего не собирает заново.
+    content["i18n"] = digest_i18n.translate(organization, content)
     return _set(digest, status=AIDigest.Status.READY, content=content, ready_at=timezone.now())
 
 
@@ -437,6 +439,9 @@ def expire_stuck(organization, now=None) -> int:
 
 
 def request_refresh(organization, user, language="ru") -> tuple[AIDigest, bool]:
+    # Дайджест один на все языки (digest_i18n): собирается по-русски и сразу
+    # переводится; язык экрана на сборку не влияет.
+    language = digest_i18n.SOURCE
     """Кнопка «Обновить». Уже собирается — тот же дайджест; недавно
     обновляли — текст; лимит исчерпан — текст. (дайджест, создан ли новый)."""
     expire_stuck(organization)
@@ -489,18 +494,11 @@ def dispatch(now=None) -> int:
     for organization in Organization.objects.filter(is_active=True, ai_enabled=True):
         if not due(organization, now):
             continue
-        previous_language = (
-            AIDigest.objects.for_tenant(organization)
-            .filter(status=AIDigest.Status.READY)
-            .values_list("language", flat=True)
-            .first()
-            or "ru"
-        )
         digest = AIDigest.objects.create(
             organization=organization,
             week_start=week_start(organization, now),
             trigger=AIDigest.Trigger.SCHEDULE,
-            language=previous_language,
+            language=digest_i18n.SOURCE,
         )
         _schedule(digest)
         started += 1
