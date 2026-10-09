@@ -285,6 +285,36 @@ lead, created = create_renewal_lead(child, actor=None)               # авто�
   продление ребёнка уходит в `PURCHASED` с автором и названием абонемента.
   Отказ по продлению продажа не трогает.
 
+### Конверсия продлений (TRU-125, ТЗ п. 5.3) — для прогноза выручки и TRU-126
+
+```python
+from domains.money.subscriptions.renewal_conversion import (
+    RENEWAL_GRACE_DAYS, RenewalIndex, load_rows, renewal_conversion,
+)
+
+index = RenewalIndex(load_rows(org, ends_since=date(2026, 1, 1)))
+renewal_conversion(index, as_of=today, months=6, branch_ids=None)
+# {ended, renewed, rate (0..1 | None), avg_renewal_price, window_start, window_end}
+index.renewal_of(subscription_row, known_before=date)  # продление или None
+```
+
+- Продлён = у ребёнка есть другой абонемент, проданный кнопкой «Продлить»
+  (`renewed_from`), или того же направления, начавшийся позже и не позже
+  `RENEWAL_GRACE_DAYS` (14) дней после окончания. Окно — решение по
+  умолчанию (вопрос №5 в `docs/project-status.md`), меняется только здесь.
+- В выборку попадают абонементы, у которых окно продления уже прошло.
+  `as_of` — «что было известно на дату»: продажи после неё не видны
+  (ретроспектива прогноза).
+- Отчёт по конверсии и колонка в сравнении филиалов (TRU-126) берут
+  конверсию отсюда, а не считают свою.
+- Прогноз выручки: `analytics/forecast.revenue_forecast(scope)`,
+  `GET /api/v1/analytics/forecast/` (только филиалы, период не нужен),
+  Excel `report=forecast`. Оплачено, но не отработано — по `paid_sum`;
+  продано, но не оплачено — `debt_total` (как экран «Задолженности»).
+  Продления следующего месяца считаются цепочкой от активных абонементов
+  (продление той же длины тоже может продлиться), диапазон расширяется до
+  худшей ошибки прогноза на законченных прошлых месяцах.
+
 ### Риск-лист (TRU-122): границы доменов
 
 `analytics.risk_list` не пересчитывает финансовые правила. Он объединяет три
