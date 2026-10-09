@@ -17,6 +17,12 @@ urlpatterns = [
     path("teacher-workload/", views.teacher_workload_api, name="analytics-teacher-workload"),
     path("funnel/", views.funnel_api, name="analytics-funnel"),
     path("funnel/by/", views.funnel_by_api, name="analytics-funnel-by"),
+    path("forecast/", views.forecast_api, name="analytics-forecast"),
+    path(
+        "renewal-conversion/",
+        views.renewal_conversion_api,
+        name="analytics-renewal-conversion",
+    ),
     path("rejections/", views.rejections_api, name="analytics-rejections"),
     path("rejections/by/", views.rejections_by_api, name="analytics-rejections-by"),
     path("branches/", views.branches_api, name="analytics-branches"),

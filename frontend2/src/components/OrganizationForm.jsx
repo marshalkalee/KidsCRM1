@@ -15,12 +15,13 @@ const THRESHOLDS = [
   { key: 'group_underfilled_percent_threshold', get label() { return t('Группа недозаполнена') }, get hint() { return t('Заполненность группы') }, get suffix() { return t('% и меньше') }, max: 100 },
   { key: 'risk_absence_change_pp_threshold', get label() { return t('Рост пропусков для риск-листа') }, get hint() { return t('Отклонение от личной нормы ребёнка') }, get suffix() { return t('п.п. и больше') }, min: 1, max: 100 },
   { key: 'risk_current_absences_min', get label() { return t('Минимум пропусков для риск-листа') }, get hint() { return t('За выбранный период') }, get suffix() { return t('пропуска и больше') }, min: 1, max: 100 },
+  { key: 'renewal_grace_days', get label() { return t('Что считать продлением') }, get hint() { return t('Новый абонемент после окончания прошлого — не позже') }, get suffix() { return t('дней') }, max: 120 },
   { key: 'lead_stale_days_threshold', get label() { return t('Заявка без движения') }, get hint() { return t('Напомнить перезвонить через') }, get suffix() { return t('дней') }, max: 90 },
 ]
 
 // Пороги на экране «Организация» — подгруппами по смыслу.
 const THRESHOLD_GROUPS = [
-  { get title() { return t('Продления и долги') }, keys: ['subscription_ending_lessons_threshold', 'subscription_ending_days_threshold', 'debt_overdue_days_threshold'] },
+  { get title() { return t('Продления и долги') }, keys: ['subscription_ending_lessons_threshold', 'subscription_ending_days_threshold', 'renewal_grace_days', 'debt_overdue_days_threshold'] },
   { get title() { return t('Группы и заявки') }, keys: ['group_underfilled_percent_threshold', 'lead_stale_days_threshold'] },
   { get title() { return t('Риск ухода') }, keys: ['risk_absence_change_pp_threshold', 'risk_current_absences_min'] },
 ]
