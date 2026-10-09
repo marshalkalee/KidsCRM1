@@ -29,7 +29,15 @@ class ManualProvider(PaymentProvider):
         self.method = method
 
     def record(
-        self, *, subscription, amount, actor, payer=None, comment="", idempotency_key=None
+        self,
+        *,
+        subscription,
+        amount,
+        actor,
+        payer=None,
+        comment="",
+        idempotency_key=None,
+        paid_at=None,
     ) -> Payment:
         if to_tenge(amount) <= 0:
             raise ValueError("Сумма оплаты должна быть больше нуля.")
@@ -44,6 +52,7 @@ class ManualProvider(PaymentProvider):
             confirmed_at=now,
             received_by=actor,
             comment=comment,
+            paid_at=paid_at or now,
         )
         if idempotency_key:
             # Ключ присылает клиент — с префиксом организации, чтобы ключ
@@ -66,6 +75,11 @@ class ManualProvider(PaymentProvider):
                 actor=actor,
                 action=AuditLog.Action.CREATE,
                 entity=payment,
-                after={"amount": str(payment.amount), "method": self.method, "provider": "manual"},
+                after={
+                    "amount": str(payment.amount),
+                    "method": self.method,
+                    "provider": "manual",
+                    "paid_at": payment.paid_at.isoformat(),
+                },
             )
         return payment
