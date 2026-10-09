@@ -4,6 +4,7 @@ import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, MessageCircle
 import api from '../api/axios'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
 import NewTaskModal from '../components/tasks/NewTaskModal'
+import { ROLE_LABELS, TASK_MANAGER_ROLES } from '../components/tasks/types'
 import { SellModal } from '../components/money/SubscriptionsTab'
 import { useSession } from '../session/SessionContext'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, PageHeader, Select, Skeleton, Tabs, apiErrorMessage, cn, money, useToast } from '../ui'
@@ -85,6 +86,9 @@ export default function MyTasks() {
   const [selling, setSelling] = useState(null)
   const [closing, setClosing] = useState(null)
   const [creating, setCreating] = useState(false)
+  // Ставить и передавать задачи — руководитель и администратор; бухгалтер и
+  // преподаватель только выполняют и переносят свои.
+  const canManage = TASK_MANAGER_ROLES.includes(user?.role)
 
   const load = useCallback(() => {
     Promise.all([
@@ -104,7 +108,7 @@ export default function MyTasks() {
 
   useEffect(() => {
     api.get('users/').then(res => {
-      const rows = (res.data.results || res.data).filter(u => u.id !== user.id && u.role !== 'teacher')
+      const rows = (res.data.results || res.data).filter(u => u.id !== user.id && u.is_active !== false)
       setColleagues(rows)
     }).catch(() => {})
   }, [user.id])
@@ -181,7 +185,7 @@ export default function MyTasks() {
         description={overdue.length > 0
           ? t('{n} просрочено, {m} на сегодня', { n: overdue.length, m: today.length })
           : t('{n} задач на сегодня', { n: today.length })}
-        actions={<Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Новая задача')}</Button>}
+        actions={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Новая задача')}</Button>}
       />
 
       <Tabs
@@ -220,6 +224,8 @@ export default function MyTasks() {
                     closing={closing === task.id}
                     center={user?.organization_name}
                     me={user?.id}
+                    canManage={canManage}
+                    canPay={Boolean(user?.permissions?.can_accept_payments)}
                     onComplete={() => complete(task)}
                     onPostpone={() => postpone(task)}
                     onReassign={() => setReassigning(task)}
@@ -250,7 +256,7 @@ export default function MyTasks() {
             {({ id }) => (
               <Select id={id} defaultValue="" onChange={e => e.target.value && reassign(reassigning, e.target.value)}>
                 <option value="" disabled>{t('Выберите сотрудника')}</option>
-                {colleagues.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                {colleagues.map(c => <option key={c.id} value={c.id}>{c.full_name}{ROLE_LABELS[c.role] ? ` · ${ROLE_LABELS[c.role]()}` : ''}</option>)}
               </Select>
             )}
           </Field>
@@ -276,7 +282,7 @@ export default function MyTasks() {
   )
 }
 
-function TaskCard({ task, overdue: late, closed, closing, center, me, onComplete, onPostpone, onReassign, onPay, onSell, onOpen }) {
+function TaskCard({ task, overdue: late, closed, closing, center, me, canManage, canPay, onComplete, onPostpone, onReassign, onPay, onSell, onOpen }) {
   // Закрытая задача не «просрочена», даже если срок давно прошёл.
   const overdue = late && !closed
   const template = REMINDER_TEMPLATES[task.type]
@@ -336,16 +342,16 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, onComplete
             <span className="hidden sm:inline">{t('WhatsApp')}</span>
           </a>
         )}
-        {task.type === 'payment_reminder' && task.child && (
+        {canPay && task.type === 'payment_reminder' && task.child && (
           <Button size="sm" variant="secondary" onClick={onPay}>{t('Принять оплату')}</Button>
         )}
-        {task.type === 'renewal_offer' && task.child && (
+        {canPay && task.type === 'renewal_offer' && task.child && (
           <Button size="sm" variant="secondary" onClick={onSell}>{t('Продать абонемент')}</Button>
         )}
         {digestLink && <a href={digestLink} className="inline-flex items-center text-sm font-semibold text-brand-600 hover:underline">{t('Открыть дайджест')}</a>}
         {!closed && (
           <div className="flex w-full items-center gap-1.5 sm:ml-auto sm:w-auto">
-            <Button size="sm" variant="ghost" icon={UserRoundPlus} onClick={onReassign}>{t('Передать')}</Button>
+            {canManage && <Button size="sm" variant="ghost" icon={UserRoundPlus} onClick={onReassign}>{t('Передать')}</Button>}
             <Button size="sm" variant="ghost" icon={CalendarClock} onClick={onPostpone}>{t('На завтра')}</Button>
             <Button size="sm" variant="primary" loading={closing} onClick={onComplete} className="ml-auto sm:ml-0">{t('Выполнено')}</Button>
           </div>

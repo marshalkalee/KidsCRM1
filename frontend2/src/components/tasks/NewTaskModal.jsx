@@ -4,7 +4,7 @@ import api from '../../api/axios'
 import { useSession } from '../../session/SessionContext'
 import { Button, DateInput, Field, Input, Modal, Select, Textarea, apiErrorMessage, cn, useToast } from '../../ui'
 import { t } from '../../i18n'
-import { MANUAL_TYPES } from './types'
+import { MANUAL_TYPES, ROLE_LABELS } from './types'
 
 function todayIso() {
   const d = new Date()
@@ -37,7 +37,9 @@ export default function NewTaskModal({ onClose, onCreated }) {
 
   useEffect(() => {
     api.get('users/')
-      .then(res => setStaff(listOf(res.data).filter(u => ['owner', 'manager', 'admin'].includes(u.role) && u.is_active !== false)))
+      // Исполнителем может быть любой сотрудник: бухгалтер и преподаватель видят
+      // свои задачи на странице «Задачи». Список уже урезан по филиалам (Д36).
+      .then(res => setStaff(listOf(res.data).filter(u => u.is_active !== false)))
       .catch(() => {})
   }, [])
 
@@ -104,7 +106,9 @@ export default function NewTaskModal({ onClose, onCreated }) {
               <Select id={id} invalid={invalid} value={form.assigned_to} onChange={e => set('assigned_to', e.target.value)}>
                 {assignees.map(person => (
                   <option key={person.id} value={String(person.id)}>
-                    {String(person.id) === String(user.id) ? t('Я ({name})', { name: person.full_name }) : person.full_name}
+                    {String(person.id) === String(user.id)
+                      ? t('Я ({name})', { name: person.full_name })
+                      : `${person.full_name}${ROLE_LABELS[person.role] ? ` · ${ROLE_LABELS[person.role]()}` : ''}`}
                   </option>
                 ))}
               </Select>

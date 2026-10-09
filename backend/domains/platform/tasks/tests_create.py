@@ -65,3 +65,43 @@ class CreateTaskTests(TestCase):
         response = self.post(self.admin_a, branch=str(self.b.id))
         self.assertEqual(response.status_code, 400)
         self.assertIn("branch", response.data)
+
+
+class OwnTasksTests(CreateTaskTests):
+    """Бухгалтер и преподаватель получают задачи и работают со своими."""
+
+    def setUp(self):
+        super().setUp()
+        self.teacher = self.user("77040000005", User.Role.TEACHER)
+        self.accountant = self.user("77040000006", User.Role.ACCOUNTANT)
+
+    def client_for(self, user):
+        client = APIClient()
+        client.force_authenticate(user)
+        return client
+
+    def rows(self, user):
+        data = self.client_for(user).get(URL).data
+        return data["results"] if isinstance(data, dict) else data
+
+    def test_teacher_sees_and_closes_only_own_tasks(self):
+        own = self.post(self.owner, assigned_to=str(self.teacher.id)).data["id"]
+        other = self.post(self.owner, assigned_to=str(self.admin_a.id)).data["id"]
+        self.assertEqual({row["id"] for row in self.rows(self.teacher)}, {own})
+        client = self.client_for(self.teacher)
+        tomorrow = (timezone.now() + timezone.timedelta(days=1)).isoformat()
+        self.assertEqual(
+            client.patch(f"{URL}{own}/", {"due_at": tomorrow}, format="json").status_code, 200
+        )
+        self.assertEqual(client.post(f"{URL}{own}/complete/").status_code, 200)
+        self.assertEqual(client.post(f"{URL}{other}/complete/").status_code, 404)
+
+    def test_accountant_completes_own_task_but_cannot_reassign(self):
+        own = self.post(self.owner, assigned_to=str(self.accountant.id)).data["id"]
+        client = self.client_for(self.accountant)
+        reassign = client.patch(f"{URL}{own}/", {"assigned_to": str(self.owner.id)}, format="json")
+        self.assertEqual(reassign.status_code, 403)
+        self.assertEqual(client.post(f"{URL}{own}/complete/").status_code, 200)
+
+    def test_teacher_cannot_create_tasks(self):
+        self.assertEqual(self.post(self.teacher).status_code, 403)
