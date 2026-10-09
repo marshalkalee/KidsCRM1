@@ -16,6 +16,7 @@ import json
 import random
 import time
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from PIL import Image, ImageDraw
@@ -137,7 +138,11 @@ class Extras:
             role: User.objects.filter(organization=org, role=role, is_active=True).first()
             for role in ("owner", "admin", "manager")
         }
-        self.api = APIClient(HTTP_HOST="localhost")
+        # На сервере — от имени его домена и «по HTTPS» (за nginx): иначе
+        # ALLOWED_HOSTS и SECURE_SSL_REDIRECT не пустят, а ссылки на фото
+        # профиля получились бы на localhost.
+        host = next((h.lstrip(".") for h in settings.ALLOWED_HOSTS if h != "*"), "localhost")
+        self.api = APIClient(HTTP_HOST=host, HTTP_X_FORWARDED_PROTO="https")
         self.api.force_authenticate(self.owner)
 
     def run(self):

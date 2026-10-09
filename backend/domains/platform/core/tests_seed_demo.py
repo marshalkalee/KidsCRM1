@@ -28,7 +28,7 @@ class SeedDemoTests(TestCase):
             role=User.Role.OWNER,
         )
 
-    @override_settings(DEBUG=True)
+    @override_settings(DEBUG=True, DEMO_DATA_ALLOWED=True)
     def test_seeds_once(self):
         call_command("seed_demo", children=20, stdout=io.StringIO())
         children = Child.objects.for_tenant(self.org).count()
@@ -43,7 +43,7 @@ class SeedDemoTests(TestCase):
         lessons = list(Lesson.objects.for_tenant(self.org))
         self.assertEqual(compute_conflict_map(lessons), {})
 
-    @override_settings(DEBUG=False)
+    @override_settings(DEBUG=False, DEMO_DATA_ALLOWED=False)
     def test_refuses_without_debug(self):
         with self.assertRaises(CommandError):
             call_command("seed_demo", children=5)

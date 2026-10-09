@@ -11,7 +11,8 @@
     python manage.py seed_showcase
     python manage.py seed_showcase --reset     # старую в архив, собрать заново
 
-Пароль у всех — DemoKids2026. Только DEBUG.
+Пароль у всех — DemoKids2026. Только в разработке или на демо-сервере
+(DEMO_DATA_ALLOWED=true в backend/.env).
 """
 
 import datetime
@@ -63,7 +64,7 @@ ABSENCE_REASONS = [
 
 
 class Command(DemoCommand):
-    help = "Демо-центр для показа с логинами всех ролей (только DEBUG)."
+    help = "Демо-центр для показа с логинами всех ролей (разработка или демо-сервер)."
     teacher_phone = "+7777001{:04d}"
 
     def add_arguments(self, parser):
@@ -80,8 +81,10 @@ class Command(DemoCommand):
         )
 
     def handle(self, *args, children, seed, reset, extras=False, **options):
-        if not settings.DEBUG:
-            raise CommandError("seed_showcase — только для разработки (DEBUG=True).")
+        if not settings.DEMO_DATA_ALLOWED:
+            raise CommandError(
+                "seed_showcase — только для разработки или демо-сервера (DEMO_DATA_ALLOWED=true)."
+            )
         if extras:
             from domains.platform.core.showcase_extras import Extras
 
