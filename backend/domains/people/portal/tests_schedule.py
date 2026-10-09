@@ -323,8 +323,11 @@ class ParentScheduleTests(PortalAuthBase):
         self.assertFalse(response.data["notice_is_timely"])
         self.assertTrue(response.data["will_be_charged"])
         task = Task.objects.get(source_key=f"parent-request:{response.data['id']}")
-        self.assertIn("Семейные обстоятельства", task.description)
-        self.assertIn("занятие спишется", task.description)
+        self.assertEqual(task.title, "Отмена занятия")
+        self.assertIn("Причина: семейные обстоятельства.", task.description)
+        self.assertIn("Предупредили позже срока — занятие спишется.", task.description)
+        # Только человеческий текст: без служебных id организации и занятия.
+        self.assertNotIn(str(self.org.id), task.description)
 
     def test_regular_options_match_direction_age_and_capacity(self):
         suitable_group = Group.objects.create(

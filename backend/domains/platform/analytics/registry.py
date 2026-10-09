@@ -351,7 +351,7 @@ def compute(names, scope, period: Period, *, compare=True, series=True, use_cach
                 metric = REGISTRY[name]
                 key = (
                     f"m:{name}:{scope.cache_key}:{period.start}:{period.end}:{period.preset}"
-                    f":{int(compare)}{int(series)}"
+                    f":{period.granularity}:{int(compare)}{int(series)}"
                 )
                 cached = _cache_get(key) if use_cache else None
                 if cached is None:

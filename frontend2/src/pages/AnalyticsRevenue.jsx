@@ -1,5 +1,6 @@
+import { useMemo, useState } from 'react'
 import { Info } from 'lucide-react'
-import { Card, ErrorState, PageHeader } from '../ui'
+import { Card, ErrorState, PageHeader, cn } from '../ui'
 import { t } from '../i18n'
 import {
   AnalyticsNav, AnalyticsToolbar, ExportButton, ChartCard, DonutChart, MetricTile, PALETTE, RankBars, TrendChart,
@@ -7,6 +8,13 @@ import {
 } from '../components/analytics'
 
 const TILES = ['revenue', 'payments_count', 'average_check', 'debt_total']
+// Шаг графика: «авто» — по длине периода (до месяца дни, до полугода недели).
+const STEPS = [
+  { value: '', get label() { return t('Авто') } },
+  { value: 'day', get label() { return t('Дни') } },
+  { value: 'week', get label() { return t('Недели') } },
+  { value: 'month', get label() { return t('Месяцы') } },
+]
 const CLIENT_COLORS = [PALETTE[0], 'var(--color-success-600)']
 
 /**
@@ -17,7 +25,13 @@ const CLIENT_COLORS = [PALETTE[0], 'var(--color-success-600)']
 export default function AnalyticsRevenue() {
   const filters = useAnalyticsFilters()
   const catalog = useAnalyticsCatalog()
-  const { data, loading, error, reload } = useMetrics(TILES, filters)
+  const [step, setStep] = useState('')
+  // Шаг касается только графика динамики и выгрузки; разрезы его не знают.
+  const stepped = useMemo(
+    () => (step ? { ...filters, query: `${filters.query}&granularity=${step}` } : filters),
+    [filters, step],
+  )
+  const { data, loading, error, reload } = useMetrics(TILES, stepped)
   const metrics = data?.metrics || {}
   const common = { loading, error, onRetry: reload, metric: metrics.revenue }
 
@@ -43,7 +57,7 @@ export default function AnalyticsRevenue() {
 
   return (
     <>
-      <PageHeader title={t('Аналитика')} description={t('Выручка по оплатам')} actions={<ExportButton report="revenue" filters={filters} />} />
+      <PageHeader title={t('Аналитика')} description={t('Выручка по оплатам')} actions={<ExportButton report="revenue" filters={stepped} />} />
       <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} previous={data?.previous_period} />
 
@@ -61,7 +75,13 @@ export default function AnalyticsRevenue() {
           </p>
 
           <div className="grid gap-4 lg:grid-cols-3">
-            <ChartCard className="lg:col-span-2" title={t('Динамика выручки')} description={t('Пунктир — прошлый период той же длины')} {...common}>
+            <ChartCard
+              className="lg:col-span-2"
+              title={t('Динамика выручки')}
+              description={t('Пунктир — прошлый период той же длины')}
+              actions={<StepPicker value={step} onChange={setStep} />}
+              {...common}
+            >
               <TrendChart series={metrics.revenue?.series} previous={metrics.revenue?.previous_series} unit="money" granularity={data?.period?.granularity} label={t('Выручка')} />
             </ChartCard>
             {breakdownCard(t('Новые клиенты и продления'), t('Откуда деньги'), clients,
@@ -78,5 +98,27 @@ export default function AnalyticsRevenue() {
         </>
       )}
     </>
+  )
+}
+
+function StepPicker({ value, onChange }) {
+  return (
+    <div role="radiogroup" aria-label={t('Шаг графика')} className="flex gap-1">
+      {STEPS.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={cn(
+            'h-8 rounded-md px-2.5 text-[12px] font-semibold transition-colors',
+            value === option.value ? 'bg-brand-50 text-brand-700' : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   )
 }

@@ -406,3 +406,23 @@ class LessonEnrollment(TenantModel):
 
     def __str__(self):
         return f"{self.child} → {self.lesson} ({self.get_kind_display()})"
+
+
+class SeatHold(TenantModel):
+    """Бронь места на занятие из каталога (TRU-180): родитель выбрал пробное
+    в каталоге — место держится за ним, пока центр не перезвонит. Пишется
+    только через schedule/holds.py: там блокировка занятия, чтобы двое не
+    взяли последнее место. Бронь действует, пока не истекла, не снята и
+    по заявке ещё нет записи на это занятие (запись уже считается в
+    участниках). Истёкшая бронь перестаёт считаться сама, без задачи."""
+
+    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="seat_holds")
+    lead = models.ForeignKey("leads.Lead", on_delete=models.CASCADE, related_name="seat_holds")
+    expires_at = models.DateTimeField()
+    released_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("Бронь места")
+        verbose_name_plural = _("Брони мест")
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["lesson", "expires_at"])]

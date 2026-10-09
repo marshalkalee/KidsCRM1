@@ -55,6 +55,7 @@ class LeadSerializer(serializers.ModelSerializer):
     direction_name = serializers.CharField(source="direction.name", read_only=True, default=None)
     source_name = serializers.CharField(source="source.name", read_only=True, default=None)
     campaign_name = serializers.CharField(source="campaign.name", read_only=True, default=None)
+    seat_hold = serializers.SerializerMethodField()
     assigned_to_name = serializers.CharField(
         source="assigned_to.full_name", read_only=True, default=None
     )
@@ -108,6 +109,7 @@ class LeadSerializer(serializers.ModelSerializer):
             "allowed_transitions",
             "allowed_stages",
             "trial_booking",
+            "seat_hold",
             "rejection_reason",
             "rejection_reason_name",
             "rejection_comment",
@@ -236,6 +238,29 @@ class LeadSerializer(serializers.ModelSerializer):
             "direction_name": lesson.group.direction.name,
             "room_name": lesson.room.name if lesson.room else None,
             "teacher_name": lesson.teacher.full_name if lesson.teacher else None,
+        }
+
+    def get_seat_hold(self, lead):
+        """Бронь места из каталога (TRU-180): на какое занятие и до когда.
+        active — держит ли место сейчас (не истекла и ещё не подтверждена)."""
+        view = self.context.get("view")
+        if view is not None and view.action in ("list", "board", "export"):
+            return None
+        hold = (
+            lead.seat_holds.select_related("lesson__group__branch").order_by("-created_at").first()
+        )
+        if hold is None:
+            return None
+        from domains.scheduling.schedule.holds import active
+
+        tz = timezone.zoneinfo.ZoneInfo(lead.organization.timezone or "Asia/Almaty")
+        return {
+            "lesson_id": str(hold.lesson_id),
+            "starts_at_local": hold.lesson.starts_at.astimezone(tz).isoformat(),
+            "group_name": hold.lesson.group.name,
+            "branch_name": hold.lesson.group.branch.name,
+            "expires_at_local": hold.expires_at.astimezone(tz).isoformat(),
+            "active": active().filter(pk=hold.pk).exists(),
         }
 
     def get_sold_subscription_details(self, lead):

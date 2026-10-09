@@ -3,6 +3,7 @@ import { Cake, CalendarDays, CheckCircle2 } from 'lucide-react'
 import { useSession } from '../../session/SessionContext'
 import { Button, Card, Skeleton, cn, money, plural } from '../../ui'
 import { locale, t } from '../../i18n'
+import { Change } from '../analytics'
 
 /*
  * Блоки главной (вариант A пробника): ключевые цифры, «Требует внимания»,
@@ -20,11 +21,12 @@ function BlockTitle({ children, to, link }) {
   )
 }
 
-function Tile({ label, value, hint, tone, progress, to }) {
+function Tile({ label, value, hint, tone, progress, change, to }) {
   const body = (
     <Card className={cn('h-full px-4 py-4 sm:px-5 sm:py-[18px]', to && 'transition-shadow hover:shadow-pop')}>
       <p className="text-[13px] text-ink-muted">{label}</p>
       <p className={cn('mt-1.5 text-[20px] font-bold leading-tight sm:text-[28px]', tone || 'text-ink')}>{value}</p>
+      {change && <div className="mt-1.5">{change}</div>}
       {progress != null && (
         <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[#f3eef6]">
           <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, progress)}%` }} />
@@ -69,6 +71,7 @@ export function KpiTiles({ data }) {
       key: 'revenue',
       label: t('Выручка за 30 дней'),
       value: money(revenue.revenue.value),
+      change: <Change metric={revenue.revenue} />,
       hint: revenue.payments_count?.value
         ? `${revenue.payments_count.value} ${plural(revenue.payments_count.value, ['оплата', 'оплаты', 'оплат'])} · ${t('средний чек {sum}', { sum: nb(revenue.average_check?.value) })}`
         : t('Оплат за 30 дней не было'),
