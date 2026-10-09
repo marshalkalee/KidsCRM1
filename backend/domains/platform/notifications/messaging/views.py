@@ -4,7 +4,8 @@
 from html import escape
 
 from django.core import signing
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.decorators import (
@@ -15,8 +16,9 @@ from rest_framework.decorators import (
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from domains.people.clients.models import ParentContact
+from domains.people.clients.models import ChildContact, ParentContact
 from domains.platform.core.permissions import IsOwner, IsOwnerOrManagerOrAdmin
+from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.tenants.org_settings import (
     MESSAGING_CHANNELS,
     MESSAGING_QUIET_FROM,
@@ -25,10 +27,26 @@ from domains.platform.tenants.org_settings import (
     get_org_setting,
 )
 
-from ..models import MessageCategory, MessageTemplate, MessagingConsent, OutboundMessage
+from ..models import (
+    MessageCategory,
+    MessageTemplate,
+    MessagingConsent,
+    OutboundMessage,
+    WhatsAppConnection,
+)
 from . import service
 from .channels import CHANNELS
 from .events import EVENTS, LANGUAGES
+from .whatsapp import (
+    WhatsAppError,
+    ensure_default_templates,
+    handle_webhook,
+    new_verify_token,
+    template_name,
+    valid_webhook_signature,
+    verify_connection,
+    within_service_window,
+)
 
 JOURNAL_LIMIT = 200
 
@@ -80,11 +98,344 @@ def messaging_settings(request, version=None):
                 {
                     "key": key,
                     "label": channel.label,
-                    "connected": not getattr(channel, "reason", ""),
-                    "reason": getattr(channel, "reason", ""),
+                    "connected": (
+                        WhatsAppConnection.objects.for_tenant(organization)
+                        .filter(status=WhatsAppConnection.Status.CONNECTED)
+                        .exists()
+                        if key == "whatsapp"
+                        else not getattr(channel, "reason", "")
+                    ),
+                    "reason": (
+                        "WhatsApp центра не подключён"
+                        if key == "whatsapp"
+                        and not WhatsAppConnection.objects.for_tenant(organization)
+                        .filter(status=WhatsAppConnection.Status.CONNECTED)
+                        .exists()
+                        else getattr(channel, "reason", "")
+                    ),
                 }
                 for key, channel in CHANNELS.items()
             ],
+        }
+    )
+
+
+def _connection_payload(connection):
+    if not connection:
+        return {
+            "mode": "console",
+            "status": "disconnected",
+            "waba_id": "",
+            "phone_number_id": "",
+            "business_phone": "",
+            "has_token": False,
+            "webhook_verify_token": "",
+            "verified_at": None,
+            "last_error": "",
+            "templates": [],
+        }
+    templates = MessageTemplate.objects.for_tenant(connection.organization).filter(
+        channel="whatsapp"
+    )
+    return {
+        "mode": connection.mode,
+        "status": connection.status,
+        "waba_id": connection.waba_id,
+        "phone_number_id": connection.phone_number_id,
+        "business_phone": connection.business_phone,
+        "has_token": bool(connection.access_token),
+        "webhook_verify_token": connection.webhook_verify_token,
+        "verified_at": connection.verified_at,
+        "last_error": connection.last_error,
+        "templates": [
+            {
+                "event": row.event,
+                "event_label": EVENTS[row.event].label if row.event in EVENTS else row.event,
+                "language": row.language,
+                "status": row.provider_status,
+                "status_label": row.get_provider_status_display(),
+                "rejection_reason": row.rejection_reason,
+                "synced_at": row.synced_at,
+            }
+            for row in templates.order_by("event", "language")
+        ],
+    }
+
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsOwner])
+def whatsapp_connection(request, version=None):
+    organization = request.user.organization
+    connection = WhatsAppConnection.objects.for_tenant(organization).filter().first()
+    if request.method == "PUT":
+        connection = connection or WhatsAppConnection(organization=organization)
+        mode = request.data.get("mode", connection.mode or "console")
+        if mode not in WhatsAppConnection.Mode.values:
+            return Response({"mode": ["Неизвестный режим."]}, status=400)
+        connection.mode = mode
+        for field in ("waba_id", "phone_number_id", "business_phone"):
+            value = request.data.get(field, getattr(connection, field))
+            setattr(connection, field, str(value).strip())
+        if "access_token" in request.data and request.data["access_token"]:
+            connection.access_token = str(request.data["access_token"]).strip()
+        if not connection.webhook_verify_token:
+            connection.webhook_verify_token = new_verify_token()
+        connection.status = WhatsAppConnection.Status.DISCONNECTED
+        connection.last_error = ""
+        connection.save()
+    return Response(_connection_payload(connection))
+
+
+@api_view(["POST"])
+@permission_classes([IsOwner])
+def whatsapp_test(request, version=None):
+    connection = WhatsAppConnection.objects.for_tenant(request.user.organization).filter().first()
+    if not connection:
+        return Response({"detail": "Сначала сохраните подключение."}, status=400)
+    try:
+        result = verify_connection(connection)
+        connection.status = WhatsAppConnection.Status.CONNECTED
+        connection.verified_at = timezone.now()
+        connection.last_error = ""
+        connection.save(update_fields=["status", "verified_at", "last_error", "updated_at"])
+        ensure_default_templates(connection)
+    except WhatsAppError as exc:
+        connection.status = WhatsAppConnection.Status.ERROR
+        connection.last_error = str(exc)
+        connection.save(update_fields=["status", "last_error", "updated_at"])
+        return Response({"detail": str(exc)}, status=400)
+    return Response({**_connection_payload(connection), "provider": result})
+
+
+@api_view(["POST"])
+@permission_classes([IsOwner])
+def whatsapp_sync_templates(request, version=None):
+    connection = WhatsAppConnection.objects.for_tenant(request.user.organization).filter().first()
+    if not connection or connection.status != WhatsAppConnection.Status.CONNECTED:
+        return Response({"detail": "WhatsApp не подключён."}, status=400)
+    try:
+        ensure_default_templates(connection)
+    except WhatsAppError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    return Response(_connection_payload(connection))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def whatsapp_webhook(request, version=None):
+    if request.method == "GET":
+        token = request.query_params.get("hub.verify_token", "")
+        challenge = request.query_params.get("hub.challenge", "")
+        if WhatsAppConnection.objects.filter(webhook_verify_token=token).exists():
+            return HttpResponse(challenge)
+        return HttpResponse("invalid verify token", status=403)
+    if not valid_webhook_signature(request.body, request.headers.get("X-Hub-Signature-256", "")):
+        return JsonResponse({"detail": "invalid signature"}, status=403)
+    handle_webhook(request.data)
+    return JsonResponse({"ok": True})
+
+
+def _reply_state(parent):
+    connection = WhatsAppConnection.objects.for_tenant(parent.organization).first()
+    if not connection or connection.status != WhatsAppConnection.Status.CONNECTED:
+        return False, "WhatsApp центра не подключён"
+    recipient, reason = CHANNELS["whatsapp"].recipient(parent)
+    if not recipient:
+        return False, reason
+    if service.consent_status(parent, MessageCategory.UTILITY) != MessagingConsent.Status.OPTED_IN:
+        return False, "Нет согласия на служебные сообщения"
+    if not within_service_window(parent):
+        return False, "24-часовое окно ответа закрыто — используйте одобренный шаблон Meta"
+    return True, ""
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def whatsapp_reply(request, version=None):
+    parent = (
+        ParentContact.objects.for_tenant(request.user.organization)
+        .filter(pk=request.data.get("parent_id"))
+        .first()
+    )
+    if parent is None:
+        return Response({"detail": "Родитель не найден."}, status=404)
+    available, reason = _reply_state(parent)
+    if not available:
+        return Response({"detail": reason}, status=400)
+    try:
+        message = service.notify_whatsapp_reply(
+            parent, request.data.get("body", ""), user=request.user
+        )
+    except service.MessagingError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    return Response(_message_row(message), status=202)
+
+
+def _bulk_candidates(organization, source, ids):
+    from domains.money.subscriptions.debt import debtor_subscriptions
+    from domains.money.subscriptions.models import Subscription
+
+    if source not in {"debts", "renewals"}:
+        raise ValueError("Неизвестный список.")
+    if source == "debts":
+        subscriptions = list(debtor_subscriptions(organization).filter(pk__in=ids)[:200])
+    else:
+        subscriptions = list(
+            Subscription.objects.for_tenant(organization)
+            .filter(pk__in=ids)
+            .select_related("child")[:200]
+        )
+    links = (
+        ChildContact.objects.for_tenant(organization)
+        .filter(child_id__in=[s.child_id for s in subscriptions], is_payer=True)
+        .select_related("parent_contact")
+        .prefetch_related("parent_contact__phones")
+    )
+    payers = {link.child_id: link.parent_contact for link in links}
+    event = "payment_due" if source == "debts" else "subscription_ending"
+    result = []
+    for subscription in subscriptions:
+        parent = payers.get(subscription.child_id)
+        context = {"child": subscription.child.full_name}
+        if source == "debts":
+            context["amount"] = f"{int(subscription.debt):,} ₸".replace(",", " ")
+        else:
+            remaining = subscription.sessions_remaining_cache
+            context["left"] = (
+                f"{remaining} занятий"
+                if remaining is not None
+                else f"до {subscription.ends_on:%d.%m.%Y}"
+            )
+        result.append((subscription, parent, event, context))
+    return result
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def whatsapp_bulk(request, version=None):
+    source = request.data.get("source")
+    ids = request.data.get("ids") or []
+    if not isinstance(ids, list) or not ids or len(ids) > 200:
+        return Response({"detail": "Выберите от 1 до 200 строк."}, status=400)
+    try:
+        candidates = _bulk_candidates(request.user.organization, source, ids)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    preview = request.data.get("preview", True)
+    rows, queued = [], 0
+    templates = {}
+    today = timezone.localdate().isoformat()
+    for subscription, parent, event, context in candidates:
+        reason = ""
+        language = service.parent_language(parent) if parent else "ru"
+        template = (
+            MessageTemplate.objects.for_tenant(request.user.organization)
+            .filter(event=event, channel="whatsapp", language=language)
+            .first()
+        )
+        subject, body = service.template_for(request.user.organization, event, "whatsapp", language)
+        values = {
+            "parent": service._first_name(parent.full_name) if parent else "",
+            "center": request.user.organization.name,
+            **context,
+        }
+        rendered_body = service.render(body, values)
+        template_preview = {
+            "name": template_name(event, language),
+            "event": event,
+            "event_label": EVENTS[event].label,
+            "language": language,
+            "body": rendered_body,
+        }
+        templates[(event, language)] = template_preview
+        recipient = ""
+        if not parent:
+            reason = "Не указан плательщик"
+        else:
+            raw_phone = parent.whatsapp or parent.phones.values_list("number", flat=True).first()
+            if not raw_phone:
+                reason = "Нет номера WhatsApp"
+            else:
+                try:
+                    recipient = normalize_phone_number(raw_phone)
+                except InvalidPhoneNumberError:
+                    reason = "Некорректный номер WhatsApp"
+        consent = service.consent_status(parent, EVENTS[event].category) if parent else None
+        if not reason and consent == MessagingConsent.Status.OPTED_OUT:
+            reason = "Родитель отписался"
+        elif not reason and consent != MessagingConsent.Status.OPTED_IN:
+            reason = "Нет согласия на служебные сообщения"
+        if not reason and (
+            not template or template.provider_status != MessageTemplate.ProviderStatus.APPROVED
+        ):
+            reason = "Шаблон Meta ещё не одобрен"
+        dedup_key = f"whatsapp:{event}:{subscription.id}:{today}"
+        existing = (
+            OutboundMessage.objects.for_tenant(request.user.organization)
+            .filter(dedup_key=dedup_key)
+            .first()
+        )
+        if not reason and existing:
+            reason = "Такое напоминание уже поставлено сегодня"
+        service_window = within_service_window(parent) if parent else False
+        row = {
+            "subscription_id": str(subscription.id),
+            "child": subscription.child.full_name,
+            "parent": parent.full_name if parent else "",
+            "ready": not reason,
+            "reason": reason,
+            "service_window": service_window,
+            "template": template_preview,
+            "mode": ("Свободный текст доступен" if service_window else "Только одобренный шаблон"),
+        }
+        rows.append(row)
+        if preview or not parent:
+            continue
+        if not reason:
+            message = service.notify(
+                parent,
+                event,
+                {**context, "_channel": "whatsapp"},
+                dedup_key=dedup_key,
+                user=request.user,
+            )
+            if message.status == OutboundMessage.Status.QUEUED:
+                queued += 1
+            continue
+        if existing:
+            continue
+        skipped_status = OutboundMessage.Status.FAILED
+        if consent == MessagingConsent.Status.OPTED_OUT:
+            skipped_status = OutboundMessage.Status.OPTED_OUT
+        elif consent != MessagingConsent.Status.OPTED_IN:
+            skipped_status = OutboundMessage.Status.NO_CONSENT
+        elif not recipient:
+            skipped_status = OutboundMessage.Status.NO_CHANNEL
+        OutboundMessage.objects.create(
+            organization=request.user.organization,
+            parent=parent,
+            event=event,
+            category=EVENTS[event].category,
+            dedup_key=dedup_key,
+            context={k: str(v) for k, v in context.items()},
+            status=skipped_status,
+            channel="whatsapp",
+            recipient=recipient,
+            language=language,
+            subject=service.render(subject, values)[:200],
+            body=rendered_body,
+            attempts=[{"channel": "whatsapp", "result": "skipped", "reason": reason}],
+            error=reason,
+            created_by=request.user,
+        )
+    return Response(
+        {
+            "total": len(rows),
+            "ready": sum(row["ready"] for row in rows),
+            "queued": queued,
+            "templates": list(templates.values()),
+            "results": rows,
         }
     )
 
@@ -164,7 +515,13 @@ def _message_row(m):
         "scheduled_for": m.scheduled_for,
         "parent": {"id": str(m.parent_id), "name": m.parent.full_name},
         "event": m.event,
-        "event_label": EVENTS[m.event].label if m.event in EVENTS else m.event,
+        "event_label": (
+            EVENTS[m.event].label
+            if m.event in EVENTS
+            else "Ответ в WhatsApp"
+            if m.event == "whatsapp_reply"
+            else m.event
+        ),
         "status": m.status,
         "status_label": m.get_status_display(),
         "channel": m.channel,
@@ -182,8 +539,22 @@ def journal(request, version=None):
     """Что и кому отправили: фильтры — родитель, статус, событие, период."""
     rows = OutboundMessage.objects.for_tenant(request.user.organization).select_related("parent")
     params = request.query_params
+    reply = None
     if params.get("parent"):
+        parent = (
+            ParentContact.objects.for_tenant(request.user.organization)
+            .filter(pk=params["parent"])
+            .first()
+        )
         rows = rows.filter(parent_id=params["parent"])
+        if parent:
+            available, reason = _reply_state(parent)
+            reply = {
+                "parent_id": str(parent.id),
+                "parent_name": parent.full_name,
+                "available": available,
+                "reason": reason,
+            }
     if params.get("status"):
         rows = rows.filter(status__in=params["status"].split(","))
     if params.get("event"):
@@ -199,6 +570,7 @@ def journal(request, version=None):
             "limit": JOURNAL_LIMIT,
             "events": [{"key": e.key, "label": e.label} for e in EVENTS.values()],
             "statuses": [{"key": k, "label": v} for k, v in OutboundMessage.Status.choices],
+            "whatsapp_reply": reply,
         }
     )
 

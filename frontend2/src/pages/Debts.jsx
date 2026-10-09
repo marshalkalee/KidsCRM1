@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, Download, MessageCircle, Phone, Search, Wallet } from 'lucide-react'
 import api from '../api/axios'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
+import WhatsAppBulkModal from '../components/messaging/WhatsAppBulkModal'
 import { useSession } from '../session/SessionContext'
 import {
   Button, Card, DataTable, EmptyState, FilterBar, FilterCheck, FilterPanel, FilterSelect,
@@ -31,6 +32,8 @@ export default function Debts() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [paying, setPaying] = useState(null)
   const [exporting, setExporting] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   const page = Math.max(1, Number(params.get('page')) || 1)
   const sort = { key: params.get('sort') || 'debt', dir: params.get('dir') || 'desc' }
@@ -78,6 +81,23 @@ export default function Debts() {
   const setQuery = useCallback(q => update({ q }), [update])
   const resetFilters = () => update(Object.fromEntries(FILTER_KEYS.map(key => [key, ''])))
   const overdueDays = data.overdue_days ?? 5
+  const visibleIds = data.results.map(row => row.subscription_id)
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id))
+  function toggleSelected(id) {
+    setSelected(current => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function toggleVisible() {
+    setSelected(current => {
+      const next = new Set(current)
+      visibleIds.forEach(id => allVisibleSelected ? next.delete(id) : next.add(id))
+      return next
+    })
+  }
 
   async function exportExcel() {
     setExporting(true)
@@ -102,9 +122,12 @@ export default function Debts() {
       sortable: true,
       primary: true,
       render: row => (
-        <div className="min-w-0">
-          <div className="truncate font-semibold text-ink">{row.child_name}</div>
-          <div className="truncate text-xs text-ink-muted">{row.parent_name || t('Плательщик не указан')}</div>
+        <div className="flex min-w-0 items-center gap-3" onClick={event => event.stopPropagation()}>
+          <input type="checkbox" checked={selected.has(row.subscription_id)} onChange={() => toggleSelected(row.subscription_id)} aria-label={t('Выбрать {name}', { name: row.child_name })} className="size-4 accent-[var(--color-brand-500)]" />
+          <div className="min-w-0">
+            <div className="truncate font-semibold text-ink">{row.child_name}</div>
+            <div className="truncate text-xs text-ink-muted">{row.parent_name || t('Плательщик не указан')}</div>
+          </div>
         </div>
       ),
     },
@@ -157,7 +180,12 @@ export default function Debts() {
       <PageHeader
         title={t('Задолженности')}
         description={loading && !data.count ? t('Загрузка…') : `${countLabel} ${t('с долгом')}${hasAnyFilter ? ` ${t('по фильтрам')}` : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
-        actions={<Button icon={Download} loading={exporting} onClick={exportExcel} disabled={!data.count}>{t('Скачать Excel')}</Button>}
+        actions={(
+          <>
+            <Button icon={MessageCircle} disabled={!selected.size} onClick={() => setBulkOpen(true)}>{t('Напомнить в WhatsApp')} {selected.size ? `(${selected.size})` : ''}</Button>
+            <Button icon={Download} loading={exporting} onClick={exportExcel} disabled={!data.count}>{t('Скачать Excel')}</Button>
+          </>
+        )}
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
@@ -199,6 +227,13 @@ export default function Debts() {
         )}
       </div>
 
+      {data.results.length > 0 && (
+        <label className="mb-3 inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink-muted">
+          <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} className="size-4 accent-[var(--color-brand-500)]" />
+          {t('Выбрать все на странице')}
+        </label>
+      )}
+
       <DataTable
         columns={columns}
         rows={data.results}
@@ -231,6 +266,7 @@ export default function Debts() {
           onPaid={() => setReloadKey(k => k + 1)}
         />
       )}
+      <WhatsAppBulkModal open={bulkOpen} onClose={() => setBulkOpen(false)} source="debts" ids={[...selected]} onSent={() => setSelected(new Set())} />
     </div>
   )
 }

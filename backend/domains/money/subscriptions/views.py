@@ -312,6 +312,9 @@ class SubscriptionTypeViewSet(viewsets.ModelViewSet):
             directions=data.get("directions", []),
             branches=data.get("branches", []),
         )
+        if data.get("is_public"):
+            subscription_type.is_public = True
+            subscription_type.save(update_fields=["is_public", "updated_at"])
         return Response(self.get_serializer(subscription_type).data, status=201)
 
     def partial_update(self, request, *args, **kwargs):
@@ -330,6 +333,9 @@ class SubscriptionTypeViewSet(viewsets.ModelViewSet):
         if "is_active" in data:
             instance.is_active = data["is_active"]
             instance.save(update_fields=["is_active", "updated_at"])
+        if "is_public" in data:
+            instance.is_public = data["is_public"]
+            instance.save(update_fields=["is_public", "updated_at"])
 
         instance.refresh_from_db()
         return Response(self.get_serializer(instance).data)

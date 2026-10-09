@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowRight, CalendarClock, ChevronRight, History, Loader2, Newspaper, RefreshCw, Sprout, TrendingDown, TrendingUp } from 'lucide-react'
+import { ArrowRight, CalendarClock, CheckSquare, ChevronRight, History, Loader2, Newspaper, RefreshCw, Sprout, TrendingDown, TrendingUp, X } from 'lucide-react'
 import api from '../api/axios'
 import { AIBadge } from '../components/ai/ai'
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, apiErrorMessage, cn, formatDateTime, useToast } from '../ui'
-import { locale, plural, t } from '../i18n'
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, Modal, PageHeader, Select, Skeleton, apiErrorMessage, cn, formatDateTime, useToast } from '../ui'
+import { locale, plural, t, useLang } from '../i18n'
 
 /*
  * Еженедельный дайджест (TRU-163): что сделать на этой неделе. Не второй
@@ -45,11 +45,20 @@ function factValue({ value, label }) {
 function shortLabel(label) {
   const parts = label.split(' · ')
   const text = parts.length > 1 ? parts.slice(1).join(' · ') : label
+  // Старые дайджесты могли сохранить внутренний candidate_key рядом с названием группы.
+  const withoutTechnicalKeys = text
+    .replace(/\b[0-9a-f]{12,64}\b,?\s*/gi, '')
+    .replace(/·\s*,/g, '· ')
+  const localized = withoutTechnicalKeys.replace(
+    /(^| · |, |: )([^·,:]+)/g,
+    (_, separator, value) => `${separator}${t(value.trim())}`,
+  )
   // «%» уже стоит у самой цифры.
-  return text.replace(/, %$/, '')
+  return localized.replace(/, %$/, '')
 }
 
 export default function Digest() {
+  const language = useLang()
   const toast = useToast()
   const [params, setParams] = useSearchParams()
   const selectedId = params.get('id')
@@ -59,7 +68,7 @@ export default function Digest() {
   const [error, setError] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
-  const load = useCallback(() => api.get('ai/digests/').then(res => { setData(res.data); setError(false) }).catch(() => setError(true)), [])
+  const load = useCallback(() => api.get('ai/digests/', { params: { language } }).then(res => { setData(res.data); setError(false) }).catch(() => setError(true)), [language])
   useEffect(() => { load() }, [load])
 
   // Собирается — опрашиваем, пока не будет готов.
@@ -78,7 +87,7 @@ export default function Digest() {
   async function refresh() {
     setRefreshing(true)
     try {
-      const res = await api.post('ai/digests/')
+      const res = await api.post('ai/digests/', { language })
       if (!res.data.created) toast.success(t('Дайджест уже собирается'))
       setParams({})
       await load()
@@ -160,7 +169,23 @@ function Banner({ tone, children }) {
 
 function DigestView({ digest }) {
   const { content } = digest
-  const rest = content.items.filter(item => !content.highlights.some(h => h.id === item.id))
+  const toast = useToast()
+  const [taskItem, setTaskItem] = useState(null)
+  const [dismissed, setDismissed] = useState([])
+  const visible = content.items.filter(item => !dismissed.includes(item.id))
+  const highlights = content.highlights.filter(item => !dismissed.includes(item.id))
+  const rest = visible.filter(item => !highlights.some(h => h.id === item.id))
+
+  async function dismiss(item) {
+    try {
+      await api.post(`ai/digests/${digest.id}/dismiss/`, { item_id: item.id })
+      setDismissed(current => [...current, item.id])
+      toast.success(t('Рекомендация скрыта'))
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    }
+  }
+
   return (
     <>
       <p className="flex flex-wrap items-center gap-2 px-1 text-[13px] text-ink-muted">
@@ -173,7 +198,9 @@ function DigestView({ digest }) {
       <section>
         <h2 className="mb-2 px-1 text-[15px] font-bold text-ink">{t('Главное')}</h2>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {content.highlights.map(item => <Advice key={item.id} item={item} />)}
+          {highlights.map(item => (
+            <Advice key={item.id} item={item} onTask={() => setTaskItem(item)} onDismiss={() => dismiss(item)} />
+          ))}
         </div>
       </section>
 
@@ -185,6 +212,10 @@ function DigestView({ digest }) {
               <li key={item.id} className="py-3">
                 <p className="text-sm font-semibold text-ink">{item.title}</p>
                 <p className="mt-0.5 text-[13px] text-ink-muted">{item.action}</p>
+                <div className="mt-2 flex gap-2">
+                  <Button size="sm" variant="secondary" icon={CheckSquare} onClick={() => setTaskItem(item)}>{t('Поставить задачу')}</Button>
+                  <Button size="sm" variant="ghost" icon={X} onClick={() => dismiss(item)}>{t('Не актуально')}</Button>
+                </div>
               </li>
             ))}
           </ul>
@@ -193,6 +224,7 @@ function DigestView({ digest }) {
       {content.failed_blocks > 0 && (
         <p className="px-1 text-[13px] text-ink-muted">{t('Часть блоков не собралась — в следующий раз попробуем снова.')}</p>
       )}
+      {taskItem && <DigestTaskModal digestId={digest.id} item={taskItem} onClose={() => setTaskItem(null)} />}
     </>
   )
 }
@@ -229,7 +261,7 @@ function Changes({ changes }) {
   )
 }
 
-function Advice({ item }) {
+function Advice({ item, onTask, onDismiss }) {
   const priority = PRIORITY[item.priority] || PRIORITY.low
   return (
     <Card className="flex flex-col">
@@ -248,7 +280,123 @@ function Advice({ item }) {
         <span>{item.action}</span>
       </p>
       <p className="mt-1.5 pl-6 text-[13px] text-ink-muted">{item.rationale}</p>
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-3">
+        <Button size="sm" variant="secondary" icon={CheckSquare} onClick={onTask}>{t('Поставить задачу')}</Button>
+        <Button size="sm" variant="ghost" icon={X} onClick={onDismiss}>{t('Не актуально')}</Button>
+      </div>
     </Card>
+  )
+}
+
+const TASK_TYPES = [
+  ['other', 'Другое'],
+  ['retention', 'Вернуть клиента'],
+  ['renewal_offer', 'Предложить продление'],
+  ['call_back', 'Перезвонить'],
+]
+
+function localDueValue() {
+  const now = new Date()
+  const date = new Date(now.getTime() + 4 * 60 * 60 * 1000)
+  if (date.toDateString() !== now.toDateString()) date.setTime(now.getTime() + 15 * 60 * 1000)
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000)
+  return local.toISOString().slice(0, 16)
+}
+
+function DigestTaskModal({ digestId, item, onClose }) {
+  const toast = useToast()
+  const [taskType, setTaskType] = useState('other')
+  const [dueAt, setDueAt] = useState(localDueValue)
+  const [assigneeId, setAssigneeId] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [error, setError] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setPreview(null)
+    setError('')
+    api.post(`ai/digests/${digestId}/task-preview/`, { item_id: item.id, task_type: taskType })
+      .then(res => { if (active) setPreview(res.data) })
+      .catch(err => { if (active) setError(apiErrorMessage(err)) })
+    return () => { active = false }
+  }, [digestId, item.id, taskType])
+
+  async function create() {
+    setCreating(true)
+    try {
+      const result = await api.post(`ai/digests/${digestId}/tasks/`, {
+        item_id: item.id,
+        task_type: taskType,
+        due_at: new Date(dueAt).toISOString(),
+        assignee_id: assigneeId || null,
+      })
+      toast.success(t('Создано задач: {n}', { n: result.data.created }))
+      onClose()
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={t('Поставить задачу')}>
+      <p className="mb-4 text-sm text-ink-muted">{item.title}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={t('Тип задачи')}>
+          {({ id }) => (
+            <Select id={id} value={taskType} onChange={event => setTaskType(event.target.value)}>
+              {TASK_TYPES.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
+            </Select>
+          )}
+        </Field>
+        <Field label={t('Срок')}>
+          {({ id }) => <Input id={id} type="datetime-local" value={dueAt} onChange={event => setDueAt(event.target.value)} />}
+        </Field>
+      </div>
+      <Field label={t('Исполнитель')} className="mt-3">
+        {({ id }) => (
+          <Select id={id} value={assigneeId} onChange={event => setAssigneeId(event.target.value)}>
+            <option value="">{t('По умолчанию — администратор филиала')}</option>
+            {(preview?.assignees || []).map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
+          </Select>
+        )}
+      </Field>
+
+      <div className="mt-4 rounded-xl bg-surface-muted p-3">
+        {!preview && !error && <p className="text-sm text-ink-muted">{t('Собираем предпросмотр…')}</p>}
+        {error && <p className="text-sm text-danger-600">{error}</p>}
+        {preview && (
+          <>
+            <p className="text-sm font-semibold text-ink">
+              {t('Будет создано задач: {n}', { n: preview.new_count })}
+            </p>
+            {preview.items.some(row => row.already_exists) && (
+              <p className="mt-1 text-xs text-ink-muted">{t('Дубликаты пропущены автоматически.')}</p>
+            )}
+            <ul className="mt-2 max-h-52 space-y-2 overflow-auto">
+              {preview.items.slice(0, 20).map((row, index) => (
+                <li key={row.child_id || index} className="flex items-start justify-between gap-3 text-[13px]">
+                  <span className="min-w-0">
+                    <strong className="block truncate text-ink">{row.child_name || item.title}</strong>
+                    <span className="text-ink-muted">{row.reason}</span>
+                  </span>
+                  <span className="shrink-0 text-ink-muted">{row.already_exists ? t('Уже есть') : row.assignee_name}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>{t('Отмена')}</Button>
+        <Button loading={creating} disabled={!preview?.new_count || !dueAt} onClick={create}>
+          {t('Создать задачи')}
+        </Button>
+      </div>
+    </Modal>
   )
 }
 

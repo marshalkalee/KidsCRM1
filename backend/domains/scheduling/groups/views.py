@@ -5,6 +5,7 @@ from rest_framework import filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from domains.platform.core.active_branch import branch_scope
 from domains.platform.core.permissions import (
     IsOwnerOrManager,
     IsStaffOfOrganization,
@@ -58,9 +59,9 @@ class GroupViewSet(TenantModelViewSet):
         if status_filter:
             qs = qs.filter(status=status_filter)
 
-        branch_id = self.request.query_params.get("branch")
-        if branch_id:
-            qs = qs.filter(branch_id=branch_id)
+        scope = branch_scope(self.request, self.request.query_params.get("branch"))
+        if scope is not None:
+            qs = qs.filter(branch_id__in=scope)
 
         direction_id = self.request.query_params.get("direction")
         if direction_id:

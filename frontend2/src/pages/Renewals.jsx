@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { CalendarClock, Check, Inbox, MessageCircle, Phone, RefreshCw, Search } from 'lucide-react'
+import { CalendarClock, Check, Download, Inbox, MessageCircle, Phone, RefreshCw, Search } from 'lucide-react'
 import api from '../api/axios'
 import RenewModal from '../components/money/RenewModal'
+import WhatsAppBulkModal from '../components/messaging/WhatsAppBulkModal'
 import { useSession } from '../session/SessionContext'
 import {
   Badge, Button, DataTable, EmptyState, FilterBar, FilterCheck, FilterPanel, FilterSelect,
@@ -28,6 +29,7 @@ function whenLabel(row) {
 export default function Renewals() {
   const navigate = useNavigate()
   const toast = useToast()
+  const [exporting, setExporting] = useState(false)
   const { can, activeBranch, activeBranchId, branches } = useSession()
   const canLeads = can('can_manage_leads')
   // Преподаватель с открытыми финансами (TRU-153) список видит, но не меняет.
@@ -40,6 +42,8 @@ export default function Renewals() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [renewing, setRenewing] = useState(null)
   const [busy, setBusy] = useState(null)
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   const page = Math.max(1, Number(params.get('page')) || 1)
   const query = params.toString()
@@ -92,6 +96,23 @@ export default function Renewals() {
   const hasAnyFilter = activeFilters > 0 || Boolean(params.get('q'))
   const setQuery = useCallback(q => update({ q }), [update])
   const resetFilters = () => update(Object.fromEntries(FILTER_KEYS.map(key => [key, ''])))
+  const visibleIds = data.results.map(row => row.subscription_id)
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id))
+  function toggleSelected(id) {
+    setSelected(current => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function toggleVisible() {
+    setSelected(current => {
+      const next = new Set(current)
+      visibleIds.forEach(id => allVisibleSelected ? next.delete(id) : next.add(id))
+      return next
+    })
+  }
 
   async function markContacted(row) {
     setBusy(`contact:${row.subscription_id}`)
@@ -124,9 +145,12 @@ export default function Renewals() {
       header: t('Ребёнок'),
       primary: true,
       render: row => (
-        <div className="min-w-0">
-          <div className="truncate font-semibold text-ink">{row.child_name}</div>
-          <div className="truncate text-xs text-ink-muted">{row.parent_name || t('Плательщик не указан')}</div>
+        <div className="flex min-w-0 items-center gap-3" onClick={event => event.stopPropagation()}>
+          <input type="checkbox" checked={selected.has(row.subscription_id)} onChange={() => toggleSelected(row.subscription_id)} aria-label={t('Выбрать {name}', { name: row.child_name })} className="size-4 accent-[var(--color-brand-500)]" />
+          <div className="min-w-0">
+            <div className="truncate font-semibold text-ink">{row.child_name}</div>
+            <div className="truncate text-xs text-ink-muted">{row.parent_name || t('Плательщик не указан')}</div>
+          </div>
         </div>
       ),
     },
@@ -198,11 +222,33 @@ export default function Renewals() {
 
   const countLabel = `${data.count} ${plural(data.count, ['абонемент', 'абонемента', 'абонементов'])}`
 
+  // Та же выборка файлом — сверка с бухгалтерией (TRU-152).
+  async function exportExcel() {
+    setExporting(true)
+    try {
+      const res = await api.get('subscriptions/renewals/export/', { params: Object.fromEntries(new URLSearchParams(query)), responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const link = Object.assign(document.createElement('a'), { href: url, download: `renewals-${new Date().toISOString().slice(0, 10)}.xlsx` })
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title={t('Продления')}
         description={loading && !data.count ? t('Загрузка…') : `${countLabel} ${t('скоро заканчиваются')}${hasAnyFilter ? ` ${t('по фильтрам')}` : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
+        actions={(
+          <>
+            <Button icon={MessageCircle} disabled={!selected.size} onClick={() => setBulkOpen(true)}>{t('Напомнить в WhatsApp')} {selected.size ? `(${selected.size})` : ''}</Button>
+            <Button icon={Download} loading={exporting} onClick={exportExcel} disabled={!data.count}>{t('Скачать Excel')}</Button>
+          </>
+        )}
       />
 
       <div className="mb-4 space-y-3">
@@ -216,6 +262,13 @@ export default function Renewals() {
           <RenewalFilters params={params} update={update} branches={branches} directions={directions} groups={branchGroups} onReset={resetFilters} />
         )}
       </div>
+
+      {data.results.length > 0 && (
+        <label className="mb-3 inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink-muted">
+          <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} className="size-4 accent-[var(--color-brand-500)]" />
+          {t('Выбрать все на странице')}
+        </label>
+      )}
 
       <DataTable
         columns={columns}
@@ -242,6 +295,7 @@ export default function Renewals() {
       {renewing && (
         <RenewModal row={renewing} onClose={() => setRenewing(null)} onDone={() => { setRenewing(null); reload() }} />
       )}
+      <WhatsAppBulkModal open={bulkOpen} onClose={() => setBulkOpen(false)} source="renewals" ids={[...selected]} onSent={() => setSelected(new Set())} />
     </div>
   )
 }

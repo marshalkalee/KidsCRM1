@@ -129,7 +129,7 @@ class RBACTests(TestCase):
 
     def test_teacher_cannot_create_branch(self):
         client = make_client(self.teacher)
-        response = client.post("/api/v1/branches/", {"name": "Новый филиал"})
+        response = client.post("/api/v1/branches/", {"name": "Новый филиал", "city": "Алматы"})
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_accountant_cannot_create_room(self):

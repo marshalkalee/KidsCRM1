@@ -188,10 +188,14 @@ def visible_tasks(user):
     """Кто видит задачу (ТЗ п. 2): владелец — все, управляющий/админ с
     закреплёнными филиалами — задачи своих филиалов, задачи без филиала
     и назначенные лично на него; без закреплённых филиалов — все (тот же
-    принцип, что у visible_leads в platform.leads)."""
+    принцип, что у visible_leads в platform.leads). Преподаватель — только
+    свои."""
     qs = Task.objects.for_tenant(user.organization)
     if user.role == User.Role.OWNER:
         return qs
+    # Преподаватель — только поручения ему лично (костюмы, фото с концерта).
+    if user.role == User.Role.TEACHER:
+        return qs.filter(assigned_to=user)
     branch_ids = list(user.branches.values_list("id", flat=True))
     if not branch_ids:
         return qs

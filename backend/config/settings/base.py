@@ -63,6 +63,7 @@ DOMAIN_APPS = [
     "domains.platform.leads",
     "domains.platform.ai",
     "domains.platform.analytics",
+    "domains.platform.public_api",
     "domains.scheduling.schedule_templates",
 ]
 
@@ -196,6 +197,11 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
+    # Допуск расхождения часов: PyJWT отклоняет токен, у которого время выпуска
+    # «в будущем». Часы в Docker на Windows (WSL2) прыгают назад до ~1,2 с —
+    # отсюда были случайные 401 в тестах; на проде то же даёт разница часов
+    # между серверами.
+    "LEEWAY": timedelta(seconds=30),
     "TOKEN_OBTAIN_SERIALIZER": "domains.platform.users.serializers.CustomTokenObtainSerializer",
 }
 
@@ -339,6 +345,9 @@ else:
 # адрес центра (настройка рассылок). Свой домен у каждого центра — это DNS
 # (SPF, DKIM) на центр, на старте не нужно.
 MESSAGING_FROM_EMAIL = env("MESSAGING_FROM_EMAIL", default="noreply@kidscrm.kz")
+WHATSAPP_GRAPH_API_VERSION = env("WHATSAPP_GRAPH_API_VERSION", default="v23.0")
+WHATSAPP_HTTP_TIMEOUT = env.int("WHATSAPP_HTTP_TIMEOUT", default=15)
+WHATSAPP_APP_SECRET = env("WHATSAPP_APP_SECRET", default="")
 # Публичный адрес сайта — для ссылки «отписаться» в письме.
 PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="http://localhost")
 
@@ -348,3 +357,8 @@ PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="http://localhost")
 WEBPUSH_VAPID_PUBLIC_KEY = env("WEBPUSH_VAPID_PUBLIC_KEY", default="")
 WEBPUSH_VAPID_PRIVATE_KEY = env("WEBPUSH_VAPID_PRIVATE_KEY", default="")
 WEBPUSH_CONTACT = env("WEBPUSH_CONTACT", default="mailto:support@kidscrm.kz")
+
+# Координаты филиала по адресу (TRU-178): nominatim (OpenStreetMap, без
+# ключа) или "" — выключено. Nominatim требует понятный User-Agent.
+GEOCODER = env("GEOCODER", default="nominatim")
+GEOCODER_USER_AGENT = env("GEOCODER_USER_AGENT", default="KidsCRM/1.0 (support@kidscrm.kz)")

@@ -3,7 +3,7 @@ from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from domains.platform.core.active_branch import get_active_branch
+from domains.platform.core.active_branch import branch_scope
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin
 from domains.platform.users.models import User
 
@@ -115,11 +115,10 @@ class ParentRequestViewSet(
             "lesson__teacher",
             "processed_by",
         )
-        active = get_active_branch(self.request)
-        branch_id = self.request.query_params.get("branch") or (active.id if active else None)
-        if branch_id:
+        scope = branch_scope(self.request, self.request.query_params.get("branch"))
+        if scope is not None:
             qs = qs.filter(
-                Q(lesson__group__branch_id=branch_id) | Q(lesson__room__branch_id=branch_id)
+                Q(lesson__group__branch_id__in=scope) | Q(lesson__room__branch_id__in=scope)
             )
         for field in ("status", "type", "kind"):
             value = self.request.query_params.get(field)
