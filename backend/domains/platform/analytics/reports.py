@@ -11,13 +11,19 @@ from .attendance_trends import attendance_trends
 from .branches import COLUMNS as BRANCH_COLUMNS
 from .branches import compare_branches
 from .breakdowns import breakdown, visits_heatmap
+from .churn import DIMENSIONS as CHURN_DIMENSIONS
+from .churn import churn_report
+from .dashboard import owner_dashboard
 from .export import Column, Export, Section
+from .forecast import revenue_forecast
 from .funnel import BY as FUNNEL_BY
 from .funnel import STAGES, funnel, funnel_by
 from .group_occupancy import group_occupancy
 from .registry import REGISTRY, compute
 from .rejections import STAGES as REJECTION_STAGES
 from .rejections import rejection_comments, rejections, rejections_by
+from .renewal_report import DIMENSIONS as RENEWAL_DIMENSIONS
+from .renewal_report import renewal_conversion_report
 from .risk_list import risk_list
 from .sources import SMALL_SAMPLE, sources_by_month, sources_quality
 from .teacher_load import teacher_workload
@@ -177,9 +183,92 @@ OVERVIEW = [
 ]
 
 
+def dashboard_section(scope, period):
+    """Семь цифр главного экрана дашборда (TRU-129) — как на экране."""
+    tiles = owner_dashboard(scope, period)["tiles"]
+    empty = {}
+    revenue = tiles["revenue"] or empty
+    debt = tiles["debt"] or empty
+    fill = tiles["group_fill"] or empty
+    leads = tiles["lead_conversion"] or empty
+    renewals = tiles["renewal_conversion"] or empty
+    risk = tiles["risk"] or empty
+    forecast = tiles["forecast"] or empty
+    low, high = forecast.get("low"), forecast.get("high")
+    rows = [
+        [
+            "Выручка",
+            (revenue.get("value"), "money"),
+            (revenue.get("previous"), "money"),
+            (revenue.get("change_percent"), "percent"),
+            "оплаты за период",
+        ],
+        [
+            "Задолженность",
+            (debt.get("value"), "money"),
+            (debt.get("previous"), "money"),
+            (debt.get("change_percent"), "percent"),
+            "сейчас; прошлое — снимок на конец прошлого периода",
+        ],
+        [
+            "Заполняемость групп",
+            (fill.get("value"), "percent"),
+            (fill.get("previous"), "percent"),
+            (fill.get("change_percent"), "percent"),
+            f"сейчас: {fill.get('members', '—')} детей на {fill.get('capacity', '—')} мест, "
+            f"с недобором: {fill.get('underfilled', '—')}",
+        ],
+        [
+            "Конверсия заявок",
+            (leads.get("value"), "percent"),
+            (leads.get("previous"), "percent"),
+            None,
+            f"купили {leads.get('purchased', '—')} из {leads.get('leads', '—')} новых заявок; "
+            "изменение в п.п.",
+        ],
+        [
+            "Конверсия продлений",
+            (renewals.get("value"), "percent"),
+            (renewals.get("previous"), "percent"),
+            None,
+            f"продлили {renewals.get('renewed', '—')} из {renewals.get('decided', '—')}; "
+            f"окно продления идёт ещё у {renewals.get('pending', '—')}",
+        ],
+        [
+            "Дети в зоне риска ухода",
+            (risk.get("value"), "count"),
+            None,
+            None,
+            f"срочно: {risk.get('urgent', '—')}",
+        ],
+        [
+            "Прогноз выручки",
+            (forecast.get("value"), "money"),
+            None,
+            None,
+            f"продления на месяц с {forecast.get('month', '—')}: "
+            f"{FORECAST_STATUS.get(forecast.get('status'), '—')}"
+            + (f", диапазон {low}–{high} ₸" if low is not None else ""),
+        ],
+    ]
+    return Section(
+        "Дашборд",
+        [
+            Column("Показатель", width=28),
+            Column("Значение", "decimal", 16, total=False),
+            Column("Прошлый период", "decimal", 16, total=False),
+            Column("Изменение, %", "percent", 14, total=False),
+            Column("Пояснение", width=60),
+        ],
+        rows,
+        note="Главный экран дашборда владельца. Деньги — в тенге, доли — в процентах.",
+    )
+
+
 @report("overview", "Аналитика — обзор")
 def overview(scope, period, params):
     return [
+        dashboard_section(scope, period),
         metrics_section(OVERVIEW, scope, period),
         series_section(["revenue", "visits", "attendance_rate", "new_leads"], scope, period),
         breakdown_section("Способы оплаты", "Способ оплаты", "revenue", "method", scope, period),
@@ -801,6 +890,500 @@ def risk_list_report(scope, period, params):
             ),
         )
     ]
+
+
+FORECAST_STATUS = {
+    "point": "прогноз и диапазон",
+    "range": "только диапазон — данных мало",
+    "hidden": "не показываем — данных мало",
+}
+
+
+def _forecast_comment(forecast, rules):
+    sample = forecast["conversion"]["ended"]
+    if forecast["status"] == "hidden":
+        return (
+            f"Не показываем: в выборке {sample} закончившихся абонементов, "
+            f"нужно хотя бы {rules['min_sample_range']}. Цифра из воздуха хуже, чем никакой."
+        )
+    spread = f"{forecast['low']:,.0f}–{forecast['high']:,.0f} ₸".replace(",", " ")
+    if forecast["status"] == "range":
+        return (
+            f"Только диапазон {spread}: в выборке {sample} закончившихся абонементов, "
+            f"для точной цифры нужно {rules['min_sample_point']}."
+        )
+    return f"Скорее всего {spread}."
+
+
+@report("forecast", "Прогноз выручки")
+def forecast_report(scope, period, params):
+    data = revenue_forecast(scope)
+    forecast, rules = data["forecast"], data["rules"]
+    month = f"{forecast['month'][5:7]}.{forecast['month'][:4]}"
+    summary = Section(
+        "Три величины",
+        [
+            Column("Величина", width=44),
+            Column("Сумма, ₸", "money", 16, total=False),
+            Column("Абонементов", "count", 13, total=False),
+            Column("Что это значит", width=80),
+        ],
+        [
+            [
+                "Оплачено, но не отработано (обязательства центра)",
+                data["prepaid"]["value"],
+                data["prepaid"]["subscriptions"],
+                "Деньги уже получены, занятия впереди. Это не будущая выручка: "
+                "центр должен провести эти занятия.",
+            ],
+            [
+                "Продано, но не оплачено (задолженность)",
+                data["unpaid"]["value"],
+                data["unpaid"]["subscriptions"],
+                "Должно прийти от родителей. Та же сумма, что на экране «Задолженности».",
+            ],
+            [
+                f"Ожидаемые продления за {month} (прогноз)",
+                forecast["value"],
+                forecast["expiring"],
+                "Сколько продлений придётся на месяц (по доле продлений за прошлые месяцы, "
+                "с продлениями продлений) × средняя цена продления. В колонке «Абонементов» — "
+                "сколько заканчивается в этом месяце уже сейчас. Новые клиенты и оплаты долгов "
+                "не входят. " + _forecast_comment(forecast, rules),
+            ],
+        ],
+        note=(
+            f"Три величины не складываются: это разные деньги. Посчитано на "
+            f"{data['today'][8:10]}.{data['today'][5:7]}.{data['today'][:4]}; "
+            "период в шапке на расчёт не влияет."
+        ),
+    )
+    conversion = forecast["conversion"]
+    calc = Section(
+        "Расчёт прогноза",
+        [Column("Показатель", width=48), Column("Значение", "decimal", 18, total=False)],
+        [
+            ["Месяц прогноза", (forecast["month"], "date")],
+            ["Активных абонементов в расчёте (ещё не продлены)", (forecast["base"], "count")],
+            ["Из них заканчиваются в этом месяце", (forecast["expiring"], "count")],
+            ["Ожидаемых продлений в этом месяце", (forecast["expected_renewals"], "decimal")],
+            ["Выборка: закончилось абонементов", (conversion["ended"], "count")],
+            ["Из них продлены", (conversion["renewed"], "count")],
+            ["Конверсия продлений, %", (conversion["rate"], "percent")],
+            [
+                f"Конверсия — нижняя граница ({rules['confidence']}%), %",
+                (conversion["low"], "percent"),
+            ],
+            [
+                f"Конверсия — верхняя граница ({rules['confidence']}%), %",
+                (conversion["high"], "percent"),
+            ],
+            [
+                "Средняя цена продления, ₸"
+                if forecast["avg_check_source"] != "base"
+                else "Средняя цена активных абонементов, ₸ (продлений в выборке нет)",
+                (forecast["avg_check"], "money"),
+            ],
+            ["Прогноз, ₸", (forecast["value"], "money")],
+            [
+                "Диапазон расширен до худшей ошибки прошлых месяцев, %",
+                (forecast["calibration_percent"], "percent"),
+            ],
+            ["Нижняя граница, ₸", (forecast["low"], "money")],
+            ["Верхняя граница, ₸", (forecast["high"], "money")],
+            ["Что показываем", (FORECAST_STATUS[forecast["status"]], "text")],
+        ],
+        note=(
+            f"Выборка — абонементы, закончившиеся с {conversion['window_start']} по "
+            f"{conversion['window_end']}. Продлён — у ребёнка есть следующий абонемент того же "
+            f"направления (или проданный кнопкой «Продлить»), начавшийся не позже "
+            f"{rules['grace_days']} дней после окончания. Продление ждём в день окончания "
+            "абонемента; продление той же длины тоже может закончиться и продлиться в этом "
+            "месяце — так в прогноз попадают месячные абонементы, которые ещё не проданы."
+        ),
+    )
+    retro = Section(
+        "Ретроспектива",
+        [
+            Column("Месяц", "date", 12),
+            Column("Прогноз делали на", "date", 14),
+            Column("Ожидали продлений", "decimal", 14, total=False),
+            Column("Выборка", "count", 10, total=False),
+            Column("Прогноз, ₸", "money", 14, total=False),
+            Column("От, ₸", "money", 14, total=False),
+            Column("До, ₸", "money", 14, total=False),
+            Column("Продлили", "count", 10, total=False),
+            Column("Факт, ₸", "money", 14, total=False),
+            Column("Отклонение, %", "percent", 13),
+            Column("Факт в диапазоне", width=14),
+            Column("Факт окончательный", width=16),
+        ],
+        [
+            [
+                row["month"],
+                row["as_of"],
+                row["expected_renewals"],
+                row["conversion"]["ended"],
+                row["value"],
+                row["low"],
+                row["high"],
+                row["fact_renewed"],
+                row["fact"],
+                row["deviation_percent"],
+                "—" if row["in_range"] is None else ("да" if row["in_range"] else "нет"),
+                "да" if row["complete"] else f"дособирается до {row['settles_on']}",
+            ]
+            for row in data["retrospective"]
+        ],
+        note=(
+            "Прогноз восстановлен так, как его показали бы на 1-е число предыдущего месяца: "
+            "только продажи, сделанные до этой даты. Факт — продления, пришедшиеся на месяц, "
+            "по цепочкам от тех же абонементов (новые клиенты не входят), по цене продления, "
+            "по данным на сегодня."
+        ),
+    )
+    return [summary, calc, retro]
+
+
+RENEWAL_SHEETS = {
+    "branch": "По филиалам",
+    "direction": "По направлениям",
+    "group": "По группам",
+    "teacher": "По преподавателям",
+    "type": "По типам абонементов",
+    "age": "По возрасту",
+}
+
+
+def _renewal_columns(first_title, *, summable=True):
+    total = None if summable else False
+    return [
+        Column(first_title, width=32),
+        Column("Закончилось", "count", 13, total=total),
+        Column("Окно прошло", "count", 13, total=total),
+        Column("Продлили", "count", 11, total=total),
+        Column("Не продлили", "count", 12, total=total),
+        Column("Конверсия, %", "percent", 13),
+        Column("Первые: продлили", "count", 15, total=total),
+        Column("Первые: из", "count", 11, total=total),
+        Column("Первые, %", "percent", 11),
+        Column("Последующие: продлили", "count", 15, total=total),
+        Column("Последующие: из", "count", 13, total=total),
+        Column("Последующие, %", "percent", 13),
+        Column("Окно идёт", "count", 11, total=total),
+    ]
+
+
+def _renewal_cells(item):
+    return [
+        item["ended"],
+        item["decided"],
+        item["renewed"],
+        item["lost"],
+        item["rate"],
+        item["first"]["renewed"],
+        item["first"]["decided"],
+        item["first"]["rate"],
+        item["repeat"]["renewed"],
+        item["repeat"]["decided"],
+        item["repeat"]["rate"],
+        item["pending"],
+    ]
+
+
+@report("renewal_conversion", "Конверсия продлений")
+def renewal_conversion_export(scope, period, params):
+    data = renewal_conversion_report(scope, period)
+    rules, summary = data["rules"], data["summary"]
+    definition = (
+        f"Продлён — у ребёнка есть следующий абонемент того же направления, начавшийся "
+        f"не позже {rules['grace_days']} дней после окончания, или проданный кнопкой "
+        "«Продлить». Конверсия — по абонементам, у которых это окно уже прошло; "
+        "абонементы, у которых окно ещё идёт, в неё не входят."
+    )
+    total = Section(
+        "Итог",
+        _renewal_columns("Абонементы"),
+        [["Закончились в периоде", *_renewal_cells(summary)]],
+        note=definition
+        + f" Из тех, у кого окно ещё идёт, уже продлили: {summary['pending_renewed']}.",
+    )
+    trend = Section(
+        "По месяцам",
+        [Column("Месяц", "date", 12), *_renewal_columns("", summable=True)[1:]]
+        + [Column("Окончательно", width=13)],
+        [
+            [row["month"], *_renewal_cells(row), "да" if row["complete"] else "дособирается"]
+            for row in data["trend"]
+        ],
+        note="Месяц — по дате окончания абонемента. 12 месяцев до конца выбранного периода.",
+    )
+    gaps = data["gaps"]
+    gap = Section(
+        "Срок продления",
+        [
+            Column("Купили продление", width=32),
+            Column("Продлений", "count", 12),
+            Column("Доля, %", "percent", 10),
+        ],
+        [[row["label"], row["value"], row["share"]] for row in gaps["buckets"]],
+        note=(
+            "День покупки продления относительно окончания абонемента. "
+            f"Средний срок: {gaps['average_days'] if gaps['average_days'] is not None else '—'} "
+            f"дн. Пауза дольше {gaps['long_pause_days']} дней — риск потери."
+        ),
+    )
+    sections = [total, trend, gap]
+    for dimension, title in RENEWAL_DIMENSIONS:
+        rows = data["breakdowns"][dimension]
+        # Ребёнок у двух преподавателей попадает в обе строки — сумма не итог.
+        columns = _renewal_columns(title, summable=dimension != "teacher")
+        note = f"Меньше {rules['min_sample']} абонементов с прошедшим окном — процент ненадёжен."
+        if dimension in ("group", "teacher"):
+            columns += [
+                Column("Заполняемость сейчас, %", "percent", 14),
+                Column("Группы", width=60),
+            ]
+            note = (
+                "Не рейтинг преподавателей: продления зависят и от времени занятий, и от "
+                "возраста детей — рядом заполняемость и расписание групп. " + note
+            )
+        sections.append(
+            Section(
+                RENEWAL_SHEETS[dimension],
+                columns,
+                [
+                    [
+                        row["label"],
+                        *_renewal_cells(row),
+                        *(
+                            [
+                                row["context"]["fill_percent"],
+                                "; ".join(
+                                    f"{g['name']} ({g['occupied']}/{g['capacity']}"
+                                    + (f", {g['schedule']}" if g["schedule"] else "")
+                                    + ")"
+                                    for g in row["context"]["groups"]
+                                ),
+                            ]
+                            if dimension in ("group", "teacher")
+                            else []
+                        ),
+                    ]
+                    for row in rows
+                ],
+                note=note,
+            )
+        )
+    return sections
+
+
+CHURN_SHEETS = {
+    "branch": "Ушли по филиалам",
+    "direction": "Ушли по направлениям",
+    "group": "Ушли по группам",
+    "teacher": "Ушли по преподавателям",
+    "lifetime": "Ушли по сроку жизни",
+    "reason": "Причины ухода",
+}
+CHILD_STATES = {
+    "active": "ходит дальше",
+    "departed": "ушёл",
+    "summer": "пауза на лето",
+    "recent": "в риск-листе",
+}
+
+
+def _churn_rule_note(rules):
+    note = (
+        f"Ушёл — нет активного абонемента дольше {rules['inactive_days']} дней после "
+        "окончания последнего (или отмечен «ушёл»). Дата ухода — окончание последнего "
+        "абонемента."
+    )
+    if rules["summer_pause"]:
+        note += (
+            " Летом (июнь–август) — пауза до 30 сентября: вернулся до неё — не уходил; "
+            "летние месяцы окончательны с 1 октября."
+        )
+    return note
+
+
+@report("churn", "Отток")
+def churn_export(scope, period, params):
+    data = churn_report(scope, period)
+    rules, summary = data["rules"], data["summary"]
+    previous = summary["previous_year"]
+    total = Section(
+        "Итог",
+        [
+            Column("Показатель", width=44),
+            Column("Значение", "decimal", 14, total=False),
+            Column("Год назад", "decimal", 14, total=False),
+        ],
+        [
+            ["Ушли", (summary["departed"], "count"), (previous["departed"], "count")],
+            ["Ходили в периоде", (summary["active"], "count"), (previous["active"], "count")],
+            ["Доля ушедших, %", (summary["rate"], "percent"), (previous["rate"], "percent")],
+            ["Из ушедших уже вернулись", (summary["returned"], "count"), None],
+            ["Не отмечены ушедшими в карточке", (summary["not_marked"], "count"), None],
+            ["Пауза на лето, ждём до 30 сентября", (summary["summer_waiting"], "count"), None],
+            ["Вернулись после лета", (summary["summer_returned"], "count"), None],
+            ["Ещё не ушли — в риск-листе", (summary["recent"], "count"), None],
+            [
+                "Средний срок жизни ушедших, мес.",
+                data["lifetime"]["period"]["average_months"],
+                None,
+            ],
+            ["То же за 12 месяцев, мес.", data["lifetime"]["year"]["average_months"], None],
+        ],
+        note=_churn_rule_note(rules)
+        + ("" if summary["complete"] else " Период ещё дособирается: порог не прошёл."),
+    )
+    departed = Section(
+        "Ушли",
+        [
+            Column("Ребёнок", width=28),
+            Column("Ушёл", "date", 12),
+            Column("Срок жизни, мес.", "decimal", 14, total=False),
+            Column("Вернулся", "date", 12),
+            Column("Причина ухода", width=36),
+            Column("Филиал", width=20),
+            Column("Направление", width=20),
+            Column("Группа", width=20),
+            Column("Преподаватель", width=24),
+            Column("Абонемент", width=24),
+            Column("Родитель", width=24),
+            Column("Телефон", width=18),
+            Column("WhatsApp", width=18),
+        ],
+        [
+            [
+                item["name"],
+                item["left_on"],
+                item["lifetime_months"],
+                item["returned_on"],
+                item["reason"] if item["marked_left"] else "не отмечен ушедшим",
+                item["branch"],
+                item["direction"],
+                item["group"],
+                ", ".join(teacher["name"] for teacher in item["teachers"]),
+                item["subscription"],
+                item["parent"],
+                item["phone"],
+                item["whatsapp"],
+            ]
+            for item in data["items"]
+        ],
+        note="Не вернувшиеся — сверху, свежие уходы — первыми.",
+    )
+    not_renewed = Section(
+        "Не продлили",
+        [
+            Column("Ребёнок", width=28),
+            Column("Абонемент закончился", "date", 14),
+            Column("Абонемент", width=24),
+            Column("Направление", width=20),
+            Column("Филиал", width=20),
+            Column("Ребёнок сейчас", width=16),
+            Column("Родитель", width=24),
+            Column("Телефон", width=18),
+            Column("WhatsApp", width=18),
+        ],
+        [
+            [
+                item["name"],
+                item["ends_on"],
+                item["subscription"],
+                item["direction"],
+                item["branch"],
+                CHILD_STATES.get(item["child_state"], item["child_state"]),
+                item["parent"],
+                item["phone"],
+                item["whatsapp"],
+            ]
+            for item in data["not_renewed"]
+        ],
+        note=(
+            f"Абонемент закончился в периоде, за {rules['grace_days']} дней после окончания "
+            "продления нет (как в отчёте «Продления»). «Ходит дальше» — у ребёнка идёт "
+            "абонемент другого направления."
+        ),
+    )
+    trend = Section(
+        "По месяцам",
+        [
+            Column("Месяц", "date", 12),
+            Column("Ушли", "count", 10),
+            Column("Ходили", "count", 10, total=False),
+            Column("Доля, %", "percent", 10),
+            Column("Год назад: ушли", "count", 14),
+            Column("Год назад: доля, %", "percent", 16),
+            Column("Пауза на лето", "count", 13),
+            Column("Окончательно", width=13),
+        ],
+        [
+            [
+                row["month"],
+                row["departed"],
+                row["active"],
+                row["rate"],
+                row["previous_year"]["departed"],
+                row["previous_year"]["rate"],
+                row["summer_waiting"],
+                "да" if row["complete"] else "дособирается",
+            ]
+            for row in data["trend"]
+        ],
+        note="Месяц ухода — месяц окончания последнего абонемента. Сравнение — с тем же "
+        "месяцем прошлого года: соседние месяцы в детском центре несравнимы из-за лета.",
+    )
+    sections = [total, departed, not_renewed, trend]
+    for dimension, title in CHURN_DIMENSIONS:
+        rows = data["breakdowns"][dimension]
+        columns = [
+            Column(title, width=36),
+            Column("Ушли", "count", 10, total=False if dimension == "teacher" else None),
+            Column("Уже вернулись", "count", 13, total=False if dimension == "teacher" else None),
+            Column("Доля от ушедших, %", "percent", 16),
+            Column("Средний срок жизни, мес.", "decimal", 18, total=False),
+        ]
+        note = "Сколько прожил клиент — от первого абонемента до ухода."
+        if dimension in ("group", "teacher"):
+            columns.append(Column("Группы", width=60))
+            note = (
+                "Не рейтинг преподавателей. Группа — та, где ребёнок ходил по последнему "
+                "абонементу; ребёнок у двух преподавателей учитывается у обоих."
+            )
+        sections.append(
+            Section(
+                CHURN_SHEETS[dimension],
+                columns,
+                [
+                    [
+                        row["label"],
+                        row["departed"],
+                        row["returned"],
+                        row["share"],
+                        row["average_lifetime_months"],
+                        *(
+                            [
+                                "; ".join(
+                                    f"{g['name']} ({g['occupied']}/{g['capacity']}"
+                                    + (f", {g['schedule']}" if g["schedule"] else "")
+                                    + ")"
+                                    for g in row["context"]["groups"]
+                                )
+                            ]
+                            if dimension in ("group", "teacher")
+                            else []
+                        ),
+                    ]
+                    for row in rows
+                ],
+                note=note,
+            )
+        )
+    return sections
 
 
 def build(name, scope, period, params=None) -> Export:

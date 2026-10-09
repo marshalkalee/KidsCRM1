@@ -1,9 +1,11 @@
-import { Card, ErrorState, PageHeader } from '../ui'
+import { useState } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
+import { Button, Card, ErrorState, PageHeader } from '../ui'
 import { t } from '../i18n'
 import {
   AnalyticsNav, AnalyticsToolbar, ExportButton, BarsChart, ChartCard, ComboChart, DonutChart, GaugeChart, HeatmapChart,
-  MetricTile, PALETTE, RankBars, TrendChart,
-  useAnalyticsCatalog, useAnalyticsFilters, useBreakdown, useHeatmap, useMetrics,
+  MetricTile, OwnerTiles, PALETTE, RankBars, TrendChart,
+  useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet, useBreakdown, useHeatmap, useMetrics,
 } from '../components/analytics'
 
 const TILES = [
@@ -16,19 +18,51 @@ const ATTENDANCE_COLORS = ['var(--color-success-600)', PALETTE[1], 'var(--color-
 const STATUS_ORDER = ['present', 'makeup', 'absent']
 
 /**
- * «Аналитика» (TRU-113): каркас отчётов владельца. Каждый блок — своя
- * форма под свой вопрос: динамика — линия с прошлым периодом, структура —
- * кольцо, «когда» — тепловая карта, «насколько полно» — шкала, «кто
- * больше» — рейтинг. Главный экран дашборда соберут в TRU-129.
+ * «Аналитика», главный экран дашборда владельца (TRU-129, ТЗ раздел 7):
+ * семь цифр верхнего уровня — выручка, задолженность, заполняемость,
+ * конверсия заявок и продлений, зона ухода, прогноз. Каждая плитка —
+ * ссылка в подробный отчёт; листать не нужно. Графики каркаса (TRU-113)
+ * — на один клик глубже, кнопкой «Графики»: пока свёрнуты, не грузятся.
  */
 export default function Analytics() {
   const filters = useAnalyticsFilters()
   const catalog = useAnalyticsCatalog()
+  const { data, loading, error, reload } = useAnalyticsGet('dashboard', '', filters)
+  const [charts, setCharts] = useState(false)
+  const branchNote = data && !data.all_branches ? data.branches.map(b => b.name).join(', ') : t('Все филиалы')
+
+  return (
+    <>
+      <PageHeader title={t('Аналитика')} description={branchNote} actions={<ExportButton report="overview" filters={filters} />} />
+      <AnalyticsNav />
+      <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} previous={data?.previous_period} />
+
+      {error && !data ? (
+        <Card className="mb-5"><ErrorState onRetry={reload} /></Card>
+      ) : (
+        <OwnerTiles data={data} loading={loading} />
+      )}
+
+      <Button
+        variant="secondary"
+        icon={charts ? ChevronUp : ChevronDown}
+        className="mb-5"
+        aria-expanded={charts}
+        onClick={() => setCharts(open => !open)}
+      >
+        {charts ? t('Скрыть графики') : t('Графики')}
+      </Button>
+      {charts && <OverviewCharts filters={filters} catalog={catalog} />}
+    </>
+  )
+}
+
+/** Графики каркаса (TRU-113): динамика, структура, «когда ходят». */
+function OverviewCharts({ filters, catalog }) {
   const { data, loading, error, reload } = useMetrics(METRICS, filters)
   const metrics = data?.metrics || {}
   const granularity = data?.period?.granularity
   const manyBranches = data && (data.all_branches ? (catalog?.branches?.length || 0) > 1 : data.branches.length > 1)
-  const branchNote = data && !data.all_branches ? data.branches.map(b => b.name).join(', ') : t('Все филиалы')
 
   const methods = useBreakdown('revenue', 'method', filters)
   const statuses = useBreakdown('attendance_marks', 'status', filters)
@@ -43,10 +77,6 @@ export default function Analytics() {
 
   return (
     <>
-      <PageHeader title={t('Аналитика')} description={branchNote} actions={<ExportButton report="overview" filters={filters} />} />
-      <AnalyticsNav />
-      <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} previous={data?.previous_period} />
-
       {error && !data ? (
         <Card><ErrorState onRetry={reload} /></Card>
       ) : (

@@ -285,6 +285,53 @@ lead, created = create_renewal_lead(child, actor=None)               # авто�
   продление ребёнка уходит в `PURCHASED` с автором и названием абонемента.
   Отказ по продлению продажа не трогает.
 
+### Конверсия продлений (TRU-125, TRU-126, ТЗ п. 5.3) — одно определение для прогноза и отчёта
+
+```python
+from domains.money.subscriptions.renewal_conversion import (
+    DEFAULT_GRACE_DAYS, RenewalIndex, grace_days, load_rows, renewal_conversion,
+)
+
+index = RenewalIndex(load_rows(org, ends_since=date(2026, 1, 1)), grace_days(org))
+renewal_conversion(index, as_of=today, months=6, branch_ids=None)
+# {ended, renewed, rate (0..1 | None), avg_renewal_price, window_start, window_end}
+index.renewal_of(subscription_row, known_before=date)  # продление или None
+index.is_first(subscription_row)  # первый абонемент ребёнка в направлении
+```
+
+- Продлён = у ребёнка есть другой абонемент, проданный кнопкой «Продлить»
+  (`renewed_from`), или того же направления, начавшийся позже и не позже
+  N дней после окончания. N — настройка организации `renewal_grace_days`
+  (`org_settings.RENEWAL_GRACE_DAYS`, экран «Настройки → Организация»), по
+  умолчанию 14 — до ответа центра (вопрос №5 в `docs/project-status.md`).
+  Читается только через `grace_days(org)`; `RenewalIndex` без второго
+  аргумента берёт значение по умолчанию.
+- Первое продление — продление абонемента, который сам ничего не продлевает
+  (первый у ребёнка в направлении). Первые и последующие не смешиваем.
+- В конверсию попадают абонементы, у которых окно продления уже прошло:
+  ранние продления без поздних завысили бы процент. `as_of` — «что было
+  известно на дату»: продажи после неё не видны (ретроспектива прогноза).
+- Прогноз выручки: `analytics/forecast.revenue_forecast(scope)`,
+  `GET /api/v1/analytics/forecast/` (только филиалы, период не нужен),
+  Excel `report=forecast`. Оплачено, но не отработано — по `paid_sum`;
+  продано, но не оплачено — `debt_total` (как экран «Задолженности»).
+  Продления следующего месяца считаются цепочкой от активных абонементов
+  (продление той же длины тоже может продлиться), диапазон расширяется до
+  худшей ошибки прогноза на законченных прошлых месяцах.
+- Отчёт «Конверсия продлений» (TRU-126):
+  `analytics/renewal_report.renewal_conversion_report(scope, period)`,
+  `GET /api/v1/analytics/renewal-conversion/?period=…&branch=…`, Excel
+  `report=renewal_conversion`, экран «Аналитика → Продления». Абонементы,
+  закончившиеся в периоде (по дате окончания, филиал — филиал абонемента);
+  итог, первые и последующие, «окно идёт», срок продления (день покупки
+  продления относительно окончания), динамика за 12 месяцев, разрезы:
+  филиал, направление, группа, преподаватель, тип абонемента, возраст на
+  дату окончания. Группа — членство ребёнка в группе того же направления,
+  пока шёл абонемент; преподаватели — текущие у группы (истории нет).
+  Разрез по преподавателю — по алфавиту, с заполняемостью и расписанием
+  групп, не рейтинг. Меньше 10 абонементов с прошедшим окном в строке —
+  пометка «мало данных».
+
 ### Риск-лист (TRU-122): границы доменов
 
 `analytics.risk_list` не пересчитывает финансовые правила. Он объединяет три
@@ -300,6 +347,45 @@ API: `GET /api/v1/analytics/risk-list/`; задача удержания:
 хранятся в `Organization.settings` и редактируются на общем экране настроек.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.
+
+С TRU-127 в риск-лист не попадают дети, которые уже ушли по правилу оттока
+(`analytics.churn.departed_child_ids`): риск-лист — про тех, кого можно
+удержать, ушедшие — в отчёте «Отток». Контакт родителя для обоих списков —
+`analytics.contacts.parent_contacts(org, child_ids)`.
+
+### Отток (TRU-127, ТЗ раздел 7)
+
+```python
+from domains.platform.analytics.churn import churn_report, churn_rules, departed_child_ids
+
+churn_report(scope, period)  # ушедшие за период, непродлившиеся, динамика, разрезы
+churn_rules(org)  # ChurnRules(inactive_days, summer_pause), .deadline(end)
+departed_child_ids(org, child_ids)  # кто из детей уже ушёл и не вернулся
+```
+
+- Ушёл = нет активного абонемента (любого направления и филиала) дольше
+  N дней после окончания последнего; N — настройка организации
+  `churn_inactive_days` (`org_settings.CHURN_INACTIVE_DAYS`, по умолчанию 30).
+  Статус ребёнка «ушёл» — уход сразу после окончания абонемента. Дата ухода —
+  окончание последнего абонемента (своей даты в карточке нет). Без
+  абонементов (только пробное) — не клиент, в отток не идёт.
+- Летняя пауза — `churn_summer_pause` (по умолчанию включена): если N дней
+  после окончания задевают 1 июня — 31 августа, ребёнок до 30 сентября на
+  паузе; вернулся до неё — не уходил, срок жизни продолжается. Летние
+  месяцы окончательны с 1 октября; месяц сравнивается с тем же месяцем
+  прошлого года.
+- Срок жизни клиента — от начала первого абонемента до окончания последнего
+  без перерыва дольше порога (летняя пауза не перерыв).
+- Непродлившиеся — абонементы, закончившиеся в периоде без продления, по
+  определению «Конверсии продлений» (`renewal_conversion`, окно
+  `renewal_grace_days`); рядом — ушёл ли ребёнок совсем.
+- Причина ухода — `Child.leave_reason` у отмеченных «ушёл»; остальные —
+  «не отмечен ушедшим».
+- API: `GET /api/v1/analytics/churn/?period=…&branch=…`; задача «вернуть
+  клиента»: `POST /api/v1/analytics/churn/<child_id>/task/?<те же фильтры>`
+  (`tasks.services.create_winback_task`, тип «Удержание клиента», ключ
+  `winback:<child>:<месяц>` — одна открытая в месяц); Excel `report=churn`;
+  экран «Аналитика → Отток».
 
 ## 8. Аналитика → все отчёты (TRU-118, ADR-0006)
 
@@ -343,6 +429,15 @@ compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, seri
   `<ExportButton report="имя" filters={filters} />`. Шапка листа, форматы
   чисел/дат и «Итого» формулами — общие (`analytics/export.py`),
   `GET /api/v1/analytics/export/?report=…` с теми же period/branch/фильтрами.
+- Главный экран дашборда (TRU-129): `analytics/dashboard.owner_dashboard(scope,
+  period)`, `GET /api/v1/analytics/dashboard/?period=…&branch=…` — семь плиток
+  (`tiles`): `revenue`, `debt`, `group_fill` (+ места, дети, недобор),
+  `lead_conversion`, `renewal_conversion` (изменение — `change_pp`, в п.п.),
+  `risk`, `forecast`. Своих формул нет: каждая цифра — из функции своего
+  отчёта или экрана (`compute`, `funnel`, `renewal_report.renewal_summary`,
+  `risk_list`, `revenue_forecast`). Упавшая плитка приходит `null`, остальные
+  считаются. Новая цифра на главный экран — только через эту функцию и тест
+  сверки в `tests_dashboard.py`. Excel — первый лист `report=overview`.
 
 Владелец: Анель. Потребители: Дарья, Bekzat.
 
