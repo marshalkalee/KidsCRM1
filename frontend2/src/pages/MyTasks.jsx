@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, MessageCircle, Phone, UserRoundPlus } from 'lucide-react'
+import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, MessageCircle, Phone, Plus, UserRoundPlus } from 'lucide-react'
 import api from '../api/axios'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
+import NewTaskModal from '../components/tasks/NewTaskModal'
 import { SellModal } from '../components/money/SubscriptionsTab'
 import { useSession } from '../session/SessionContext'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, PageHeader, Select, Skeleton, Tabs, apiErrorMessage, cn, money, useToast } from '../ui'
@@ -83,6 +84,7 @@ export default function MyTasks() {
   const [paying, setPaying] = useState(null)
   const [selling, setSelling] = useState(null)
   const [closing, setClosing] = useState(null)
+  const [creating, setCreating] = useState(false)
 
   const load = useCallback(() => {
     Promise.all([
@@ -179,6 +181,7 @@ export default function MyTasks() {
         description={overdue.length > 0
           ? t('{n} просрочено, {m} на сегодня', { n: overdue.length, m: today.length })
           : t('{n} задач на сегодня', { n: today.length })}
+        actions={<Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Новая задача')}</Button>}
       />
 
       <Tabs
@@ -232,6 +235,13 @@ export default function MyTasks() {
             </Card>
           ))}
         </div>
+      )}
+
+      {creating && (
+        <NewTaskModal
+          onClose={() => setCreating(false)}
+          onCreated={() => { setCreating(false); load() }}
+        />
       )}
 
       {reassigning && (

@@ -60,7 +60,28 @@ class TaskSerializer(serializers.ModelSerializer):
             related = attrs.get(field)
             if related is not None and related.organization_id != organization_id:
                 raise serializers.ValidationError({field: "Объект не найден."})
+        self._check_branches(request.user, attrs)
         return attrs
+
+    @staticmethod
+    def _check_branches(user, attrs):
+        """Сотрудник с выбранными филиалами (Д36) ставит задачи только в своих
+        филиалах и только тем, кто в них работает (или работает везде)."""
+        from domains.platform.core.active_branch import allowed_branch_ids
+
+        allowed = allowed_branch_ids(user)
+        if allowed is None:
+            return
+        branch = attrs.get("branch")
+        if branch is not None and branch.id not in allowed:
+            raise serializers.ValidationError({"branch": "Это не ваш филиал."})
+        assignee = attrs.get("assigned_to")
+        if assignee is not None and assignee.pk != user.pk:
+            their = set(assignee.branches.values_list("id", flat=True))
+            if their and not their & set(allowed):
+                raise serializers.ValidationError(
+                    {"assigned_to": "Этот сотрудник работает в другом филиале."}
+                )
 
     def get_contact_phone(self, obj):
         contact = self._payer_contact(obj)
