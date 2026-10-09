@@ -19,6 +19,7 @@ from django.conf import settings
 from django.core.mail import EmailMessage
 from django.utils import timezone
 
+from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.tenants.org_settings import MESSAGING_REPLY_TO, get_org_setting
 
 from .recipients import accounts_for_parent
@@ -151,6 +152,40 @@ class PushChannel(Channel):
         return f"push:{delivered}"
 
 
+class WhatsAppChannel(Channel):
+    key = "whatsapp"
+    label = "WhatsApp"
+
+    @property
+    def reason(self):
+        return ""
+
+    def recipient(self, parent):
+        from ..models import WhatsAppConnection
+        from .whatsapp import connection_for
+
+        connection = connection_for(parent.organization)
+        if not connection or connection.status != WhatsAppConnection.Status.CONNECTED:
+            return None, "WhatsApp центру не подключён"
+        raw = parent.whatsapp or parent.phones.values_list("number", flat=True).first()
+        if not raw:
+            return None, "у родителя нет номера WhatsApp"
+        try:
+            return normalize_phone_number(raw), ""
+        except InvalidPhoneNumberError:
+            return None, "номер WhatsApp имеет неверный формат"
+
+    def send(self, message, *, unsubscribe_url):
+        from .whatsapp import WhatsAppError, send_free_text, send_template
+
+        try:
+            if message.event == "whatsapp_reply":
+                return send_free_text(message)
+            return send_template(message)
+        except WhatsAppError as exc:
+            raise ChannelError(str(exc)) from exc
+
+
 class NotConnectedChannel(Channel):
     """Канал из настроек, которого ещё нет в системе: пропускается."""
 
@@ -166,6 +201,6 @@ class NotConnectedChannel(Channel):
 
 CHANNELS = {
     "email": EmailChannel(),
-    "whatsapp": NotConnectedChannel("whatsapp", "WhatsApp", "WhatsApp центру не подключён"),
+    "whatsapp": WhatsAppChannel(),
     "push": PushChannel(),
 }

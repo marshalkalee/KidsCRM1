@@ -61,6 +61,13 @@ class CenterProfileTests(TestCase):
         ok = self.api.patch(URL, {"description": "О нас", "is_published": True}, format="json")
         self.assertTrue(ok.data["is_published"])
 
+    def test_soft_deleted_profile_comes_back_empty(self):
+        self.api.patch(URL, {"description": "О нас", "is_published": True}, format="json")
+        CenterProfile.objects.get(organization=self.org).delete()
+        data = self.api.get(URL).data
+        self.assertEqual((data["description"], data["is_published"]), ("", False))
+        self.assertIsNone(center_profile(self.org))
+
     def test_only_owner(self):
         admin = APIClient()
         admin.force_authenticate(self.user("77010000002", User.Role.ADMIN))

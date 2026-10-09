@@ -38,6 +38,10 @@ class Group(TenantModel, TimestampedSoftDeleteModel):
     is_public = models.BooleanField(_("Показывать в публичном каталоге"), default=False)
     # Коротко для родителя в каталоге: что делают, что взять с собой (TRU-179).
     description = models.TextField(_("Описание для каталога"), blank=True)
+    # Пробное занятие для каталога (TRU-180): есть ли и сколько стоит;
+    # пустая цена — бесплатно.
+    trial_available = models.BooleanField(_("Есть пробное занятие"), default=True)
+    trial_price = models.PositiveIntegerField(_("Цена пробного, ₸"), null=True, blank=True)
     status = models.CharField(
         _("Статус"),
         max_length=16,

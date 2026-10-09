@@ -252,7 +252,7 @@ function UserMenu({ collapsed = false, onNavigate }) {
  * филиал отмечен точкой, его название — в подсказке и в списке.
  */
 function BranchSwitcher() {
-  const { branches, activeBranch, activeBranchId, setActiveBranchId } = useSession()
+  const { user, branches, activeBranch, activeBranchId, setActiveBranchId } = useSession()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -263,8 +263,13 @@ function BranchSwitcher() {
     return () => document.removeEventListener('mousedown', onClick)
   }, [open])
 
-  if (!branches.length) return null
-  const label = activeBranch?.name || t('Все филиалы')
+  // Один филиал — переключать нечего (у сотрудника с одним филиалом он и есть
+  // его рабочий: остальные сервер не показывает).
+  if (branches.length < 2) return null
+  // Сотрудник с выбранными филиалами: «все» — это все его филиалы.
+  const restricted = user?.role !== 'owner' && (user?.branches?.length || 0) > 0
+  const allLabel = restricted ? t('Все мои филиалы') : t('Все филиалы')
+  const label = activeBranch?.name || allLabel
 
   function choose(id) {
     setActiveBranchId(id)
@@ -293,7 +298,7 @@ function BranchSwitcher() {
       {open && (
         <ul className="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-pop" role="listbox" aria-label={t('Филиал')}>
           <li className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-subtle" role="presentation">{t('Филиал')}</li>
-          {[{ id: null, name: t('Все филиалы') }, ...branches].map(branch => (
+          {[{ id: null, name: allLabel }, ...branches].map(branch => (
             <li key={branch.id || 'all'}>
               <button
                 type="button"

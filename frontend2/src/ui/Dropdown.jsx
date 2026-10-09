@@ -11,10 +11,12 @@ import { t } from '../i18n'
  *
  * options: [{ value, label, disabled? }]. multiple — value массив, пункты с
  * квадратными галочками (как выбор преподавателей в первой версии).
+ * tone: 'filter' — выбранное розовым (фильтры, переключатели); 'field' —
+ * поле формы, выглядит как Input рядом, розовым только при открытии.
  */
 export function Dropdown({
   id, value, onChange, options, placeholder = t('Выберите…'), multiple = false, invalid, disabled,
-  size = 'md', ariaLabel, ariaLabelledby, className,
+  size = 'md', tone = 'filter', ariaLabel, ariaLabelledby, className,
 }) {
   const [open, setOpen] = useState(false)
   const [rect, setRect] = useState(null)
@@ -91,7 +93,9 @@ export function Dropdown({
         className={cn(
           'font-btn flex w-full items-center justify-between gap-2 rounded-md border-[1.5px] text-left transition-all',
           small ? 'h-9 px-2.5 text-xs' : 'h-[38px] px-3 text-[13px]',
-          active || open ? 'border-brand-400 bg-brand-50 font-semibold text-brand-600' : 'border-line-strong bg-surface-muted text-ink-subtle',
+          tone === 'field'
+            ? cn('bg-surface', open ? 'border-brand-400' : 'border-line-strong', active ? 'text-ink' : 'text-ink-subtle')
+            : active || open ? 'border-brand-400 bg-brand-50 font-semibold text-brand-600' : 'border-line-strong bg-surface-muted text-ink-subtle',
           open && 'ring-3 ring-brand-50',
           invalid && 'border-danger-600',
           disabled && 'cursor-not-allowed opacity-60',

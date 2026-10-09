@@ -42,6 +42,8 @@ class GroupSerializer(serializers.ModelSerializer):
             "status",
             "is_public",
             "description",
+            "trial_available",
+            "trial_price",
             "exclude_from_ai_recommendations",
             "teachers_count",
             "members_count",

@@ -195,7 +195,13 @@ class LessonService:
                 return EnrollResult(EnrollOutcome.SOURCE_LEAD_ALREADY_BOOKED)
 
         capacity = lesson.group.capacity if lesson.group_id else None
-        current_count = lesson.participants().count()
+        # Брони из каталога (TRU-180) тоже занимают места; своя бронь заявки
+        # не мешает её же подтвердить.
+        from .holds import held_count
+
+        current_count = lesson.participants().count() + held_count(
+            lesson, exclude_lead_id=source_lead_id
+        )
         if capacity is not None and current_count + 1 > capacity and not confirm_capacity:
             return EnrollResult(
                 EnrollOutcome.CAPACITY_EXCEEDED, capacity=capacity, current_count=current_count

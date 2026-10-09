@@ -656,6 +656,7 @@ def digests(request, version=None):
             {"building": _digest_brief(item), "created": created}, status=status.HTTP_202_ACCEPTED
         )
 
+    digest.expire_stuck(organization)
     rows = AIDigest.objects.for_tenant(organization).filter(language=language)
     latest = rows.filter(status__in=digest.DONE).first()
     last = rows.first()
