@@ -80,8 +80,8 @@ export default function Digest() {
 
   useEffect(() => {
     if (!selectedId) return
-    api.get(`ai/digests/${selectedId}/`).then(res => setLoaded(res.data)).catch(() => setParams({}))
-  }, [selectedId, setParams])
+    api.get(`ai/digests/${selectedId}/`, { params: { language } }).then(res => setLoaded(res.data)).catch(() => setParams({}))
+  }, [selectedId, setParams, language])
   const selected = selectedId && loaded?.id === selectedId ? loaded : null
 
   async function refresh() {

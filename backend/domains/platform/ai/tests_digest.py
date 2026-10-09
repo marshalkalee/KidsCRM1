@@ -1,6 +1,7 @@
 """Еженедельный дайджест (TRU-163)."""
 
 import datetime
+import json
 from decimal import Decimal
 from unittest import mock
 from zoneinfo import ZoneInfo
@@ -11,7 +12,7 @@ from rest_framework.test import APIClient
 
 from domains.platform.users.models import User
 
-from . import digest, services
+from . import digest, digest_i18n, services
 from .generation_provider import ProviderResult
 from .models import AIDigest, AIUsage
 from .tests import AIFixtures
@@ -96,14 +97,41 @@ class DigestBuildTests(AIFixtures):
         self.assertEqual(item.status, AIDigest.Status.READY)
         self.assertEqual(item.content["highlights"][0]["evidence"][0]["value"], 125000)
 
-    def test_digest_language_reaches_model_and_localizes_fact_labels(self):
-        item, call = self.build(answer(recommendation("Топты толтырыңыз", [BALLET])), language="kk")
-        self.assertEqual(item.language, "kk")
-        self.assertEqual(item.content["language"], "kk")
-        self.assertTrue(
-            item.content["highlights"][0]["evidence"][0]["label"].startswith("Толымдылық")
+    def test_built_once_in_russian_and_translated_to_kk_and_en(self):
+        """Один дайджест на три языка: советы пишутся по-русски, затем один
+        запрос переводит готовые тексты — смена языка ничего не собирает."""
+
+        def provider(**kwargs):
+            if '"texts"' in kwargs["user"]:
+                texts = json.loads(kwargs["user"])["texts"]
+                return ProviderResult(
+                    {"kk": [f"KK {t}" for t in texts], "en": [f"EN {t}" for t in texts]}, 300, 200
+                )
+            return answer(recommendation("Заполните группу", [BALLET]))
+
+        item = AIDigest.objects.create(
+            organization=self.org, week_start=datetime.date(2026, 10, 5), trigger="schedule"
         )
-        self.assertIn("қазақ тілінде", call.call_args.kwargs["user"])
+        with (
+            mock.patch("domains.platform.ai.aggregates.snapshot", return_value=snapshot()),
+            mock.patch(
+                "domains.platform.ai.generations.generation_provider.call", side_effect=provider
+            ),
+        ):
+            item = digest.build(item.id)
+        self.assertEqual(item.language, "ru")
+        self.assertEqual(item.content["items"][0]["title"], "Заполните группу")
+        self.assertEqual(item.content["i18n"]["kk"]["Заполните группу"], "KK Заполните группу")
+        kk = digest_i18n.localize(item.content, "kk")
+        en = digest_i18n.localize(item.content, "en")
+        self.assertEqual(kk["highlights"][0]["title"], "KK Заполните группу")
+        self.assertTrue(en["highlights"][0]["evidence"][0]["label"].startswith("EN "))
+        self.assertNotIn("i18n", kk)
+        # Перевод не удался — дайджест всё равно готов, на любом языке текст русский.
+        self.assertEqual(
+            digest_i18n.localize({**item.content, "i18n": {}}, "kk")["items"][0]["title"],
+            "Заполните группу",
+        )
 
     def test_small_center_gets_honest_empty_state_without_model(self):
         item, call = self.build(
@@ -209,18 +237,17 @@ class DigestApiTests(AIFixtures):
                 "/api/v1/ai/digests/", data or {}, format="json"
             )
 
-    def test_refresh_saves_current_interface_language(self):
+    def test_refresh_builds_one_digest_for_all_languages(self):
         response = self.refresh(data={"language": "kk"})
         self.assertEqual(response.status_code, 202)
-        self.assertEqual(AIDigest.objects.get().language, "kk")
-        self.assertEqual(response.data["building"]["language"], "kk")
+        self.assertEqual(AIDigest.objects.get().language, "ru")
 
     def test_refresh_rejects_unknown_language(self):
         response = self.refresh(data={"language": "de"})
         self.assertEqual(response.status_code, 400)
         self.assertFalse(AIDigest.objects.exists())
 
-    def test_list_only_returns_digest_in_requested_language(self):
+    def test_same_digest_is_shown_in_requested_language(self):
         AIDigest.objects.create(
             organization=self.org,
             week_start=datetime.date(2026, 10, 5),
@@ -228,10 +255,17 @@ class DigestApiTests(AIFixtures):
             language="ru",
             status=AIDigest.Status.READY,
             ready_at=timezone.now(),
+            content={
+                "items": [{"id": "x", "title": "Совет", "evidence": []}],
+                "highlights": [{"id": "x", "title": "Совет", "evidence": []}],
+                "i18n": {"kk": {"Совет": "Кеңес"}, "en": {"Совет": "Advice"}},
+            },
         )
-        response = self.client_api.get("/api/v1/ai/digests/", {"language": "kk"})
-        self.assertIsNone(response.data["latest"])
-        self.assertEqual(response.data["archive"], [])
+        kk = self.client_api.get("/api/v1/ai/digests/", {"language": "kk"}).data
+        self.assertEqual(kk["latest"]["content"]["highlights"][0]["title"], "Кеңес")
+        self.assertEqual(len(kk["archive"]), 1)
+        en = self.client_api.get("/api/v1/ai/digests/", {"language": "en"}).data
+        self.assertEqual(en["latest"]["content"]["items"][0]["title"], "Advice")
 
     def test_repeated_refresh_does_not_multiply_generations(self):
         first = self.refresh()
