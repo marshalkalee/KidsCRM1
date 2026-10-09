@@ -29,6 +29,8 @@ from .summary import current_subscription, subscription_row
 LEDGER_LABELS = {
     SubscriptionLedgerEntry.Kind.INITIAL_GRANT: "Покупка абонемента",
     SubscriptionLedgerEntry.Kind.EXTENSION: "Продление",
+    SubscriptionLedgerEntry.Kind.LESSON_REVERT: "Возврат занятия",
+    SubscriptionLedgerEntry.Kind.MANUAL_ADJUSTMENT: "Корректировка",
 }
 
 
@@ -68,8 +70,6 @@ def ledger(subscription):
                     "group": lesson.group.name if lesson.group_id else "",
                 }
             row["reverted"] = bool(record and record.reverted_at)
-        elif entry.kind == SubscriptionLedgerEntry.Kind.MANUAL_ADJUSTMENT:
-            row["label"] = "Возврат занятия" if entry.delta > 0 else "Корректировка"
         else:
             row["label"] = LEDGER_LABELS.get(entry.kind, entry.get_kind_display())
         rows.append(row)

@@ -197,11 +197,14 @@ class Attendance(TenantModel):
         )
         self.hard_delete()
 
+    def _lesson_local_date(self):
+        tz = timezone.zoneinfo.ZoneInfo(self.organization.timezone or "Asia/Almaty")
+        return self.lesson.starts_at.astimezone(tz).date()
+
     def _lesson_already_happened(self):
         tz = timezone.zoneinfo.ZoneInfo(self.organization.timezone or "Asia/Almaty")
         today = timezone.now().astimezone(tz).date()
-        lesson_date = self.lesson.starts_at.astimezone(tz).date()
-        return lesson_date < today
+        return self._lesson_local_date() < today
 
     def _consume(self):
         """Списание при отметке «пришёл». SubscriptionService.consume()
@@ -245,8 +248,13 @@ class Attendance(TenantModel):
             self._notify_missing_subscription()
             return
 
+        # TRU-130: срок абонемента сверяется с датой занятия, а не с днём
+        # отметки — отметку за вчера ставят и сегодня.
         result = SubscriptionService.consume(
-            child_id=self.child_id, lesson_id=self.lesson_id, direction_id=direction_id
+            child_id=self.child_id,
+            lesson_id=self.lesson_id,
+            direction_id=direction_id,
+            lesson_date=self._lesson_local_date(),
         )
         self.consumed_from_subscription = result.outcome == ConsumeOutcome.CONSUMED
         self.subscription_id = result.subscription_id
