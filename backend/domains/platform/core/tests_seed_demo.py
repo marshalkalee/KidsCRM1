@@ -43,7 +43,7 @@ class SeedDemoTests(TestCase):
         lessons = list(Lesson.objects.for_tenant(self.org))
         self.assertEqual(compute_conflict_map(lessons), {})
 
-    @override_settings(DEBUG=False)
+    @override_settings(DEBUG=False, DEMO_DATA_ALLOWED=False)
     def test_refuses_without_debug(self):
         with self.assertRaises(CommandError):
             call_command("seed_demo", children=5)
