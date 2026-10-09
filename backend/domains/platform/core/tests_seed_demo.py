@@ -28,7 +28,7 @@ class SeedDemoTests(TestCase):
             role=User.Role.OWNER,
         )
 
-    @override_settings(DEBUG=True)
+    @override_settings(DEBUG=True, DEMO_DATA_ALLOWED=True)
     def test_seeds_once(self):
         call_command("seed_demo", children=20, stdout=io.StringIO())
         children = Child.objects.for_tenant(self.org).count()
