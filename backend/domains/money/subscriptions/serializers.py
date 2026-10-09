@@ -132,4 +132,5 @@ class SubscriptionTypeSerializer(serializers.ModelSerializer):
             "directions",
             "branches",
             "is_active",
+            "is_public",
         ]

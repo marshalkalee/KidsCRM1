@@ -203,6 +203,8 @@ export default function LeadDetail() {
 
       <div className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
         <aside className="space-y-4 lg:sticky lg:top-24">
+          {/* На телефоне бронь — первой: место держится считанные часы. */}
+          {lead.seat_hold && !lead.trial_booking && <div className="lg:hidden"><SeatHoldCard hold={lead.seat_hold} /></div>}
           <Card>
             <p className="text-[15px] font-bold text-ink">{t('Связаться')}</p>
             <p className="mt-1 text-sm text-ink-muted">{lead.parent_name} · <a href={`tel:${lead.phone}`} className="font-medium text-ink hover:text-brand-700">{lead.phone}</a></p>
@@ -268,6 +270,7 @@ export default function LeadDetail() {
         </aside>
 
         <div className="min-w-0 space-y-6">
+          {lead.seat_hold && !lead.trial_booking && <div className="hidden lg:block"><SeatHoldCard hold={lead.seat_hold} /></div>}
           {lead.trial_booking && (
             <TrialBookingCard
               booking={lead.trial_booking}
@@ -407,6 +410,26 @@ export default function LeadDetail() {
         />
       )}
     </div>
+  )
+}
+
+/** Бронь места из каталога (TRU-180): держится до срока, подтверждается записью на пробное. */
+function SeatHoldCard({ hold }) {
+  return (
+    <Card className={hold.active ? 'border-warning-600/20 bg-warning-50/50' : ''}>
+      <div className="flex flex-wrap items-center gap-2">
+        <CalendarPlus className="size-4 text-warning-600" />
+        <p className="text-[15px] font-bold text-ink">{t('Бронь места из каталога')}</p>
+        <Badge tone={hold.active ? 'warning' : 'neutral'}>{hold.active ? t('Место держится') : t('Бронь истекла')}</Badge>
+      </div>
+      <p className="mt-2 font-semibold text-ink">{hold.group_name} · {formatDateTime(hold.starts_at_local)}</p>
+      <p className="text-[13px] text-ink-muted">{hold.branch_name}</p>
+      <p className="mt-2 text-[13px] text-ink-muted">
+        {hold.active
+          ? t('Родитель выбрал это занятие в каталоге. Место держится до {when} — позвоните и запишите на пробное, иначе бронь снимется сама.', { when: formatDateTime(hold.expires_at_local) })
+          : t('Бронь не подтвердили до {when}, место освободилось. Можно записать на это или другое занятие.', { when: formatDateTime(hold.expires_at_local) })}
+      </p>
+    </Card>
   )
 }
 

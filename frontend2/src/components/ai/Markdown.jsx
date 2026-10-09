@@ -26,21 +26,32 @@ function Inline({ text }) {
 
 export default function Markdown({ text }) {
   const blocks = []
+  let nextOrderedNumber = 1
   for (const raw of text.split('\n')) {
     const line = raw.trimEnd()
     const bullet = /^\s*[-*•]\s+(.*)$/.exec(line)
-    const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line)
+    const numbered = /^\s*(\d+)[.)]\s+(.*)$/.exec(line)
     const last = blocks[blocks.length - 1]
     if (bullet || numbered) {
       const kind = bullet ? 'ul' : 'ol'
-      const item = (bullet || numbered)[1]
+      const item = bullet ? bullet[1] : numbered[2]
       if (last?.kind === kind) last.items.push(item)
-      else blocks.push({ kind, items: [item] })
+      else if (kind === 'ol') {
+        const writtenNumber = Number(numbered[1])
+        // Модель иногда начинает каждый пункт с `1.` и вставляет между ними
+        // подпункты. Markdown видит несколько списков и каждый раз начинает
+        // нумерацию заново. Пока не встретили новый заголовок, продолжаем счёт.
+        const start = writtenNumber === 1 && nextOrderedNumber > 1 ? nextOrderedNumber : writtenNumber
+        blocks.push({ kind, items: [item], start })
+      } else blocks.push({ kind, items: [item] })
+      if (kind === 'ol') nextOrderedNumber = blocks[blocks.length - 1].start + blocks[blocks.length - 1].items.length
     } else if (/^#{1,4}\s+/.test(line)) {
       blocks.push({ kind: 'h', text: line.replace(/^#{1,4}\s+/, '') })
+      nextOrderedNumber = 1
     } else if (line.trim()) {
       if (last?.kind === 'p') last.lines.push(line)
       else blocks.push({ kind: 'p', lines: [line] })
+      if (/^\s*\*\*[^*]+\*\*\s*$/.test(line)) nextOrderedNumber = 1
     } else {
       blocks.push({ kind: 'gap' })
     }
@@ -53,7 +64,7 @@ export default function Markdown({ text }) {
         if (b.kind === 'p') return <p key={i}>{b.lines.map((l, j) => <Fragment key={j}>{j > 0 && <br />}<Inline text={l} /></Fragment>)}</p>
         const List = b.kind
         return (
-          <List key={i} className={cn('space-y-1 pl-5', b.kind === 'ul' ? 'list-disc marker:text-[#a78bfa]' : 'list-decimal marker:font-semibold marker:text-ink-muted')}>
+          <List start={b.kind === 'ol' ? b.start : undefined} key={i} className={cn('space-y-1 pl-5', b.kind === 'ul' ? 'list-disc marker:text-[#a78bfa]' : 'list-decimal marker:font-semibold marker:text-ink-muted')}>
             {b.items.map((item, j) => <li key={j}><Inline text={item} /></li>)}
           </List>
         )

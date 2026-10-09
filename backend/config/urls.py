@@ -35,6 +35,8 @@ api_v1_patterns = [
     path("ai/", include("domains.platform.ai.urls")),
     path("audit/", include("domains.platform.core.audit_urls")),
     path("analytics/", include("domains.platform.analytics.urls")),
+    # Ключи публичного API — сторона владельца (TRU-176).
+    path("api-keys/", include("domains.platform.public_api.staff_urls")),
     # Кабинет родителя (M4): свой вход по коду и свой токен, не JWT сотрудников.
     path("portal/", include("domains.people.portal.urls")),
     # Объявления для кабинета родителя — сторона сотрудников (TRU-140).
@@ -45,6 +47,8 @@ api_v1_patterns = [
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/", include(api_v1_patterns)),
+    # Публичное API для тарифа Enterprise (TRU-176): свой ключ, свои правила совместимости.
+    path("api/public/v1/", include("domains.platform.public_api.urls")),
     # Веб — только frontend2 (React, ADR-004); nginx отдаёт его на всё,
     # что не /api/, /admin/, /static/, /media/ и /healthz/.
     path("", include("domains.platform.core.urls")),

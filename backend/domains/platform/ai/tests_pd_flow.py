@@ -283,6 +283,11 @@ class PDFlowTests(PDFlowFixtures):
             "conversations",
             "conversation-detail",
             "digest-detail",
+            # Действия над уже сохранённым дайджестом работают только внутри CRM:
+            # предпросмотр/создание Task и скрытие рекомендации модель не вызывают.
+            "digest-task-preview",
+            "digest-task-create",
+            "digest-recommendation-dismiss",
         }
         self.assertEqual(routes - service_routes, described)
 

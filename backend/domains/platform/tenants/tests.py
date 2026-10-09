@@ -94,7 +94,9 @@ class TenantScopedAPITests(APITestCase):
     def test_created_branch_is_attached_to_callers_organization(self):
         self.client.force_authenticate(self.user_a)
 
-        response = self.client.post("/api/v1/branches/", {"name": "Новый филиал"}, format="json")
+        response = self.client.post(
+            "/api/v1/branches/", {"name": "Новый филиал", "city": "Алматы"}, format="json"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         created = Branch.objects.get(pk=response.data["id"])

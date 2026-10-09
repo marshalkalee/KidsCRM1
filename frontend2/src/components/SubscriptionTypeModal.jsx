@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import api from '../api/axios'
-import { Button, CheckList, Field, Input, Modal, apiErrorMessage, useToast } from '../ui'
+import { Button, CheckList, Checkbox, Field, Input, Modal, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
 import { entityNameInputProps } from '../utils/formValidation'
 
@@ -15,6 +15,7 @@ export default function SubscriptionTypeModal({ type, directions, branches, onCl
     duration_days: type?.duration_days || '',
     directions: (type?.directions || []).map(String),
     branches: (type?.branches || []).map(String),
+    is_public: type?.is_public || false,
   })
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
@@ -103,6 +104,14 @@ export default function SubscriptionTypeModal({ type, directions, branches, onCl
             onChange={v => set('branches', v)}
           />
         </Field>
+        <div>
+          <Checkbox
+            checked={form.is_public}
+            onChange={e => set('is_public', e.target.checked)}
+            label={<span className="text-sm text-ink">{t('Показывать цену в публичном каталоге')}</span>}
+          />
+          <p className="mt-1 pl-7 text-[12px] text-ink-muted">{t('По умолчанию цена видна только внутри CRM.')}</p>
+        </div>
       </form>
     </Modal>
   )

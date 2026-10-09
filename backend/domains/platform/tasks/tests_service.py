@@ -169,11 +169,16 @@ class TaskServiceTests(TestCase):
         self.assertEqual(task.status, Task.Status.DONE)
         self.assertEqual(task.closing_comment, "Дозвонился")
 
-    def test_teacher_has_no_api_access(self):
+    def test_teacher_sees_only_own_tasks(self):
+        """Преподаватель получает поручения (TRU-181), но чужих задач не видит
+        и задачи по карточке ребёнка ему недоступны."""
         client = APIClient()
         client.force_authenticate(self.teacher)
         response = client.get("/api/v1/tasks/")
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200)
+        rows = response.data["results"] if isinstance(response.data, dict) else response.data
+        self.assertTrue(all(row["assigned_to"] == self.teacher.id for row in rows))
+        self.assertEqual(client.get("/api/v1/tasks/for-child/").status_code, 403)
 
     def test_admin_can_create_task_via_api(self):
         client = APIClient()

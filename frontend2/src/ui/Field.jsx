@@ -100,6 +100,7 @@ export function Select({ id, value, onChange, children, invalid, disabled, requi
         disabled={disabled}
         ariaLabel={ariaLabel}
         size={className?.includes('h-9') ? 'sm' : 'md'}
+        tone="field"
       />
       {/* Для проверки формы браузером: обязательный список без значения не даст отправить. */}
       {required && (
@@ -111,7 +112,7 @@ export function Select({ id, value, onChange, children, invalid, disabled, requi
 
 /** Выбор нескольких значений — список с галочками (как выбор преподавателей). */
 export function MultiSelect({ id, value, onChange, options, placeholder = t('Не выбрано'), invalid }) {
-  return <Dropdown id={id} multiple value={value} onChange={onChange} options={options} placeholder={placeholder} invalid={invalid} />
+  return <Dropdown id={id} multiple value={value} onChange={onChange} options={options} placeholder={placeholder} invalid={invalid} tone="field" />
 }
 
 /** Галочка первой версии (коралловый квадрат). */

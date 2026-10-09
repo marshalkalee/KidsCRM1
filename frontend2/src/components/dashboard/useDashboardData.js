@@ -52,7 +52,6 @@ export function useDashboardData() {
           period: 'custom',
           from: isoDate(monthAgo),
           to: isoDate(today),
-          compare: 0,
           series: 0,
         }).then(r => r.metrics),
       } : {}),

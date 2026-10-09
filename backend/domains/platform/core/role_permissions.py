@@ -246,6 +246,11 @@ def can_view_ai_digest(user) -> bool:
     return user.role in (User.Role.OWNER, User.Role.MANAGER)
 
 
+def can_reconcile_balances(user) -> bool:
+    """Отчёт сверки остатков (TRU-61) — те же роли, что у API (IsOwnerOrManager)."""
+    return user.role in (User.Role.OWNER, User.Role.MANAGER)
+
+
 def get_user_permissions(user) -> dict:
     return {
         "can_view_financials": can_view_financials(user),
@@ -270,4 +275,5 @@ def get_user_permissions(user) -> dict:
         "can_manage_announcements": can_manage_announcements(user),
         "can_manage_parent_requests": can_manage_parent_requests(user),
         "can_view_ai_digest": can_view_ai_digest(user),
+        "can_reconcile_balances": can_reconcile_balances(user),
     }

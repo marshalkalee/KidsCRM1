@@ -6,9 +6,42 @@ app_name = "ai"
 
 urlpatterns = [
     path("status/", views.ai_status, name="status"),
+    path("recommendations/groups/", views.group_recommendations, name="group-recommendations"),
+    path(
+        "recommendations/<uuid:recommendation_id>/dismiss/",
+        views.dismiss_recommendation,
+        name="dismiss-recommendation",
+    ),
+    path("content/", views.content_studio, name="content-studio"),
+    path(
+        "content/<uuid:generation_id>/cancel/",
+        views.cancel_content_generation,
+        name="content-generation-cancel",
+    ),
+    path("content/drafts/", views.content_drafts, name="content-drafts"),
+    path(
+        "content/drafts/<uuid:draft_id>/",
+        views.content_draft_detail,
+        name="content-draft-detail",
+    ),
     path("usage/", views.usage_summary, name="usage"),
     path("digests/", views.digests, name="digests"),
     path("digests/<uuid:digest_id>/", views.digest_detail, name="digest-detail"),
+    path(
+        "digests/<uuid:digest_id>/task-preview/",
+        views.digest_task_preview,
+        name="digest-task-preview",
+    ),
+    path(
+        "digests/<uuid:digest_id>/tasks/",
+        views.digest_task_create,
+        name="digest-task-create",
+    ),
+    path(
+        "digests/<uuid:digest_id>/dismiss/",
+        views.dismiss_digest_recommendation,
+        name="digest-recommendation-dismiss",
+    ),
     path("chat/", views.chat_view, name="chat"),
     path("conversations/", views.conversations, name="conversations"),
     path(

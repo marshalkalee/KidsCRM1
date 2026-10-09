@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/axios'
-import { Button, Field, Input, Modal, MultiSelect, Select, apiErrorMessage, useToast } from '../ui'
+import { Button, Checkbox, Field, Input, Modal, MultiSelect, Select, Textarea, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
 import { entityNameInputProps } from '../utils/formValidation'
 
@@ -23,6 +23,11 @@ export default function GroupModal({ group, onClose, onSaved }) {
     age_min: group?.age_min ?? '',
     age_max: group?.age_max ?? '',
     status: group?.status || 'active',
+    is_public: group?.is_public || false,
+    description: group?.description || '',
+    trial_available: group?.trial_available ?? true,
+    trial_price: group?.trial_price ?? '',
+    exclude_from_ai_recommendations: group?.exclude_from_ai_recommendations || false,
   })
   const [options, setOptions] = useState({ branches: [], directions: [], teachers: [] })
   const [errors, setErrors] = useState({})
@@ -54,6 +59,7 @@ export default function GroupModal({ group, onClose, onSaved }) {
       capacity: Number(form.capacity),
       age_min: form.age_min === '' ? null : Number(form.age_min),
       age_max: form.age_max === '' ? null : Number(form.age_max),
+      trial_price: form.trial_price === '' ? null : Number(form.trial_price),
     }
     try {
       const response = isEdit ? await api.patch(`groups/${group.id}/`, payload) : await api.post('groups/', payload)
@@ -134,6 +140,42 @@ export default function GroupModal({ group, onClose, onSaved }) {
             </Select>
           )}
         </Field>
+        <Field label={t('Описание для каталога')} className="sm:col-span-2" hint={t('Коротко для родителей: что делают на занятиях, что взять с собой.')}>
+          {({ id }) => <Textarea id={id} rows={2} maxLength={500} value={form.description} onChange={e => set('description', e.target.value)} />}
+        </Field>
+        <div className="rounded-lg border border-line bg-surface-muted p-3 sm:col-span-2">
+          <Checkbox
+            checked={form.is_public}
+            onChange={e => set('is_public', e.target.checked)}
+            label={t('Показывать в публичном каталоге')}
+          />
+          <p className="mt-1 pl-6 text-xs text-ink-subtle">
+            {t('Название, возраст, расписание и свободные места — для будущего каталога кружков. Детей и родителей каталог не видит.')}
+          </p>
+          {/* Пробное из каталога (TRU-180): родитель бронирует место, центр подтверждает. */}
+          <div className="mt-3 border-t border-line pt-3">
+            <Checkbox
+              checked={form.trial_available}
+              onChange={e => set('trial_available', e.target.checked)}
+              label={t('Можно записаться на пробное')}
+            />
+            {form.trial_available && (
+              <Field label={t('Цена пробного, ₸')} hint={t('Пусто — бесплатно')} className="mt-2 w-48 pl-6">
+                {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={0} value={form.trial_price} onChange={e => set('trial_price', e.target.value)} placeholder="0" />}
+              </Field>
+            )}
+          </div>
+        </div>
+        <div className="rounded-lg border border-line bg-surface-muted p-3 sm:col-span-2">
+          <Checkbox
+            checked={form.exclude_from_ai_recommendations}
+            onChange={e => set('exclude_from_ai_recommendations', e.target.checked)}
+            label={t('Не предлагать продвижение этой группы')}
+          />
+          <p className="mt-1 pl-6 text-xs text-ink-subtle">
+            {t('Для индивидуальных, конкурсных и других намеренно малых групп.')}
+          </p>
+        </div>
       </form>
     </Modal>
   )

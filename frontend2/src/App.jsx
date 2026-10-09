@@ -5,6 +5,7 @@ import { RequireAuth, RequirePermission, SessionProvider, useSession } from './s
 import { ConfirmProvider, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Assistant from './pages/Assistant'
+import ContentStudio from './pages/ContentStudio'
 import Digest from './pages/Digest'
 import { MessagingJournal, MessagingSettings, MessagingTemplates } from './pages/Messaging'
 import Login from './pages/Login'
@@ -27,6 +28,9 @@ import Directions from './pages/Directions'
 import SubscriptionTypes from './pages/SubscriptionTypes'
 import OrganizationSettings from './pages/OrganizationSettings'
 import AccessSettings from './pages/AccessSettings'
+import BalanceCheck from './pages/BalanceCheck'
+import ApiKeys from './pages/ApiKeys'
+import CenterProfile from './pages/CenterProfile'
 import LeadDictionaries from './pages/LeadDictionaries'
 import Leads from './pages/Leads'
 import Notifications from './pages/Notifications'
@@ -96,7 +100,10 @@ function StaffApp() {
                 <Route path="onboarding" element={<RequirePermission permission="can_manage_org_settings"><Onboarding /></RequirePermission>} />
                 <Route path="leads" element={<RequirePermission permission="can_manage_leads"><Leads /></RequirePermission>} />
                 <Route path="leads/:id" element={<RequirePermission permission="can_manage_leads"><LeadDetail /></RequirePermission>} />
-                <Route path="assistant" element={<RequirePermission permission="can_use_ai_chat"><Assistant /></RequirePermission>} />
+                <Route path="assistant" element={<RequirePermission permission="can_use_ai_chat"><PageGroup title={t('ИИ-помощник')} tabs={[
+                  { key: 'chat', label: t('Чат'), element: <Assistant /> },
+                  { key: 'content', label: t('Контент'), element: <ContentStudio /> },
+                ]} /></RequirePermission>} />
                 <Route path="digest" element={<RequirePermission permission="can_view_ai_digest"><Digest /></RequirePermission>} />
                 <Route path="messaging" element={<PageGroup title={t('Рассылки родителям')} tabs={[
                   { key: 'journal', label: t('Журнал'), permission: 'can_manage_children', element: <MessagingJournal /> },
@@ -119,6 +126,7 @@ function StaffApp() {
                 <Route path="money" element={<RequirePermission permission="can_view_client_money"><PageGroup title={t('Деньги')} tabs={[
                   { key: 'debts', label: t('Долги'), element: <Debts /> },
                   { key: 'renewals', label: t('Продления'), element: <Renewals /> },
+                  { key: 'balances', label: t('Сверка остатков'), permission: 'can_reconcile_balances', element: <BalanceCheck /> },
                 ]} /></RequirePermission>} />
                 <Route path="debts" element={<TabRedirect to="/money" tab="debts" />} />
                 <Route path="renewals" element={<TabRedirect to="/money" tab="renewals" />} />
@@ -150,6 +158,8 @@ function StaffApp() {
                 <Route path="settings/staff" element={<RequirePermission permission="can_manage_staff"><Staff /></RequirePermission>} />
                 <Route path="settings/organization" element={<RequirePermission permission="can_manage_org_settings"><OrganizationSettings /></RequirePermission>} />
                 <Route path="settings/access" element={<RequirePermission permission="can_manage_org_settings"><AccessSettings /></RequirePermission>} />
+                <Route path="settings/api-keys" element={<RequirePermission permission="can_manage_org_settings"><ApiKeys /></RequirePermission>} />
+                <Route path="settings/center-profile" element={<RequirePermission permission="can_manage_org_settings"><CenterProfile /></RequirePermission>} />
                 <Route path="*" element={<LegacyRedirect />} />
               </Route>
             </Routes>

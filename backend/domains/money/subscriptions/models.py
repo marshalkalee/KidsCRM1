@@ -41,6 +41,8 @@ class SubscriptionType(TenantModel):
     branches = models.ManyToManyField(Branch, related_name="subscription_types", blank=True)
 
     is_active = models.BooleanField(default=True)
+    # Показывать ли цену во внешнем каталоге (TRU-177). По умолчанию нет.
+    is_public = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["name"]

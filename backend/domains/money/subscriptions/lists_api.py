@@ -16,7 +16,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from domains.people.clients.models import ChildContact
-from domains.platform.core.active_branch import get_active_branch
+from domains.platform.core.active_branch import branch_scope
 from domains.platform.core.permissions import CanViewClientMoney, IsNotTeacher
 from domains.platform.core.role_permissions import can_view_phone
 from domains.platform.core.utils import today_for_org
@@ -26,7 +26,7 @@ from domains.platform.tenants.org_settings import DEBT_OVERDUE_DAYS_THRESHOLD, g
 from domains.scheduling.groups.models import Group, GroupMembership
 
 from .debt import debtor_subscriptions
-from .debt_report import build_debtors_workbook
+from .debt_report import build_debtors_workbook, build_renewals_workbook
 from .models import RenewalContact, Subscription
 from .renewals import expiring_subscriptions, mark_contacted
 
@@ -51,10 +51,16 @@ def _page(qs, params):
 def _branch(request):
     """?branch= — фильтр панели; нет — филиал из шапки (X-Branch-Id), как у списка детей."""
     organization = request.user.organization
-    branch_id = request.query_params.get("branch")
-    if branch_id:
-        return Branch.objects.for_tenant(organization).filter(pk=branch_id).first()
-    return get_active_branch(request)
+    scope = branch_scope(request, request.query_params.get("branch"))
+    if scope is not None and len(scope) == 1:
+        return Branch.objects.for_tenant(organization).filter(pk=scope[0]).first()
+    return None
+
+
+def _in_scope(request, qs):
+    """Несколько своих филиалов («все мои») — фильтр списком."""
+    scope = branch_scope(request, request.query_params.get("branch"))
+    return qs.filter(branch_id__in=scope) if scope is not None and len(scope) > 1 else qs
 
 
 def _direction(request):
@@ -105,6 +111,7 @@ def _debtors_queryset(request):
     qs = debtor_subscriptions(
         organization, branch=_branch(request), direction=_direction(request), min_age_days=min_age
     )
+    qs = _in_scope(request, qs)
     query = (params.get("q") or "").strip()
     if query:
         qs = qs.filter(child__full_name__icontains=query)
@@ -210,6 +217,7 @@ def _renewals_queryset(request):
     qs = expiring_subscriptions(
         organization, branch=_branch(request), direction=_direction(request), group=group
     )
+    qs = _in_scope(request, qs)
     query = (params.get("q") or "").strip()
     if query:
         qs = qs.filter(child__full_name__icontains=query)
@@ -320,6 +328,24 @@ def renewals_api(request):
         show_phones=can_view_phone(request.user),
     )
     return Response({"results": rows, "count": qs.count()})
+
+
+@api_view(["GET"])
+@permission_classes([CanViewClientMoney])
+def renewals_export_api(request):
+    """Та же выборка «Продлений» файлом .xlsx — для сверки (TRU-152)."""
+    organization = request.user.organization
+    qs = _renewals_queryset(request).order_by("ends_on", "sessions_remaining_cache", "pk")
+    show_phones = can_view_phone(request.user)
+    rows = renewal_rows(organization, qs, show_phones=show_phones)
+    workbook = build_renewals_workbook(rows, show_phones=show_phones)
+    response = HttpResponse(
+        workbook.read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    name = f"renewals-{today_for_org(organization):%Y-%m-%d}.xlsx"
+    response["Content-Disposition"] = f'attachment; filename="{name}"'
+    return response
 
 
 @api_view(["POST"])

@@ -6,6 +6,7 @@ from unittest import mock
 from zoneinfo import ZoneInfo
 
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from domains.platform.users.models import User
@@ -52,9 +53,12 @@ STRETCH = "occupancy.группы[1].процент"
 
 @override_settings(**OPENAI)
 class DigestBuildTests(AIFixtures):
-    def build(self, provider_answer, snap=None):
+    def build(self, provider_answer, snap=None, language="ru"):
         item = AIDigest.objects.create(
-            organization=self.org, week_start=datetime.date(2026, 10, 5), trigger="schedule"
+            organization=self.org,
+            week_start=datetime.date(2026, 10, 5),
+            trigger="schedule",
+            language=language,
         )
         with (
             mock.patch("domains.platform.ai.aggregates.snapshot", return_value=snap or snapshot()),
@@ -91,6 +95,15 @@ class DigestBuildTests(AIFixtures):
         item, _ = self.build(answer(recommendation("Выручка", ["money.Выручка.было"])))
         self.assertEqual(item.status, AIDigest.Status.READY)
         self.assertEqual(item.content["highlights"][0]["evidence"][0]["value"], 125000)
+
+    def test_digest_language_reaches_model_and_localizes_fact_labels(self):
+        item, call = self.build(answer(recommendation("Топты толтырыңыз", [BALLET])), language="kk")
+        self.assertEqual(item.language, "kk")
+        self.assertEqual(item.content["language"], "kk")
+        self.assertTrue(
+            item.content["highlights"][0]["evidence"][0]["label"].startswith("Толымдылық")
+        )
+        self.assertIn("қазақ тілінде", call.call_args.kwargs["user"])
 
     def test_small_center_gets_honest_empty_state_without_model(self):
         item, call = self.build(
@@ -138,11 +151,49 @@ class DigestBuildTests(AIFixtures):
             "Сезонность · Новых заявок · 2026-09",
         )
 
+    def test_fact_label_for_promotion_candidates_has_no_ids(self):
+        snap = {
+            "promotion_opportunities": {
+                "кандидаты": [
+                    {"ref": "d397137c375b6e8c", "группа": "Растяжка 5–10", "филиал": "Орбита",
+                     "заполняемость_процент": 13},
+                ]
+            }
+        }  # fmt: skip
+        self.assertEqual(
+            digest.fact_label(snap, "promotion_opportunities.кандидаты[0].заполняемость_процент"),
+            "Продвижение · Растяжка 5–10, Орбита: заполняемость, %",
+        )
+
     def test_fact_label_for_nested_keys(self):
         self.assertEqual(
             digest.fact_label(snapshot(), "occupancy.итого.occupied"),
             "Заполняемость · весь центр: занято мест",
         )
+
+    def test_fact_label_never_exposes_internal_candidate_key(self):
+        candidate_key = "edf921beb0c2995b"
+        snap = {
+            "promotion_opportunities": {
+                "кандидаты": [
+                    {
+                        "candidate_key": candidate_key,
+                        "группа": "Хореография 6–10",
+                        "филиал": "Алмалы",
+                        "приоритет": "high",
+                    }
+                ]
+            }
+        }
+
+        label = digest.fact_label(
+            snap,
+            "promotion_opportunities.кандидаты[0].приоритет",
+        )
+
+        self.assertNotIn(candidate_key, label)
+        self.assertIn("Хореография 6–10", label)
+        self.assertIn("Алмалы", label)
 
 
 @override_settings(**OPENAI)
@@ -152,9 +203,35 @@ class DigestApiTests(AIFixtures):
         self.delay = mock.patch("domains.platform.ai.tasks.build_ai_digest.delay").start()
         self.addCleanup(mock.patch.stopall)
 
-    def refresh(self, client=None):
+    def refresh(self, client=None, data=None):
         with self.captureOnCommitCallbacks(execute=True):
-            return (client or self.client_api).post("/api/v1/ai/digests/")
+            return (client or self.client_api).post(
+                "/api/v1/ai/digests/", data or {}, format="json"
+            )
+
+    def test_refresh_saves_current_interface_language(self):
+        response = self.refresh(data={"language": "kk"})
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(AIDigest.objects.get().language, "kk")
+        self.assertEqual(response.data["building"]["language"], "kk")
+
+    def test_refresh_rejects_unknown_language(self):
+        response = self.refresh(data={"language": "de"})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AIDigest.objects.exists())
+
+    def test_list_only_returns_digest_in_requested_language(self):
+        AIDigest.objects.create(
+            organization=self.org,
+            week_start=datetime.date(2026, 10, 5),
+            trigger=AIDigest.Trigger.SCHEDULE,
+            language="ru",
+            status=AIDigest.Status.READY,
+            ready_at=timezone.now(),
+        )
+        response = self.client_api.get("/api/v1/ai/digests/", {"language": "kk"})
+        self.assertIsNone(response.data["latest"])
+        self.assertEqual(response.data["archive"], [])
 
     def test_repeated_refresh_does_not_multiply_generations(self):
         first = self.refresh()
@@ -164,6 +241,18 @@ class DigestApiTests(AIFixtures):
         self.assertFalse(second.data["created"])
         self.assertEqual(second.data["building"]["id"], first.data["building"]["id"])
         self.assertEqual(self.delay.call_count, 1)
+
+    def test_stuck_build_is_failed_and_refresh_starts_a_new_one(self):
+        stuck = self.refresh().data["building"]["id"]
+        AIDigest.objects.filter(pk=stuck).update(
+            created_at=datetime.datetime.now(datetime.UTC) - digest.STUCK_AFTER * 2
+        )
+        data = self.client_api.get("/api/v1/ai/digests/").data
+        self.assertIsNone(data["building"])
+        self.assertEqual(data["notice"]["status"], AIDigest.Status.FAILED)
+        again = self.refresh()
+        self.assertTrue(again.data["created"])
+        self.assertNotEqual(again.data["building"]["id"], stuck)
 
     def test_refresh_right_after_previous_is_refused_with_text(self):
         self.refresh()
@@ -256,3 +345,48 @@ class DigestSettingsTests(AIFixtures):
         self.assertEqual(
             (self.org.settings["digest_weekday"], self.org.settings["digest_hour"]), (4, 18)
         )
+
+
+class GroupPromotionBlockTests(AIFixtures):
+    ROW = {
+        "candidate_key": "g1",
+        "group": "Растяжка 5–10",
+        "branch": "Орбита",
+        "direction": "Растяжка",
+        "case": "underfilled",
+        "systemic": False,
+        "season": {},
+        "title": "Наберите детей в растяжку",
+        "rationale": "Мест много, спрос есть",
+        "action": "Пост про пробное в Instagram",
+        "basis": {"available_places": 13, "occupancy_percent": 13, "conversion_percent": 20.0},
+    }
+
+    def test_block_becomes_digest_advice_with_numbers(self):
+        block = ("group_promotion", "Какие группы продвигать", {"recommendations": [self.ROW]})
+        content = digest.compose(self.org, [block], snapshot(), None)
+        item = content["highlights"][0]
+        self.assertEqual(item["title"], "Наберите детей в растяжку")
+        self.assertEqual(
+            [(e["label"], e["value"]) for e in item["evidence"]],
+            [
+                ("Растяжка 5–10, Орбита: свободных мест", 13),
+                ("Растяжка 5–10, Орбита: заполняемость, %", 13),
+                ("Растяжка 5–10, Орбита: конверсия заявок направления, %", 20.0),
+            ],
+        )
+
+    def test_same_group_next_week_is_the_same_advice(self):
+        block = [("group_promotion", "", {"recommendations": [self.ROW]})]
+        first = digest.compose(self.org, block, snapshot(), None)
+        previous = AIDigest(
+            organization=self.org, week_start=datetime.date(2026, 9, 28), content=first
+        )
+        reworded = {**self.ROW, "title": "Растяжке нужны дети"}
+        second = digest.compose(
+            self.org,
+            [("group_promotion", "", {"recommendations": [reworded]})],
+            snapshot(),
+            previous,
+        )
+        self.assertTrue(second["changes"]["unchanged"])
