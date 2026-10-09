@@ -9,9 +9,9 @@
 import uuid
 from dataclasses import dataclass, field
 
+from domains.platform.analytics.epoch import epoch_of
 from domains.platform.core.active_branch import get_active_branch
 from domains.platform.tenants.models import Branch
-from domains.platform.users.models import User
 
 
 class ScopeError(PermissionError):
@@ -29,7 +29,7 @@ class Scope:
     @property
     def cache_key(self) -> str:
         ids = "all" if self.branch_ids is None else ",".join(sorted(map(str, self.branch_ids)))
-        return f"{self.organization.pk}:{ids}"
+        return f"{self.organization.pk}:{epoch_of(self.organization.pk)}:{ids}"
 
     def filter(self, qs, branch_field: str):
         """Фильтр по филиалу для любого queryset: `branch_field` — путь до
@@ -40,11 +40,11 @@ class Scope:
 
 
 def allowed_branch_ids(user) -> list | None:
-    """None — все филиалы организации."""
-    if user.role == User.Role.OWNER:
-        return None
-    own = list(user.branches.values_list("id", flat=True))
-    return own or None
+    """None — все филиалы организации. Правило одно на всю систему —
+    core/active_branch.py."""
+    from domains.platform.core.active_branch import allowed_branch_ids as allowed
+
+    return allowed(user)
 
 
 def scope_for(request) -> Scope:

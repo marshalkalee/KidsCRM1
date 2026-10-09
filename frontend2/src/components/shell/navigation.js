@@ -10,6 +10,8 @@ import {
   ListTodo,
   Megaphone,
   MessageSquareText,
+  Newspaper,
+  Send,
   Settings,
   Sparkles,
   UserRoundCog,
@@ -42,7 +44,9 @@ export const NAV_SECTIONS = [
       { to: '/announcements', get label() { return t('Объявления') }, icon: Megaphone, permission: 'can_manage_announcements' },
       { to: '/parent-requests', get label() { return t('Запросы родителей') }, icon: MessageSquareText, permission: 'can_manage_parent_requests' },
       { to: '/analytics', get label() { return t('Аналитика') }, icon: ChartColumn, permission: 'can_view_analytics' },
-      { to: '/assistant', get label() { return t('ИИ-помощник') }, icon: Sparkles, permission: 'can_use_ai_chat' },
+      // ai: true — пункт виден, только если ИИ подключён центру (TRU-160).
+      { to: '/assistant', get label() { return t('ИИ-помощник') }, icon: Sparkles, permission: 'can_use_ai_chat', ai: true },
+      { to: '/digest', get label() { return t('Дайджест недели') }, icon: Newspaper, permission: 'can_view_ai_digest', ai: true },
     ],
   },
   {
@@ -50,14 +54,16 @@ export const NAV_SECTIONS = [
     items: [
       { to: '/settings/structure', get label() { return t('Структура центра') }, icon: Building2, permission: 'can_manage_branches' },
       { to: '/settings/staff', get label() { return t('Сотрудники') }, icon: UserRoundCog, permission: 'can_manage_staff' },
+      { to: '/messaging', get label() { return t('Рассылки родителям') }, icon: Send, permission: 'can_manage_children' },
       { to: '/settings/sales', get label() { return t('Справочники продаж') }, icon: ListChecks, permission: 'can_manage_lead_dictionaries' },
       { to: '/settings/organization', get label() { return t('Организация') }, icon: Settings, permission: 'can_manage_org_settings' },
     ],
   },
 ]
 
-export function visibleSections(can) {
+export function visibleSections(can, aiEnabled = false) {
+  const visible = item => (!item.permission || can(item.permission)) && (!item.ai || aiEnabled)
   return NAV_SECTIONS
-    .map(section => ({ ...section, items: section.items.filter(item => !item.permission || can(item.permission)) }))
+    .map(section => ({ ...section, items: section.items.filter(visible) }))
     .filter(section => section.items.length)
 }

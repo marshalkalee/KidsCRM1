@@ -20,7 +20,7 @@ export function CardHeader({ title, description, actions, className }) {
         <h2 className="text-[15px] font-bold text-ink">{title}</h2>
         {description && <p className="mt-0.5 text-[13px] text-ink-muted">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
     </div>
   )
 }
@@ -60,7 +60,7 @@ export function PageHeader({ title, description, actions, back }) {
             <h1 className="text-[22px] font-bold leading-tight tracking-tight text-ink">{group.title}</h1>
             {description && <p className="mt-1 text-[13px] text-ink-subtle">{description}</p>}
           </div>
-          {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+          {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
         </div>
         <div className="mt-4 pb-4 sm:pb-0">{group.tabs}</div>
       </div>
@@ -78,7 +78,7 @@ export function PageHeader({ title, description, actions, back }) {
         <h1 className="text-[22px] font-bold leading-tight tracking-tight text-ink">{title}</h1>
         {description && <p className="mt-1 text-[13px] text-ink-subtle">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
     </div>
   )
 }

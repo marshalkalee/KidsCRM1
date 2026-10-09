@@ -106,7 +106,7 @@ class BranchWorkingHoursApiTests(SettingsApiBase):
     def test_new_branch_gets_default_hours(self):
         self.api.force_authenticate(self.owner)
 
-        response = self.api.post(self.url, {"name": "Северный"}, format="json")
+        response = self.api.post(self.url, {"name": "Северный", "city": "Астана"}, format="json")
 
         self.assertEqual(response.status_code, 201, response.content)
         hours = response.json()["working_hours"]

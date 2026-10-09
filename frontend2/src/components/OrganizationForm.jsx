@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
-import { BellRing, Building2, CalendarX2, Gauge, Globe } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { BellRing, Building2, CalendarX2, Gauge, Globe, Newspaper, Sparkles } from 'lucide-react'
 import api from '../api/axios'
 import { Button, Card, CardHeader, Checkbox, ErrorState, Field, Input, Select, Skeleton, apiErrorMessage, cn, useToast } from '../ui'
-import { t } from '../i18n'
+import { locale, t } from '../i18n'
+import { useAI } from './ai/ai'
 import { entityNameInputProps } from '../utils/formValidation'
 
 // Пороги автостатусов (backend: tenants/org_settings.py) — по ним экраны
@@ -15,6 +16,13 @@ const THRESHOLDS = [
   { key: 'risk_absence_change_pp_threshold', get label() { return t('Рост пропусков для риск-листа') }, get hint() { return t('Отклонение от личной нормы ребёнка') }, get suffix() { return t('п.п. и больше') }, min: 1, max: 100 },
   { key: 'risk_current_absences_min', get label() { return t('Минимум пропусков для риск-листа') }, get hint() { return t('За выбранный период') }, get suffix() { return t('пропуска и больше') }, min: 1, max: 100 },
   { key: 'lead_stale_days_threshold', get label() { return t('Заявка без движения') }, get hint() { return t('Напомнить перезвонить через') }, get suffix() { return t('дней') }, max: 90 },
+]
+
+// Пороги на экране «Организация» — подгруппами по смыслу.
+const THRESHOLD_GROUPS = [
+  { get title() { return t('Продления и долги') }, keys: ['subscription_ending_lessons_threshold', 'subscription_ending_days_threshold', 'debt_overdue_days_threshold'] },
+  { get title() { return t('Группы и заявки') }, keys: ['group_underfilled_percent_threshold', 'lead_stale_days_threshold'] },
+  { get title() { return t('Риск ухода') }, keys: ['risk_absence_change_pp_threshold', 'risk_current_absences_min'] },
 ]
 
 // Автоправила создания задач (TRU-108) — владелец может выключить любое.
@@ -30,12 +38,15 @@ const RULES = [
  * Форма настроек организации — одна на экран «Организация» и шаг мастера
  * онбординга (TRU-86). Сохранение тем же путём, что у старого веба:
  * organization/settings/ → OrganizationSettingsForm.
- * wide — экран «Организация»: карточки в две колонки на всю ширину и
- * панель «Сохранить» всегда внизу экрана; в мастере — одна колонка.
+ * wide — экран «Организация»: оглавление слева, разделы одной колонкой,
+ * панель «Сохранить» появляется только при изменениях; в мастере — просто форма.
  * secondaryAction — дополнительная кнопка слева от «Сохранить» (в мастере — «Пропустить»).
+ * aside — карточка не из формы последним разделом (расход ИИ); asideNav —
+ * её пункт в оглавлении ({ id, label }).
  */
-export default function OrganizationForm({ onSaved, submitLabel = t('Сохранить'), secondaryAction, wide = false }) {
+export default function OrganizationForm({ onSaved, submitLabel = t('Сохранить'), secondaryAction, wide = false, aside, asideNav }) {
   const toast = useToast()
+  const ai = useAI()
   const [form, setForm] = useState(null)
   const [saved, setSaved] = useState(null)
   const [timezones, setTimezones] = useState([])
@@ -52,6 +63,13 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
 
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
   const dirty = form && saved && JSON.stringify(form) !== JSON.stringify(saved)
+  // Уходят со страницы с несохранённым — браузер переспросит.
+  useEffect(() => {
+    if (!wide || !dirty) return undefined
+    const warn = e => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [wide, dirty])
 
   async function submit(e) {
     e.preventDefault()
@@ -85,7 +103,7 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
   if (status === 'error') return <Card><ErrorState onRetry={() => { setStatus('loading'); load() }} /></Card>
 
   const main = (
-    <Section icon={Building2} title={t('Основное')} wide={wide}>
+    <Section id="org-main" icon={Building2} title={t('Основное')} wide={wide}>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={t('Название')} required error={errors.name}>
           {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.name || ''} onChange={e => set('name', e.target.value)} required {...entityNameInputProps} />}
@@ -103,6 +121,7 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
 
   const cancel = (
     <Section
+      id="org-cancel"
       icon={CalendarX2}
       title={t('Отмена занятия родителем')}
       description={t('Родитель сможет предупредить о пропуске и позже срока, но система заранее покажет правило списания.')}
@@ -147,7 +166,7 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
   )
 
   const site = (
-    <Section icon={Globe} title={t('Приём заявок с сайта')} description={t('Для формы на сайте центра, которая отправляет заявки напрямую в CRM.')} wide={wide}>
+    <Section id="org-site" icon={Globe} title={t('Приём заявок с сайта')} description={t('Для формы на сайте центра, которая отправляет заявки напрямую в CRM.')} wide={wide}>
       <div className="space-y-4">
         <Field label={t('Домен сайта')} hint={t('Форма сможет слать заявки только с этого адреса')} error={errors.website_domain}>
           {({ id, invalid }) => (
@@ -165,41 +184,55 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
     </Section>
   )
 
-  const thresholds = (
-    <Section icon={Gauge} title={t('Пороги автостатусов')} description={t('Когда система сама помечает ребёнка или группу.')} wide={wide}>
-      <div className={cn('grid grid-cols-1 gap-3', wide && 'lg:grid-cols-2')}>
-        {THRESHOLDS.map(th => (
-          <div key={th.key} className="flex flex-col gap-2 rounded-lg border border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <label htmlFor={th.key} className="min-w-0">
-              <span className="block text-sm font-semibold text-ink">{th.label}</span>
-              <span className="block text-[13px] text-ink-muted">{th.hint}</span>
-            </label>
-            <div className="shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-20 shrink-0">
-                  <Input
-                    id={th.key}
-                    type="number"
-                    min={th.min ?? 0}
-                    max={th.max}
-                    className="text-right"
-                    invalid={Boolean(errors[th.key])}
-                    value={form[th.key] ?? ''}
-                    onChange={e => set(th.key, e.target.value === '' ? '' : Number(e.target.value))}
-                  />
-                </div>
-                <span className="w-32 text-sm text-ink-muted sm:whitespace-nowrap">{th.suffix}</span>
-              </div>
-              {errors[th.key] && <p className="mt-1 text-xs text-danger-600">{errors[th.key][0]}</p>}
-            </div>
+  const thresholdRow = th => (
+    <div key={th.key} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <label htmlFor={th.key} className="min-w-0">
+        <span className="block text-sm font-semibold text-ink">{th.label}</span>
+        <span className="block text-[13px] text-ink-muted">{th.hint}</span>
+      </label>
+      <div className="shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-20 shrink-0">
+            <Input
+              id={th.key}
+              type="number"
+              min={th.min ?? 0}
+              max={th.max}
+              className="text-right"
+              invalid={Boolean(errors[th.key])}
+              value={form[th.key] ?? ''}
+              onChange={e => set(th.key, e.target.value === '' ? '' : Number(e.target.value))}
+            />
           </div>
-        ))}
+          <span className="w-32 text-sm text-ink-muted sm:whitespace-nowrap">{th.suffix}</span>
+        </div>
+        {errors[th.key] && <p className="mt-1 text-xs text-danger-600">{errors[th.key][0]}</p>}
       </div>
+    </div>
+  )
+  const byKey = Object.fromEntries(THRESHOLDS.map(th => [th.key, th]))
+
+  const thresholds = (
+    <Section id="org-thresholds" icon={Gauge} title={t('Пороги автостатусов')} description={t('Когда система сама помечает ребёнка или группу.')} wide={wide}>
+      {wide ? (
+        <div className="space-y-5">
+          {THRESHOLD_GROUPS.map(group => (
+            <div key={group.keys[0]}>
+              <p className="font-btn text-[10px] font-bold uppercase tracking-[0.07em] text-ink-subtle">{group.title}</p>
+              <div className="divide-y divide-line">{group.keys.map(key => thresholdRow(byKey[key]))}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3">
+          {THRESHOLDS.map(th => <div key={th.key} className="rounded-lg border border-line px-4">{thresholdRow(th)}</div>)}
+        </div>
+      )}
     </Section>
   )
 
   const rules = (
-    <Section icon={BellRing} title={t('Автоправила')} description={t('Какие напоминания создаёт система сама — без них список задач останется пустым.')} wide={wide}>
+    <Section id="org-rules" icon={BellRing} title={t('Автоправила')} description={t('Какие напоминания создаёт система сама — без них список задач останется пустым.')} wide={wide}>
       <div className="divide-y divide-line">
         {RULES.map(rule => (
           <div key={rule.key} className="py-2.5 first:pt-0 last:pb-0">
@@ -211,6 +244,31 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
             />
           </div>
         ))}
+      </div>
+    </Section>
+  )
+
+  // Дайджест ИИ (TRU-163): день и час по времени центра. Только у центров
+  // с подключённым ИИ и только на экране «Организация».
+  const digest = wide && ai.enabled && (
+    <Section id="org-digest" icon={Newspaper} title={t('Дайджест недели')} description={t('Когда собирать советы на неделю и присылать уведомление владельцу и управляющему.')} wide={wide}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t('День')}>
+          {({ id }) => (
+            <Select id={id} value={form.digest_weekday ?? 0} onChange={e => set('digest_weekday', Number(e.target.value))}>
+              {[0, 1, 2, 3, 4, 5, 6].map(day => (
+                <option key={day} value={day}>{new Date(2026, 9, 5 + day).toLocaleString(locale, { weekday: 'long' })}</option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field label={t('Время')} hint={t('По часовому поясу центра')}>
+          {({ id }) => (
+            <Select id={id} value={form.digest_hour ?? 9} onChange={e => set('digest_hour', Number(e.target.value))}>
+              {Array.from({ length: 17 }, (_, i) => i + 6).map(hour => <option key={hour} value={hour}>{hour}:00</option>)}
+            </Select>
+          )}
+        </Field>
       </div>
     </Section>
   )
@@ -231,32 +289,110 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
     )
   }
 
+  const nav = [
+    { id: 'org-main', icon: Building2, label: t('Основное') },
+    { id: 'org-cancel', icon: CalendarX2, label: t('Отмена занятия') },
+    { id: 'org-thresholds', icon: Gauge, label: t('Пороги') },
+    { id: 'org-rules', icon: BellRing, label: t('Автоправила') },
+    { id: 'org-site', icon: Globe, label: t('Заявки с сайта') },
+    ...(digest ? [{ id: 'org-digest', icon: Newspaper, label: t('Дайджест недели') }] : []),
+    ...(aside && asideNav && ai.enabled ? [{ icon: Sparkles, ...asideNav }] : []),
+  ]
+
   return (
-    <form onSubmit={submit} className="space-y-4">
-      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+    <form onSubmit={submit} className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[200px_minmax(0,1fr)]">
+      <SectionNav items={nav} />
+      <div className="min-w-0 space-y-4">
         {main}
         {cancel}
-      </div>
-      {thresholds}
-      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+        {thresholds}
         {rules}
         {site}
+        {digest}
+        {aside && <div id={asideNav?.id} className="scroll-mt-24">{aside}</div>}
+        {/* Место под панель, чтобы она не закрывала последний раздел. */}
+        {dirty && <div className="h-16" aria-hidden />}
       </div>
-      {/* «Сохранить» всегда под рукой: форма длинная, кнопка внизу терялась. */}
-      <div className="sticky bottom-3 z-10 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-line bg-surface/95 px-4 py-3 shadow-pop backdrop-blur">
-        <p className={cn('mr-auto text-[13px]', dirty ? 'font-semibold text-warning-600' : 'text-ink-subtle')}>
-          {dirty ? t('Есть несохранённые изменения') : t('Все изменения сохранены')}
-        </p>
-        {dirty && <Button type="button" variant="ghost" onClick={() => { setForm(saved); setErrors({}) }}>{t('Отменить')}</Button>}
-        {secondaryAction}
-        <Button variant="primary" type="submit" loading={saving} disabled={!dirty}>{submitLabel}</Button>
+      {/* Панель появляется, только когда есть что сохранить; после сохранения
+          уходит, о результате говорит уведомление. Нулевая высота — не
+          оставляет пустого места внизу страницы. */}
+      <div className="sticky bottom-4 z-20 h-0 xl:col-start-2">
+        <div
+          className={cn(
+            'absolute bottom-0 left-0 flex w-full justify-center transition-all duration-200',
+            dirty ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-4 opacity-0',
+          )}
+          aria-hidden={!dirty}
+        >
+          <div className="flex w-full flex-wrap items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 shadow-pop sm:w-auto">
+            <span className="size-2 shrink-0 rounded-full bg-warning-600" />
+            <p className="text-[13px] font-semibold text-ink sm:mr-4">{t('Есть несохранённые изменения')}</p>
+            <span className="ml-auto flex gap-2">
+              <Button type="button" variant="ghost" tabIndex={dirty ? 0 : -1} onClick={() => { setForm(saved); setErrors({}) }}>{t('Отменить')}</Button>
+              {secondaryAction}
+              <Button variant="primary" type="submit" loading={saving} tabIndex={dirty ? 0 : -1}>{submitLabel}</Button>
+            </span>
+          </div>
+        </div>
       </div>
     </form>
   )
 }
 
+/** Оглавление настроек: подсвечивает раздел, который сейчас на экране. */
+function SectionNav({ items }) {
+  const [current, setCurrent] = useState(items[0]?.id)
+  const ids = items.map(i => i.id).join(',')
+  const clicked = useRef(false)
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      entries => {
+        if (clicked.current) return
+        const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        if (visible[0]) setCurrent(visible[0].target.id)
+      },
+      { rootMargin: '-15% 0px -70% 0px' },
+    )
+    ids.split(',').forEach(id => {
+      const el = document.getElementById(id)
+      if (el) observer.observe(el)
+    })
+    return () => observer.disconnect()
+  }, [ids])
+
+  function go(id) {
+    setCurrent(id)
+    clicked.current = true
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    window.setTimeout(() => { clicked.current = false }, 700)
+  }
+
+  return (
+    <nav className="sticky top-24 hidden xl:block" aria-label={t('Разделы настроек')}>
+      <ul className="space-y-0.5">
+        {items.map(({ id, icon: Icon, label }) => (
+          <li key={id}>
+            <button
+              type="button"
+              onClick={() => go(id)}
+              aria-current={current === id || undefined}
+              className={cn(
+                'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors',
+                current === id ? 'bg-brand-50 font-semibold text-brand-700' : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
+              )}
+            >
+              <Icon className="size-4 shrink-0" />
+              {label}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
 /** Раздел настроек: на экране «Организация» — с иконкой, как «Доступ сотрудников». */
-function Section({ icon: Icon, title, description, wide, children }) {
+function Section({ id, icon: Icon, title, description, wide, children }) {
   if (!wide) {
     return (
       <Card>
@@ -266,7 +402,7 @@ function Section({ icon: Icon, title, description, wide, children }) {
     )
   }
   return (
-    <Card>
+    <Card id={id} className="scroll-mt-24">
       <div className="mb-4 flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
           <Icon className="size-[18px]" />

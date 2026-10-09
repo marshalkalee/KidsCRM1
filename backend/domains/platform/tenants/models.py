@@ -37,6 +37,15 @@ class Organization(TimestampedSoftDeleteModel):
         blank=True,
         help_text="Домен сайта центра для формы приёма заявок (CORS), например https://trueballet.kz",
     )
+    # ИИ-помощник — платная опция (ТЗ раздел 8, TRU-160). Включает платформа,
+    # не центр: поэтому флаг здесь, а не в settings владельца. Выключено —
+    # ИИ-кнопок нет, эндпоинты ИИ отвечают 403.
+    ai_enabled = models.BooleanField(default=True, help_text="ИИ-помощник включён (платная опция)")
+    ai_monthly_limit_kzt = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Лимит расхода ИИ в месяц, ₸. Пусто — лимит платформы по умолчанию.",
+    )
 
     def save(self, *args, **kwargs):
         if not self.public_api_key:
@@ -55,8 +64,22 @@ class Organization(TimestampedSoftDeleteModel):
 
 
 class Branch(TenantModel):
+    class CoordinatesSource(models.TextChoices):
+        AUTO = "auto", "По адресу"
+        MANUAL = "manual", "Вручную"
+
     name = models.CharField(max_length=255)
     address = models.TextField(blank=True)
+    # Для поиска «рядом» в будущем каталоге (TRU-178): город из справочника
+    # (cities.KZ_CITIES), район и точка. Точку ставит геокодер по адресу,
+    # сотрудник может поправить — тогда автоматика её не трогает.
+    city = models.CharField(max_length=64, blank=True)
+    district = models.CharField(max_length=100, blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    coordinates_source = models.CharField(
+        max_length=8, choices=CoordinatesSource.choices, blank=True
+    )
     phone = models.CharField(max_length=20, blank=True)
     working_hours = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)

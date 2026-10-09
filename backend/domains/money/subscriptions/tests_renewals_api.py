@@ -206,6 +206,20 @@ class RenewalsApiTests(APITestCase):
         self.client.force_authenticate(teacher)
         self.assertEqual(self.client.get("/api/v1/subscriptions/renewals/").status_code, 403)
 
+    def test_export_for_reconciliation(self):
+        """«Продления» файлом — сверка с бухгалтерией (TRU-152)."""
+        import io as _io
+
+        import openpyxl
+
+        response = self.client.get("/api/v1/subscriptions/renewals/export/")
+        self.assertEqual(response.status_code, 200)
+        sheet = openpyxl.load_workbook(_io.BytesIO(response.content)).active
+        self.assertEqual(sheet.cell(row=1, column=1).value, "Ребёнок")
+        names = [sheet.cell(row=r, column=1).value for r in range(2, sheet.max_row + 1)]
+        self.assertEqual(names, [row["child_name"] for row in self.list()["results"]])
+        self.assertIn("Скоро Конец", names)
+
 
 class RenewalLeadRuleTests(RenewalsApiTests):
     """TRU-98: автоправило «абонемент заканчивается → заявка-продление»."""

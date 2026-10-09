@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { lang, setLang } from '../i18n'
 import portal, { SESSION_EXPIRED_EVENT, forgetParent, getToken, setToken, usePortalData } from './api'
+import { disablePush } from './push'
 import { ParentContext, useParent } from './useParent'
 
 /*
@@ -53,6 +54,8 @@ export function ParentSessionProvider({ children }) {
   }, [])
 
   const signOut = useCallback(async ({ everywhere = false } = {}) => {
+    // Общий телефон: напоминания прошлого родителя этому устройству не нужны.
+    await disablePush().catch(() => {})
     await portal.post('auth/logout/', { everywhere }).catch(() => {})
     forgetParent()
     setTokenState(null)

@@ -63,4 +63,6 @@ urlpatterns = [
     ),
     path("profile/", views.ProfileView.as_view(), name="profile"),
     path("profile/phone/", views.PhoneChangeView.as_view(), name="phone-change"),
+    path("notifications/", views.NotificationsView.as_view(), name="notifications"),
+    path("push/", views.PushSubscriptionView.as_view(), name="push"),
 ]

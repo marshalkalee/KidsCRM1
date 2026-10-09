@@ -33,11 +33,25 @@ class Group(TenantModel, TimestampedSoftDeleteModel):
     capacity = models.PositiveSmallIntegerField(_("Вместимость"))
     age_min = models.PositiveSmallIntegerField(_("Возраст от"), null=True, blank=True)
     age_max = models.PositiveSmallIntegerField(_("Возраст до"), null=True, blank=True)
+    # Показывать ли группу во внешнем каталоге (будущий маркетплейс, TRU-177).
+    # По умолчанию нет: публикует только сам центр.
+    is_public = models.BooleanField(_("Показывать в публичном каталоге"), default=False)
+    # Коротко для родителя в каталоге: что делают, что взять с собой (TRU-179).
+    description = models.TextField(_("Описание для каталога"), blank=True)
+    # Пробное занятие для каталога (TRU-180): есть ли и сколько стоит;
+    # пустая цена — бесплатно.
+    trial_available = models.BooleanField(_("Есть пробное занятие"), default=True)
+    trial_price = models.PositiveIntegerField(_("Цена пробного, ₸"), null=True, blank=True)
     status = models.CharField(
         _("Статус"),
         max_length=16,
         choices=Status.choices,
         default=Status.ACTIVE,
+    )
+    exclude_from_ai_recommendations = models.BooleanField(
+        _("Не предлагать продвижение"),
+        default=False,
+        help_text=_("Для индивидуальных, конкурсных и других намеренно малых групп."),
     )
 
     class Meta:

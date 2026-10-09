@@ -8,6 +8,7 @@ import LanguageSwitcher from './LanguageSwitcher'
 import { QuickLeadLauncher } from '../leads/QuickLead'
 import { NotificationList, useNotifications } from '../notifications/NotificationList'
 import { visibleSections } from './navigation'
+import { useAI } from '../ai/ai'
 import { t } from '../../i18n'
 
 const COLLAPSED_KEY = 'kc:sidebar-collapsed'
@@ -88,6 +89,7 @@ export default function Layout() {
 
 function Sidebar({ onNavigate, collapsed = false }) {
   const { can } = useSession()
+  const ai = useAI()
   return (
     <>
       <div className={cn('flex h-16 shrink-0 items-center gap-2.5 border-b border-line', collapsed ? 'justify-center' : 'px-5')}>
@@ -100,7 +102,7 @@ function Sidebar({ onNavigate, collapsed = false }) {
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-        {visibleSections(can).map(section => (
+        {visibleSections(can, ai.enabled).map(section => (
           <div key={section.label}>
             {collapsed
               ? <div className="mx-2 mb-2 h-px bg-line" aria-hidden="true" />
@@ -250,7 +252,7 @@ function UserMenu({ collapsed = false, onNavigate }) {
  * филиал отмечен точкой, его название — в подсказке и в списке.
  */
 function BranchSwitcher() {
-  const { branches, activeBranch, activeBranchId, setActiveBranchId } = useSession()
+  const { user, branches, activeBranch, activeBranchId, setActiveBranchId } = useSession()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -261,8 +263,13 @@ function BranchSwitcher() {
     return () => document.removeEventListener('mousedown', onClick)
   }, [open])
 
-  if (!branches.length) return null
-  const label = activeBranch?.name || t('Все филиалы')
+  // Один филиал — переключать нечего (у сотрудника с одним филиалом он и есть
+  // его рабочий: остальные сервер не показывает).
+  if (branches.length < 2) return null
+  // Сотрудник с выбранными филиалами: «все» — это все его филиалы.
+  const restricted = user?.role !== 'owner' && (user?.branches?.length || 0) > 0
+  const allLabel = restricted ? t('Все мои филиалы') : t('Все филиалы')
+  const label = activeBranch?.name || allLabel
 
   function choose(id) {
     setActiveBranchId(id)
@@ -291,7 +298,7 @@ function BranchSwitcher() {
       {open && (
         <ul className="absolute right-0 top-12 z-40 w-64 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-pop" role="listbox" aria-label={t('Филиал')}>
           <li className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-subtle" role="presentation">{t('Филиал')}</li>
-          {[{ id: null, name: t('Все филиалы') }, ...branches].map(branch => (
+          {[{ id: null, name: allLabel }, ...branches].map(branch => (
             <li key={branch.id || 'all'}>
               <button
                 type="button"

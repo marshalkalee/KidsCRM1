@@ -9,13 +9,14 @@
 """
 
 import calendar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 
 import pytz
 
 from domains.platform.core.utils import today_for_org
 
+STEPS = ("day", "week", "month")
 PRESETS = ("today", "week", "month", "quarter", "year", "custom")
 DEFAULT_PRESET = "month"
 # Больше года за раз не считаем: отчёт превращается в выгрузку базы.
@@ -31,6 +32,9 @@ class Period:
     start: date
     end: date
     preset: str = "custom"
+    # Шаг графика, выбранный пользователем (day / week / month); пусто —
+    # по длине периода, см. granularity.
+    step: str = ""
 
     @property
     def days(self) -> int:
@@ -38,7 +42,10 @@ class Period:
 
     @property
     def granularity(self) -> str:
-        """Шаг графика: до месяца — по дням, до полугода — по неделям."""
+        """Шаг графика: выбранный пользователем, иначе по длине периода —
+        до месяца по дням, до полугода по неделям."""
+        if self.step:
+            return self.step
         if self.days <= 31:
             return "day"
         if self.days <= 184:
@@ -50,11 +57,12 @@ class Period:
             months = {"month": 1, "quarter": 3, "year": 12}[self.preset]
             start = _add_months(self.start, -months)
             end = min(start + timedelta(days=self.days - 1), self.start - timedelta(days=1))
-            return Period(start, end, self.preset)
+            return Period(start, end, self.preset, self.step)
         return Period(
             self.start - timedelta(days=self.days),
             self.start - timedelta(days=1),
             self.preset,
+            self.step,
         )
 
     def bounds(self, organization) -> tuple[datetime, datetime]:
@@ -105,7 +113,16 @@ def _add_months(day: date, months: int) -> date:
     return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
 
 
-def period_for(preset: str, today: date, start=None, end=None) -> Period:
+def period_for(preset: str, today: date, start=None, end=None, step: str = "") -> Period:
+    period = _preset_period(preset, today, start, end)
+    if step:
+        if step not in STEPS:
+            raise PeriodError("Шаг графика: day, week или month.")
+        period = replace(period, step=step)
+    return period
+
+
+def _preset_period(preset: str, today: date, start, end) -> Period:
     if preset == "today":
         return Period(today, today, preset)
     if preset == "week":
@@ -130,11 +147,14 @@ def period_for(preset: str, today: date, start=None, end=None) -> Period:
 
 
 def parse_period(params, organization) -> Period:
-    """?period=month | ?period=custom&from=2026-01-01&to=2026-03-31"""
+    """?period=month | ?period=custom&from=2026-01-01&to=2026-03-31;
+    ?granularity=day|week|month — шаг графика (TRU-123), иначе по длине периода."""
     preset = params.get("period") or DEFAULT_PRESET
     try:
         start = date.fromisoformat(params["from"]) if params.get("from") else None
         end = date.fromisoformat(params["to"]) if params.get("to") else None
     except ValueError as exc:
         raise PeriodError("Дата в формате ГГГГ-ММ-ДД.") from exc
-    return period_for(preset, today_for_org(organization), start, end)
+    return period_for(
+        preset, today_for_org(organization), start, end, params.get("granularity") or ""
+    )

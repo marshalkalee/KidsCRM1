@@ -1,7 +1,10 @@
-from django.db.models import Count
+import uuid
+
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from domains.platform.core.audit import AuditLog
@@ -9,11 +12,19 @@ from domains.platform.core.permissions import (
     IsNotTeacher,
     IsOwnerOrManager,
     IsOwnerOrManagerOrAdmin,
+    IsStaffOfOrganization,
 )
+from domains.platform.users.models import User
 
 from .models import Task
-from .serializers import TaskSerializer
+from .serializers import TaskHistorySerializer, TaskSerializer
 from .services import cancel_task, complete_task, visible_tasks
+
+# Кто ставит и передаёт задачи; остальные только выполняют свои.
+TASK_MANAGERS = (User.Role.OWNER, User.Role.MANAGER, User.Role.ADMIN)
+
+# Сколько закрытых задач отдаём во вкладку «Задачи» карточки ребёнка.
+CLOSED_HISTORY_LIMIT = 100
 
 
 class TaskViewSet(
@@ -28,9 +39,24 @@ class TaskViewSet(
     def get_permissions(self):
         if self.action == "escalation":
             return [IsOwnerOrManager()]
-        if self.action in ("create", "update", "partial_update", "complete", "cancel"):
+        if self.action == "create":
             return [IsOwnerOrManagerOrAdmin()]
+        # Свои задачи видит, закрывает и переносит любой сотрудник, кому их
+        # поручили (бухгалтер, преподаватель); остальное — _check_can_change.
+        if self.action in ("list", "retrieve", "update", "partial_update", "complete", "cancel"):
+            return [IsStaffOfOrganization()]
         return [IsNotTeacher()]
+
+    def _check_can_change(self, task, fields=None):
+        """Бухгалтер и преподаватель меняют только свои задачи и только срок
+        («На завтра»); передать или поручить — руководитель и администратор."""
+        user = self.request.user
+        if user.role in TASK_MANAGERS:
+            return
+        if task.assigned_to_id != user.id:
+            raise PermissionDenied("Это не ваша задача.")
+        if fields is not None and set(fields) - {"due_at"}:
+            raise PermissionDenied("Можно только перенести срок.")
 
     def get_queryset(self):
         qs = visible_tasks(self.request.user).select_related(
@@ -58,16 +84,27 @@ class TaskViewSet(
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(
+        task = serializer.save(
             organization=self.request.user.organization,
             created_by=self.request.user,
             source=Task.Source.MANUAL,
+        )
+        AuditLog.record(
+            actor=self.request.user,
+            action=AuditLog.Action.CREATE,
+            entity=task,
+            after={
+                "title": task.title,
+                "assigned_to": task.assigned_to.full_name if task.assigned_to else None,
+                "due_at": task.due_at.isoformat() if task.due_at else None,
+            },
         )
 
     def partial_update(self, request, *args, **kwargs):
         """Переназначение пишется в аудит-лог (ТЗ п. 5.2, TRU-109) — только
         смена assigned_to, не любое изменение (например, дедлайна)."""
         instance = self.get_object()
+        self._check_can_change(instance, request.data.keys())
         old_assignee = instance.assigned_to
         response = super().partial_update(request, *args, **kwargs)
         instance.refresh_from_db()
@@ -88,12 +125,14 @@ class TaskViewSet(
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         task = self.get_object()
+        self._check_can_change(task)
         complete_task(task, actor=request.user, comment=request.data.get("comment", ""))
         return Response(TaskSerializer(task).data)
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         task = self.get_object()
+        self._check_can_change(task)
         cancel_task(task, actor=request.user, comment=request.data.get("comment", ""))
         return Response(TaskSerializer(task).data)
 
@@ -140,11 +179,49 @@ class TaskViewSet(
             )
 
         by_type = list(overdue.values("type").annotate(count=Count("id")).order_by("-count"))
+        # Название типа — с сервера: новый тип не покажется сырым ключом.
+        labels = dict(Task.Type.choices)
+        for row in by_type:
+            row["label"] = labels.get(row["type"], row["type"])
 
         return Response(
             {
                 "by_employee": sorted(by_employee.values(), key=lambda r: r["name"]),
                 "by_type": by_type,
                 "total_overdue": overdue.count(),
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="for-child")
+    def for_child(self, request):
+        """Вкладка «Задачи» карточки ребёнка (ТЗ п. 4.1, TRU-112): задачи по
+        самому ребёнку и по его заявкам — до конвертации работа велась по
+        заявке, и обрывать историю на этой границе неправильно. Права те же,
+        что у списка задач: только то, что пользователь видит (филиалы)."""
+        try:
+            child_id = uuid.UUID(request.query_params.get("child", ""))
+        except ValueError:
+            return Response({"detail": "Укажите child."}, status=400)
+
+        tasks = (
+            visible_tasks(request.user)
+            .filter(
+                Q(child_id=child_id)
+                | Q(lead__converted_child_id=child_id)
+                | Q(lead__child_id=child_id)
+            )
+            .select_related("assigned_to", "created_by", "lead")
+        )
+        open_tasks = tasks.filter(status=Task.Status.OPEN).order_by(
+            F("due_at").asc(nulls_last=True), "created_at"
+        )
+        closed_tasks = tasks.exclude(status=Task.Status.OPEN)
+        return Response(
+            {
+                "open": TaskHistorySerializer(open_tasks, many=True).data,
+                "closed": TaskHistorySerializer(
+                    closed_tasks.order_by("-updated_at")[:CLOSED_HISTORY_LIMIT], many=True
+                ).data,
+                "closed_total": closed_tasks.count(),
             }
         )
