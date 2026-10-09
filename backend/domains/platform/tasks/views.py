@@ -63,10 +63,20 @@ class TaskViewSet(
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(
+        task = serializer.save(
             organization=self.request.user.organization,
             created_by=self.request.user,
             source=Task.Source.MANUAL,
+        )
+        AuditLog.record(
+            actor=self.request.user,
+            action=AuditLog.Action.CREATE,
+            entity=task,
+            after={
+                "title": task.title,
+                "assigned_to": task.assigned_to.full_name if task.assigned_to else None,
+                "due_at": task.due_at.isoformat() if task.due_at else None,
+            },
         )
 
     def partial_update(self, request, *args, **kwargs):

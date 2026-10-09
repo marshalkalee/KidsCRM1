@@ -2536,5 +2536,15 @@
   "Здравствуйте! Хотим предложить записаться на пробное занятие в {center}.": "Hello! We would like to invite you to a trial class at {center}.",
   "Все мои филиалы": "All my branches",
   "Выполненные и отменённые": "Done and cancelled",
-  "Просрочено": "Overdue"
+  "Просрочено": "Overdue",
+  "Без филиала": "No branch",
+  "Например: подготовить костюмы к концерту": "E.g. prepare costumes for the concert",
+  "Начните вводить имя": "Start typing a name",
+  "Необязательно: ребёнок или заявка": "Optional: a child or a lead",
+  "Новая задача": "New task",
+  "Подробности": "Details",
+  "Пусто — до конца дня": "Empty — end of day",
+  "Что сделать": "What to do",
+  "Я ({name})": "Me ({name})",
+  "ребёнок": "child"
 }
