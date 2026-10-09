@@ -2546,5 +2546,10 @@
   "Пусто — до конца дня": "Empty — end of day",
   "Что сделать": "What to do",
   "Я ({name})": "Me ({name})",
-  "ребёнок": "child"
+  "ребёнок": "child",
+  "владелец": "owner",
+  "управляющий": "manager",
+  "администратор": "administrator",
+  "бухгалтер": "accountant",
+  "преподаватель": "teacher"
 }
