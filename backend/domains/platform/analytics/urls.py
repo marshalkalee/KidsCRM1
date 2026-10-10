@@ -22,6 +22,8 @@ urlpatterns = [
     path("branches/", views.branches_api, name="analytics-branches"),
     path("branches/trend/", views.branch_trends_api, name="analytics-branch-trends"),
     path("sources/", views.sources_api, name="analytics-sources"),
+    path("average-check/", views.average_check_api, name="analytics-average-check"),
+    path("debt/", views.debt_dynamics_api, name="analytics-debt"),
     path("export/", views.export_api, name="analytics-export"),
     path("catalog/", views.catalog_api, name="analytics-catalog"),
 ]

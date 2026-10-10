@@ -45,6 +45,7 @@ import Analytics from './pages/Analytics'
 import Announcements from './pages/Announcements'
 import AnalyticsKit from './pages/AnalyticsKit'
 import AnalyticsRevenue from './pages/AnalyticsRevenue'
+import AnalyticsCheckDebt from './pages/AnalyticsCheckDebt'
 import AnalyticsAttendance from './pages/AnalyticsAttendance'
 import AnalyticsFunnel from './pages/AnalyticsFunnel'
 import AnalyticsGroups from './pages/AnalyticsGroups'
@@ -130,6 +131,7 @@ function StaffApp() {
                 <Route path="renewals" element={<TabRedirect to="/money" tab="renewals" />} />
                 <Route path="analytics" element={<RequirePermission permission="can_view_analytics"><Analytics /></RequirePermission>} />
                 <Route path="analytics/revenue" element={<RequirePermission permission="can_view_analytics"><AnalyticsRevenue /></RequirePermission>} />
+                <Route path="analytics/check-debt" element={<RequirePermission permission="can_view_analytics"><AnalyticsCheckDebt /></RequirePermission>} />
                 <Route path="analytics/attendance" element={<RequirePermission permission="can_view_analytics"><AnalyticsAttendance /></RequirePermission>} />
                 <Route path="analytics/risk" element={<RequirePermission permission="can_view_analytics"><AnalyticsRisk /></RequirePermission>} />
                 <Route path="analytics/funnel" element={<RequirePermission permission="can_view_analytics"><AnalyticsFunnel /></RequirePermission>} />
