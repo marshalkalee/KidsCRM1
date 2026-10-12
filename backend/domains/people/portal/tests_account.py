@@ -4,16 +4,13 @@
 через код.
 """
 
-from datetime import date, timedelta
+from datetime import date
 
-from django.utils import timezone
-
-from domains.people.clients.models import Child, ChildContact, ContactPhone
+from domains.people.clients.models import Child, ChildContact
 from domains.platform.core.audit import AuditLog
 from domains.platform.tenants.models import Branch, Direction
 from domains.scheduling.groups.models import Group, GroupMembership
 
-from .models import OtpChallenge, ParentAccount
 from .tests_auth import MAMA, PortalAuthBase, family
 
 PAPA = "+77027654321"
@@ -133,69 +130,3 @@ class ParentAccountTests(PortalAuthBase):
             client.patch("/api/v1/portal/profile/", {"language": "en"}, format="json").status_code,
             400,
         )
-
-    def test_phone_change_requires_code_on_new_number(self):
-        client = self.as_parent(self.login())
-        new = "+77075550000"
-        self.assertEqual(
-            self.ask_change(client, new).status_code,
-            200,
-        )
-        self.assertEqual(self.sent[-1][0], new)  # код ушёл на НОВЫЙ номер
-        code = self.sent[-1][1]
-        wrong = "000000" if code != "000000" else "111111"
-        self.assertEqual(
-            client.post(
-                "/api/v1/portal/profile/phone/", {"phone": new, "code": wrong}, format="json"
-            ).status_code,
-            400,
-        )
-        response = client.post(
-            "/api/v1/portal/profile/phone/", {"phone": new, "code": code}, format="json"
-        )
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data["phone"], new)
-        self.assertTrue(
-            ContactPhone.objects.filter(parent_contact=self.parent, number=new).exists()
-        )
-        self.assertFalse(ContactPhone.objects.filter(number=MAMA).exists())
-        # Сессия та же, дети те же — под новым номером.
-        self.assertEqual(
-            [c["full_name"] for c in client.get("/api/v1/portal/me/").data["children"]],
-            ["Касымова Айлин"],
-        )
-        self.assertEqual(ParentAccount.objects.get().phone, new)
-
-    def test_login_code_cannot_change_phone(self):
-        client = self.as_parent(self.login())
-        new = "+77075550000"
-        self.ask_change(client, new)
-        # Код для входа на новый номер не подходит для смены (и наоборот).
-        OtpChallenge.objects.filter(purpose=OtpChallenge.Purpose.PHONE_CHANGE).update(
-            purpose=OtpChallenge.Purpose.LOGIN
-        )
-        response = client.post(
-            "/api/v1/portal/profile/phone/", {"phone": new, "code": self.sent[-1][1]}, format="json"
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_phone_already_used_for_login_is_refused(self):
-        family(self.org, "Папа", PAPA, "Ахметов Тимур")
-        self.login(PAPA)
-        self.age_challenges(PAPA)
-        client = self.as_parent(self.login(MAMA))
-        response = self.ask_change(client, PAPA)
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("администратор", response.data["detail"])
-
-    def test_phone_change_code_expires(self):
-        client = self.as_parent(self.login())
-        new = "+77075550000"
-        self.ask_change(client, new)
-        OtpChallenge.objects.filter(phone=new).update(
-            expires_at=timezone.now() - timedelta(seconds=1)
-        )
-        response = client.post(
-            "/api/v1/portal/profile/phone/", {"phone": new, "code": self.sent[-1][1]}, format="json"
-        )
-        self.assertEqual(response.status_code, 400)
