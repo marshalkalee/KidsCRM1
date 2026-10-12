@@ -11,7 +11,7 @@ from django.db.models import Count
 from django.db.models.functions import ExtractHour, ExtractIsoWeekDay
 
 from domains.money.payments.models import Payment
-from domains.money.subscriptions.models import SubscriptionType
+from domains.money.subscriptions.models import Subscription, SubscriptionType
 from domains.platform.leads.models import LeadSource
 from domains.platform.tenants.models import Branch, Direction
 from domains.platform.users.models import User
@@ -53,6 +53,7 @@ DIMENSIONS = {
     "teacher": _staff,
     "subscription_type": _names(SubscriptionType),
     "client": _choices([("new", "Новые клиенты"), ("renewal", "Продления")]),
+    "discount_reason": _choices(Subscription.DiscountReason.choices),
 }
 
 

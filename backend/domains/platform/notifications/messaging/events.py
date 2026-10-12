@@ -105,6 +105,8 @@ EVENTS = {
             category=MessageCategory.UTILITY,
             variables={
                 "child": "Имя ребёнка",
+                "changes": "Список изменений в расписании",
+                # Оставлены для уже сохранённых шаблонов TRU-168.
                 "group": "Группа",
                 "when": "Дата и время занятия",
                 "note": "Что вместо (перенос, отработка)",
@@ -113,19 +115,47 @@ EVENTS = {
                 "ru": (
                     "{center}: изменение в расписании",
                     "Здравствуйте, {parent}!\n\n"
-                    "{child}: занятие в группе «{group}» {when} отменено. {note}\n\n"
+                    "{child}: в расписании есть изменения.\n{changes}\n\n"
                     "{center}",
                 ),
                 "kk": (
                     "{center}: кестедегі өзгеріс",
                     "Сәлеметсіз бе, {parent}!\n\n"
-                    "{child} «{group}» тобындағы {when} сабағы болмайды. {note}\n\n"
+                    "{child}: сабақ кестесінде өзгерістер бар.\n{changes}\n\n"
                     "{center}",
                 ),
             },
             push={
-                "ru": ("Занятие отменено", "{child}, «{group}», {when}. {note}"),
-                "kk": ("Сабақ болмайды", "{child}, «{group}», {when}. {note}"),
+                "ru": ("Изменение в расписании", "{child}: {changes}"),
+                "kk": ("Кестедегі өзгеріс", "{child}: {changes}"),
+            },
+            link="/parent/schedule",
+        ),
+        Event(
+            key="lesson_reminder",
+            label="Напоминание о занятии",
+            category=MessageCategory.UTILITY,
+            variables={
+                "child": "Имя ребёнка",
+                "group": "Группа",
+                "when": "Дата и время занятия",
+                "place": "Филиал и зал",
+            },
+            email={
+                "ru": (
+                    "{center}: завтра занятие — {child}",
+                    "Здравствуйте, {parent}!\n\n"
+                    "Напоминаем: {child}, группа «{group}», {when}. {place}.\n\n{center}",
+                ),
+                "kk": (
+                    "{center}: ертең сабақ — {child}",
+                    "Сәлеметсіз бе, {parent}!\n\n"
+                    "Еске саламыз: {child}, «{group}» тобы, {when}. {place}.\n\n{center}",
+                ),
+            },
+            push={
+                "ru": ("Завтра занятие", "{child}, «{group}», {when}. {place}"),
+                "kk": ("Ертең сабақ", "{child}, «{group}», {when}. {place}"),
             },
             link="/parent/schedule",
         ),

@@ -9,7 +9,10 @@ API рабочих списков денег для frontend2: «Задолже�
 """
 
 from datetime import timedelta
+from decimal import Decimal
 
+from django.core.exceptions import ValidationError
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
@@ -48,12 +51,30 @@ def _page(qs, params):
     return qs[(page - 1) * size : page * size]
 
 
+class UnknownFilter(Exception):
+    """?branch=/?direction=/?group= не из своей организации (чужой, удалённый или
+    кривой id). Список тогда пустой, а не «без фильтра»: иначе чужой id тихо
+    показывал бы все филиалы, а кривой — ронял запрос в 500 (TRU-133).
+    Нечитаемый ?branch= сюда не доходит: его branch_scope заменяет филиалом
+    из шапки или филиалами сотрудника."""
+
+
+def _own(model, organization, raw_id):
+    """Объект фильтра — только своей организации, иначе UnknownFilter."""
+    try:
+        found = model.objects.for_tenant(organization).filter(pk=raw_id).first()
+    except (ValueError, ValidationError):
+        found = None
+    if found is None:
+        raise UnknownFilter(raw_id)
+    return found
+
+
 def _branch(request):
     """?branch= — фильтр панели; нет — филиал из шапки (X-Branch-Id), как у списка детей."""
-    organization = request.user.organization
     scope = branch_scope(request, request.query_params.get("branch"))
     if scope is not None and len(scope) == 1:
-        return Branch.objects.for_tenant(organization).filter(pk=scope[0]).first()
+        return _own(Branch, request.user.organization, scope[0])
     return None
 
 
@@ -67,7 +88,7 @@ def _direction(request):
     direction_id = request.query_params.get("direction")
     if not direction_id:
         return None
-    return Direction.objects.for_tenant(request.user.organization).filter(pk=direction_id).first()
+    return _own(Direction, request.user.organization, direction_id)
 
 
 def _payers(organization, child_ids):
@@ -108,8 +129,12 @@ def _debtors_queryset(request):
         min_age = threshold
     elif params.get("min_age_days"):
         min_age = max(0, _int(params, "min_age_days", 0))
+    try:
+        branch, direction = _branch(request), _direction(request)
+    except UnknownFilter:
+        return debtor_subscriptions(organization).none(), threshold
     qs = debtor_subscriptions(
-        organization, branch=_branch(request), direction=_direction(request), min_age_days=min_age
+        organization, branch=branch, direction=direction, min_age_days=min_age
     )
     qs = _in_scope(request, qs)
     query = (params.get("q") or "").strip()
@@ -155,11 +180,19 @@ def debtor_rows(organization, subscriptions, *, show_phones, threshold):
 @api_view(["GET"])
 @permission_classes([CanViewClientMoney])
 def debtors_api(request):
-    """Список долгов по абонементам: фильтры, сортировка, итог по выборке."""
+    """Список долгов по абонементам: фильтры, сортировка, итог по выборке.
+
+    Итоги — одним aggregate в базе, не перебором строк в Python; запросов на
+    страницу столько же при 5 строках, сколько при 200 (TRU-133)."""
     organization = request.user.organization
     qs, threshold = _debtors_queryset(request)
-    total_debt = sum(qs.values_list("debt", flat=True), 0)
-    overdue = qs.filter(starts_on__lte=today_for_org(organization) - timedelta(days=threshold))
+    overdue = Q(starts_on__lte=today_for_org(organization) - timedelta(days=threshold))
+    totals = qs.aggregate(
+        count=Count("pk"),
+        total_debt=Sum("debt", default=Decimal(0)),
+        overdue_count=Count("pk", filter=overdue),
+        overdue_debt=Sum("debt", filter=overdue, default=Decimal(0)),
+    )
     sort = request.query_params.get("sort", "debt")
     order = DEBTOR_SORTS.get(sort, "debt")
     if request.query_params.get("dir", "desc") == "desc":
@@ -174,10 +207,10 @@ def debtors_api(request):
     return Response(
         {
             "results": rows,
-            "count": qs.count(),
-            "total_debt": str(total_debt),
-            "overdue_count": overdue.count(),
-            "overdue_debt": str(sum(overdue.values_list("debt", flat=True), 0)),
+            "count": totals["count"],
+            "total_debt": str(totals["total_debt"]),
+            "overdue_count": totals["overdue_count"],
+            "overdue_debt": str(totals["overdue_debt"]),
             "overdue_days": threshold,
         }
     )
@@ -211,12 +244,12 @@ CONTACT_COOLDOWN_DAYS = 7  # «не звонить одному и тому же
 def _renewals_queryset(request):
     organization = request.user.organization
     params = request.query_params
-    group = None
-    if params.get("group"):
-        group = Group.objects.for_tenant(organization).filter(pk=params.get("group")).first()
-    qs = expiring_subscriptions(
-        organization, branch=_branch(request), direction=_direction(request), group=group
-    )
+    try:
+        branch, direction = _branch(request), _direction(request)
+        group = _own(Group, organization, params["group"]) if params.get("group") else None
+    except UnknownFilter:
+        return expiring_subscriptions(organization).none()
+    qs = expiring_subscriptions(organization, branch=branch, direction=direction, group=group)
     qs = _in_scope(request, qs)
     query = (params.get("q") or "").strip()
     if query:

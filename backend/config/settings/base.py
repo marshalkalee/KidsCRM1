@@ -281,6 +281,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "domains.platform.ai.tasks.dispatch_ai_digests",
         "schedule": crontab(minute=10),
     },
+    # TRU-171: задача сама проверяет локальное время каждого центра и
+    # отправляет дневные напоминания только в 9 утра по его часовому поясу.
+    "dispatch-parent-notifications": {
+        "task": ("domains.platform.notifications.messaging.tasks" ".dispatch_parent_notifications"),
+        "schedule": crontab(minute=15),
+    },
 }
 
 # ИИ-помощник (эксперимент): без ключа функции выключены, экраны их не показывают.

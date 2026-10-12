@@ -20,6 +20,12 @@ from domains.people.clients.models import ChildContact, ParentContact
 from domains.platform.core.permissions import IsOwner, IsOwnerOrManagerOrAdmin
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.tenants.org_settings import (
+    AUTO_NOTIFY_CHANGE_DELAY_MINUTES,
+    AUTO_NOTIFY_LESSON_CHANGES_ENABLED,
+    AUTO_NOTIFY_LESSON_REMINDER_ENABLED,
+    AUTO_NOTIFY_LESSON_REMINDER_HOURS,
+    AUTO_NOTIFY_PAYMENT_ENABLED,
+    AUTO_NOTIFY_SUBSCRIPTION_ENABLED,
     MESSAGING_CHANNELS,
     MESSAGING_QUIET_FROM,
     MESSAGING_QUIET_TO,
@@ -34,7 +40,7 @@ from ..models import (
     OutboundMessage,
     WhatsAppConnection,
 )
-from . import service
+from . import automation, service
 from .channels import CHANNELS
 from .events import EVENTS, LANGUAGES
 from .whatsapp import (
@@ -78,6 +84,28 @@ def messaging_settings(request, version=None):
         reply_to = (data.get("reply_to") or "").strip()
         if reply_to and "@" not in reply_to:
             errors["reply_to"] = ["Это не похоже на email."]
+        rules = data.get("rules")
+        if not isinstance(rules, dict):
+            rules = {}
+        try:
+            reminder_hours = int(
+                rules.get(
+                    "lesson_reminder_hours",
+                    get_org_setting(organization, AUTO_NOTIFY_LESSON_REMINDER_HOURS),
+                )
+            )
+            change_delay = int(
+                rules.get(
+                    "change_delay_minutes",
+                    get_org_setting(organization, AUTO_NOTIFY_CHANGE_DELAY_MINUTES),
+                )
+            )
+            if not 1 <= reminder_hours <= 168:
+                raise ValueError
+            if not 1 <= change_delay <= 60:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["rules"] = ["Напоминание — 1–168 часов, задержка изменений — 1–60 минут."]
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
         organization.settings = {
@@ -86,6 +114,32 @@ def messaging_settings(request, version=None):
             MESSAGING_QUIET_TO: quiet_to,
             MESSAGING_CHANNELS: list(dict.fromkeys(channels)),
             MESSAGING_REPLY_TO: reply_to,
+            AUTO_NOTIFY_PAYMENT_ENABLED: bool(
+                rules.get(
+                    "payment_enabled",
+                    get_org_setting(organization, AUTO_NOTIFY_PAYMENT_ENABLED),
+                )
+            ),
+            AUTO_NOTIFY_SUBSCRIPTION_ENABLED: bool(
+                rules.get(
+                    "subscription_enabled",
+                    get_org_setting(organization, AUTO_NOTIFY_SUBSCRIPTION_ENABLED),
+                )
+            ),
+            AUTO_NOTIFY_LESSON_CHANGES_ENABLED: bool(
+                rules.get(
+                    "lesson_changes_enabled",
+                    get_org_setting(organization, AUTO_NOTIFY_LESSON_CHANGES_ENABLED),
+                )
+            ),
+            AUTO_NOTIFY_LESSON_REMINDER_ENABLED: bool(
+                rules.get(
+                    "lesson_reminder_enabled",
+                    get_org_setting(organization, AUTO_NOTIFY_LESSON_REMINDER_ENABLED),
+                )
+            ),
+            AUTO_NOTIFY_LESSON_REMINDER_HOURS: reminder_hours,
+            AUTO_NOTIFY_CHANGE_DELAY_MINUTES: change_delay,
         }
         organization.save(update_fields=["settings", "updated_at"])
     return Response(
@@ -94,6 +148,25 @@ def messaging_settings(request, version=None):
             "quiet_to": get_org_setting(organization, MESSAGING_QUIET_TO),
             "channels": get_org_setting(organization, MESSAGING_CHANNELS),
             "reply_to": get_org_setting(organization, MESSAGING_REPLY_TO),
+            "rules": {
+                "payment_enabled": get_org_setting(organization, AUTO_NOTIFY_PAYMENT_ENABLED),
+                "subscription_enabled": get_org_setting(
+                    organization, AUTO_NOTIFY_SUBSCRIPTION_ENABLED
+                ),
+                "lesson_changes_enabled": get_org_setting(
+                    organization, AUTO_NOTIFY_LESSON_CHANGES_ENABLED
+                ),
+                "lesson_reminder_enabled": get_org_setting(
+                    organization, AUTO_NOTIFY_LESSON_REMINDER_ENABLED
+                ),
+                "lesson_reminder_hours": get_org_setting(
+                    organization, AUTO_NOTIFY_LESSON_REMINDER_HOURS
+                ),
+                "change_delay_minutes": get_org_setting(
+                    organization, AUTO_NOTIFY_CHANGE_DELAY_MINUTES
+                ),
+            },
+            "weekly_preview": automation.volume_preview(organization),
             "available_channels": [
                 {
                     "key": key,
