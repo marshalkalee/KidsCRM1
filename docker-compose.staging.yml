@@ -61,6 +61,20 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A config.celery beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    env_file:
+      - backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
   nginx:
     # React (frontend2) собирается внутри образа — см. infra/nginx/Dockerfile (TRU-79).
     build:

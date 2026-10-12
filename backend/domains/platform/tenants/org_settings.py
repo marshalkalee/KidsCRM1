@@ -46,6 +46,12 @@ MESSAGING_QUIET_FROM = "messaging_quiet_from"
 MESSAGING_QUIET_TO = "messaging_quiet_to"
 MESSAGING_CHANNELS = "messaging_channels"
 MESSAGING_REPLY_TO = "messaging_reply_to"
+AUTO_NOTIFY_PAYMENT_ENABLED = "auto_notify_payment_enabled"
+AUTO_NOTIFY_SUBSCRIPTION_ENABLED = "auto_notify_subscription_enabled"
+AUTO_NOTIFY_LESSON_CHANGES_ENABLED = "auto_notify_lesson_changes_enabled"
+AUTO_NOTIFY_LESSON_REMINDER_ENABLED = "auto_notify_lesson_reminder_enabled"
+AUTO_NOTIFY_LESSON_REMINDER_HOURS = "auto_notify_lesson_reminder_hours"
+AUTO_NOTIFY_CHANGE_DELAY_MINUTES = "auto_notify_change_delay_minutes"
 ACCESS_SETTINGS = (
     TEACHER_SEES_PARENT_PHONES,
     TEACHER_SEES_FINANCES,
@@ -97,6 +103,12 @@ DEFAULT_ORG_SETTINGS = {
     # родителя или он не подключён центру — пропускается.
     MESSAGING_CHANNELS: ["push", "whatsapp", "email"],
     MESSAGING_REPLY_TO: "",
+    AUTO_NOTIFY_PAYMENT_ENABLED: False,
+    AUTO_NOTIFY_SUBSCRIPTION_ENABLED: False,
+    AUTO_NOTIFY_LESSON_CHANGES_ENABLED: True,
+    AUTO_NOTIFY_LESSON_REMINDER_ENABLED: False,
+    AUTO_NOTIFY_LESSON_REMINDER_HOURS: 24,
+    AUTO_NOTIFY_CHANGE_DELAY_MINUTES: 5,
 }
 
 

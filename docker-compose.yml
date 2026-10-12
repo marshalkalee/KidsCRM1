@@ -56,6 +56,21 @@ services:
       redis:
         condition: service_started
 
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    command: celery -A config.celery beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    env_file:
+      - backend/.env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   nginx:
     # React (frontend2) собирается внутри образа и раздаётся nginx'ом на "/",
     # API и старые Django-страницы проксируются на backend (TRU-79,

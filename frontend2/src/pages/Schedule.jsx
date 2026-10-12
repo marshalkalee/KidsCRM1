@@ -1053,7 +1053,7 @@ function TimeGrid({ columns, columnHeader, itemsByColumn, hours, loading, emptyT
   return (
     <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #F0F0F5', overflow: 'hidden' }}>
       <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: templateColumns, borderBottom: '1px solid #F0F0F5', position: 'sticky', top: 0, zIndex: 30, background: '#fff' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: templateColumns, borderBottom: '1px solid #F0F0F5', position: 'sticky', top: 0, zIndex: 10, background: '#fff' }}>
           <div />
           {columns.map(col => (
             <div key={col.id} style={{ padding: '10px 8px', textAlign: 'center', borderLeft: '1px solid #F0F0F5', background: col.highlighted ? '#FDF0EE' : '#fff' }}>

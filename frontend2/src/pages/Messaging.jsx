@@ -369,7 +369,82 @@ export function MessagingSettings() {
     <div>
       <PageHeader description={t('Когда и через что система пишет родителям.')} />
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-        <div className="space-y-4">
+        <Card>
+          <CardHeader
+            title={t('Автоуведомления')}
+            description={t('Включите только нужные события. Сообщения учитывают согласие родителя и тихие часы.')}
+          />
+          <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+            <div>
+              <Checkbox
+                checked={form.rules.payment_enabled}
+                onChange={e => setForm({ ...form, rules: { ...form.rules, payment_enabled: e.target.checked } })}
+                label={<span className="text-sm text-ink">{t('Напоминать о просроченной оплате')}</span>}
+              />
+            </div>
+            <div>
+              <Checkbox
+                checked={form.rules.subscription_enabled}
+                onChange={e => setForm({ ...form, rules: { ...form.rules, subscription_enabled: e.target.checked } })}
+                label={<span className="text-sm text-ink">{t('Напоминать об окончании абонемента')}</span>}
+              />
+            </div>
+            <div>
+              <Checkbox
+                checked={form.rules.lesson_changes_enabled}
+                onChange={e => setForm({ ...form, rules: { ...form.rules, lesson_changes_enabled: e.target.checked } })}
+                label={<span className="text-sm text-ink">{t('Сообщать об отмене и переносе')}</span>}
+              />
+            </div>
+            <div className="flex flex-wrap items-end gap-3 sm:col-span-2">
+              <Checkbox
+                checked={form.rules.lesson_reminder_enabled}
+                onChange={e => setForm({ ...form, rules: { ...form.rules, lesson_reminder_enabled: e.target.checked } })}
+                label={<span className="text-sm text-ink">{t('Напоминать о ближайшем занятии')}</span>}
+              />
+              <Field label={t('За сколько часов')} className="w-40">
+                {({ id }) => <Input id={id} type="number" min="1" max="168" value={form.rules.lesson_reminder_hours} onChange={e => setForm({ ...form, rules: { ...form.rules, lesson_reminder_hours: Number(e.target.value) } })} />}
+              </Field>
+            </div>
+          </div>
+          <div className="mt-4 rounded-lg bg-surface-muted px-3 py-3 text-[13px] text-ink-muted">
+            <p className="font-semibold text-ink">{t('Оценка на неделю: около {n} сообщений', { n: form.weekly_preview.total })}</p>
+            <p className="mt-1">{t('Оплата: {payment}, абонементы: {subscriptions}, занятия: {lessons}', {
+              payment: form.weekly_preview.payment,
+              subscriptions: form.weekly_preview.subscription,
+              lessons: form.weekly_preview.lesson_reminder,
+            })}</p>
+            <p className="mt-1 text-ink-subtle">{t(form.weekly_preview.note)}</p>
+          </div>
+        </Card>
+        <Card>
+            <CardHeader title={t('Каналы')} description={t('Пробуем по порядку: первый, через который удалось отправить, — последний.')} />
+            <ul className="divide-y divide-line">
+              {ordered.map(key => {
+                const channel = byKey[key]
+                const position = form.channels.indexOf(key)
+                return (
+                  <li key={key} className="flex items-start gap-2 py-2.5 first:pt-0 last:pb-0">
+                    <span className="mt-0.5 w-5 text-center text-[13px] font-bold text-ink-subtle">{position >= 0 ? position + 1 : ''}</span>
+                    <div className="min-w-0 flex-1">
+                      <Checkbox
+                        checked={position >= 0}
+                        onChange={e => toggleChannel(key, e.target.checked)}
+                        label={<span className="text-sm text-ink">{t(channel.label)}</span>}
+                      />
+                      {!channel.connected && <p className="mt-1 pl-7 text-[12px] text-ink-muted">{t(channel.reason)} — {t('пока пропускается')}</p>}
+                    </div>
+                    {position >= 0 && (
+                      <span className="flex gap-1">
+                        <Button size="icon" variant="ghost" aria-label={t('Выше')} disabled={position === 0} onClick={() => move(key, -1)}><ArrowUp className="size-4" /></Button>
+                        <Button size="icon" variant="ghost" aria-label={t('Ниже')} disabled={position === form.channels.length - 1} onClick={() => move(key, 1)}><ArrowDown className="size-4" /></Button>
+                      </span>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+        </Card>
         <Card>
           <CardHeader title={t('Тихие часы')} description={t('Ночью не пишем — сообщение уйдёт утром. По времени центра.')} />
           <div className="flex flex-wrap items-end gap-3">
@@ -387,35 +462,6 @@ export function MessagingSettings() {
           <Field label={t('Email центра')}>
             {({ id }) => <Input id={id} type="email" placeholder="info@trueballet.kz" value={form.reply_to} onChange={e => setForm({ ...form, reply_to: e.target.value })} />}
           </Field>
-        </Card>
-        </div>
-        <Card>
-          <CardHeader title={t('Каналы')} description={t('Пробуем по порядку: первый, через который удалось отправить, — последний.')} />
-          <ul className="divide-y divide-line">
-            {ordered.map(key => {
-              const channel = byKey[key]
-              const position = form.channels.indexOf(key)
-              return (
-                <li key={key} className="flex items-start gap-2 py-2.5 first:pt-0 last:pb-0">
-                  <span className="mt-0.5 w-5 text-center text-[13px] font-bold text-ink-subtle">{position >= 0 ? position + 1 : ''}</span>
-                  <div className="min-w-0 flex-1">
-                    <Checkbox
-                      checked={position >= 0}
-                      onChange={e => toggleChannel(key, e.target.checked)}
-                      label={<span className="text-sm text-ink">{t(channel.label)}</span>}
-                    />
-                    {!channel.connected && <p className="mt-1 pl-7 text-[12px] text-ink-muted">{t(channel.reason)} — {t('пока пропускается')}</p>}
-                  </div>
-                  {position >= 0 && (
-                    <span className="flex gap-1">
-                      <Button size="icon" variant="ghost" aria-label={t('Выше')} disabled={position === 0} onClick={() => move(key, -1)}><ArrowUp className="size-4" /></Button>
-                      <Button size="icon" variant="ghost" aria-label={t('Ниже')} disabled={position === form.channels.length - 1} onClick={() => move(key, 1)}><ArrowDown className="size-4" /></Button>
-                    </span>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
         </Card>
       </div>
       <WhatsAppSettings />

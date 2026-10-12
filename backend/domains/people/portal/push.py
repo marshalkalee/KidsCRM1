@@ -14,7 +14,11 @@ from django.db import transaction
 
 from domains.platform.notifications.messaging.events import EVENTS
 from domains.platform.notifications.messaging.service import consent_status, set_consent
-from domains.platform.notifications.models import MessageCategory, MessagingConsent
+from domains.platform.notifications.models import (
+    MessageCategory,
+    MessagingConsent,
+    OutboundMessage,
+)
 
 from . import access
 from .auth import LoginError
@@ -29,6 +33,11 @@ def status(account, endpoint: str = "") -> dict:
     contacts = _contacts(account)
     statuses = {consent_status(c, MessageCategory.UTILITY) for c in contacts}
     prefs = account.notification_prefs or {}
+    messages = (
+        OutboundMessage.objects.filter(parent__in=contacts, deleted_at__isnull=True)
+        .exclude(event="whatsapp_reply")
+        .order_by("-created_at")[:30]
+    )
     return {
         "public_key": settings.WEBPUSH_VAPID_PUBLIC_KEY,
         # Включено, если хоть один центр может писать: согласие есть и не все отписаны.
@@ -39,6 +48,18 @@ def status(account, endpoint: str = "") -> dict:
         "events": [
             {"key": e.key, "label": e.label, "enabled": prefs.get(e.key) is not False}
             for e in EVENTS.values()
+        ],
+        "feed": [
+            {
+                "id": str(message.id),
+                "event": message.event,
+                "label": EVENTS[message.event].label if message.event in EVENTS else message.event,
+                "subject": message.subject,
+                "body": message.body,
+                "status": message.status,
+                "created_at": message.created_at,
+            }
+            for message in messages
         ],
     }
 

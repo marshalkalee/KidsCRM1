@@ -124,6 +124,43 @@ class UserAPITests(APITestCase):
         phones = [u["phone"] for u in response.data["results"]]
         self.assertEqual(phones, ["+77010000001"])
 
+    def test_user_list_follows_active_branch(self):
+        second_branch = Branch.objects.create(organization=self.org_a, name="Филиал A2")
+        first_staff = User.objects.create_user(
+            phone="+77010000030",
+            full_name="Первый филиал",
+            password="pass12345",
+            organization=self.org_a,
+            role=User.Role.TEACHER,
+        )
+        first_staff.branches.set([self.branch_a])
+        second_staff = User.objects.create_user(
+            phone="+77010000031",
+            full_name="Второй филиал",
+            password="pass12345",
+            organization=self.org_a,
+            role=User.Role.TEACHER,
+        )
+        second_staff.branches.set([second_branch])
+        all_branches_staff = User.objects.create_user(
+            phone="+77010000032",
+            full_name="Все филиалы",
+            password="pass12345",
+            organization=self.org_a,
+            role=User.Role.ADMIN,
+        )
+        self.client.force_authenticate(self.owner_a)
+
+        response = self.client.get("/api/v1/users/", HTTP_X_BRANCH_ID=str(self.branch_a.id))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = {row["id"] for row in response.data["results"]}
+        self.assertEqual(
+            ids,
+            {str(self.owner_a.id), str(first_staff.id), str(all_branches_staff.id)},
+        )
+        self.assertNotIn(str(second_staff.id), ids)
+
 
 class AuthTests(TestCase):
     def setUp(self):

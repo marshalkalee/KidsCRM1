@@ -2556,5 +2556,17 @@
   "Группы ребёнка": "Child's groups",
   "Здесь занимается ребёнок": "Your child studies here",
   "На карте": "On the map",
-  "Что делают на занятиях и что взять с собой.": "What happens in class and what to bring."
+  "Что делают на занятиях и что взять с собой.": "What happens in class and what to bring.",
+  "Автоуведомления": "Automatic notifications",
+  "Включите только нужные события. Сообщения учитывают согласие родителя и тихие часы.": "Enable only the events you need. Messages respect parent consent and quiet hours.",
+  "Напоминать о просроченной оплате": "Remind about overdue payments",
+  "Напоминать об окончании абонемента": "Remind when a subscription is ending",
+  "Сообщать об отмене и переносе": "Notify about cancellations and rescheduling",
+  "Напоминать о ближайшем занятии": "Remind about an upcoming lesson",
+  "За сколько часов": "Hours before",
+  "Оценка на неделю: около {n} сообщений": "Weekly estimate: about {n} messages",
+  "Оплата: {payment}, абонементы: {subscriptions}, занятия: {lessons}": "Payments: {payment}, subscriptions: {subscriptions}, lessons: {lessons}",
+  "Изменения расписания заранее неизвестны и в оценку не входят.": "Schedule changes are unknown in advance and are not included in the estimate.",
+  "Последние уведомления": "Recent notifications",
+  "Уведомлений пока нет.": "No notifications yet."
 }

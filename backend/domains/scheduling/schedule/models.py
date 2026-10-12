@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from domains.platform.core.models import TenantModel, TimestampedSoftDeleteModel
@@ -201,6 +202,7 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
             before=before,
             after={"status": self.status, "rescheduled_to_id": str(new_lesson.id)},
         )
+        self._queue_parent_change_notification()
         return new_lesson
 
     def cancel(self, *, actor, category: str, comment: str = ""):
@@ -245,6 +247,26 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
                 "cancel_reason_category": self.cancel_reason_category,
                 "cancel_reason": self.cancel_reason,
             },
+        )
+        self._queue_parent_change_notification()
+
+    def _queue_parent_change_notification(self):
+        """Короткий debounce: не сообщаем об ошибочной отмене и объединяем
+        массовые изменения расписания в одно сообщение на ребёнка и день."""
+        import datetime
+
+        from domains.platform.notifications.messaging.tasks import (
+            dispatch_lesson_change_notification,
+        )
+        from domains.platform.tenants.org_settings import (
+            AUTO_NOTIFY_CHANGE_DELAY_MINUTES,
+            get_org_setting,
+        )
+
+        delay = get_org_setting(self.organization, AUTO_NOTIFY_CHANGE_DELAY_MINUTES)
+        eta = timezone.now() + datetime.timedelta(minutes=delay)
+        transaction.on_commit(
+            lambda: dispatch_lesson_change_notification.apply_async(args=[str(self.id)], eta=eta)
         )
 
 
