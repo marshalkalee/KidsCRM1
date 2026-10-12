@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   Bell,
   Check,
   ChevronDown,
   CloudOff,
   LogOut,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react'
@@ -36,7 +37,8 @@ function useOnline() {
 
 /**
  * На компьютере кабинет выглядит как CRM: боковое меню, шапка и широкая
- * рабочая область. На телефоне — компактная шапка и пять вкладок снизу.
+ * рабочая область. На телефоне — то же меню, выезжающее слева по кнопке
+ * в шапке (кабинет открывают как сайт, а не как приложение).
  * Сессия остаётся родительской: служебные API и разделы недоступны даже по URL.
  */
 export default function ParentLayout() {
@@ -44,6 +46,14 @@ export default function ParentLayout() {
   const { child, children, me } = useParent()
   const [picking, setPicking] = useState(false)
   const [collapsed, setCollapsed] = useState(readCollapsed)
+  const [drawer, setDrawer] = useState(false)
+  const location = useLocation()
+  // Перешли в раздел — меню на телефоне закрывается.
+  const [path, setPath] = useState(location.pathname)
+  if (path !== location.pathname) {
+    setPath(location.pathname)
+    setDrawer(false)
+  }
   const online = useOnline()
   const { data: noteData, reload: reloadNotes } = usePortalData(
     child && `children/${child.id}/notes/`,
@@ -68,7 +78,7 @@ export default function ParentLayout() {
 
   return (
     <div className={cn(
-      'min-h-dvh bg-canvas pb-[calc(4.5rem+env(safe-area-inset-bottom))] transition-[padding] duration-200 lg:pb-0',
+      'min-h-dvh bg-canvas transition-[padding] duration-200',
       collapsed ? 'lg:pl-[76px]' : 'lg:pl-64',
     )}>
       <aside className={cn(
@@ -78,11 +88,27 @@ export default function ParentLayout() {
         <ParentSidebar collapsed={collapsed} noteUnread={noteUnread} />
       </aside>
 
+      {/* Телефон: меню слева поверх страницы. */}
+      {drawer && (
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label={t('Меню')}>
+          <button type="button" className="absolute inset-0 bg-ink/40" onClick={() => setDrawer(false)} aria-label={t('Закрыть меню')} />
+          <aside className="relative flex h-full w-72 max-w-[85vw] flex-col bg-surface shadow-pop">
+            <ParentSidebar collapsed={false} noteUnread={noteUnread} />
+          </aside>
+        </div>
+      )}
+
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-[1500px] items-center gap-3 px-4 sm:px-6 lg:max-w-none">
-          <Link to="/parent" className="rounded-[10px] outline-none focus-visible:ring-2 focus-visible:ring-brand-400 lg:hidden" aria-label={t('Главная')}>
-            <BrandMark />
-          </Link>
+          <button
+            type="button"
+            onClick={() => setDrawer(true)}
+            className="-ml-1.5 relative rounded-md p-2 text-ink-muted hover:bg-surface-muted hover:text-ink lg:hidden"
+            aria-label={t('Меню')}
+          >
+            <Menu className="size-6" />
+            {noteUnread > 0 && <span className="absolute right-1 top-1 size-2 rounded-full bg-brand-600 ring-2 ring-surface" />}
+          </button>
           <button
             type="button"
             onClick={toggleCollapsed}
@@ -112,27 +138,6 @@ export default function ParentLayout() {
         <Outlet />
       </main>
 
-      <nav aria-label={t('Разделы кабинета')} className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        <div className="mx-auto grid max-w-2xl grid-cols-6">
-          {PARENT_NAV.filter(item => item.mobile !== false).map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) => cn(
-                'relative flex h-16 min-w-0 flex-col items-center justify-center gap-1 text-[10px] font-semibold sm:text-[11px]',
-                isActive ? 'text-brand-600' : 'text-ink-muted',
-              )}
-            >
-              <item.icon className="size-5 shrink-0" />
-              <span className="max-w-full truncate px-1">{item.label}</span>
-              {item.to === '/parent/notes' && noteUnread > 0 && (
-                <span className="absolute ml-5 -mt-8 flex min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[9px] font-bold text-white">{noteUnread}</span>
-              )}
-            </NavLink>
-          ))}
-        </div>
-      </nav>
 
       {picking && <ChildPicker onClose={() => setPicking(false)} />}
     </div>

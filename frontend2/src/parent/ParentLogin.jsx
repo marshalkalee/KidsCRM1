@@ -1,19 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { Eye, EyeOff, LogIn } from 'lucide-react'
 import { Button, Card, Field, Input } from '../ui'
 import { t, useLang } from '../i18n'
 import LanguageSwitcher from '../components/shell/LanguageSwitcher'
-import { formatPhone } from '../ui'
 import { phoneDigits, phoneInputProps } from '../utils/formValidation'
 import portal, { portalError } from './api'
 import { useParent } from './useParent'
 import { installPwa } from './pwa'
 
 /*
- * Вход в кабинет: номер → код → кабинет (TRU-135). Паролей нет.
- * Ответ «код отправлен» одинаков для любого номера — экран не говорит,
- * есть ли номер в базе центра.
+ * Вход в кабинет: телефон + пароль (Д40). Пароль выдаёт администратор центра
+ * в карточке родителя; родитель меняет его в профиле. Ошибка одна для любого
+ * номера — экран не говорит, есть ли номер в базе центра.
  */
 
 const ERRORS = {
@@ -26,54 +25,27 @@ export default function ParentLogin() {
   const { signedIn, signIn } = useParent()
   const navigate = useNavigate()
   const location = useLocation()
-  const [step, setStep] = useState('phone')
   const [phone, setPhone] = useState('')
-  const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
+  const [shown, setShown] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [wait, setWait] = useState(0)
-  const codeInput = useRef(null)
 
   useEffect(() => { installPwa() }, [])
-  useEffect(() => {
-    if (wait <= 0) return undefined
-    const timer = setTimeout(() => setWait(w => w - 1), 1000)
-    return () => clearTimeout(timer)
-  }, [wait])
 
   if (signedIn) return <Navigate to={location.state?.from || '/parent'} replace />
 
-  async function sendCode(event) {
-    event?.preventDefault()
-    setBusy(true)
-    setError('')
-    try {
-      const { data } = await portal.post('auth/request-code/', { phone }, { anonymous: true })
-      setPhone(data.phone)
-      setWait(data.resend_in)
-      setStep('code')
-      setCode('')
-      setTimeout(() => codeInput.current?.focus(), 50)
-    } catch (err) {
-      setError(portalError(err, ERRORS))
-      const retry = Number(err.response?.headers?.['retry-after'])
-      if (retry && step === 'code') setWait(retry)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function verify(event) {
+  async function submit(event) {
     event.preventDefault()
     setBusy(true)
     setError('')
     try {
-      const { data } = await portal.post('auth/verify/', { phone, code }, { anonymous: true })
+      const { data } = await portal.post('auth/login/', { phone, password }, { anonymous: true })
       signIn(data.token)
       navigate(location.state?.from || '/parent', { replace: true })
     } catch (err) {
       setError(portalError(err, ERRORS))
-      setCode('')
+      setPassword('')
     } finally {
       setBusy(false)
     }
@@ -91,71 +63,57 @@ export default function ParentLogin() {
       </div>
 
       <Card className="w-full max-w-sm">
-        {location.state?.expired && step === 'phone' && !error && (
+        {location.state?.expired && !error && (
           <p className="mb-4 rounded-lg bg-surface-muted px-3 py-2 text-[13px] text-ink-muted">{t('Сессия закончилась — войдите заново.')}</p>
         )}
-
-        {step === 'phone' ? (
-          <form onSubmit={sendCode} className="space-y-4">
-            <Field label={t('Номер телефона')} hint={t('Тот, что вы оставили в центре')} error={error}>
-              {({ id, invalid }) => (
+        <form onSubmit={submit} className="space-y-4">
+          <Field label={t('Номер телефона')} hint={t('Тот, что вы оставили в центре')}>
+            {({ id }) => (
+              <Input
+                id={id}
+                value={phone}
+                onChange={e => setPhone(phoneDigits(e.target.value))}
+                placeholder="+7 701 123 45 67"
+                autoComplete="username"
+                autoFocus
+                required
+                className="text-base"
+                {...phoneInputProps}
+              />
+            )}
+          </Field>
+          <Field label={t('Пароль')} error={error}>
+            {({ id, invalid }) => (
+              <div className="relative">
                 <Input
                   id={id}
                   invalid={invalid}
-                  value={phone}
-                  onChange={e => setPhone(phoneDigits(e.target.value))}
-                  placeholder="+7 701 123 45 67"
-                  autoComplete="tel"
-                  autoFocus
+                  type={shown ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoComplete="current-password"
                   required
-                  className="text-base"
-                  {...phoneInputProps}
+                  className="pr-11 text-base"
                 />
-              )}
-            </Field>
-            <Button type="submit" variant="primary" className="h-12 w-full text-base" loading={busy} icon={ArrowRight}>
-              {t('Получить код')}
-            </Button>
-            <p className="rounded-lg bg-surface-muted px-3 py-2.5 text-center text-[13px] leading-relaxed text-ink-muted">
-              {t('Впервые входите? Обратитесь в центр и попросите привязать ваш номер к ребёнку.')}
-            </p>
-          </form>
-        ) : (
-          <form onSubmit={verify} className="space-y-4">
-            <button type="button" onClick={() => { setStep('phone'); setError('') }} className="inline-flex items-center gap-1 text-[13px] font-semibold text-ink-muted hover:text-ink">
-              <ArrowLeft className="size-4" /> {formatPhone(phone)}
-            </button>
-            <p className="text-sm text-ink-muted">{t('Если номер есть в базе центра, мы отправили на него код. Он придёт в Telegram или SMS.')}</p>
-            <Field label={t('Код из сообщения')} error={error}>
-              {({ id, invalid }) => (
-                <Input
-                  id={id}
-                  ref={codeInput}
-                  invalid={invalid}
-                  value={code}
-                  onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  placeholder="••••••"
-                  required
-                  className="text-center text-2xl font-bold tracking-[0.4em]"
-                />
-              )}
-            </Field>
-            <Button type="submit" variant="primary" className="h-12 w-full text-base" loading={busy} disabled={code.length !== 6}>
-              {t('Войти')}
-            </Button>
-            <p className="text-center text-[13px] text-ink-muted">
-              {wait > 0
-                ? t('Новый код можно запросить через {n} с', { n: wait })
-                : <button type="button" onClick={sendCode} disabled={busy} className="font-semibold text-brand-700 hover:underline">{t('Отправить код ещё раз')}</button>}
-            </p>
-          </form>
-        )}
+                <button
+                  type="button"
+                  onClick={() => setShown(s => !s)}
+                  aria-label={shown ? t('Скрыть пароль') : t('Показать пароль')}
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-ink-subtle hover:text-ink"
+                >
+                  {shown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+            )}
+          </Field>
+          <Button type="submit" variant="primary" className="h-12 w-full text-base" loading={busy} icon={LogIn}>
+            {t('Войти')}
+          </Button>
+          <p className="rounded-lg bg-surface-muted px-3 py-2.5 text-center text-[13px] leading-relaxed text-ink-muted">
+            {t('Нет пароля или забыли? Попросите администратора центра — он выдаст новый.')}
+          </p>
+        </form>
       </Card>
-
-      <p className="mt-6 max-w-xs text-center text-[12px] text-ink-subtle">{t('Не приходит код или сменился номер — напишите администратору центра.')}</p>
     </div>
   )
 }
