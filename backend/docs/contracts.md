@@ -151,6 +151,9 @@ debt_by_child(organization, child_ids) -> dict[child_id, Decimal]
 debt_for_child(organization, child_id) -> Decimal
 debt_for_parent(organization, parent) -> Decimal
 debtor_subscriptions(organization, branch=None, direction=None, min_age_days=None) -> QuerySet[Subscription]
+debt_total(organization, branch_ids=None) -> Decimal
+debt_structure(organization, branch_ids=None) -> {"total", "by_age": {"0_30", "31_60", "over_60"}, "child_ids"}
+repaid_debt(organization, start, end, branch_ids=None) -> (долг на start, погашено до end)
 
 Единственный источник правды для долга (ТЗ п. 3.1, критерий приёмки
 MVP №4). Долг — по каждому абонементу отдельно (price > paid), без
@@ -159,6 +162,11 @@ MVP №4). Долг — по каждому абонементу отдельн�
 is_payer) — так же, как уже считает карточка родителя. Код —
 domains/money/subscriptions/debt.py — единственный модуль, второй
 (payments/debt.py) удалён (TRU-73).
+
+Аналитика (TRU-118, TRU-124) берёт отсюда же: `debt_total` — итог экрана
+«Задолженности», `debt_structure` — та же сумма с разбивкой по давности
+(давность — `debt_age_days`, от даты начала абонемента) и должниками,
+`repaid_debt` — сколько из долга на начало периода оплачено за период.
 
 Владелец: Bekzat. Потребители: Анель (список детей, карточка родителя,
 экран «Задолженности», вкладка «Оплаты»).
@@ -325,6 +333,10 @@ compute(["revenue", "visits"], scope, period)  # {имя: {value, previous, seri
 - Цифра, которая уже считается в операционке, берётся из того же сервиса:
   долг — `subscriptions.debt`, заполняемость — `groups.queries`, оплаты —
   правило `paid_sum` (подтверждённые, не отменённые).
+- Средний чек (`average_check`) — средняя цена проданного абонемента со
+  скидкой по дате продажи (`sales_amount / sales_count`, TRU-124), а не
+  выручка на оплату: одна цифра на дашборде, в «Сравнении филиалов» и в
+  отчёте «Чек и долги». Медиана и распределение — `analytics/check_debt.py`.
 - Филиалы — только через `scope.filter(qs, "<путь до branch_id>")`: права
   управляющего проверяются в одном месте (`analytics/scope.py`).
 - API: `GET /api/v1/analytics/metrics/?metrics=a,b&period=month|week|today|

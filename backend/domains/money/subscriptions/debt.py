@@ -147,6 +147,69 @@ def debt_total(organization, *, branch_ids=None) -> Decimal:
     return sum((price - paid for price, paid in rows), Decimal(0))
 
 
+# Структура долга по давности (TRU-124): до 30 дней, 31–60, больше 60.
+# Давность — та же, что колонка экрана «Задолженности» (debt_age_days).
+DEBT_AGE_BUCKETS = (("0_30", 30), ("31_60", 60), ("over_60", None))
+
+
+def _age_bucket(age_days: int) -> str:
+    for key, upper in DEBT_AGE_BUCKETS:
+        if upper is None or age_days <= upper:
+            return key
+    return DEBT_AGE_BUCKETS[-1][0]
+
+
+def debt_structure(organization, *, branch_ids=None) -> dict:
+    """Долг «на сейчас» с разбивкой для аналитики (TRU-124): {"total",
+    "by_age": {"0_30", "31_60", "over_60"}, "child_ids": {должники}}.
+    Те же строки, что debt_total и экран «Задолженности»: total == debt_total."""
+    qs = (
+        Subscription.objects.for_tenant(organization)
+        .annotate(paid=paid_sum())
+        .filter(price__gt=F("paid"))
+    )
+    if branch_ids is not None:
+        qs = qs.filter(branch_id__in=branch_ids)
+    today = today_for_org(organization)
+    by_age = {key: Decimal(0) for key, _ in DEBT_AGE_BUCKETS}
+    child_ids = set()
+    for price, paid, starts_on, child_id in qs.values_list(
+        "price", "paid", "starts_on", "child_id"
+    ):
+        by_age[_age_bucket((today - starts_on).days)] += price - paid
+        child_ids.add(child_id)
+    return {"total": sum(by_age.values(), Decimal(0)), "by_age": by_age, "child_ids": child_ids}
+
+
+def repaid_debt(organization, start, end, *, branch_ids=None) -> tuple[Decimal, Decimal]:
+    """Сколько из долга на момент `start` погашено до `end` (TRU-124):
+    (долг на start, погашено). Долг на start — по абонементам, проданным до
+    start, той же формулой «цена − оплачено» по каждому абонементу, но с
+    оплатами, принятыми до start. Погашено — оплаты [start, end) по этим же
+    абонементам, не больше их долга (переплата не считается погашением).
+    Картина оплат — сегодняшняя: оплату, отменённую позже, считаем
+    неоплаченной и тогда."""
+    before = _CONFIRMED_PAYMENT & Q(payments__paid_at__lt=start)
+    during = _CONFIRMED_PAYMENT & Q(payments__paid_at__gte=start, payments__paid_at__lt=end)
+    qs = (
+        Subscription.objects.for_tenant(organization)
+        .filter(created_at__lt=start)
+        .annotate(
+            paid_before=Coalesce(Sum("payments__amount", filter=before), Decimal(0)),
+            paid_during=Coalesce(Sum("payments__amount", filter=during), Decimal(0)),
+        )
+        .filter(price__gt=F("paid_before"))
+    )
+    if branch_ids is not None:
+        qs = qs.filter(branch_id__in=branch_ids)
+    owed = repaid = Decimal(0)
+    for price, paid_before, paid_during in qs.values_list("price", "paid_before", "paid_during"):
+        debt = price - paid_before
+        owed += debt
+        repaid += min(debt, paid_during)
+    return owed, repaid
+
+
 def create_tasks_for_overdue_debt() -> int:
     """Автоправило: задолженность старше N дней → «напомнить об оплате»
     (ТЗ п. 5.2, TRU-108). Идемпотентность — через source_key на Task."""
