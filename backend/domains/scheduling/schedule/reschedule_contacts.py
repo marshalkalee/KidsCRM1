@@ -12,6 +12,7 @@ from urllib.parse import quote
 from django.utils import timezone
 
 from domains.people.clients.models import ChildContact
+from domains.platform.notifications.models import OutboundMessage
 
 from .models import Lesson, LessonEnrollment, RescheduleCallLog
 
@@ -115,11 +116,27 @@ def build_who_to_call(lesson, organization):
     )
 
     role_labels = dict(ChildContact.Role.choices)
+    change_day = lesson.starts_at.astimezone(tz).date().isoformat()
     contacts = []
     for parent_contact_id, entry in by_contact.items():
         parent_contact = entry["parent_contact"]
         phones = [phone.number for phone in parent_contact.phones.all()]
         whatsapp_number = parent_contact.whatsapp or (phones[0] if phones else "")
+        delivery_keys = [
+            f"auto:lesson-change:{child.id}:{change_day}:{parent_contact_id}"
+            for child in entry["children"]
+        ]
+        delivery = (
+            OutboundMessage.objects.for_tenant(organization)
+            .filter(
+                parent_id=parent_contact_id,
+                event="lesson_cancelled",
+                dedup_key__in=delivery_keys,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        delivery_status = delivery.status if delivery else "pending"
         contacts.append(
             {
                 "contact_key": f"parent:{parent_contact_id}",
@@ -135,6 +152,20 @@ def build_who_to_call(lesson, organization):
                 "whatsapp_number": whatsapp_number,
                 "whatsapp_link": _whatsapp_link(whatsapp_number, message),
                 "called": parent_contact_id in called_parent_ids,
+                "delivery_status": delivery_status,
+                "delivery_status_label": (
+                    delivery.get_status_display() if delivery else "Ожидает отправки"
+                ),
+                "requires_call": (
+                    not whatsapp_number
+                    or delivery_status
+                    in {
+                        OutboundMessage.Status.FAILED,
+                        OutboundMessage.Status.NO_CONSENT,
+                        OutboundMessage.Status.OPTED_OUT,
+                        OutboundMessage.Status.NO_CHANNEL,
+                    }
+                ),
             }
         )
 

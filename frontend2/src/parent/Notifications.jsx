@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Bell, BellOff, Share, Smartphone } from 'lucide-react'
-import { Badge, Button, Card, CardHeader, Checkbox, Skeleton, useToast } from '../ui'
+import { Badge, Button, Card, CardHeader, Checkbox, Skeleton, formatDateTime, useToast } from '../ui'
 import { t } from '../i18n'
 import portal, { portalError } from './api'
 import { currentSubscription, disablePush, dismiss, enablePush, permission, pushSupport, wasDismissed } from './push'
@@ -168,6 +168,22 @@ export function NotificationSettings() {
           <Button variant="ghost" icon={BellOff} loading={busy} onClick={() => run(() => patch({ enabled: false }), t('Все уведомления отключены'))}>{t('Отключить все уведомления')}</Button>
         ) : (
           <Button icon={Bell} loading={busy} onClick={() => run(() => patch({ enabled: true }), t('Уведомления включены'))}>{t('Получать уведомления от центра')}</Button>
+        )}
+      </div>
+      <div className="mt-4 border-t border-line pt-4">
+        <p className="text-sm font-bold text-ink">{t('Последние уведомления')}</p>
+        {status.feed?.length ? (
+          <ul className="mt-2 divide-y divide-line">
+            {status.feed.map(message => (
+              <li key={message.id} className="py-2.5">
+                <p className="text-sm font-semibold text-ink">{message.subject || t(message.label)}</p>
+                {message.body && <p className="mt-1 whitespace-pre-line text-[13px] text-ink-muted">{message.body}</p>}
+                <p className="mt-1 text-[11px] text-ink-subtle">{formatDateTime(message.created_at)}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-[13px] text-ink-muted">{t('Уведомлений пока нет.')}</p>
         )}
       </div>
     </Card>

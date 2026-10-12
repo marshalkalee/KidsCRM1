@@ -23,7 +23,7 @@ const listOf = response => response.data.results || response.data
 
 export default function Staff() {
   const navigate = useNavigate()
-  const { user, can } = useSession()
+  const { user, can, activeBranchId } = useSession()
   const toast = useToast()
   const [staff, setStaff] = useState(null)
   const [branches, setBranches] = useState([])
@@ -33,14 +33,15 @@ export default function Staff() {
   const [role, setRole] = useState('')
 
   const load = useCallback(() => {
-    Promise.all([api.get('users/'), api.get('branches/')])
+    const params = activeBranchId ? { branch: activeBranchId } : {}
+    Promise.all([api.get('users/', { params }), api.get('branches/')])
       .then(([users, branchList]) => {
         setStaff(listOf(users))
         setBranches(listOf(branchList).filter(branch => branch.is_active))
         setError(false)
       })
       .catch(() => setError(true))
-  }, [])
+  }, [activeBranchId])
   useEffect(() => { load() }, [load])
 
   const rows = useMemo(() => {

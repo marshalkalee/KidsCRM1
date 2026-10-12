@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from domains.platform.core.active_branch import allowed_branch_ids
+from domains.platform.core.active_branch import branch_scope
 from domains.platform.core.images import clean_image, delete_image, save_image
 from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
 from domains.platform.core.role_permissions import get_user_permissions
@@ -42,10 +42,10 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = User.objects.filter(organization=self.request.user.organization)
-        allowed = allowed_branch_ids(self.request.user)
-        if allowed is not None:
+        scope = branch_scope(self.request, self.request.query_params.get("branch"))
+        if scope is not None:
             in_my_branches = User.branches.through.objects.filter(
-                user_id=OuterRef("pk"), branch_id__in=allowed
+                user_id=OuterRef("pk"), branch_id__in=scope
             )
             no_branches = ~Exists(User.branches.through.objects.filter(user_id=OuterRef("pk")))
             qs = qs.filter(Exists(in_my_branches) | no_branches)
