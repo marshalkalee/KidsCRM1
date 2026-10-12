@@ -34,9 +34,9 @@ from . import metrics  # noqa: F401 — регистрирует базовые 
 from .attendance_trends import attendance_trends
 from .branches import branch_trends, compare_branches
 from .breakdowns import BreakdownError, breakdown, visits_heatmap
+from .check_debt import average_check, debt_dynamics
 from .churn import churn_report
 from .dashboard import owner_dashboard
-from .check_debt import average_check, debt_dynamics
 from .export import filename, workbook
 from .forecast import revenue_forecast
 from .funnel import FILTERS as FUNNEL_FILTERS

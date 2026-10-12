@@ -11,10 +11,10 @@ from .attendance_trends import attendance_trends
 from .branches import COLUMNS as BRANCH_COLUMNS
 from .branches import compare_branches
 from .breakdowns import breakdown, visits_heatmap
+from .check_debt import average_check, debt_dynamics
 from .churn import DIMENSIONS as CHURN_DIMENSIONS
 from .churn import churn_report
 from .dashboard import owner_dashboard
-from .check_debt import average_check, debt_dynamics
 from .export import Column, Export, Section
 from .forecast import revenue_forecast
 from .funnel import BY as FUNNEL_BY
