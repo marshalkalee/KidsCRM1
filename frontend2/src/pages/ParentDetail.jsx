@@ -4,6 +4,7 @@ import { ChevronRight, Mail, MessageCircle, Pencil, Phone, SearchX, Trash2 } fro
 import api from '../api/axios'
 import ParentModal from '../components/ParentModal'
 import ParentMessaging from '../components/messaging/ParentMessaging'
+import PortalAccessCard from '../components/parents/PortalAccessCard'
 import { useSession } from '../session/SessionContext'
 import { Communications } from '../components/communications/Communications'
 import {
@@ -94,6 +95,7 @@ export default function ParentDetail() {
         <aside className="space-y-4 lg:sticky lg:top-24">
           <ContactsCard parent={parent} />
           {card.money && <MoneyCard money={card.money} />}
+          {permissions.can_edit && <PortalAccessCard parentId={parent.id} />}
           {can('can_manage_children') && <ParentMessaging parentId={parent.id} />}
         </aside>
 
