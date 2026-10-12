@@ -38,7 +38,13 @@ def upcoming_lessons(child, limit=3):
             | Q(individual_children=child)
             | Q(enrollments__child=child, enrollments__cancelled_at__isnull=True)
         )
-        .select_related("group__direction", "group__branch", "room__branch", "teacher")
+        .select_related(
+            "group__direction",
+            "group__branch",
+            "room__branch",
+            "teacher",
+            "original_teacher",
+        )
         .distinct()
         .order_by("starts_at")[:limit]
     )
@@ -71,6 +77,10 @@ def lesson_row(lesson, child):
         "address": branch.address if branch else "",
         "room": lesson.room.name if lesson.room_id else "",
         "teacher": lesson.teacher.full_name if lesson.teacher_id else "",
+        "teacher_is_substitute": lesson.original_teacher_id is not None,
+        "original_teacher": (
+            lesson.original_teacher.full_name if lesson.original_teacher_id else ""
+        ),
         "kind": kind,
     }
 

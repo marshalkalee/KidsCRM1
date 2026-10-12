@@ -15,6 +15,7 @@ import {
 } from '../api/lessons'
 import { t } from '../i18n'
 import { initialHours } from '../components/workingHours'
+import TeacherSubstitutionModal from '../components/schedule/TeacherSubstitutionModal'
 
 const ACCENT = '#C97B6E'
 const DEFAULT_COLOR = '#7C6FF7'
@@ -274,6 +275,7 @@ export default function Schedule() {
   const [branches, setBranches] = useState([])
   const [directions, setDirections] = useState([])
   const [selectedLesson, setSelectedLesson] = useState(null)
+  const [substitutionLesson, setSubstitutionLesson] = useState(null)
   const [whoToCallLessonId, setWhoToCallLessonId] = useState(null)
   const [createSlot, setCreateSlot] = useState(null)
   const [mobileDay, setMobileDay] = useState(() => {
@@ -288,6 +290,7 @@ export default function Schedule() {
   const navigate = useNavigate()
   const isTeacher = me?.role === 'teacher'
   const isOwnerOrManager = me?.role === 'owner' || me?.role === 'manager'
+  const canManageSubstitutions = ['owner', 'manager', 'admin'].includes(me?.role)
 
   const weekStart = useMemo(() => startOfWeek(new Date(date)), [date])
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
@@ -521,6 +524,10 @@ export default function Schedule() {
           onAttendance={id => navigate(`/attendance?lesson=${id}&date=${localDatePart(selectedLesson.starts_at_local)}`)}
           onWhoToCall={id => { closeSelectedLesson(); setWhoToCallLessonId(id) }}
           onSelectReplacement={l => setSelectedLesson(l)}
+          onSubstitute={canManageSubstitutions ? lesson => {
+            setSelectedLesson(null)
+            setSubstitutionLesson(lesson)
+          } : null}
           onCreateHere={l => {
             setSelectedLesson(null)
             const durationMin = Math.round((new Date(l.ends_at) - new Date(l.starts_at)) / 60000)
@@ -533,6 +540,22 @@ export default function Schedule() {
               durationMin,
             })
           }}
+        />
+      )}
+
+      {substitutionLesson && (
+        <TeacherSubstitutionModal
+          lesson={substitutionLesson}
+          teachers={teachers}
+          branchId={
+            substitutionLesson.group
+              ? groups.find(group => String(group.id) === String(substitutionLesson.group))?.branch
+              : rooms.find(room => String(room.id) === String(substitutionLesson.room))?.branch
+          }
+          dateFrom={view === 'week' ? toISODate(weekStart) : date}
+          dateTo={view === 'week' ? toISODate(addDays(weekStart, 6)) : date}
+          onClose={() => setSubstitutionLesson(null)}
+          onDone={() => { setSubstitutionLesson(null); load(); loadConflicts() }}
         />
       )}
 
@@ -944,6 +967,11 @@ function LessonChip({ lesson, style, onClick }) {
             {localTimePart(lesson.starts_at_local)}–{localTimePart(lesson.ends_at_local)}
             {lesson.capacity != null && ` · ${totalCount}/${lesson.capacity}`}
           </div>
+          {!dimmed && lesson.is_substitution && (
+            <div style={{ fontSize: 9, fontWeight: 700, color: '#C2415D', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {t('Замена: {teacher}', { teacher: lesson.teacher_name })}
+            </div>
+          )}
           {!dimmed && lesson.trial_count > 0 && (
             <div style={{ fontSize: 9, fontWeight: 700, color: '#7C3AED', whiteSpace: 'nowrap' }}>
               {t('Пробное: {count}', { count: lesson.trial_count })}
@@ -1357,6 +1385,11 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
                 {showRoom && `${lesson.room_name || '—'} · `}{lesson.teacher_name || '—'}
                 {lesson.capacity != null && ` · ${totalCount}/${lesson.capacity}`}
               </div>
+              {!dimmed && lesson.is_substitution && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#C2415D', marginTop: 3 }}>
+                  {t('Замена: {teacher} (вместо {original})', { teacher: lesson.teacher_name, original: lesson.original_teacher_name })}
+                </div>
+              )}
               {!dimmed && lesson.trial_count > 0 && (
                 <div style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', marginTop: 3 }}>
                   {t('Пробное: {count}', { count: lesson.trial_count })}
@@ -1715,7 +1748,7 @@ const dangerBtn = { ...secondaryBtn, color: '#DC2626', borderColor: '#FECACA' }
 const inputStyle = { width: '100%', padding: '9px 12px', border: '1.5px solid #EBEBF0', borderRadius: 8, fontSize: 13, fontFamily: 'Manrope', outline: 'none', boxSizing: 'border-box' }
 const labelStyle = { display: 'block', fontSize: 11, fontWeight: 600, color: '#9CA3AF', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em' }
 
-function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, onWhoToCall, onCreateHere, onSelectReplacement }) {
+function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, onWhoToCall, onCreateHere, onSelectReplacement, onSubstitute }) {
   const [mode, setMode] = useState('view') // view | cancel | reschedule
   const [reasonCategory, setReasonCategory] = useState('')
   const [comment, setComment] = useState('')
@@ -1808,7 +1841,12 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
               <InfoRow icon={<MapPin size={14} />} text={`${localTimePart(lesson.starts_at_local)}–${localTimePart(lesson.ends_at_local)} · ${lesson.room_name || t('зал не указан')}`} />
-              <InfoRow icon={<UserIcon size={14} />} text={lesson.teacher_name || t('преподаватель не назначен')} />
+              <InfoRow
+                icon={<UserIcon size={14} />}
+                text={lesson.is_substitution
+                  ? t('Замена: {teacher} (вместо {original})', { teacher: lesson.teacher_name, original: lesson.original_teacher_name })
+                  : lesson.teacher_name || t('преподаватель не назначен')}
+              />
               {lesson.teacher_absence && canAct && (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: '#FFF1F2', border: '1px solid #FECDD3', borderRadius: 10, padding: '10px 12px' }}>
                   <UserX size={16} style={{ color: ABSENCE_COLOR, flexShrink: 0, marginTop: 1 }} />
@@ -1893,6 +1931,7 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
               )}
               {canAct && (
                 <>
+                  {onSubstitute && <button style={secondaryBtn} onClick={() => onSubstitute(lesson)}>{lesson.is_substitution ? t('Изменить замену') : t('Назначить замену')}</button>}
                   <button style={secondaryBtn} onClick={() => setMode('reschedule')}>{t('Перенести')}</button>
                   <button style={dangerBtn} onClick={() => setMode('cancel')}>{t('Отменить занятие')}</button>
                 </>

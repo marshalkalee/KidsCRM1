@@ -238,6 +238,7 @@ class ChildScheduleView(ParentView):
                 "group__branch",
                 "room__branch",
                 "teacher",
+                "original_teacher",
                 "rescheduled_from",
                 "rescheduled_to",
             )
