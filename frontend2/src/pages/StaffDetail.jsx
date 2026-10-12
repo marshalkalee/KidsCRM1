@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { MapPin, Phone, SearchX, UsersRound } from 'lucide-react'
+import { CalendarOff, MapPin, Phone, SearchX, UsersRound } from 'lucide-react'
 import api from '../api/axios'
 import { ROLE_LABELS } from '../session/SessionContext'
 import { Avatar, Badge, Card, EmptyState, ErrorState, PageHeader, Skeleton } from '../ui'
@@ -74,6 +74,7 @@ export default function StaffDetail() {
               <span>{allBranches ? t('Все филиалы') : branchNames.join(', ')}</span>
             </div>
           </div>
+          <UpcomingAbsences staffId={staff.id} />
         </Card>
 
         <Card>
@@ -102,6 +103,40 @@ export default function StaffDetail() {
           )}
         </Card>
       </div>
+    </div>
+  )
+}
+
+const ABSENCE_TONES = { vacation: 'info', sick: 'danger', day_off: 'warning', other: 'neutral' }
+const shortDate = value => `${value.slice(8, 10)}.${value.slice(5, 7)}`
+
+/** TRU-182: ближайшие отпуска, больничные и отгулы сотрудника. */
+function UpcomingAbsences({ staffId }) {
+  const [items, setItems] = useState(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    api.get('schedule/absences/', { params: { staff: staffId, date_from: today }, signal: controller.signal })
+      .then(res => setItems(listOf(res).slice(0, 5)))
+      .catch(() => setItems([]))
+    return () => controller.abort()
+  }, [staffId])
+
+  if (!items?.length) return null
+  return (
+    <div className="mt-4 w-full border-t border-line pt-4 text-left">
+      <p className="mb-2 flex items-center gap-2 px-2 text-[12px] font-bold uppercase tracking-wide text-ink-subtle">
+        <CalendarOff className="size-3.5" />{t('Ближайшие отсутствия')}
+      </p>
+      <ul className="space-y-1.5">
+        {items.map(item => (
+          <li key={item.id} className="flex items-center justify-between gap-2 px-2 text-[13px] text-ink">
+            <span>{item.starts_on === item.ends_on ? shortDate(item.starts_on) : `${shortDate(item.starts_on)} – ${shortDate(item.ends_on)}`}</span>
+            <Badge tone={ABSENCE_TONES[item.kind] || 'neutral'}>{t(item.kind_display)}</Badge>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

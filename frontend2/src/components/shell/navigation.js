@@ -1,6 +1,7 @@
 import {
   Building2,
   CalendarDays,
+  CalendarOff,
   ChartColumn,
   CheckSquare,
   Contact,
@@ -39,6 +40,7 @@ export const NAV_SECTIONS = [
       { to: '/groups', get label() { return t('Группы') }, icon: UsersRound },
       { to: '/schedule', get label() { return t('Расписание') }, icon: CalendarDays },
       { to: '/attendance', get label() { return t('Посещаемость') }, icon: CheckSquare },
+      { to: '/absences', get label() { return t('Отсутствия') }, icon: CalendarOff, permission: 'can_edit_schedule' },
       { to: '/tasks', get label() { return t('Задачи') }, icon: ListTodo },
       { to: '/money', get label() { return t('Деньги') }, icon: Wallet, permission: 'can_view_client_money' },
       { to: '/announcements', get label() { return t('Объявления') }, icon: Megaphone, permission: 'can_manage_announcements' },
