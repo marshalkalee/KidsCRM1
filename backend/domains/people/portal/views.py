@@ -512,6 +512,18 @@ class ChildMoneyView(ParentView):
         return Response(money.money(child))
 
 
+class ChildCenterView(ParentView):
+    """«О центре»: профиль центра, филиалы с адресом и часами, группы ребёнка."""
+
+    def get(self, request, child_id, version=None):
+        from . import access, center
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(center.center(child))
+
+
 class ChildParentNotesView(ParentView):
     """Teacher notes and homework visible to one child and their parents (TRU-148)."""
 

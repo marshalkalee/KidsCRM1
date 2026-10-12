@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, BookOpen, CalendarDays, Clock, MapPin, Megaphone, Snowflake, UserRound, Wallet } from 'lucide-react'
+import { ArrowRight, BookOpen, Building2, CalendarDays, Clock, MapPin, Megaphone, Snowflake, UserRound, Wallet } from 'lucide-react'
 import { Card, ErrorState, Skeleton, cn, money, plural } from '../../ui'
 import { locale, t } from '../../i18n'
 import { usePortalData } from '../api'
@@ -55,7 +55,24 @@ export default function ParentHome() {
       <SubscriptionCard subscription={data.subscription} />
       <ToPay amount={Number(data.to_pay)} />
       <News />
+      <CenterLink />
     </div>
+  )
+}
+
+/** На телефоне «О центре» нет в нижнем меню — переход с главной. */
+function CenterLink() {
+  return (
+    <Link to="/parent/center" className="block lg:hidden">
+      <Card className="flex items-center gap-3 py-4 transition-shadow hover:shadow-pop">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Building2 className="size-5" /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-semibold text-ink">{t('О центре')}</span>
+          <span className="block text-[13px] text-ink-muted">{t('Адреса, часы работы, контакты и группы')}</span>
+        </span>
+        <ArrowRight className="size-4 text-ink-subtle" />
+      </Card>
+    </Link>
   )
 }
 

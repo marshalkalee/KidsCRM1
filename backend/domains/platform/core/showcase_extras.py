@@ -192,7 +192,7 @@ class Extras:
         updated = 0
         for group in Group.objects.for_tenant(self.org).select_related("direction"):
             name = group.direction.name if group.direction_id else group.name
-            text = next((v for k, v in GROUP_DESCRIPTIONS.items() if k in name), "")
+            text = next((v for k, v in GROUP_DESCRIPTIONS.items() if k.lower() in name.lower()), "")
             if text and not group.description:
                 group.description = text
                 group.save(update_fields=["description"])

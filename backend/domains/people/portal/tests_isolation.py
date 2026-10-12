@@ -54,6 +54,7 @@ CASES = {
     "child-lesson-requests": ("child", "get"),
     "child-summary": ("child", "get"),
     "child-money": ("child", "get"),
+    "child-center": ("child", "get"),
     "child-parent-notes": ("child", "get"),
     "child-parent-note-read": ("child-note", "post"),
     "session-detail": ("session", "delete"),

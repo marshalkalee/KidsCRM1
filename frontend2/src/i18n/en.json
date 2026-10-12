@@ -2551,5 +2551,10 @@
   "управляющий": "manager",
   "администратор": "administrator",
   "бухгалтер": "accountant",
-  "преподаватель": "teacher"
+  "преподаватель": "teacher",
+  "Адреса, часы работы, контакты и группы": "Addresses, opening hours, contacts and groups",
+  "Группы ребёнка": "Child's groups",
+  "Здесь занимается ребёнок": "Your child studies here",
+  "На карте": "On the map",
+  "Что делают на занятиях и что взять с собой.": "What happens in class and what to bring."
 }
