@@ -9,12 +9,14 @@ Subscription.status, а результат вычисления на лету: �
 
 import logging
 
+from django.db.models import Exists, OuterRef
+
 from domains.platform.core.utils import today_for_org
 from domains.platform.tenants.models import Organization
 from domains.platform.tenants.org_settings import RULE_RENEWAL_OFFER_ENABLED, get_org_setting
 
-from .freezes import finish_freeze
-from .models import Subscription
+from .freezes import finish_freeze, freezes_covering, start_freeze
+from .models import Subscription, SubscriptionFreeze
 from .renewals import is_ending_soon
 from .subscriptions import transition_status
 
@@ -109,11 +111,19 @@ def _update_organization(organization, today) -> int:
         if is_ending_soon(subscription, today):
             suggest_renewal(subscription)
 
-    # Заморозка закончилась — по ПОСЛЕДНЕЙ заморозке: старая закончившаяся
-    # при новой, ещё идущей, не должна размораживать абонемент.
-    for subscription in subscriptions.filter(status=Subscription.Status.FROZEN).iterator():
-        latest = subscription.freezes.order_by("-starts_on").first()
-        if latest is not None and latest.ends_on is not None and latest.ends_on < today:
-            changed += safely(finish_freeze, subscription)
+    # Статус «заморожен» — ровно пока сегодня внутри какой-то заморозки
+    # (TRU-132). Заморозка закончилась — размораживаем, но не если уже идёт
+    # следующая; заморозка, оформленная заранее, началась — замораживаем.
+    # Так же исправляются абонементы, замороженные раньше срока до TRU-132.
+    in_freeze = Exists(
+        freezes_covering(SubscriptionFreeze.objects.filter(subscription=OuterRef("pk")), today)
+    )
+    finished = subscriptions.filter(~in_freeze, status=Subscription.Status.FROZEN)
+    for subscription in finished.iterator():
+        changed += safely(finish_freeze, subscription)
+
+    started = subscriptions.filter(in_freeze, status=Subscription.Status.ACTIVE)
+    for subscription in started.iterator():
+        changed += safely(start_freeze, subscription)
 
     return changed

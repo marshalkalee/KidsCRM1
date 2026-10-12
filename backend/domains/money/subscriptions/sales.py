@@ -32,12 +32,14 @@ def sell_subscription(
     payment_method,
     comment="",
 ):
+    list_price = subscription_type_version.price
+    # Скидка больше цены давала отрицательную стоимость абонемента (TRU-131).
+    if discount_amount < 0 or discount_amount > list_price:
+        raise ValueError("Скидка должна быть от 0 до стоимости абонемента.")
     if discount_amount and not discount_reason:
         raise ValueError("Скидка без причины не допускается")
 
     ends_on = starts_on + timedelta(days=subscription_type_version.duration_days)
-
-    list_price = subscription_type_version.price
     subscription = Subscription.objects.create(
         organization=child.organization,
         child=child,

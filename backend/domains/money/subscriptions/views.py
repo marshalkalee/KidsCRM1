@@ -122,10 +122,7 @@ class SubscriptionViewSet(
         subscription = self.get_object()
         data = FreezeRequestSerializer(data=request.data)
         data.is_valid(raise_exception=True)
-        if subscription.status != Subscription.Status.ACTIVE:
-            return Response(
-                {"detail": "Заморозить можно только действующий абонемент."}, status=400
-            )
+        # Статус, даты, лимит и пересечения проверяет freeze_subscription (TRU-132).
         try:
             freeze_subscription(subscription, actor=request.user, **data.validated_data)
         except ValueError as exc:

@@ -5,6 +5,7 @@ import { fetchChildSubscriptions } from '../../api/subscriptions'
 import { Button, Field, Input, Modal, Select, Skeleton, apiErrorMessage, cn, money, useToast } from '../../ui'
 import { t } from '../../i18n'
 import api from '../../api/axios'
+import { toISODate } from '../../utils/calendarDate'
 
 // Kaspi первым — самый частый случай у стойки (ТЗ п. 10.4).
 const METHODS = [
@@ -32,7 +33,9 @@ const hasDebt = s => Number(s.debt) > 0
 export default function AcceptPaymentModal({ child, subscriptionId, onClose, onPaid }) {
   const toast = useToast()
   const [subscriptions, setSubscriptions] = useState(null)
-  const [form, setForm] = useState({ subscription: '', amount: '', method: 'kaspi_transfer', comment: '', payer: '' })
+  // Дата оплаты (TRU-131): вчерашний перевод фиксируют вчерашним числом.
+  const [today] = useState(() => toISODate(new Date()))
+  const [form, setForm] = useState({ subscription: '', amount: '', method: 'kaspi_transfer', comment: '', payer: '', paid_on: today })
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [key] = useState(newKey)
@@ -186,6 +189,20 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
           </Field>
 
           <MethodPicker value={form.method} onChange={method => setForm({ ...form, method })} />
+
+          <Field label={t('Дата')} required error={errors.paid_on}>
+            {({ id, invalid }) => (
+              <Input
+                id={id}
+                invalid={invalid}
+                type="date"
+                max={today}
+                value={form.paid_on}
+                onChange={e => setForm({ ...form, paid_on: e.target.value })}
+                required
+              />
+            )}
+          </Field>
 
           <Field label={t('Комментарий')} error={errors.comment}>
             {({ id }) => <Input id={id} value={form.comment} onChange={e => setForm({ ...form, comment: e.target.value })} placeholder={t('Необязательно')} />}
