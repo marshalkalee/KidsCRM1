@@ -30,6 +30,8 @@ SHORT_TASKS = "short_tasks"
 FEATURE_GROUPS = {
     "chat": "chat",
     "marketing_recommendations": "digest",
+    "group_promotion": "digest",
+    "digest_translation": "digest",
     "attendance_photo": "attendance_photo",
     "import_clean": "import_clean",
 }

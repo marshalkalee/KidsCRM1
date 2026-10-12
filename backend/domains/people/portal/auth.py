@@ -1,18 +1,20 @@
 """
-Вход родителя по одноразовому коду (TRU-135, ADR-0007).
+Вход родителя по телефону и паролю (Д40; раньше — по коду, TRU-135).
 
-Защита — выше, чем у входа сотрудников: это единственный вход без пароля,
-и за ним данные несовершеннолетних.
+Пароль выдаёт администратор центра в карточке родителя («Доступ в
+кабинет» → «Выдать пароль»): система генерирует его, показывает один раз,
+родитель меняет его в профиле. Забыл — администратор выдаёт новый, и все
+прежние входы закрываются.
 
-- Ответ на «пришлите код» одинаков для любого номера: есть он в базе или
-  нет — по форме входа нельзя проверить, ходит ли ребёнок в центр. Для
-  неизвестного номера тоже создаётся запрос кода (код никуда не уходит),
-  так что лимиты, ответы и время ответа совпадают; отправка — в фоне.
-- Лимиты: не чаще раза в RESEND_SECONDS и не больше CODES_PER_HOUR кодов
-  на номер, IP_CODES_PER_HOUR с одного IP. Считаются по таблице запросов,
-  а не в кэше: одинаково на всех серверах.
-- Код: 6 цифр, живёт OTP_CODE_TTL_SECONDS, одноразовый, после
-  MAX_ATTEMPTS неверных вводов сгорает. Хранится только HMAC.
+Защита — данные несовершеннолетних:
+
+- Ответ на неверный вход одинаков для любого номера: по форме нельзя
+  проверить, ходит ли ребёнок в центр. Для неизвестного номера пароль всё
+  равно проверяется с «пустым» хэшем — время ответа одно и то же.
+- Лимиты неудачных попыток: FAILED_PER_PHONE за FAILED_WINDOW на номер и
+  FAILED_PER_IP за час с одного IP. Считаются по журналу входов, а не в
+  кэше: одинаково на всех серверах.
+- Пароль хранится только хэшем (как у сотрудников).
 - Сессия: случайный токен, в базе — хэш; живёт SESSION_DAYS и
   продлевается, пока родитель заходит.
 """
@@ -20,30 +22,32 @@
 import hashlib
 import hmac
 import secrets
-import threading
 from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
 from django.utils import timezone
 
 from domains.platform.core.audit import AuditLog
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
-from domains.platform.otp.senders import send_code
 
 from . import access
-from .models import OtpChallenge, ParentAccessLog, ParentAccount, ParentSession
+from .models import ParentAccessLog, ParentAccount, ParentSession
 
-CODE_LENGTH = 6
-MAX_ATTEMPTS = 5
-RESEND_SECONDS = 60
-CODES_PER_HOUR = 5
-IP_CODES_PER_HOUR = 20
 SESSION_DAYS = 90
 # Продлевать срок не чаще раза в день — не писать в базу на каждый запрос.
 SESSION_TOUCH_EVERY = timedelta(days=1)
-
-CODE_SENT = "Если номер есть в базе центра, мы отправили на него код."
+FAILED_PER_PHONE = 5
+FAILED_WINDOW = timedelta(minutes=15)
+FAILED_PER_IP = 20
+MIN_PASSWORD = 8
+# Выданный пароль — без похожих символов (0/O, 1/l/I): его диктуют и пересылают.
+ISSUED_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
+ISSUED_LENGTH = 10
+WRONG_LOGIN = "Неверный номер или пароль."
+# Хэш «ничего» — сравниваем с ним, когда аккаунта нет, чтобы время ответа совпадало.
+_DUMMY_HASH = make_password(None)
 
 
 class LoginError(Exception):
@@ -76,110 +80,45 @@ def _log(event, phone, request_meta, account=None):
     )
 
 
-def dispatch_code(phone: str, code: str) -> None:
-    """Отправка — в фоне после ответа: время ответа не зависит от того,
-    известен ли номер и сколько думал провайдер."""
-    threading.Thread(target=send_code, args=(phone, code), daemon=True).start()
-
-
-def request_code(raw_phone: str, request_meta: dict) -> dict:
-    phone = normalize(raw_phone)
-    _issue_code(
-        phone,
-        request_meta,
-        purpose=OtpChallenge.Purpose.LOGIN,
-        send=access.phone_is_known(phone),
-    )
-    return {
-        "detail": CODE_SENT,
-        "phone": phone,
-        "resend_in": RESEND_SECONDS,
-        "expires_in": settings.OTP_CODE_TTL_SECONDS,
-    }
-
-
-def _issue_code(phone, request_meta, *, purpose, send, account=None):
-    """Новый код с лимитами. send=False — запрос создаётся, но код никуда
-    не уходит (неизвестный номер при входе)."""
-    ip = request_meta.get("ip")
+def _failed_recently(phone, ip) -> int | None:
+    """Сколько ждать до новой попытки или None — можно пробовать."""
     now = timezone.now()
+    failed = ParentAccessLog.objects.filter(event=ParentAccessLog.Event.LOGIN_FAILED)
+    by_phone = failed.filter(phone=phone, created_at__gte=now - FAILED_WINDOW)
+    if by_phone.count() >= FAILED_PER_PHONE:
+        oldest = by_phone.order_by("created_at").first()
+        return int((oldest.created_at + FAILED_WINDOW - now).total_seconds()) + 1
     hour_ago = now - timedelta(hours=1)
-
-    recent = OtpChallenge.objects.filter(phone=phone, created_at__gte=hour_ago)
-    last = recent.order_by("-created_at").first()
-    wait = None
-    if last and (now - last.created_at).total_seconds() < RESEND_SECONDS:
-        wait = RESEND_SECONDS - int((now - last.created_at).total_seconds())
-    elif recent.count() >= CODES_PER_HOUR:
-        oldest = recent.order_by("created_at").first()
-        wait = int((oldest.created_at + timedelta(hours=1) - now).total_seconds()) + 1
-    elif (
-        ip
-        and OtpChallenge.objects.filter(ip=ip, created_at__gte=hour_ago).count()
-        >= IP_CODES_PER_HOUR
-    ):
-        wait = 3600
-    if wait is not None:
-        _log(ParentAccessLog.Event.CODE_RATE_LIMITED, phone, request_meta)
-        minutes = max(1, round(wait / 60))
-        message = (
-            f"Новый код можно запросить через {wait} с."
-            if wait < 120
-            else f"Слишком много запросов. Попробуйте через {minutes} мин."
-        )
-        raise LoginError(message, status=429, retry_after=wait)
-
-    code = "".join(secrets.choice("0123456789") for _ in range(CODE_LENGTH))
-    OtpChallenge.objects.create(
-        phone=phone,
-        purpose=purpose,
-        account=account,
-        code_hash=_hash(f"{phone}:{code}"),
-        ip=ip,
-        expires_at=now + timedelta(seconds=settings.OTP_CODE_TTL_SECONDS),
-        channel="pending" if send else "",
-    )
-    _log(ParentAccessLog.Event.CODE_REQUESTED, phone, request_meta, account=account)
-    if send:
-        transaction.on_commit(lambda: dispatch_code(phone, code))
+    if ip and failed.filter(ip=ip, created_at__gte=hour_ago).count() >= FAILED_PER_IP:
+        return 3600
+    return None
 
 
-def verify_code(raw_phone: str, code: str, request_meta: dict) -> dict:
-    """Ошибка поднимается после транзакции: счётчик попыток и запись в
-    журнал должны сохраниться, иначе лимит попыток не работает."""
+def login(raw_phone: str, password: str, request_meta: dict) -> dict:
+    """Телефон + пароль → токен сессии. Ошибка — одна и та же для любого номера."""
     phone = normalize(raw_phone)
-    code = "".join(ch for ch in (code or "") if ch.isdigit())
-    with transaction.atomic():
-        outcome = _check_code(phone, code, request_meta)
-    if isinstance(outcome, LoginError):
-        raise outcome
-    return outcome
-
-
-def _check_code(phone, code, request_meta):
-    now = timezone.now()
-    challenge = (
-        OtpChallenge.objects.select_for_update()
-        .filter(
-            phone=phone,
-            purpose=OtpChallenge.Purpose.LOGIN,
-            used_at__isnull=True,
-            expires_at__gt=now,
-            attempts__lt=MAX_ATTEMPTS,
+    wait = _failed_recently(phone, request_meta.get("ip"))
+    if wait is not None:
+        minutes = max(1, round(wait / 60))
+        raise LoginError(
+            f"Слишком много неудачных попыток. Попробуйте через {minutes} мин.",
+            status=429,
+            retry_after=wait,
         )
-        .order_by("-created_at")
-        .first()
-    )
-    # Номер мог пропасть из базы, пока родитель вводил код, — тогда не пускаем.
-    error = _consume(
-        challenge, phone, code, request_meta, extra_ok=lambda: access.phone_is_known(phone)
-    )
-    if error:
-        return error
-    account, _ = ParentAccount.objects.get_or_create(phone=phone)
+    account = ParentAccount.objects.filter(phone=phone).first()
+    stored = account.password if account and account.password else _DUMMY_HASH
+    matches = check_password(password or "", stored)
+    # Номер мог пропасть из базы центра — тогда не пускаем, даже с верным паролем.
+    if not (account and account.password and matches and access.phone_is_known(phone)):
+        _log(ParentAccessLog.Event.LOGIN_FAILED, phone, request_meta, account=account)
+        raise LoginError(WRONG_LOGIN, status=400)
+    return _start_session(account, request_meta)
+
+
+def _start_session(account, request_meta) -> dict:
+    now = timezone.now()
     account.last_login_at = now
     account.save(update_fields=["last_login_at"])
-
     token = secrets.token_urlsafe(32)
     session = ParentSession.objects.create(
         account=account,
@@ -188,31 +127,58 @@ def _check_code(phone, code, request_meta):
         ip=request_meta.get("ip"),
         expires_at=now + timedelta(days=SESSION_DAYS),
     )
-    _log(ParentAccessLog.Event.LOGIN, phone, request_meta, account=account)
+    _log(ParentAccessLog.Event.LOGIN, account.phone, request_meta, account=account)
     _audit_login(account, session)
     return {"token": token, "expires_at": session.expires_at}
 
 
-def _consume(challenge, phone, code, request_meta, extra_ok=lambda: True):
-    """Проверить код и погасить его. Ошибка — LoginError (не поднимается:
-    вызывающий выходит из транзакции, чтобы счётчик попыток сохранился)."""
-    if challenge is None:
-        _log(ParentAccessLog.Event.LOGIN_FAILED, phone, request_meta)
-        return LoginError("Код устарел или попыток больше нет. Запросите новый код.")
-    challenge.attempts += 1
-    matches = len(code) == CODE_LENGTH and hmac.compare_digest(
-        challenge.code_hash, _hash(f"{phone}:{code}")
+def _set_password(account, password):
+    account.password = make_password(password)
+    account.password_set_at = timezone.now()
+    account.save(update_fields=["password", "password_set_at"])
+
+
+@transaction.atomic
+def issue_password(raw_phone: str) -> str:
+    """Новый пароль для номера родителя (выдаёт администратор). Прежние входы
+    закрываются: выдают новый, когда пароль забыли или он попал не туда."""
+    phone = normalize(raw_phone)
+    if not access.phone_is_known(phone):
+        raise LoginError("У этого номера нет детей в центре — кабинет ему не нужен.")
+    password = "".join(secrets.choice(ISSUED_ALPHABET) for _ in range(ISSUED_LENGTH))
+    account, _ = ParentAccount.objects.get_or_create(phone=phone)
+    _set_password(account, password)
+    ParentSession.objects.filter(account=account, revoked_at__isnull=True).update(
+        revoked_at=timezone.now()
     )
-    if not matches or not extra_ok():
-        challenge.save(update_fields=["attempts"])
-        _log(ParentAccessLog.Event.LOGIN_FAILED, phone, request_meta, account=challenge.account)
-        left = MAX_ATTEMPTS - challenge.attempts
-        if left <= 0:
-            return LoginError("Код введён неверно слишком много раз. Запросите новый код.")
-        return LoginError(f"Неверный код. Осталось попыток: {left}.")
-    challenge.used_at = timezone.now()
-    challenge.save(update_fields=["attempts", "used_at"])
-    return None
+    return password
+
+
+@transaction.atomic
+def change_password(session, current: str, new: str, request_meta: dict) -> None:
+    """Родитель меняет пароль сам: нужен текущий. Остальные устройства выходят."""
+    account = session.account
+    if not check_password(current or "", account.password or _DUMMY_HASH):
+        _log(ParentAccessLog.Event.LOGIN_FAILED, account.phone, request_meta, account=account)
+        raise LoginError("Текущий пароль неверный.")
+    new = new or ""
+    if len(new) < MIN_PASSWORD:
+        raise LoginError(f"Новый пароль — не короче {MIN_PASSWORD} символов.")
+    if new == current:
+        raise LoginError("Новый пароль совпадает с текущим.")
+    _set_password(account, new)
+    ParentSession.objects.filter(account=account, revoked_at__isnull=True).exclude(
+        pk=session.pk
+    ).update(revoked_at=timezone.now())
+    _log(ParentAccessLog.Event.PASSWORD_CHANGED, account.phone, request_meta, account=account)
+
+
+def has_password(raw_phone: str) -> bool:
+    try:
+        phone = normalize(raw_phone)
+    except LoginError:
+        return False
+    return ParentAccount.objects.filter(phone=phone).exclude(password="").exists()
 
 
 def _audit_login(account, session):
