@@ -48,6 +48,13 @@
 
 Список нужно согласовать с центром — см. `docs/project-status.md`, п. 20.
 
+## «О центре»
+
+`GET /api/v1/portal/children/<id>/center/` (`portal/center.py`): профиль центра
+(только опубликованный, Д39), филиалы — свой первым — с адресом, часами,
+телефоном, WhatsApp и ссылкой на 2GIS, группы ребёнка с описанием. Экран —
+`frontend2/src/parent/pages/ParentCenter.jsx`.
+
 ## Безопасность (TRU-141)
 
 - **Изоляция.** `portal/tests_isolation.py` (метка `tenant_isolation`,
