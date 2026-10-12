@@ -11,7 +11,8 @@ frontend2 смотрели на десятках строк, а не на трё
 ничего не дублирует (метка в Organization.settings["demo_seed"]).
 Заявки воронки (TRU-94) — своей меткой "demo_leads": досеиваются и в уже
 наполненную организацию.
-Только DEBUG — в проде команда откажется работать.
+Только в разработке или на демо-сервере с DEMO_DATA_ALLOWED=true —
+на боевом сервере команда откажется работать.
 """
 
 import datetime
@@ -161,7 +162,7 @@ NOTES = [
 
 
 class Command(BaseCommand):
-    help = "Наполняет организацию демо-данными для разработки (только DEBUG)."
+    help = "Наполняет организацию демо-данными для разработки (разработка или демо-сервер)."
     # Телефоны педагогов уникальны на всю базу — у другой демо-организации
     # (seed_showcase) свой префикс, иначе get_or_create вернул бы чужих.
     teacher_phone = "+7700900{:04d}"
@@ -172,8 +173,10 @@ class Command(BaseCommand):
         parser.add_argument("--seed", type=int, default=2026)
 
     def handle(self, *args, phone, children, seed, **options):
-        if not settings.DEBUG:
-            raise CommandError("seed_demo — только для разработки (DEBUG=True).")
+        if not settings.DEMO_DATA_ALLOWED:
+            raise CommandError(
+                "seed_demo — только для разработки или демо-сервера (DEMO_DATA_ALLOWED=true)."
+            )
         owner = User.objects.filter(phone=phone, role=User.Role.OWNER).first()
         if owner is None or owner.organization is None:
             raise CommandError(f"Нет владельца организации с телефоном {phone}.")

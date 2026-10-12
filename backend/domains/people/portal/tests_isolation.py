@@ -36,13 +36,12 @@ FAR_AWAY = "+77029990000"
 #   own    — без идентификатора, отдаёт только своё;
 #   child / makeup / session / announcement — идентификатор чужого объекта → 404.
 CASES = {
-    "request-code": ("public", "post"),
-    "verify": ("public", "post"),
+    "login": ("public", "post"),
     "logout": ("own", "post"),
     "sessions": ("own", "get"),
     "me": ("own", "get"),
     "profile": ("own", "get"),
-    "phone-change": ("own", "post"),
+    "password": ("own", "post"),
     "notifications": ("own", "get"),
     "push": ("own", "post"),
     "announcements": ("own", "get"),
@@ -54,6 +53,7 @@ CASES = {
     "child-lesson-requests": ("child", "get"),
     "child-summary": ("child", "get"),
     "child-money": ("child", "get"),
+    "child-center": ("child", "get"),
     "child-parent-notes": ("child", "get"),
     "child-parent-note-read": ("child-note", "post"),
     "session-detail": ("session", "delete"),

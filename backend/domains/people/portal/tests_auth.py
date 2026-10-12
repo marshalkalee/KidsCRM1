@@ -1,11 +1,10 @@
 """
-Вход родителя по коду (TRU-135): полный путь, неразглашение номера,
-лимиты, одноразовость кода, сессии, изоляция от API сотрудников, аудит.
-Отправка кода подменена — код перехватываем.
+Вход родителя по телефону и паролю (Д40): пароль выдаёт администратор,
+неразглашение номера, лимиты неудачных попыток, смена пароля, сессии,
+изоляция от API сотрудников, аудит.
 """
 
 from datetime import date, timedelta
-from unittest import mock
 
 from django.test import TestCase, tag
 from django.utils import timezone
@@ -17,7 +16,7 @@ from domains.platform.tenants.models import Branch, Organization
 from domains.platform.users.models import User
 
 from . import auth
-from .models import OtpChallenge, ParentAccessLog, ParentSession
+from .models import ParentAccessLog, ParentAccount, ParentSession
 
 MAMA = "+77011234567"
 
@@ -44,25 +43,26 @@ class PortalAuthBase(TestCase):
         Branch.objects.create(organization=self.org, name="Алмалы")
         self.parent, (self.child,) = family(self.org, "Касымова Гульмира", MAMA, "Касымова Айлин")
         self.api = APIClient()
-        self.sent = []
-        patcher = mock.patch.object(
-            auth, "dispatch_code", side_effect=lambda phone, code: self.sent.append((phone, code))
+        self.passwords = {}
+
+    def password_for(self, phone=MAMA):
+        """Пароль выдаётся один раз на номер — повторная выдача закрыла бы входы."""
+        if phone not in self.passwords:
+            self.passwords[phone] = auth.issue_password(phone)
+        return self.passwords[phone]
+
+    def attempt(self, phone=MAMA, password=None, ip="10.0.0.1"):
+        return self.api.post(
+            "/api/v1/portal/auth/login/",
+            {
+                "phone": phone,
+                "password": self.password_for(phone) if password is None else password,
+            },
+            REMOTE_ADDR=ip,
         )
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def request_code(self, phone=MAMA, ip="10.0.0.1"):
-        with self.captureOnCommitCallbacks(execute=True):
-            return self.api.post(
-                "/api/v1/portal/auth/request-code/", {"phone": phone}, REMOTE_ADDR=ip
-            )
-
-    def verify(self, code, phone=MAMA):
-        return self.api.post("/api/v1/portal/auth/verify/", {"phone": phone, "code": code})
 
     def login(self, phone=MAMA):
-        self.request_code(phone)
-        response = self.verify(self.sent[-1][1], phone)
+        response = self.attempt(phone)
         self.assertEqual(response.status_code, 200, response.data)
         return response.data["token"]
 
@@ -72,19 +72,15 @@ class PortalAuthBase(TestCase):
         return client
 
     def age_challenges(self, phone=MAMA, by=timedelta(minutes=2)):
-        for challenge in OtpChallenge.objects.filter(phone=phone):
-            OtpChallenge.objects.filter(pk=challenge.pk).update(
-                created_at=challenge.created_at - by
-            )
+        """Со входа по коду: теперь ждать нечего — оставлено для старых тестов."""
 
 
 class LoginFlowTests(PortalAuthBase):
-    def test_phone_code_session_children(self):
-        self.request_code("8 701 123 45 67")  # нормализуется как везде в CRM
-        self.assertEqual(self.sent[0][0], MAMA)
-        self.assertEqual(len(self.sent[0][1]), auth.CODE_LENGTH)
-        token = self.login()
-        me = self.as_parent(token).get("/api/v1/portal/me/").data
+    def test_phone_password_session_children(self):
+        self.password_for(MAMA)
+        response = self.attempt("8 701 123 45 67", self.passwords[MAMA])  # нормализуется
+        self.assertEqual(response.status_code, 200, response.data)
+        me = self.as_parent(response.data["token"]).get("/api/v1/portal/me/").data
         self.assertEqual([c["full_name"] for c in me["children"]], ["Касымова Айлин"])
         self.assertEqual(me["phone"], MAMA)
 
@@ -96,89 +92,72 @@ class LoginFlowTests(PortalAuthBase):
         ]
         self.assertEqual(names, ["Ахметов Тимур"])
 
-    def test_code_is_single_use_and_expires(self):
-        self.request_code()
-        code = self.sent[-1][1]
-        self.assertEqual(self.verify(code).status_code, 200)
-        self.assertEqual(self.verify(code).status_code, 400)
+    def test_password_is_stored_only_as_hash_and_is_readable(self):
+        password = self.password_for()
+        self.assertEqual(len(password), auth.ISSUED_LENGTH)
+        self.assertFalse(set(password) & set("0O1lI"))  # без похожих символов
+        stored = ParentAccount.objects.get(phone=MAMA).password
+        self.assertNotIn(password, stored)
+        self.assertTrue(stored.startswith(("pbkdf2_", "argon2", "bcrypt")))
 
-        self.age_challenges()
-        self.request_code()
-        OtpChallenge.objects.filter(used_at__isnull=True).update(expires_at=timezone.now())
-        self.assertEqual(self.verify(self.sent[-1][1]).status_code, 400)
-
-    def test_code_is_stored_only_as_hash(self):
-        self.request_code()
-        code = self.sent[-1][1]
-        challenge = OtpChallenge.objects.get()
-        self.assertNotIn(code, challenge.code_hash)
+    def test_new_password_closes_previous_sessions(self):
+        token = self.login()
+        auth.issue_password(MAMA)
+        self.assertEqual(self.as_parent(token).get("/api/v1/portal/me/").status_code, 401)
 
 
 class NoDisclosureTests(PortalAuthBase):
-    def test_same_answer_for_known_and_unknown_phone(self):
-        known = self.request_code(MAMA)
-        unknown = self.request_code("+77770000099")
-        self.assertEqual(known.status_code, unknown.status_code)
-        self.assertEqual(known.data["detail"], unknown.data["detail"])
-        self.assertEqual(set(known.data), set(unknown.data))
-        # Код уходит только на известный номер — за неизвестные не платим.
-        self.assertEqual([phone for phone, _ in self.sent], [MAMA])
+    def test_same_answer_for_wrong_password_unknown_phone_and_no_password(self):
+        self.password_for()
+        family(self.org, "Без пароля", "+77015550000", "Ребёнок")
+        answers = [
+            self.attempt(MAMA, "неверный"),
+            self.attempt("+77779998877", "что-то"),
+            self.attempt("+77015550000", "что-то"),
+        ]
+        self.assertEqual({r.status_code for r in answers}, {400})
+        self.assertEqual({r.data["detail"] for r in answers}, {auth.WRONG_LOGIN})
 
-    def test_unknown_phone_cannot_log_in_and_errors_match(self):
-        self.request_code("+77770000099")
-        unknown = self.verify("123456", phone="+77770000099")
-        self.request_code(MAMA)
-        wrong = self.verify("000000" if self.sent[-1][1] != "000000" else "111111")
-        self.assertEqual(unknown.status_code, wrong.status_code)
-        self.assertEqual(unknown.data, wrong.data)
-
-    def test_limits_are_the_same_for_unknown_phone(self):
-        self.request_code("+77770000099")
-        self.assertEqual(self.request_code("+77770000099").status_code, 429)
+    def test_password_for_unknown_phone_cannot_be_issued(self):
+        with self.assertRaises(auth.LoginError):
+            auth.issue_password("+77779998877")
 
 
 class RateLimitTests(PortalAuthBase):
-    def test_resend_not_sooner_than_a_minute(self):
-        self.assertEqual(self.request_code().status_code, 200)
-        again = self.request_code()
-        self.assertEqual(again.status_code, 429)
-        self.assertTrue(again["Retry-After"])
-        self.assertEqual(len(self.sent), 1)
+    def test_failed_attempts_per_phone(self):
+        for _ in range(auth.FAILED_PER_PHONE):
+            self.assertEqual(self.attempt(password="неверный").status_code, 400)
+        blocked = self.attempt()  # даже верный пароль — после лимита ждать
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("Retry-After", blocked)
 
-    def test_codes_per_hour_per_phone(self):
-        for _ in range(auth.CODES_PER_HOUR):
-            self.assertEqual(self.request_code().status_code, 200)
-            self.age_challenges()
-        response = self.request_code()
-        self.assertEqual(response.status_code, 429)
-        self.assertIn("мин", response.data["detail"])
-        self.assertTrue(
-            ParentAccessLog.objects.filter(event=ParentAccessLog.Event.CODE_RATE_LIMITED).exists()
-        )
-
-    def test_codes_per_hour_per_ip(self):
-        for i in range(auth.IP_CODES_PER_HOUR):
-            self.assertEqual(self.request_code(f"+7770000{i:04d}", ip="10.9.9.9").status_code, 200)
-        self.assertEqual(self.request_code("+77771112233", ip="10.9.9.9").status_code, 429)
-        self.assertEqual(self.request_code("+77771112233", ip="10.9.9.10").status_code, 200)
-
-    def test_wrong_attempts_burn_the_code(self):
-        self.request_code()
-        code = self.sent[-1][1]
-        wrong = "000000" if code != "000000" else "111111"
-        for left in range(auth.MAX_ATTEMPTS - 1, 0, -1):
-            response = self.verify(wrong)
-            self.assertIn(str(left), response.data["detail"])
-        self.assertIn("слишком много", self.verify(wrong).data["detail"])
-        self.assertEqual(self.verify(code).status_code, 400)  # верный код уже не поможет
-        self.assertEqual(
-            ParentAccessLog.objects.filter(event=ParentAccessLog.Event.LOGIN_FAILED).count(), 6
-        )
+    def test_failed_attempts_per_ip(self):
+        for n in range(auth.FAILED_PER_IP):
+            self.attempt(f"+7701000{n:04d}", "что-то", ip="10.0.0.9")
+        self.assertEqual(self.attempt(ip="10.0.0.9").status_code, 429)
 
     def test_bad_phone_is_explained(self):
-        response = self.api.post("/api/v1/portal/auth/request-code/", {"phone": "мама"})
+        response = self.attempt("123", "что-то")
         self.assertEqual(response.status_code, 400)
         self.assertIn("номер", response.data["detail"])
+
+
+class PasswordChangeTests(PortalAuthBase):
+    def test_change_needs_current_and_closes_other_devices(self):
+        here = self.as_parent(self.login())
+        other = self.as_parent(self.login())
+        url = "/api/v1/portal/profile/password/"
+        self.assertEqual(
+            here.post(url, {"current": "не тот", "new": "новый-пароль"}).status_code, 400
+        )
+        self.assertEqual(
+            here.post(url, {"current": self.passwords[MAMA], "new": "коротко"}).status_code, 400
+        )
+        ok = here.post(url, {"current": self.passwords[MAMA], "new": "новый-пароль"})
+        self.assertEqual(ok.status_code, 200, ok.data)
+        self.assertEqual(here.get("/api/v1/portal/me/").status_code, 200)
+        self.assertEqual(other.get("/api/v1/portal/me/").status_code, 401)
+        self.assertEqual(self.attempt(password="новый-пароль").status_code, 200)
 
 
 class SessionTests(PortalAuthBase):
@@ -295,3 +274,31 @@ class AccessTests(PortalAuthBase):
         self.assertTrue(
             ParentAccessLog.objects.filter(event=ParentAccessLog.Event.LOGIN, phone=MAMA).exists()
         )
+
+
+class StaffIssuesPasswordTests(PortalAuthBase):
+    """Пароль выдаёт администратор в карточке родителя (Д40)."""
+
+    def staff(self, role, phone):
+        user = User.objects.create_user(
+            phone=phone, password="x", full_name=role, organization=self.org, role=role
+        )
+        client = APIClient()
+        client.force_authenticate(user)
+        return client
+
+    def test_admin_issues_password_parent_logs_in(self):
+        admin = self.staff(User.Role.ADMIN, "+77010000301")
+        url = f"/api/v1/clients/parents/{self.parent.id}/portal-access/"
+        self.assertFalse(admin.get(url).data["has_password"])
+        issued = admin.post(url).data
+        self.assertEqual(issued["phone"], MAMA)
+        self.assertIn(issued["password"], issued["message"])
+        self.assertTrue(issued["whatsapp_url"].startswith("https://wa.me/"))
+        self.assertEqual(self.attempt(MAMA, issued["password"]).status_code, 200)
+        self.assertTrue(admin.get(url).data["has_password"])
+
+    def test_teacher_cannot_issue_password(self):
+        teacher = self.staff(User.Role.TEACHER, "+77010000302")
+        url = f"/api/v1/clients/parents/{self.parent.id}/portal-access/"
+        self.assertEqual(teacher.post(url).status_code, 403)

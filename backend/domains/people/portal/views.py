@@ -19,7 +19,7 @@ from domains.scheduling.schedule.enrollment_service import available_makeups_for
 from domains.scheduling.schedule.models import Lesson, LessonEnrollment
 
 from . import access, account, push
-from .auth import LoginError, logout, request_code, verify_code
+from .auth import LoginError, change_password, login, logout
 from .authentication import IsParent, ParentTokenAuthentication, request_meta
 from .lesson_requests import (
     ParentRequestError,
@@ -55,21 +55,15 @@ class PublicView(APIView):
     permission_classes = [AllowAny]
 
 
-class RequestCodeView(PublicView):
-    def post(self, request, version=None):
-        try:
-            return Response(request_code(request.data.get("phone", ""), request_meta(request)))
-        except LoginError as exc:
-            return _error(exc)
+class LoginView(PublicView):
+    """Телефон + пароль (Д40). Пароль выдаёт администратор центра."""
 
-
-class VerifyCodeView(PublicView):
     def post(self, request, version=None):
         try:
             return Response(
-                verify_code(
+                login(
                     request.data.get("phone", ""),
-                    request.data.get("code", ""),
+                    request.data.get("password", ""),
                     request_meta(request),
                 )
             )
@@ -467,25 +461,20 @@ class ProfileView(ParentView):
             return _error(exc)
 
 
-class PhoneChangeView(ParentView):
-    """Смена телефона: {phone} — код на новый номер; {phone, code} — сменить."""
+class PasswordView(ParentView):
+    """Смена пароля родителем: {current, new}; другие устройства выходят."""
 
     def post(self, request, version=None):
         try:
-            if request.data.get("code"):
-                result = account.confirm_phone_change(
-                    request.user,
-                    request.data.get("phone", ""),
-                    request.data["code"],
-                    request_meta(request),
-                )
-            else:
-                result = account.request_phone_change(
-                    request.user, request.data.get("phone", ""), request_meta(request)
-                )
-            return Response(result)
+            change_password(
+                request.auth,
+                request.data.get("current", ""),
+                request.data.get("new", ""),
+                request_meta(request),
+            )
         except LoginError as exc:
             return _error(exc)
+        return Response({"detail": "Пароль изменён."})
 
 
 class ChildSummaryView(ParentView):
@@ -510,6 +499,18 @@ class ChildMoneyView(ParentView):
         if child is None:
             return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
         return Response(money.money(child))
+
+
+class ChildCenterView(ParentView):
+    """«О центре»: профиль центра, филиалы с адресом и часами, группы ребёнка."""
+
+    def get(self, request, child_id, version=None):
+        from . import access, center
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(center.center(child))
 
 
 class ChildParentNotesView(ParentView):
