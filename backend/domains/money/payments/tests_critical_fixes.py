@@ -182,8 +182,11 @@ class NightlyStatusFreezeTests(TestCase):
             self.sub,
             actor=self.users[User.Role.ADMIN],
             starts_on=date.today() - timedelta(days=10),
-            ends_on=date.today() - timedelta(days=2),
+            ends_on=date.today() + timedelta(days=2),
         )
+        # Заморозка закончилась вчера (сдвигаем её даты прямо в базе): ночная
+        # задача ещё не успела разморозить абонемент.
+        self.sub.freezes.update(ends_on=date.today() - timedelta(days=2))
         self.sub.refresh_from_db()
         ends_on = self.sub.ends_on
         self.assertEqual(self.sub.status, Subscription.Status.FROZEN)

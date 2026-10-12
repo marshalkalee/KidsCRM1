@@ -82,7 +82,8 @@ export default function SubscriptionsTab({ child, onCountChange }) {
   useEffect(() => { load() }, [load])
 
   async function unfreeze(sub) {
-    const running = sub.freezes?.find(f => f.ends_on >= todayIso())
+    // Идущая заморозка: в истории может быть и запланированная на будущее (TRU-132).
+    const running = sub.freezes?.find(f => f.starts_on <= todayIso() && f.ends_on >= todayIso())
     const unused = running ? Math.max(daysBetween(todayIso(), running.ends_on), 0) : 0
     const ok = await confirm({
       title: t('Разморозить сегодня?'),
