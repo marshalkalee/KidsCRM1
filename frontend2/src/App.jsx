@@ -54,6 +54,9 @@ import AnalyticsTeachers from './pages/AnalyticsTeachers'
 import AnalyticsRejections from './pages/AnalyticsRejections'
 import AnalyticsBranches from './pages/AnalyticsBranches'
 import AnalyticsRisk from './pages/AnalyticsRisk'
+import AnalyticsChurn from './pages/AnalyticsChurn'
+import AnalyticsRenewals from './pages/AnalyticsRenewals'
+import AnalyticsForecast from './pages/AnalyticsForecast'
 import TaskEscalation from './pages/TaskEscalation'
 import ParentRequests from './pages/ParentRequests'
 import PageGroup, { TabRedirect } from './components/shell/PageGroup'
@@ -134,12 +137,15 @@ function StaffApp() {
                 <Route path="analytics/check-debt" element={<RequirePermission permission="can_view_analytics"><AnalyticsCheckDebt /></RequirePermission>} />
                 <Route path="analytics/attendance" element={<RequirePermission permission="can_view_analytics"><AnalyticsAttendance /></RequirePermission>} />
                 <Route path="analytics/risk" element={<RequirePermission permission="can_view_analytics"><AnalyticsRisk /></RequirePermission>} />
+                <Route path="analytics/churn" element={<RequirePermission permission="can_view_analytics"><AnalyticsChurn /></RequirePermission>} />
                 <Route path="analytics/funnel" element={<RequirePermission permission="can_view_analytics"><AnalyticsFunnel /></RequirePermission>} />
                 <Route path="analytics/groups" element={<RequirePermission permission="can_view_analytics"><AnalyticsGroups /></RequirePermission>} />
                 <Route path="analytics/branches" element={<RequirePermission permission="can_view_analytics"><AnalyticsBranches /></RequirePermission>} />
                 <Route path="analytics/rejections" element={<RequirePermission permission="can_view_analytics"><AnalyticsRejections /></RequirePermission>} />
                 <Route path="analytics/sources" element={<RequirePermission permission="can_view_analytics"><AnalyticsSources /></RequirePermission>} />
                 <Route path="analytics/teachers" element={<RequirePermission permission="can_view_analytics"><AnalyticsTeachers /></RequirePermission>} />
+                <Route path="analytics/renewals" element={<RequirePermission permission="can_view_analytics"><AnalyticsRenewals /></RequirePermission>} />
+                <Route path="analytics/forecast" element={<RequirePermission permission="can_view_analytics"><AnalyticsForecast /></RequirePermission>} />
                 <Route path="analytics/kit" element={<RequirePermission permission="can_view_analytics"><AnalyticsKit /></RequirePermission>} />
                 <Route path="groups" element={<Groups />} />
                 <Route path="groups/:id" element={<GroupDetail />} />

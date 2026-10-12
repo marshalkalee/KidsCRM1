@@ -27,6 +27,10 @@ from .models import Attendance
 
 User = get_user_model()
 
+# TRU-130: consume() списывает, только если дата занятия в сроке абонемента.
+# Занятия в фикстурах — с 21.09.2026, поэтому абонемент начинается раньше.
+SUBSCRIPTION_STARTS_ON = datetime.date(2026, 9, 1)
+
 
 def _authenticated_client(user):
     # См. domains.scheduling.schedule.tests._authenticated_client — та же
@@ -92,7 +96,7 @@ class AttendanceFixtureMixin:
             child=self.child,
             subscription_type_version=st.versions.latest(),
             direction=self.direction,
-            starts_on=datetime.date.today(),
+            starts_on=SUBSCRIPTION_STARTS_ON,
             ends_on=datetime.date.today() + datetime.timedelta(days=60),
             list_price=25000,
             price=25000,
@@ -118,6 +122,25 @@ class AttendanceMarkModelTest(AttendanceFixtureMixin, TestCase):
         self.assertTrue(attendance.consumed_from_subscription)
         self.assertEqual(attendance.subscription_id, sub.id)
         self.assertEqual(attendance.consume_outcome, ConsumeOutcome.CONSUMED.value)
+
+    def test_subscription_term_is_checked_against_lesson_date(self):
+        """TRU-130: отметку за прошедшее занятие ставят позже — абонемент,
+        закончившийся в день занятия, всё равно списывается."""
+        sub = self._create_subscription(sessions=8)
+        sub.ends_on = self.lesson.starts_at.date()
+        sub.save(update_fields=["ends_on"])
+        attendance = Attendance.objects.create(
+            organization=self.org,
+            lesson=self.lesson,
+            child=self.child,
+            status=Attendance.Status.ABSENT,
+        )
+
+        attendance.mark(Attendance.Status.PRESENT, actor=self.owner)
+
+        sub.refresh_from_db()
+        self.assertEqual(sub.sessions_remaining_cache, 7)
+        self.assertEqual(attendance.subscription_id, sub.id)
 
     def test_toggle_present_absent_present_charges_exactly_once(self):
         """ТЗ TRU-50: критерий приёмки — переключение статуса туда-обратно
@@ -374,7 +397,7 @@ class AttendanceMarkApiTest(APITestCase):
             child=self.child,
             subscription_type_version=st.versions.latest(),
             direction=self.direction,
-            starts_on=datetime.date.today(),
+            starts_on=SUBSCRIPTION_STARTS_ON,
             ends_on=datetime.date.today() + datetime.timedelta(days=60),
             list_price=25000,
             price=25000,
@@ -666,7 +689,7 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
             child=self.children[0],
             subscription_type_version=st.versions.latest(),
             direction=self.direction,
-            starts_on=datetime.date.today(),
+            starts_on=SUBSCRIPTION_STARTS_ON,
             ends_on=datetime.date.today() + datetime.timedelta(days=60),
             list_price=25000,
             price=25000,

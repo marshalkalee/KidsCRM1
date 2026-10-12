@@ -10,6 +10,8 @@ from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone
 from domains.platform.core.text_validation import normalize_entity_name
 from domains.platform.tenants.models import Branch, Direction, Room
 from domains.platform.tenants.org_settings import (
+    CHURN_INACTIVE_DAYS,
+    CHURN_SUMMER_PAUSE,
     DEBT_OVERDUE_DAYS_THRESHOLD,
     DEFAULT_ORG_SETTINGS,
     DIGEST_HOUR,
@@ -18,6 +20,7 @@ from domains.platform.tenants.org_settings import (
     LEAD_STALE_DAYS_THRESHOLD,
     PARENT_CANCEL_CHARGE_ON_TIME,
     PARENT_CANCEL_NOTICE_HOURS,
+    RENEWAL_GRACE_DAYS,
     RISK_ABSENCE_CHANGE_PP_THRESHOLD,
     RISK_CURRENT_ABSENCES_MIN,
     RULE_DEBT_REMINDER_ENABLED,
@@ -119,6 +122,22 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     lead_stale_days_threshold = forms.IntegerField(
         min_value=0, max_value=90, required=False, label="Заявка без движения после N дней"
     )
+    renewal_grace_days = forms.IntegerField(
+        min_value=0,
+        max_value=120,
+        required=False,
+        label="Продление: новый абонемент не позже N дней после окончания",
+    )
+    churn_inactive_days = forms.IntegerField(
+        min_value=1,
+        max_value=365,
+        required=False,
+        label="Отток: нет активного абонемента дольше N дней",
+    )
+    churn_summer_pause = forms.BooleanField(
+        required=False,
+        label="Отток: летом пауза до 30 сентября, а не уход",
+    )
     rule_lead_stale_enabled = forms.BooleanField(
         required=False, label="Напоминать перезвонить по зависшим заявкам"
     )
@@ -202,6 +221,21 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             if self.cleaned_data[LEAD_STALE_DAYS_THRESHOLD] is not None
             else organization.settings.get(
                 LEAD_STALE_DAYS_THRESHOLD, DEFAULT_ORG_SETTINGS[LEAD_STALE_DAYS_THRESHOLD]
+            ),
+            RENEWAL_GRACE_DAYS: (
+                self.cleaned_data.get(RENEWAL_GRACE_DAYS)
+                if self.cleaned_data.get(RENEWAL_GRACE_DAYS) is not None
+                else get_org_setting(organization, RENEWAL_GRACE_DAYS)
+            ),
+            CHURN_INACTIVE_DAYS: (
+                self.cleaned_data.get(CHURN_INACTIVE_DAYS)
+                if self.cleaned_data.get(CHURN_INACTIVE_DAYS) is not None
+                else get_org_setting(organization, CHURN_INACTIVE_DAYS)
+            ),
+            CHURN_SUMMER_PAUSE: (
+                self.cleaned_data[CHURN_SUMMER_PAUSE]
+                if CHURN_SUMMER_PAUSE in self.data
+                else get_org_setting(organization, CHURN_SUMMER_PAUSE)
             ),
             RULE_LEAD_STALE_ENABLED: self.cleaned_data[RULE_LEAD_STALE_ENABLED],
             RULE_RENEWAL_OFFER_ENABLED: self.cleaned_data[RULE_RENEWAL_OFFER_ENABLED],
