@@ -56,6 +56,13 @@ const KINDS = {
     get title() { return t('Просроченные задачи') },
     text: item => `${item.count} ${plural(item.count, ['просроченная задача', 'просроченные задачи', 'просроченных задач'])}`,
   },
+  // Коллега написал комментарий к моей задаче (TRU-184).
+  task_comments: {
+    icon: MessageSquareText,
+    tone: 'bg-info-50 text-info-600',
+    get title() { return t('Комментарии к задачам') },
+    text: item => t('Задач с новыми комментариями: {n}', { n: item.count }),
+  },
 }
 
 /** Уведомления с сервера; обновляются раз в минуту и по событию. */
