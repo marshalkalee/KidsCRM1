@@ -448,3 +448,52 @@ class SeatHold(TenantModel):
         verbose_name_plural = _("Брони мест")
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["lesson", "expires_at"])]
+
+
+class StaffAbsence(TenantModel):
+    """
+    TRU-182: отпуск, больничный или отгул сотрудника — заранее, а не отменой
+    занятия задним числом. Занятия отсутствующего преподавателя в эти дни
+    расписание помечает «нужна замена» (absences.py); пометка пропадает,
+    когда занятию поставили другого преподавателя или его отменили.
+    Даты — дни центра, включительно.
+    """
+
+    class Kind(models.TextChoices):
+        VACATION = "vacation", _("Отпуск")
+        SICK = "sick", _("Больничный")
+        DAY_OFF = "day_off", _("Отгул")
+        OTHER = "other", _("Другое")
+
+    staff = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="absences",
+        verbose_name=_("Сотрудник"),
+    )
+    kind = models.CharField(_("Тип"), max_length=16, choices=Kind.choices, default=Kind.VACATION)
+    starts_on = models.DateField(_("С"))
+    ends_on = models.DateField(_("По (включительно)"))
+    note = models.CharField(_("Заметка"), max_length=500, blank=True)
+    created_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        verbose_name = _("Отсутствие сотрудника")
+        verbose_name_plural = _("Отсутствия сотрудников")
+        ordering = ["starts_on"]
+        indexes = [models.Index(fields=["organization", "staff", "starts_on"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(ends_on__gte=models.F("starts_on")),
+                name="staff_absence_ends_after_start",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.staff_id} {self.get_kind_display()} {self.starts_on}–{self.ends_on}"

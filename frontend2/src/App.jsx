@@ -20,6 +20,7 @@ import Children from './pages/Children'
 import ChildDetail from './pages/ChildDetail'
 import Schedule from './pages/Schedule'
 import AttendanceScreen from './pages/AttendanceScreen'
+import Absences from './pages/Absences'
 import Groups from './pages/Groups'
 import GroupDetail from './pages/GroupDetail'
 import Branches from './pages/Branches'
@@ -125,6 +126,7 @@ function StaffApp() {
                 <Route path="parents/:id" element={<ParentDetail />} />
                 <Route path="schedule" element={<div className="kc-schedule"><Schedule /></div>} />
                 <Route path="attendance" element={<AttendanceScreen />} />
+                <Route path="absences" element={<RequirePermission permission="can_edit_schedule"><Absences /></RequirePermission>} />
                 <Route path="money" element={<RequirePermission permission="can_view_client_money"><PageGroup title={t('Деньги')} tabs={[
                   { key: 'debts', label: t('Долги'), element: <Debts /> },
                   { key: 'renewals', label: t('Продления'), element: <Renewals /> },

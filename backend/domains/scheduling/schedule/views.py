@@ -1,4 +1,5 @@
 import datetime
+import uuid
 
 from django.db.models import Count, Prefetch, Q
 from django.shortcuts import get_object_or_404
@@ -10,18 +11,29 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from domains.people.clients.models import ChildContact, CommunicationLog, ParentContact
-from domains.platform.core.active_branch import branch_scope
-from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
+from domains.platform.core.active_branch import allowed_branch_ids, branch_scope
+from domains.platform.core.audit import AuditLog
+from domains.platform.core.permissions import (
+    IsOwnerOrManager,
+    IsOwnerOrManagerOrAdmin,
+    IsStaffOfOrganization,
+)
 from domains.platform.core.role_permissions import can_view_phone
 from domains.platform.core.viewsets import TenantModelViewSet
 from domains.platform.leads.models import Lead, LeadComment
 from domains.scheduling.groups.models import Group
 
+from .absences import absence_map, lessons_of, uncovered_lessons
 from .conflicts import compute_conflict_map, find_conflicting_lessons
 from .enrollment_service import EnrollOutcome, LessonService
-from .models import Lesson, LessonEnrollment, RescheduleCallLog
+from .models import Lesson, LessonEnrollment, RescheduleCallLog, StaffAbsence
 from .reschedule_contacts import build_lesson_change_message, build_who_to_call
-from .serializers import LessonEnrollmentSerializer, LessonEnrollSerializer, LessonSerializer
+from .serializers import (
+    LessonEnrollmentSerializer,
+    LessonEnrollSerializer,
+    LessonSerializer,
+    StaffAbsenceSerializer,
+)
 
 
 def _is_confirmed(request):
@@ -197,6 +209,7 @@ class LessonViewSet(TenantModelViewSet):
         conflict_map = compute_conflict_map(lessons)
         context = self.get_serializer_context()
         context["conflict_map"] = conflict_map
+        context["absence_map"] = absence_map(request.organization, lessons)
         serializer = self.get_serializer(lessons, many=True, context=context)
         return Response(serializer.data)
 
@@ -617,3 +630,162 @@ class LessonEnrollmentViewSet(
         LessonService.cancel_enrollment(enrollment.id, actor=request.user)
         enrollment.refresh_from_db()
         return Response(LessonEnrollmentSerializer(enrollment, context={"request": request}).data)
+
+
+def _parse_day(raw, default):
+    if not raw:
+        return default
+    try:
+        return datetime.date.fromisoformat(raw)
+    except ValueError as exc:
+        raise DRFValidationError({"date": "Даты — в формате YYYY-MM-DD."}) from exc
+
+
+def _absence_snapshot(absence):
+    return {
+        "staff": str(absence.staff_id),
+        "kind": absence.kind,
+        "starts_on": absence.starts_on.isoformat(),
+        "ends_on": absence.ends_on.isoformat(),
+        "note": absence.note,
+    }
+
+
+def _absence_brief(absence):
+    return {
+        "id": str(absence.id),
+        "kind": absence.kind,
+        "kind_display": absence.get_kind_display(),
+        "starts_on": absence.starts_on.isoformat(),
+        "ends_on": absence.ends_on.isoformat(),
+    }
+
+
+class StaffAbsenceViewSet(TenantModelViewSet):
+    """
+    TRU-182: отпуска, больничные и отгулы. Ведут владелец, управляющий и
+    администратор (те, кто правит расписание); преподаватель и бухгалтер
+    видят только свои. Филиалы сотрудника (Д36): видны отсутствия тех, кто
+    работает в доступных филиалах, и тех, у кого филиалы не выбраны.
+    """
+
+    serializer_class = StaffAbsenceSerializer
+    pagination_class = None
+    MANAGERS = ("owner", "manager", "admin")
+
+    def get_permissions(self):
+        if self.action in ["create", "update", "partial_update", "destroy", "uncovered"]:
+            return [IsOwnerOrManagerOrAdmin()]
+        return [IsStaffOfOrganization()]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = StaffAbsence.objects.for_tenant(self.request.organization).select_related(
+            "staff", "created_by"
+        )
+        params = self.request.query_params
+        if user.role not in self.MANAGERS:
+            qs = qs.filter(staff=user)
+        else:
+            allowed = allowed_branch_ids(user)
+            if allowed is not None:
+                qs = qs.filter(
+                    Q(staff__branches__isnull=True) | Q(staff__branches__in=allowed)
+                ).distinct()
+        if params.get("staff"):
+            try:
+                qs = qs.filter(staff_id=uuid.UUID(params["staff"]))
+            except ValueError:
+                return qs.none()
+        first = _parse_day(params.get("date_from"), None)
+        last = _parse_day(params.get("date_to"), None)
+        if first:
+            qs = qs.filter(ends_on__gte=first)
+        if last:
+            qs = qs.filter(starts_on__lte=last)
+        return qs
+
+    def _with_lessons(self, absence, data):
+        # Сколько занятий сотрудника попало в отсутствие — экран сразу
+        # предлагает перейти к списку «без преподавателя».
+        data = dict(data)
+        data["lessons_affected"] = lessons_of(
+            self.request.organization,
+            absence.staff_id,
+            absence.starts_on,
+            absence.ends_on,
+            scope=allowed_branch_ids(self.request.user),
+        ).count()
+        return data
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        absence = serializer.save(organization=request.organization, created_by=request.user)
+        AuditLog.record(
+            actor=request.user,
+            action=AuditLog.Action.CREATE,
+            entity=absence,
+            after=_absence_snapshot(absence),
+        )
+        return Response(
+            self._with_lessons(absence, serializer.data), status=status.HTTP_201_CREATED
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        absence = self.get_object()
+        before = _absence_snapshot(absence)
+        serializer = self.get_serializer(absence, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        absence = serializer.save()
+        AuditLog.record(
+            actor=request.user,
+            action=AuditLog.Action.UPDATE,
+            entity=absence,
+            before=before,
+            after=_absence_snapshot(absence),
+        )
+        return Response(self._with_lessons(absence, serializer.data))
+
+    def perform_destroy(self, instance):
+        AuditLog.record(
+            actor=self.request.user,
+            action=AuditLog.Action.DELETE,
+            entity=instance,
+            before=_absence_snapshot(instance),
+        )
+        instance.delete()
+
+    @action(detail=False, methods=["get"])
+    def uncovered(self, request):
+        """Занятия, у которых преподаватель отсутствует и замены нет.
+        По умолчанию — от сегодня на 30 дней вперёд."""
+        tz = timezone.zoneinfo.ZoneInfo(request.organization.timezone or "Asia/Almaty")
+        today = timezone.now().astimezone(tz).date()
+        first = _parse_day(request.query_params.get("date_from"), today)
+        last = _parse_day(request.query_params.get("date_to"), first + datetime.timedelta(days=30))
+        if last < first or (last - first).days > 366:
+            raise DRFValidationError({"date": "Период — от одного дня до года."})
+        scope = branch_scope(request, request.query_params.get("branch"))
+        rows = []
+        for lesson, absence in uncovered_lessons(request.organization, first, last, scope):
+            group = lesson.group
+            branch = (group.branch if group else None) or (
+                lesson.room.branch if lesson.room else None
+            )
+            rows.append(
+                {
+                    "id": str(lesson.id),
+                    "starts_at_local": lesson.starts_at.astimezone(tz).isoformat(),
+                    "ends_at_local": lesson.ends_at.astimezone(tz).isoformat(),
+                    "group_name": group.name if group else None,
+                    "direction_color": group.direction.color if group else None,
+                    "room_name": lesson.room.name if lesson.room else None,
+                    "branch_name": branch.name if branch else None,
+                    "teacher": str(lesson.teacher_id),
+                    "teacher_name": lesson.teacher.full_name,
+                    "absence": _absence_brief(absence),
+                }
+            )
+        return Response({"date_from": first, "date_to": last, "count": len(rows), "results": rows})

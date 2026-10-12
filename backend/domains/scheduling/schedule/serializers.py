@@ -2,10 +2,13 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from domains.people.clients.models import Child
+from domains.platform.core.active_branch import allowed_branch_ids
 from domains.platform.core.mixins import TenantCreateMixin
+from domains.platform.users.models import User
 
+from .absences import absence_map
 from .conflicts import find_conflicting_lessons
-from .models import Lesson, LessonEnrollment
+from .models import Lesson, LessonEnrollment, StaffAbsence
 
 
 class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
@@ -21,6 +24,8 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
     # поэтому виден прямо в календаре (не только в момент создания).
     has_conflict = serializers.SerializerMethodField()
     conflicting_lesson_ids = serializers.SerializerMethodField()
+    # TRU-182: преподаватель в этот день отсутствует — «нужна замена».
+    teacher_absence = serializers.SerializerMethodField()
 
     # Поля для календаря — считаются из уже загруженных select_related/
     # prefetch_related объектов во view, доп. запросов не делают (см.
@@ -78,6 +83,7 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
             "additional_participants",
             "has_conflict",
             "conflicting_lesson_ids",
+            "teacher_absence",
             "created_at",
             "updated_at",
         ]
@@ -208,6 +214,23 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
             exclude_id=obj.id,
         )
         return set(conflicts.values_list("id", flat=True))
+
+    def get_teacher_absence(self, obj):
+        # "absence_map" предпосчитан LessonViewSet.list на всё окно; для
+        # одного занятия (retrieve/create/update) — один запрос.
+        if "absence_map" in self.context:
+            absence = self.context["absence_map"].get(obj.id)
+        else:
+            absence = absence_map(obj.organization, [obj]).get(obj.id)
+        if absence is None:
+            return None
+        return {
+            "id": str(absence.id),
+            "kind": absence.kind,
+            "kind_display": absence.get_kind_display(),
+            "starts_on": absence.starts_on.isoformat(),
+            "ends_on": absence.ends_on.isoformat(),
+        }
 
     def get_has_conflict(self, obj):
         return bool(self._conflicting_ids(obj))
@@ -392,3 +415,69 @@ class MakeupCandidateSerializer(serializers.ModelSerializer):
         if not obj.group_id:
             return None
         return obj.group.capacity - obj.participants().count()
+
+
+class StaffAbsenceSerializer(serializers.ModelSerializer):
+    staff_name = serializers.CharField(source="staff.full_name", read_only=True)
+    staff_role = serializers.CharField(source="staff.role", read_only=True)
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    created_by_name = serializers.CharField(
+        source="created_by.full_name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = StaffAbsence
+        fields = [
+            "id",
+            "staff",
+            "staff_name",
+            "staff_role",
+            "kind",
+            "kind_display",
+            "starts_on",
+            "ends_on",
+            "note",
+            "created_by_name",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            self.fields["staff"].queryset = User.objects.filter(
+                organization=request.user.organization, is_active=True
+            )
+
+    def validate(self, attrs):
+        starts_on = attrs.get("starts_on", getattr(self.instance, "starts_on", None))
+        ends_on = attrs.get("ends_on", getattr(self.instance, "ends_on", None))
+        staff = attrs.get("staff", getattr(self.instance, "staff", None))
+        if starts_on and ends_on and ends_on < starts_on:
+            raise serializers.ValidationError({"ends_on": "Дата окончания раньше даты начала."})
+        if ends_on and starts_on and (ends_on - starts_on).days > 366:
+            raise serializers.ValidationError({"ends_on": "Отсутствие не может быть дольше года."})
+        allowed = allowed_branch_ids(self.context["request"].user)
+        if allowed is not None and staff is not None:
+            # Д36: администратор филиала А не ведёт отсутствия сотрудника
+            # только из филиала Б. Сотрудник без филиалов работает везде.
+            staff_branches = set(staff.branches.values_list("id", flat=True))
+            if staff_branches and not staff_branches & set(allowed):
+                raise serializers.ValidationError({"staff": "Сотрудник работает в другом филиале."})
+        overlap = StaffAbsence.objects.for_tenant(staff.organization).filter(
+            staff=staff, starts_on__lte=ends_on, ends_on__gte=starts_on
+        )
+        if self.instance is not None:
+            overlap = overlap.exclude(pk=self.instance.pk)
+        first = overlap.first()
+        if first is not None:
+            raise serializers.ValidationError(
+                {
+                    "starts_on": (
+                        f"На эти даты уже есть отсутствие: {first.get_kind_display().lower()} "
+                        f"{first.starts_on:%d.%m}–{first.ends_on:%d.%m}."
+                    )
+                }
+            )
+        return attrs

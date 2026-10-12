@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Check, X, Users, MapPin, User as UserIcon,
-  Plus, CalendarDays, Rows3, AlertTriangle, Ban, Phone, MessageCircle, PhoneCall,
+  Plus, CalendarDays, Rows3, AlertTriangle, Ban, Phone, MessageCircle, PhoneCall, UserX,
 } from 'lucide-react'
 import {
   startOfWeek, addDays, toISODate, isToday, formatWeekRange, formatDayLabel,
@@ -189,6 +189,22 @@ function withMinutes(lesson) {
 
 // TRU-47: у индивидуального занятия нет group_name — заголовок вместо
 // generic "Индив. занятие" показывает, для кого оно.
+// TRU-182: преподаватель в этот день в отпуске/на больничном — занятие
+// остаётся в расписании, но помечено «нужна замена», пока его не отдали
+// другому преподавателю или не отменили.
+const ABSENCE_COLOR = '#E11D48'
+
+function absenceText(lesson) {
+  const absence = lesson.teacher_absence
+  if (!absence) return ''
+  const until = absence.ends_on.slice(8, 10) + '.' + absence.ends_on.slice(5, 7)
+  return t('{name}: {kind} до {date}', {
+    name: lesson.teacher_name || t('Преподаватель'),
+    kind: t(absence.kind_display).toLowerCase(),
+    date: until,
+  })
+}
+
 function lessonTitle(lesson) {
   if (lesson.group_name) return lesson.group_name
   if (lesson.is_individual && lesson.individual_children_names?.length) {
@@ -890,6 +906,7 @@ function LessonChip({ lesson, style, onClick }) {
   // Конфликт (TRU-46) — предупреждение, не запрет: занятие остаётся видно
   // как обычно, просто с жёлтой рамкой/значком, а не перечёркнуто/сером.
   const hasConflict = lesson.has_conflict && !dimmed
+  const needsSubstitute = Boolean(lesson.teacher_absence) && !dimmed
   // Индивидуальное (TRU-47) — визуально отличимо от группового: точечная
   // рамка + иконка человека вместо цвета направления (у него его просто
   // нет — direction приходит через группу).
@@ -901,17 +918,18 @@ function LessonChip({ lesson, style, onClick }) {
       onClick={onClick}
       style={{
         position: 'absolute', ...style,
-        background: dimmed ? '#F5F5F7' : hasConflict ? '#FFFBEB' : `${color}1A`,
-        border: `1.5px ${isRescheduled ? 'dashed' : isIndividual ? 'dotted' : 'solid'} ${dimmed ? '#D1D5DB' : hasConflict ? '#F59E0B' : color}`,
+        background: dimmed ? '#F5F5F7' : needsSubstitute ? '#FFF1F2' : hasConflict ? '#FFFBEB' : `${color}1A`,
+        border: `1.5px ${isRescheduled ? 'dashed' : isIndividual ? 'dotted' : 'solid'} ${dimmed ? '#D1D5DB' : needsSubstitute ? ABSENCE_COLOR : hasConflict ? '#F59E0B' : color}`,
         borderRadius: 8, padding: '4px 8px', overflow: 'hidden', cursor: 'pointer',
         opacity: dimmed ? 0.65 : 1,
         transition: 'box-shadow 0.15s',
       }}
       onMouseEnter={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)'}
       onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
-      title={hasConflict ? t('Пересекается по залу или преподавателю с другим занятием') : undefined}
+      title={needsSubstitute ? absenceText(lesson) : hasConflict ? t('Пересекается по залу или преподавателю с другим занятием') : undefined}
     >
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {needsSubstitute && <UserX size={10} style={{ color: ABSENCE_COLOR, flexShrink: 0 }} />}
             {hasConflict && <AlertTriangle size={10} style={{ color: '#B45309', flexShrink: 0 }} />}
             {isIndividual && <UserIcon size={9} style={{ color, flexShrink: 0 }} />}
             <div style={{
@@ -935,6 +953,9 @@ function LessonChip({ lesson, style, onClick }) {
             <div style={{ fontSize: 9, fontWeight: 700, color: isCancelled ? '#DC2626' : '#D97706', marginTop: 2 }}>
               {isCancelled ? t('ОТМЕНЕНО') : t('ПЕРЕНЕСЕНО')}
             </div>
+          )}
+          {needsSubstitute && (
+            <div style={{ fontSize: 9, fontWeight: 700, color: ABSENCE_COLOR, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('НУЖНА ЗАМЕНА')}</div>
           )}
           {hasConflict && (
             <div style={{ fontSize: 9, fontWeight: 700, color: '#B45309', marginTop: 2 }}>{t('КОНФЛИКТ')}</div>
@@ -1307,6 +1328,7 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
         const color = lesson.direction_color || DEFAULT_COLOR
         const dimmed = lesson.status === 'cancelled' || lesson.status === 'rescheduled'
         const hasConflict = lesson.has_conflict && !dimmed
+        const needsSubstitute = Boolean(lesson.teacher_absence) && !dimmed
         const isIndividual = lesson.is_individual && !dimmed && !hasConflict
         const totalCount = lesson.total_participants_count ?? lesson.enrolled_count
         return (
@@ -1315,8 +1337,8 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
             onClick={() => onSelectLesson(lesson)}
             style={{
               display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
-              border: `1px ${isIndividual ? 'dotted' : 'solid'} ${dimmed ? '#E5E7EB' : hasConflict ? '#F59E0B' : color}`,
-              background: dimmed ? '#FAFAFA' : hasConflict ? '#FFFBEB' : `${color}0D`,
+              border: `1px ${isIndividual ? 'dotted' : 'solid'} ${dimmed ? '#E5E7EB' : needsSubstitute ? ABSENCE_COLOR : hasConflict ? '#F59E0B' : color}`,
+              background: dimmed ? '#FAFAFA' : needsSubstitute ? '#FFF1F2' : hasConflict ? '#FFFBEB' : `${color}0D`,
               opacity: dimmed ? 0.7 : 1,
             }}
           >
@@ -1343,6 +1365,11 @@ function LessonList({ lessons, loading, emptyText, onSelectLesson, showRoom }) {
               {dimmed && (
                 <div style={{ fontSize: 10, fontWeight: 700, color: lesson.status === 'cancelled' ? '#DC2626' : '#D97706', marginTop: 4 }}>
                   {t(STATUS_LABEL[lesson.status])}
+                </div>
+              )}
+              {needsSubstitute && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, color: ABSENCE_COLOR, marginTop: 4 }}>
+                  <UserX size={11} />{t('НУЖНА ЗАМЕНА')} · {absenceText(lesson)}
                 </div>
               )}
               {hasConflict && (
@@ -1782,6 +1809,17 @@ function LessonDetailsModal({ lesson, lessons, onClose, onDone, onAttendance, on
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
               <InfoRow icon={<MapPin size={14} />} text={`${localTimePart(lesson.starts_at_local)}–${localTimePart(lesson.ends_at_local)} · ${lesson.room_name || t('зал не указан')}`} />
               <InfoRow icon={<UserIcon size={14} />} text={lesson.teacher_name || t('преподаватель не назначен')} />
+              {lesson.teacher_absence && canAct && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: '#FFF1F2', border: '1px solid #FECDD3', borderRadius: 10, padding: '10px 12px' }}>
+                  <UserX size={16} style={{ color: ABSENCE_COLOR, flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#9F1239' }}>{t('Нужна замена')}</div>
+                    <div style={{ fontSize: 12, color: '#881337', marginTop: 2 }}>
+                      {absenceText(lesson)}. {t('Поставьте другого преподавателя, перенесите или отмените занятие.')}
+                    </div>
+                  </div>
+                </div>
+              )}
               {lesson.trial_count > 0 && (
                 <InfoRow
                   icon={<Users size={14} />}
