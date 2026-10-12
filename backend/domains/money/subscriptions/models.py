@@ -167,6 +167,9 @@ class SubscriptionLedgerEntry(TenantModel):
         CONSUMPTION = "consumption", "Списание за посещение"
         MANUAL_ADJUSTMENT = "manual_adjustment", "Ручная корректировка"
         EXTENSION = "extension", "Продление"
+        # TRU-130: откат списания (снятая отметка «пришёл», отменённое
+        # занятие) — отдельно от ручной правки, чтобы различать их в отчётах.
+        LESSON_REVERT = "lesson_revert", "Возврат занятия"
 
     subscription = models.ForeignKey(
         Subscription, on_delete=models.CASCADE, related_name="ledger_entries"
