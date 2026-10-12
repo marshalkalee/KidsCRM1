@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Baby, Building2, LogOut, Monitor, Smartphone } from 'lucide-react'
+import { Baby, Building2, KeyRound, LogOut, Monitor, Smartphone } from 'lucide-react'
 import {
   Avatar,
   Badge,
@@ -20,7 +20,6 @@ import {
   useToast,
 } from '../../ui'
 import { LANGUAGES, lang, setLang, t } from '../../i18n'
-import { phoneDigits, phoneInputProps } from '../../utils/formValidation'
 import portal, { portalError, usePortalData } from '../api'
 import { useParent } from '../useParent'
 import { NotificationSettings } from '../Notifications'
@@ -42,7 +41,7 @@ export default function ParentProfile() {
   const toast = useToast()
   const [email, setEmail] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [changingPhone, setChangingPhone] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
 
   if (!profile) return <Skeleton className="h-64" />
   const shownEmail = email ?? profile.email
@@ -91,7 +90,10 @@ export default function ParentProfile() {
               <Building2 className="size-4 shrink-0" />{profile.centers.join(' · ')}
             </p>
           )}
-          <Button size="sm" className="mt-4" onClick={() => setChangingPhone(true)}>{t('Сменить номер')}</Button>
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Button size="sm" icon={KeyRound} onClick={() => setChangingPassword(true)}>{t('Сменить пароль')}</Button>
+            <span className="text-[12px] text-ink-subtle">{t('Номер для входа меняет администратор центра.')}</span>
+          </div>
         </Card>
 
         <ChildrenCard childOptions={children} selected={child} onSelect={selectChild} />
@@ -138,7 +140,7 @@ export default function ParentProfile() {
 
       <p className="px-1 text-center text-[12px] text-ink-subtle">{t('Изменить данные ребёнка может администратор центра.')}</p>
 
-      {changingPhone && <PhoneChange onClose={() => setChangingPhone(false)} onDone={() => { setChangingPhone(false); me.reload() }} />}
+      {changingPassword && <PasswordChange onClose={() => setChangingPassword(false)} />}
     </div>
   )
 }
@@ -242,27 +244,26 @@ function Devices() {
   )
 }
 
-function PhoneChange({ onClose, onDone }) {
+/** Смена пароля (Д40): нужен текущий; другие устройства после смены выходят. */
+function PasswordChange({ onClose }) {
   const toast = useToast()
-  const [phone, setPhone] = useState('')
-  const [code, setCode] = useState('')
-  const [sent, setSent] = useState(false)
+  const [form, setForm] = useState({ current: '', next: '', repeat: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
 
   async function submit(event) {
     event.preventDefault()
+    if (form.next !== form.repeat) {
+      setError(t('Новый пароль и повтор не совпадают.'))
+      return
+    }
     setBusy(true)
     setError('')
     try {
-      const { data } = await portal.post('profile/phone/', sent ? { phone, code } : { phone })
-      if (sent) {
-        toast.success(t('Номер изменён'))
-        onDone()
-      } else {
-        setPhone(data.phone)
-        setSent(true)
-      }
+      await portal.post('profile/password/', { current: form.current, new: form.next })
+      toast.success(t('Пароль изменён. На других устройствах нужно войти заново.'))
+      onClose()
     } catch (err) {
       setError(portalError(err, ERRORS))
     } finally {
@@ -275,26 +276,25 @@ function PhoneChange({ onClose, onDone }) {
       open
       onClose={onClose}
       size="sm"
-      title={t('Новый номер телефона')}
-      description={t('Пришлём код на новый номер — так мы убедимся, что он ваш.')}
+      title={t('Сменить пароль')}
+      description={t('Не короче 8 символов. На других устройствах после смены нужно будет войти заново.')}
       footer={
         <>
           <Button onClick={onClose}>{t('Отмена')}</Button>
-          <Button variant="primary" type="submit" form="parent-phone-form" loading={busy}>{sent ? t('Подтвердить') : t('Получить код')}</Button>
+          <Button variant="primary" type="submit" form="parent-password-form" loading={busy}>{t('Сохранить')}</Button>
         </>
       }
     >
-      <form id="parent-phone-form" onSubmit={submit} className="space-y-3">
-        <Field label={t('Новый номер')} error={sent ? null : error}>
-          {({ id, invalid }) => <Input id={id} invalid={invalid} value={phone} disabled={sent} onChange={e => setPhone(phoneDigits(e.target.value))} required {...phoneInputProps} />}
+      <form id="parent-password-form" onSubmit={submit} className="space-y-3">
+        <Field label={t('Текущий пароль')}>
+          {({ id }) => <Input id={id} type="password" autoComplete="current-password" value={form.current} onChange={e => set('current', e.target.value)} required autoFocus />}
         </Field>
-        {sent && (
-          <Field label={t('Код из сообщения')} error={error}>
-            {({ id, invalid }) => (
-              <Input id={id} invalid={invalid} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" required autoFocus className="text-center text-xl font-bold tracking-[0.3em]" />
-            )}
-          </Field>
-        )}
+        <Field label={t('Новый пароль')}>
+          {({ id }) => <Input id={id} type="password" autoComplete="new-password" minLength={8} value={form.next} onChange={e => set('next', e.target.value)} required />}
+        </Field>
+        <Field label={t('Повторите новый пароль')} error={error}>
+          {({ id, invalid }) => <Input id={id} invalid={invalid} type="password" autoComplete="new-password" minLength={8} value={form.repeat} onChange={e => set('repeat', e.target.value)} required />}
+        </Field>
       </form>
     </Modal>
   )

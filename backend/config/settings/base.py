@@ -18,6 +18,10 @@ if env_file.exists():
 
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="insecure-dev-key-change-me")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
+# Демо-данные (seed_demo, seed_showcase) — только в разработке или на
+# демо-сервере, где это включено явно. На боевом сервере не ставить:
+# команды создают выдуманных детей и логины с общим паролем.
+DEMO_DATA_ALLOWED = DEBUG or env.bool("DEMO_DATA_ALLOWED", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 # Каждое доменное приложение регистрируется под своим доменным пакетом
