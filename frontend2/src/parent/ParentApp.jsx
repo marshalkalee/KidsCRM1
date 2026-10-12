@@ -10,6 +10,7 @@ import ParentNotes from './pages/ParentNotes'
 import ParentProfile from './pages/ParentProfile'
 import ParentSchedule from './pages/ParentSchedule'
 import ParentSubscription from './pages/ParentSubscription'
+import ParentCenter from './pages/ParentCenter'
 
 /*
  * Кабинет родителя — отдельное приложение внутри frontend2 по адресу
@@ -31,6 +32,7 @@ export default function ParentApp() {
           <Route path="subscription" element={<ParentSubscription />} />
           <Route path="announcements" element={<ParentNews />} />
           <Route path="news" element={<Navigate to="/parent/announcements" replace />} />
+          <Route path="center" element={<ParentCenter />} />
           <Route path="profile" element={<ParentProfile />} />
           <Route path="*" element={<Navigate to="/parent" replace />} />
         </Route>

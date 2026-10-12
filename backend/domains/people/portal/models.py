@@ -25,6 +25,10 @@ class ParentAccount(UUIDPrimaryKeyModel):
     notification_prefs = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     last_login_at = models.DateTimeField(null=True, blank=True)
+    # Вход по паролю (Д40): хэш, как у сотрудников. Пусто — пароль ещё не
+    # выдан, войти нельзя. Выдаёт администратор в карточке родителя.
+    password = models.CharField(max_length=128, blank=True)
+    password_set_at = models.DateTimeField(null=True, blank=True)
 
     # DRF ждёт у request.user эти признаки.
     is_authenticated = True
@@ -185,7 +189,8 @@ class ParentAccessLog(models.Model):
         CODE_REQUESTED = "code_requested", "Запрошен код"
         CODE_RATE_LIMITED = "code_rate_limited", "Слишком много запросов кода"
         LOGIN = "login", "Вход"
-        LOGIN_FAILED = "login_failed", "Неверный код"
+        LOGIN_FAILED = "login_failed", "Неверный вход"
+        PASSWORD_CHANGED = "password_changed", "Сменил пароль"
         LOGOUT = "logout", "Выход"
         LOGOUT_ALL = "logout_all", "Выход на всех устройствах"
         PHONE_CHANGED = "phone_changed", "Сменил телефон"

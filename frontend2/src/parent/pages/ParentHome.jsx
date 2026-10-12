@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, BookOpen, CalendarDays, Clock, MapPin, Megaphone, Snowflake, UserRound, Wallet } from 'lucide-react'
-import { Card, ErrorState, Skeleton, cn, money, plural } from '../../ui'
+import { Card, ErrorState, Skeleton, money, plural } from '../../ui'
 import { locale, t } from '../../i18n'
 import { usePortalData } from '../api'
 import { useParent } from '../useParent'

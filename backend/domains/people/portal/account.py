@@ -1,28 +1,20 @@
 """
-Аккаунт родителя (TRU-136): дети с филиалами и группами, профиль, смена
-телефона. Правила доступа — docs/parent-portal.md.
+Аккаунт родителя (TRU-136): дети с филиалами и группами, профиль.
+Правила доступа — docs/parent-portal.md.
 
 Родитель в кабинете не меняет данные ребёнка: всё, что про ребёнка, —
 через администратора. Сам он правит только свой email, язык кабинета и
-номер телефона (через код на новый номер).
+пароль (auth.change_password). Номер телефона — логин кабинета — меняет
+администратор в карточке родителя (Д40).
 """
 
 from django.db import transaction
-from django.utils import timezone
 
-from domains.people.clients.models import ContactPhone, ParentContact
 from domains.platform.core.audit import AuditLog
 from domains.scheduling.groups.models import GroupMembership
 
 from . import access
-from .auth import (
-    LoginError,
-    _consume,
-    _issue_code,
-    _log,
-    normalize,
-)
-from .models import OtpChallenge, ParentAccessLog, ParentAccount
+from .auth import LoginError
 
 LANGUAGES = {"ru", "kk"}
 
@@ -117,78 +109,4 @@ def update_profile(account, *, email=None, language=None):
                     before=before,
                     after={"email": email, "by": "parent_portal"},
                 )
-    return profile(account)
-
-
-def request_phone_change(account, raw_phone, request_meta):
-    phone = normalize(raw_phone)
-    if phone == account.phone:
-        raise LoginError("Это ваш текущий номер.")
-    if ParentAccount.objects.filter(phone=phone).exists():
-        # Номер уже входит в кабинет — объединять аккаунты сам родитель не может.
-        raise LoginError(
-            "Этот номер уже используется для входа. Обратитесь к администратору центра."
-        )
-    # Код уходит всегда: номер новый, его ещё нет в базе — в этом и смысл.
-    _issue_code(
-        phone,
-        request_meta,
-        purpose=OtpChallenge.Purpose.PHONE_CHANGE,
-        send=True,
-        account=account,
-    )
-    return {"phone": phone}
-
-
-def confirm_phone_change(account, raw_phone, code, request_meta):
-    phone = normalize(raw_phone)
-    code = "".join(ch for ch in (code or "") if ch.isdigit())
-    with transaction.atomic():
-        outcome = _confirm(account, phone, code, request_meta)
-    if isinstance(outcome, LoginError):
-        raise outcome
-    return outcome
-
-
-def _confirm(account, phone, code, request_meta):
-    challenge = (
-        OtpChallenge.objects.select_for_update()
-        .filter(
-            phone=phone,
-            account=account,
-            purpose=OtpChallenge.Purpose.PHONE_CHANGE,
-            used_at__isnull=True,
-            expires_at__gt=timezone.now(),
-            attempts__lt=5,
-        )
-        .order_by("-created_at")
-        .first()
-    )
-    error = _consume(challenge, phone, code, request_meta)
-    if error:
-        return error
-    if ParentAccount.objects.filter(phone=phone).exclude(pk=account.pk).exists():
-        return LoginError(
-            "Этот номер уже используется для входа. Обратитесь к администратору центра."
-        )
-
-    old = account.phone
-    contacts = list(access.contacts_for_phone(old))
-    ContactPhone.objects.filter(
-        parent_contact__in=contacts, number=old, deleted_at__isnull=True
-    ).update(number=phone, updated_at=timezone.now())
-    ParentContact.objects.filter(pk__in=[c.pk for c in contacts], whatsapp=old).update(
-        whatsapp=phone, updated_at=timezone.now()
-    )
-    for contact in contacts:
-        AuditLog.record(
-            actor=None,
-            action=AuditLog.Action.UPDATE,
-            entity=contact,
-            before={"phone": old},
-            after={"phone": phone, "by": "parent_portal"},
-        )
-    account.phone = phone
-    account.save(update_fields=["phone"])
-    _log(ParentAccessLog.Event.PHONE_CHANGED, phone, request_meta, account=account)
     return profile(account)

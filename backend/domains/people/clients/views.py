@@ -1,5 +1,6 @@
 import uuid
 from decimal import Decimal
+from urllib.parse import quote
 
 from django.db.models import Q
 from rest_framework import mixins, status, viewsets
@@ -166,7 +167,8 @@ class ParentContactViewSet(viewsets.ModelViewSet):
     permission_classes = [IsStaffOfOrganization]
 
     def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy"):
+        # Пароль в кабинет родителя (Д40) — тоже только руководитель и администратор.
+        if self.action in ("create", "update", "partial_update", "destroy", "portal_access"):
             return [IsOwnerOrManagerOrAdmin()]
         return [IsStaffOfOrganization()]
 
@@ -196,6 +198,65 @@ class ParentContactViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(organization=self.request.user.organization)
+
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path="portal-access",
+    )
+    def portal_access(self, request, pk=None, version=None):
+        """Доступ в кабинет родителя (Д40). GET — выдан ли пароль и когда
+        родитель заходил; POST — выдать новый пароль (показывается один раз,
+        прежние входы родителя закрываются)."""
+        from domains.people.portal import auth as portal_auth
+        from domains.people.portal.models import ParentAccount
+        from domains.platform.core.audit import AuditLog
+
+        parent = self.get_object()
+        phone = next((p.number for p in parent.phones.all()), "") or parent.whatsapp
+        if not phone:
+            return Response(
+                {"detail": "У родителя нет телефона — сначала укажите номер."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if request.method == "POST":
+            try:
+                password = portal_auth.issue_password(phone)
+            except portal_auth.LoginError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            AuditLog.record(
+                actor=request.user,
+                action=AuditLog.Action.UPDATE,
+                entity=parent,
+                after={"portal_password": "issued"},
+            )
+            link = request.build_absolute_uri("/parent/login")
+            center = request.user.organization.name
+            text = "\n".join(
+                [
+                    f"Здравствуйте! Кабинет родителя {center}: {link}",
+                    f"Логин — ваш номер {phone}, пароль: {password}",
+                    "Пароль можно сменить в профиле кабинета.",
+                ]
+            )
+            digits = "".join(ch for ch in (parent.whatsapp or phone) if ch.isdigit())
+            return Response(
+                {
+                    "phone": phone,
+                    "password": password,
+                    "message": text,
+                    "whatsapp_url": f"https://wa.me/{digits}?text={quote(text)}",
+                }
+            )
+        account = ParentAccount.objects.filter(phone=phone).first()
+        return Response(
+            {
+                "phone": phone,
+                "has_password": bool(account and account.password),
+                "password_set_at": account.password_set_at if account else None,
+                "last_login_at": account.last_login_at if account else None,
+            }
+        )
 
     def destroy(self, request, *args, **kwargs):
         parent = self.get_object()
