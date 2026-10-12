@@ -5,8 +5,7 @@ from . import views
 app_name = "portal"
 
 urlpatterns = [
-    path("auth/request-code/", views.RequestCodeView.as_view(), name="request-code"),
-    path("auth/verify/", views.VerifyCodeView.as_view(), name="verify"),
+    path("auth/login/", views.LoginView.as_view(), name="login"),
     path("auth/logout/", views.LogoutView.as_view(), name="logout"),
     path("auth/sessions/", views.SessionsView.as_view(), name="sessions"),
     path(
@@ -63,7 +62,7 @@ urlpatterns = [
         name="announcement-read",
     ),
     path("profile/", views.ProfileView.as_view(), name="profile"),
-    path("profile/phone/", views.PhoneChangeView.as_view(), name="phone-change"),
+    path("profile/password/", views.PasswordView.as_view(), name="password"),
     path("notifications/", views.NotificationsView.as_view(), name="notifications"),
     path("push/", views.PushSubscriptionView.as_view(), name="push"),
 ]
