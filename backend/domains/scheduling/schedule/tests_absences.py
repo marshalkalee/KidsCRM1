@@ -118,6 +118,7 @@ class UncoveredLessonsTests(AbsenceBase):
         self.assertEqual([r["id"] for r in uncovered["results"]], [str(x.id) for x in inside])
         self.assertEqual(uncovered["results"][0]["teacher_name"], "Алия")
         self.assertEqual(uncovered["results"][0]["branch_name"], "Абая")
+        self.assertEqual(uncovered["results"][0]["branch_id"], str(self.abay.id))
 
     def test_mark_disappears_after_substitute_or_cancel(self):
         replaced = self.lesson(at(MONDAY, 16))
