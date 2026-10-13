@@ -2,9 +2,10 @@ import uuid
 
 from django.db.models import Count, F, Q
 from django.utils import timezone
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 
 from domains.platform.core.audit import AuditLog
@@ -16,15 +17,36 @@ from domains.platform.core.permissions import (
 )
 from domains.platform.users.models import User
 
-from .models import Task
-from .serializers import TaskHistorySerializer, TaskSerializer
+from .models import Task, TaskComment
+from .serializers import TaskCommentSerializer, TaskHistorySerializer, TaskSerializer
 from .services import cancel_task, complete_task, visible_tasks
+from .timeline import build_timeline, can_edit_comment
 
 # Кто ставит и передаёт задачи; остальные только выполняют свои.
 TASK_MANAGERS = (User.Role.OWNER, User.Role.MANAGER, User.Role.ADMIN)
 
 # Сколько закрытых задач отдаём во вкладку «Задачи» карточки ребёнка.
 CLOSED_HISTORY_LIMIT = 100
+
+# Что видно в ленте карточки задачи (TRU-184): кто передал и куда перенёс срок.
+AUDITED_FIELDS = ("assigned_to", "due_at")
+
+
+def with_comments_count(qs):
+    """Счётчик комментариев у задачи в списке (TRU-184) — одним запросом."""
+    return qs.annotate(
+        comments_count=Count("comments", filter=Q(comments__deleted_at__isnull=True))
+    )
+
+
+def _raw(task, field):
+    return task.assigned_to_id if field == "assigned_to" else task.due_at
+
+
+def _audit_value(task, field):
+    if field == "assigned_to":
+        return task.assigned_to.full_name if task.assigned_to else None
+    return task.due_at.isoformat() if task.due_at else None
 
 
 class TaskViewSet(
@@ -43,7 +65,18 @@ class TaskViewSet(
             return [IsOwnerOrManagerOrAdmin()]
         # Свои задачи видит, закрывает и переносит любой сотрудник, кому их
         # поручили (бухгалтер, преподаватель); остальное — _check_can_change.
-        if self.action in ("list", "retrieve", "update", "partial_update", "complete", "cancel"):
+        # Комментарии и лента (TRU-184) — всем, кто видит задачу.
+        if self.action in (
+            "list",
+            "retrieve",
+            "update",
+            "partial_update",
+            "complete",
+            "cancel",
+            "comments",
+            "comment_detail",
+            "timeline",
+        ):
             return [IsStaffOfOrganization()]
         return [IsNotTeacher()]
 
@@ -59,7 +92,7 @@ class TaskViewSet(
             raise PermissionDenied("Можно только перенести срок.")
 
     def get_queryset(self):
-        qs = visible_tasks(self.request.user).select_related(
+        qs = with_comments_count(visible_tasks(self.request.user)).select_related(
             "assigned_to",
             "created_by",
             "lead",
@@ -101,32 +134,45 @@ class TaskViewSet(
         )
 
     def partial_update(self, request, *args, **kwargs):
-        """Переназначение пишется в аудит-лог (ТЗ п. 5.2, TRU-109) — только
-        смена assigned_to, не любое изменение (например, дедлайна)."""
+        """Передача (ТЗ п. 5.2, TRU-109) и перенос срока (TRU-184) пишутся в
+        аудит-лог — из него строится лента карточки задачи. Остальные
+        изменения (заголовок, описание) — нет."""
         instance = self.get_object()
         self._check_can_change(instance, request.data.keys())
-        old_assignee = instance.assigned_to
+        old = {field: _raw(instance, field) for field in AUDITED_FIELDS}
+        old_values = {field: _audit_value(instance, field) for field in AUDITED_FIELDS}
         response = super().partial_update(request, *args, **kwargs)
         instance.refresh_from_db()
-        if "assigned_to" in request.data and instance.assigned_to_id != (
-            old_assignee.id if old_assignee else None
-        ):
+        changed = [
+            field
+            for field in AUDITED_FIELDS
+            if field in request.data and _raw(instance, field) != old[field]
+        ]
+        if changed:
             AuditLog.record(
                 actor=request.user,
                 action=AuditLog.Action.UPDATE,
                 entity=instance,
-                before={"assigned_to": old_assignee.full_name if old_assignee else None},
-                after={
-                    "assigned_to": instance.assigned_to.full_name if instance.assigned_to else None
-                },
+                before={field: old_values[field] for field in changed},
+                after={field: _audit_value(instance, field) for field in changed},
             )
         return response
+
+    def _record_close(self, task, action):
+        AuditLog.record(
+            actor=self.request.user,
+            action=action,
+            entity=task,
+            before={"status": Task.Status.OPEN},
+            after={"status": task.status, "closing_comment": task.closing_comment},
+        )
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         task = self.get_object()
         self._check_can_change(task)
         complete_task(task, actor=request.user, comment=request.data.get("comment", ""))
+        self._record_close(task, AuditLog.Action.UPDATE)
         return Response(TaskSerializer(task).data)
 
     @action(detail=True, methods=["post"])
@@ -134,7 +180,60 @@ class TaskViewSet(
         task = self.get_object()
         self._check_can_change(task)
         cancel_task(task, actor=request.user, comment=request.data.get("comment", ""))
+        self._record_close(task, AuditLog.Action.CANCEL)
         return Response(TaskSerializer(task).data)
+
+    @action(detail=True, methods=["get", "post"])
+    def comments(self, request, pk=None):
+        """Комментарии к задаче (TRU-184): читают и пишут все, кто видит
+        задачу (get_object → visible_tasks: исполнитель, автор по филиалу,
+        руководители по Д36/Д37). Чужая задача — 404."""
+        task = self.get_object()
+        if request.method == "GET":
+            comments = (
+                TaskComment.objects.for_tenant(task.organization)
+                .filter(task=task)
+                .select_related("author")
+            )
+            return Response(
+                TaskCommentSerializer(comments, many=True, context={"request": request}).data
+            )
+        serializer = TaskCommentSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save(organization=task.organization, task=task, author=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True,
+        methods=["patch", "delete"],
+        url_path=r"comments/(?P<comment_id>[0-9a-f-]{36})",
+    )
+    def comment_detail(self, request, pk=None, comment_id=None):
+        """Править и удалять — только автор и только первые 15 минут."""
+        task = self.get_object()
+        comment = get_object_or_404(
+            TaskComment.objects.for_tenant(task.organization).filter(task=task), pk=comment_id
+        )
+        if comment.author_id != request.user.id:
+            raise PermissionDenied("Это не ваш комментарий.")
+        if not can_edit_comment(comment, request.user):
+            raise PermissionDenied("Комментарий можно изменить только в течение 15 минут.")
+        if request.method == "DELETE":
+            comment.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        serializer = TaskCommentSerializer(
+            comment, data=request.data, partial=True, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save(edited_at=timezone.now())
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"])
+    def timeline(self, request, pk=None):
+        """Лента карточки задачи (TRU-184): комментарии и события журнала
+        одной лентой по времени, старые сверху; текст событий — готовый."""
+        task = self.get_object()
+        return Response({"items": build_timeline(task, request.user)})
 
     @action(detail=False, methods=["get"])
     def escalation(self, request):
@@ -204,7 +303,7 @@ class TaskViewSet(
             return Response({"detail": "Укажите child."}, status=400)
 
         tasks = (
-            visible_tasks(request.user)
+            with_comments_count(visible_tasks(request.user))
             .filter(
                 Q(child_id=child_id)
                 | Q(lead__converted_child_id=child_id)
