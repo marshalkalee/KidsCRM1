@@ -59,6 +59,7 @@ AUTO_NOTIFY_LESSON_CHANGES_ENABLED = "auto_notify_lesson_changes_enabled"
 AUTO_NOTIFY_LESSON_REMINDER_ENABLED = "auto_notify_lesson_reminder_enabled"
 AUTO_NOTIFY_LESSON_REMINDER_HOURS = "auto_notify_lesson_reminder_hours"
 AUTO_NOTIFY_CHANGE_DELAY_MINUTES = "auto_notify_change_delay_minutes"
+WHATSAPP_UNANSWERED_HOURS = "whatsapp_unanswered_hours"
 ACCESS_SETTINGS = (
     TEACHER_SEES_PARENT_PHONES,
     TEACHER_SEES_FINANCES,
@@ -126,6 +127,8 @@ DEFAULT_ORG_SETTINGS = {
     AUTO_NOTIFY_LESSON_REMINDER_ENABLED: False,
     AUTO_NOTIFY_LESSON_REMINDER_HOURS: 24,
     AUTO_NOTIFY_CHANGE_DELAY_MINUTES: 5,
+    # Через сколько часов входящее WhatsApp-сообщение без ответа становится задачей.
+    WHATSAPP_UNANSWERED_HOURS: 4,
 }
 
 

@@ -2865,5 +2865,18 @@
  "Цена": "Price",
  "Что нужно сделать": "What needs to be done",
  "Эскалация просроченных задач": "Overdue task escalation",
- "WhatsApp Business": "WhatsApp Business"
+ "WhatsApp Business": "WhatsApp Business",
+ "Входящие WhatsApp": "WhatsApp inbox",
+ "Входящие сообщения автоматически попадают в историю ребёнка или заявки. Неоднозначные совпадения остаются здесь для ручной привязки.": "Incoming messages automatically go to the child's or lead's history. Ambiguous matches remain here for manual linking.",
+ "Нужно разобрать: {n}": "Needs review: {n}",
+ "Входящих сообщений пока нет": "No incoming messages yet",
+ "После подключения Meta Cloud API сообщения родителей появятся здесь автоматически.": "After Meta Cloud API is connected, parents' messages will appear here automatically.",
+ "Сообщение привязано": "Message linked",
+ "Можно ответить в течение 24 часов": "Reply available within 24 hours",
+ "Выберите карточку вручную": "Choose a record manually",
+ "Подходящих карточек не найдено": "No matching records found",
+ "Получено": "Received",
+ "Обрабатывается": "Processing",
+ "Привязано": "Linked",
+ "Нужно разобрать": "Needs review"
 }

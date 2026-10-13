@@ -7,15 +7,24 @@ import logging
 import secrets
 import urllib.error
 import urllib.request
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
-from domains.people.clients.models import ContactPhone, ParentContact
+from domains.people.clients.models import (
+    ChildContact,
+    CommunicationLog,
+    ContactPhone,
+    ParentContact,
+)
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.leads.models import Lead, LeadComment, LeadSource
+from domains.platform.users.models import User
 
 from ..models import (
+    InboundWhatsAppMessage,
     MessageTemplate,
     MessagingConsent,
     OutboundMessage,
@@ -248,6 +257,165 @@ def _parent_by_phone(organization, raw_phone):
     return contact.parent_contact if contact else None
 
 
+def _message_text(incoming):
+    kind = incoming.get("type", "text")
+    if kind == "text":
+        return (incoming.get("text") or {}).get("body", "").strip()
+    media = incoming.get(kind) or {}
+    return (media.get("caption") or media.get("filename") or f"[{kind}]").strip()
+
+
+def _message_media(incoming):
+    kind = incoming.get("type", "text")
+    if kind not in {"image", "document", "audio", "video", "sticker"}:
+        return {}
+    value = incoming.get(kind) or {}
+    return {
+        key: value[key]
+        for key in ("id", "mime_type", "sha256", "filename", "caption")
+        if value.get(key)
+    }
+
+
+def _system_author(organization):
+    return (
+        User.objects.filter(organization=organization, is_active=True, role=User.Role.OWNER)
+        .order_by("created_at")
+        .first()
+        or User.objects.filter(organization=organization, is_active=True)
+        .order_by("created_at")
+        .first()
+    )
+
+
+def _link_to_child(message, child, parent, *, resolved_by=None):
+    author = resolved_by or _system_author(message.organization)
+    if author is None:
+        message.status = InboundWhatsAppMessage.Status.UNRESOLVED
+        message.resolution_note = "Нет активного сотрудника для журнала коммуникаций"
+        message.save(update_fields=["status", "resolution_note", "updated_at"])
+        return message
+    log = CommunicationLog.objects.create(
+        organization=message.organization,
+        child=child,
+        parent_contact=parent,
+        channel=CommunicationLog.Channel.WHATSAPP,
+        note=message.text or f"Входящий файл WhatsApp: {message.message_type}",
+        author=author,
+    )
+    message.parent = parent
+    message.child = child
+    message.communication_log = log
+    message.status = InboundWhatsAppMessage.Status.LINKED
+    message.resolution_note = "Добавлено в историю коммуникаций ребёнка"
+    message.resolved_by = resolved_by
+    message.resolved_at = timezone.now()
+    message.save()
+    if parent:
+        WhatsAppContactWindow.objects.update_or_create(
+            organization=message.organization,
+            parent=parent,
+            defaults={"last_inbound_at": message.provider_sent_at or timezone.now()},
+        )
+    return message
+
+
+def _open_service_window(message, parent):
+    if parent:
+        WhatsAppContactWindow.objects.update_or_create(
+            organization=message.organization,
+            parent=parent,
+            defaults={"last_inbound_at": message.provider_sent_at or timezone.now()},
+        )
+
+
+def _link_to_lead(message, lead, *, resolved_by=None):
+    LeadComment.objects.create(
+        organization=message.organization,
+        lead=lead,
+        author=resolved_by,
+        text=f"WhatsApp: {message.text or f'[{message.message_type}]'}",
+    )
+    message.lead = lead
+    message.status = InboundWhatsAppMessage.Status.LINKED
+    message.resolution_note = "Добавлено в историю заявки"
+    message.resolved_by = resolved_by
+    message.resolved_at = timezone.now()
+    message.save()
+    return message
+
+
+@transaction.atomic
+def route_inbound_message(message_id, *, resolved_by=None):
+    """Route exactly once; ambiguous matches remain in the manual inbox."""
+    message = InboundWhatsAppMessage.objects.select_for_update().get(pk=message_id)
+    if message.status == InboundWhatsAppMessage.Status.LINKED:
+        return message
+    message.status = InboundWhatsAppMessage.Status.PROCESSING
+    message.save(update_fields=["status", "updated_at"])
+    parent = _parent_by_phone(message.organization, message.sender_phone)
+    if parent:
+        _open_service_window(message, parent)
+        links = list(
+            ChildContact.objects.for_tenant(message.organization)
+            .filter(parent_contact=parent)
+            .select_related("child")
+        )
+        children = {link.child_id: link.child for link in links}
+        if len(children) == 1:
+            return _link_to_child(
+                message, next(iter(children.values())), parent, resolved_by=resolved_by
+            )
+        message.parent = parent
+        message.status = InboundWhatsAppMessage.Status.UNRESOLVED
+        message.resolution_note = (
+            "У контакта несколько детей — выберите карточку вручную"
+            if children
+            else "Контакт найден, но ребёнок не привязан"
+        )
+        message.save()
+        return message
+    leads = list(
+        Lead.objects.for_tenant(message.organization)
+        .filter(phone=message.sender_phone)
+        .exclude(status__in=[Lead.Status.PURCHASED, Lead.Status.REJECTED])[:2]
+    )
+    if len(leads) == 1:
+        return _link_to_lead(message, leads[0], resolved_by=resolved_by)
+    if len(leads) > 1:
+        message.status = InboundWhatsAppMessage.Status.UNRESOLVED
+        message.resolution_note = "Найдено несколько открытых заявок — выберите вручную"
+        message.save()
+        return message
+    source, _ = LeadSource.objects.get_or_create(
+        organization=message.organization, name="WhatsApp", defaults={"is_active": True}
+    )
+    lead = Lead.objects.create(
+        organization=message.organization,
+        parent_name=f"WhatsApp {message.sender_phone}",
+        phone=message.sender_phone,
+        source=source,
+        status=Lead.Status.NEW,
+    )
+    return _link_to_lead(message, lead, resolved_by=resolved_by)
+
+
+@transaction.atomic
+def resolve_inbound_message(message, *, child=None, lead=None, user=None):
+    message = InboundWhatsAppMessage.objects.select_for_update().get(pk=message.pk)
+    if message.status == InboundWhatsAppMessage.Status.LINKED:
+        raise ValueError("Сообщение уже привязано")
+    if bool(child) == bool(lead):
+        raise ValueError("Выберите ребёнка или заявку")
+    target = child or lead
+    if target.organization_id != message.organization_id:
+        raise ValueError("Карточка из другой организации")
+    if child:
+        parent = message.parent or _parent_by_phone(message.organization, message.sender_phone)
+        return _link_to_child(message, child, parent, resolved_by=user)
+    return _link_to_lead(message, lead, resolved_by=user)
+
+
 def handle_webhook(payload):
     """Apply delivery receipts and update the 24-hour service window."""
     changed = 0
@@ -275,19 +443,61 @@ def handle_webhook(payload):
                 message.save(update_fields=["status", "error", "updated_at"])
                 changed += 1
             for incoming in value.get("messages", []):
-                parent = _parent_by_phone(connection.organization, incoming.get("from", ""))
-                if not parent:
+                try:
+                    sender_phone = normalize_phone_number(incoming.get("from", ""))
+                except InvalidPhoneNumberError:
                     continue
-                WhatsAppContactWindow.objects.update_or_create(
-                    organization=connection.organization,
-                    parent=parent,
-                    defaults={"last_inbound_at": timezone.now()},
+                recent_count = (
+                    InboundWhatsAppMessage.objects.for_tenant(connection.organization)
+                    .filter(
+                        sender_phone=sender_phone,
+                        created_at__gte=timezone.now() - timedelta(minutes=1),
+                    )
+                    .count()
                 )
-                text = (incoming.get("text") or {}).get("body", "").strip().casefold()
+                kind = incoming.get("type", "text")
+                provider_message_id = incoming.get("id") or (
+                    "missing-"
+                    + hashlib.sha256(json.dumps(incoming, sort_keys=True).encode()).hexdigest()
+                )
+                message, created = InboundWhatsAppMessage.objects.get_or_create(
+                    organization=connection.organization,
+                    provider_message_id=provider_message_id,
+                    defaults={
+                        "sender_phone": sender_phone,
+                        "message_type": kind,
+                        "text": _message_text(incoming),
+                        "media": _message_media(incoming),
+                        "raw_payload": incoming,
+                        "provider_sent_at": datetime.fromtimestamp(
+                            int(incoming["timestamp"]), tz=UTC
+                        )
+                        if incoming.get("timestamp")
+                        else timezone.now(),
+                    },
+                )
+                if not created:
+                    continue
+                if recent_count >= 30:
+                    message.status = InboundWhatsAppMessage.Status.IGNORED
+                    message.resolution_note = "Лимит входящих сообщений с одного номера"
+                    message.save(update_fields=["status", "resolution_note", "updated_at"])
+                    continue
+                try:
+                    route_inbound_message(message.id)
+                except Exception:
+                    logger.exception("Failed to route WhatsApp message %s", message.id)
+                    message.status = InboundWhatsAppMessage.Status.FAILED
+                    message.resolution_note = "Ошибка обработки — повторите или привяжите вручную"
+                    message.save(update_fields=["status", "resolution_note", "updated_at"])
+                    continue
+                message.refresh_from_db()
+                parent = message.parent
+                text = message.text.casefold()
                 if text in {"stop", "стоп", "тоқта"}:
                     from .service import set_consent
 
-                    for category in ("utility", "marketing"):
+                    for category in ("utility", "marketing") if parent else ():
                         set_consent(
                             parent,
                             category,

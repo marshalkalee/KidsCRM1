@@ -209,3 +209,74 @@ class WhatsAppContactWindow(TenantModel):
                 fields=["organization", "parent"], name="whatsapp_window_unique_parent"
             )
         ]
+
+
+class InboundWhatsAppMessage(TenantModel):
+    """One idempotent inbound Meta message and its CRM routing result (TRU-170)."""
+
+    class Status(models.TextChoices):
+        RECEIVED = "received", "Получено"
+        PROCESSING = "processing", "Обрабатывается"
+        LINKED = "linked", "Привязано"
+        UNRESOLVED = "unresolved", "Нужно разобрать"
+        IGNORED = "ignored", "Пропущено"
+        FAILED = "failed", "Ошибка"
+
+    provider_message_id = models.CharField(max_length=255)
+    sender_phone = models.CharField(max_length=20, blank=True)
+    message_type = models.CharField(max_length=24, default="text")
+    text = models.TextField(blank=True)
+    media = models.JSONField(default=dict, blank=True)
+    raw_payload = models.JSONField(default=dict, blank=True)
+    provider_sent_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.RECEIVED)
+    resolution_note = models.CharField(max_length=500, blank=True)
+    parent = models.ForeignKey(
+        "clients.ParentContact",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_whatsapp_messages",
+    )
+    child = models.ForeignKey(
+        "clients.Child",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_whatsapp_messages",
+    )
+    lead = models.ForeignKey(
+        "leads.Lead",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_whatsapp_messages",
+    )
+    communication_log = models.OneToOneField(
+        "clients.CommunicationLog",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_whatsapp_message",
+    )
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="resolved_inbound_whatsapp_messages",
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "provider_message_id"],
+                name="inbound_whatsapp_unique_provider_message",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["organization", "status", "-created_at"]),
+            models.Index(fields=["organization", "sender_phone", "-created_at"]),
+        ]
