@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarOff, ChevronLeft, ChevronRight, Plus, Trash2, UserX } from 'lucide-react'
+import { CalendarOff, ChevronLeft, ChevronRight, Plus, Trash2, UserCheck, UserX } from 'lucide-react'
 import api from '../api/axios'
+import AbsenceSubstitutionModal from '../components/schedule/AbsenceSubstitutionModal'
 import {
   Badge, Button, Card, CardHeader, DateInput, EmptyState, ErrorState, Field, Modal, PageHeader,
   Select, Skeleton, Textarea, apiErrorMessage, cn, useConfirm, useToast,
@@ -46,6 +47,7 @@ export default function Absences() {
   const [staff, setStaff] = useState([])
   const [error, setError] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [substituting, setSubstituting] = useState(null)
 
   const first = iso(month)
   const last = iso(new Date(month.getFullYear(), month.getMonth() + 1, 0))
@@ -79,7 +81,7 @@ export default function Absences() {
 
       {error ? <Card><ErrorState onRetry={() => { setError(false); load() }} /></Card> : (
         <>
-          <UncoveredCard data={uncovered} />
+          <UncoveredCard data={uncovered} onSubstitute={setSubstituting} />
           <Card>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-1">
@@ -118,13 +120,35 @@ export default function Absences() {
           staff={staff}
           onClose={() => setEditing(null)}
           onDone={() => { setEditing(null); load() }}
+          onSubstitute={absence => { setEditing(null); setSubstituting(absence) }}
+        />
+      )}
+      {substituting && (
+        <AbsenceSubstitutionModal
+          absence={substituting}
+          onClose={() => setSubstituting(null)}
+          onDone={() => { setSubstituting(null); load() }}
         />
       )}
     </div>
   )
 }
 
-function UncoveredCard({ data }) {
+function groupByAbsence(rows) {
+  const groups = new Map()
+  for (const row of rows) {
+    if (!groups.has(row.absence.id)) {
+      groups.set(row.absence.id, {
+        absence: { ...row.absence, staff: row.teacher, staff_name: row.teacher_name },
+        rows: [],
+      })
+    }
+    groups.get(row.absence.id).rows.push(row)
+  }
+  return [...groups.values()]
+}
+
+function UncoveredCard({ data, onSubstitute }) {
   if (data === null) return <Skeleton className="h-24" />
   const rows = data.results
   return (
@@ -137,41 +161,51 @@ function UncoveredCard({ data }) {
       {rows.length === 0 ? (
         <p className="text-[13px] text-ink-muted">{t('Все занятия закрыты: замены не нужны.')}</p>
       ) : (
-        <ul className="divide-y divide-line">
-          {rows.map(row => {
-            const day = row.starts_at_local.slice(0, 10)
-            return (
-              <li key={row.id}>
-                <Link
-                  to={`/schedule?view=day&date=${day}&lesson=${row.id}`}
-                  className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-surface-muted"
-                >
-                  <div className="w-14 shrink-0 text-center">
-                    <div className="text-[13px] font-bold text-ink">{shortDate(day)}</div>
-                    <div className="text-[12px] text-ink-muted">{row.starts_at_local.slice(11, 16)}</div>
-                  </div>
-                  <span className="h-8 w-1 shrink-0 rounded-full" style={{ backgroundColor: row.direction_color || '#9aa3ad' }} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[14px] font-semibold text-ink">{row.group_name || t('Индивидуальное занятие')}</div>
-                    <div className="truncate text-[12px] text-ink-muted">
-                      {[row.branch_name, row.room_name].filter(Boolean).join(' · ')}
-                    </div>
-                    <div className="truncate text-[12px] font-semibold text-danger-600 sm:hidden">
-                      {row.teacher_name} · {t(row.absence.kind_display)} {t('до {date}', { date: shortDate(row.absence.ends_on) })}
-                    </div>
-                  </div>
-                  <div className="hidden min-w-0 text-right sm:block">
-                    <div className="flex items-center justify-end gap-1 truncate text-[13px] font-semibold text-danger-600">
-                      <UserX className="size-3.5 shrink-0" />{row.teacher_name}
-                    </div>
-                    <div className="text-[12px] text-ink-muted">{t(row.absence.kind_display)} {t('до {date}', { date: shortDate(row.absence.ends_on) })}</div>
-                  </div>
-                  <ChevronRight className="size-4 shrink-0 text-ink-subtle" />
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
+        <div className="space-y-4">
+          {groupByAbsence(rows).map(({ absence, rows: lessons }) => (
+            <section key={absence.id} className="rounded-xl border border-line">
+              <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-danger-50/40 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 truncate text-[14px] font-bold text-danger-600">
+                    <UserX className="size-4 shrink-0" />{absence.staff_name}
+                  </p>
+                  <p className="text-[12px] text-ink-muted">
+                    {t(absence.kind_display)} {period(absence)} · {t('без преподавателя: {count}', { count: lessons.length })}
+                  </p>
+                </div>
+                <Button size="sm" variant="primary" icon={UserCheck} onClick={() => onSubstitute(absence)}>
+                  {t('Назначить замену')}
+                </Button>
+              </header>
+              <ul className="divide-y divide-line px-2">
+                {lessons.map(row => {
+                  const day = row.starts_at_local.slice(0, 10)
+                  return (
+                    <li key={row.id}>
+                      <Link
+                        to={`/schedule?view=day&date=${day}&lesson=${row.id}`}
+                        className="flex items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-surface-muted"
+                      >
+                        <div className="w-14 shrink-0 text-center">
+                          <div className="text-[13px] font-bold text-ink">{shortDate(day)}</div>
+                          <div className="text-[12px] text-ink-muted">{row.starts_at_local.slice(11, 16)}</div>
+                        </div>
+                        <span className="h-8 w-1 shrink-0 rounded-full" style={{ backgroundColor: row.direction_color || '#9aa3ad' }} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[14px] font-semibold text-ink">{row.group_name || t('Индивидуальное занятие')}</div>
+                          <div className="truncate text-[12px] text-ink-muted">
+                            {[row.branch_name, row.room_name].filter(Boolean).join(' · ')}
+                          </div>
+                        </div>
+                        <ChevronRight className="size-4 shrink-0 text-ink-subtle" />
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          ))}
+        </div>
       )}
     </Card>
   )
@@ -271,7 +305,7 @@ function MonthList({ absences, onOpen }) {
   )
 }
 
-function AbsenceModal({ absence, staff, onClose, onDone }) {
+function AbsenceModal({ absence, staff, onClose, onDone, onSubstitute }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [form, setForm] = useState(() => ({
@@ -336,6 +370,7 @@ function AbsenceModal({ absence, staff, onClose, onDone }) {
       footer={
         <>
           {absence && <Button variant="danger-ghost" icon={Trash2} className="mr-auto" onClick={remove}>{t('Удалить')}</Button>}
+          {absence && <Button icon={UserCheck} onClick={() => onSubstitute(absence)}>{t('Назначить замену')}</Button>}
           <Button onClick={onClose}>{t('Отмена')}</Button>
           <Button variant="primary" type="submit" form="absence-form" loading={busy}>{t('Сохранить')}</Button>
         </>

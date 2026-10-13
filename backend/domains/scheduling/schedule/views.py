@@ -829,6 +829,7 @@ class StaffAbsenceViewSet(TenantModelViewSet):
                     "group_name": group.name if group else None,
                     "direction_color": group.direction.color if group else None,
                     "room_name": lesson.room.name if lesson.room else None,
+                    "branch_id": str(branch.id) if branch else None,
                     "branch_name": branch.name if branch else None,
                     "teacher": str(lesson.teacher_id),
                     "teacher_name": lesson.teacher.full_name,
