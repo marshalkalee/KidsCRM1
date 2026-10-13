@@ -1,6 +1,12 @@
 from rest_framework import serializers
 
-from .models import Task
+from .models import Task, TaskComment
+
+
+def comments_count(task):
+    """Счётчик комментариев в списке (TRU-184) — из аннотации queryset
+    (views.with_comments_count), без запроса на каждую задачу."""
+    return getattr(task, "comments_count", 0) or 0
 
 
 class TaskSerializer(serializers.ModelSerializer):
@@ -17,6 +23,7 @@ class TaskSerializer(serializers.ModelSerializer):
     contact_phone = serializers.SerializerMethodField()
     contact_whatsapp = serializers.SerializerMethodField()
     child_debt = serializers.SerializerMethodField()
+    comments_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -43,6 +50,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "contact_phone",
             "contact_whatsapp",
             "child_debt",
+            "comments_count",
             "created_at",
             "updated_at",
         ]
@@ -82,6 +90,9 @@ class TaskSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"assigned_to": "Этот сотрудник работает в другом филиале."}
                 )
+
+    def get_comments_count(self, obj):
+        return comments_count(obj)
 
     def get_contact_phone(self, obj):
         contact = self._payer_contact(obj)
@@ -130,6 +141,7 @@ class TaskHistorySerializer(serializers.ModelSerializer):
     type_display = serializers.CharField(source="get_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     lead_name = serializers.CharField(source="lead.parent_name", read_only=True, default=None)
+    comments_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -147,6 +159,7 @@ class TaskHistorySerializer(serializers.ModelSerializer):
             "assigned_to",
             "assigned_to_name",
             "created_by_name",
+            "comments_count",
             "lead",
             "lead_name",
             "child",
@@ -154,3 +167,34 @@ class TaskHistorySerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = fields
+
+    def get_comments_count(self, obj):
+        return comments_count(obj)
+
+
+class TaskCommentSerializer(serializers.ModelSerializer):
+    """Комментарий к задаче (TRU-184). can_edit — автор и первые 15 минут."""
+
+    author_name = serializers.CharField(source="author.full_name", read_only=True, default=None)
+    edited = serializers.SerializerMethodField()
+    can_edit = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TaskComment
+        fields = ["id", "author", "author_name", "text", "created_at", "edited", "can_edit"]
+        read_only_fields = ["id", "author", "author_name", "created_at", "edited", "can_edit"]
+
+    def validate_text(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Напишите комментарий.")
+        return value
+
+    def get_edited(self, obj):
+        return obj.edited_at is not None
+
+    def get_can_edit(self, obj):
+        from .timeline import can_edit_comment
+
+        request = self.context.get("request")
+        return bool(request and can_edit_comment(obj, request.user))

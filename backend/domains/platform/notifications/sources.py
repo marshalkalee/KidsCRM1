@@ -29,6 +29,9 @@ from domains.platform.leads.models import Lead
 from domains.platform.leads.services import visible_leads
 from domains.platform.users.models import User
 
+# Комментарии к своим задачам старше недели в колокольчике уже не нужны.
+TASK_COMMENTS_DAYS = datetime.timedelta(days=7)
+
 
 @dataclass
 class Item:
@@ -188,6 +191,24 @@ def ai_digest(user, branch_ids):
     return Item("ai_digest", 1 if latest else 0, latest, "/digest")
 
 
+def task_comments(user, branch_ids):
+    """Новые комментарии коллег к задачам, где сотрудник исполнитель
+    (TRU-184). Личное — филиал в шапке не сужает. Одна задача — сразу в
+    её карточку, несколько — на «Задачи», где у задач счётчик комментариев."""
+    from domains.platform.tasks.models import TaskComment
+    from domains.platform.tasks.services import visible_tasks
+
+    comments = TaskComment.objects.for_tenant(user.organization).filter(
+        task__in=visible_tasks(user).filter(assigned_to=user),
+        created_at__gte=timezone.now() - TASK_COMMENTS_DAYS,
+    )
+    comments = comments.exclude(author=user)
+    task_ids = list(comments.order_by().values_list("task_id", flat=True).distinct())
+    latest = comments.order_by("-created_at").values_list("created_at", flat=True).first()
+    link = f"/tasks?open={task_ids[0]}" if len(task_ids) == 1 else "/tasks"
+    return Item("task_comments", len(task_ids), latest, link)
+
+
 SOURCES = [
     new_leads,
     parent_requests,
@@ -195,5 +216,6 @@ SOURCES = [
     overdue_debts,
     no_subscription,
     overdue_tasks,
+    task_comments,
     ai_digest,
 ]

@@ -214,12 +214,17 @@ class NotificationRolesAndBranchesTests(NotificationFixtures):
                 "overdue_debts",
                 "no_subscription",
                 "overdue_tasks",
+                "task_comments",
                 "ai_digest",
             },
         )
-        self.assertEqual(set(by_kind(client_for(self.teacher).get(URL))), {"unmarked_lessons"})
+        # Комментарии к своим задачам (TRU-184) — всем: поручить можно любому (Д37).
         self.assertEqual(
-            set(by_kind(client_for(self.accountant).get(URL))), {"overdue_debts", "no_subscription"}
+            set(by_kind(client_for(self.teacher).get(URL))), {"unmarked_lessons", "task_comments"}
+        )
+        self.assertEqual(
+            set(by_kind(client_for(self.accountant).get(URL))),
+            {"overdue_debts", "no_subscription", "task_comments"},
         )
 
     def test_admin_sees_only_own_branch(self):

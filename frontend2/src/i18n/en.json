@@ -2883,5 +2883,13 @@
   "Изменить замену": "Change substitute",
   "Замена: {teacher} (вместо {original})": "Substitute: {teacher} (instead of {original})",
   "Замена: {teacher}": "Substitute: {teacher}",
-  "замена": "substitute"
+  "замена": "substitute",
+ "Задача": "Task",
+ "История и комментарии": "History and comments",
+ "Удалить комментарий?": "Delete the comment?",
+ "изменено": "edited",
+ "я": "me",
+ "Комментариев: {n}": "Comments: {n}",
+ "Комментарии к задачам": "Task comments",
+ "Задач с новыми комментариями: {n}": "Tasks with new comments: {n}"
 }
