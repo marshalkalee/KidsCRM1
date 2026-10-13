@@ -21,6 +21,7 @@ from domains.platform.core.permissions import (
 from domains.platform.core.role_permissions import can_view_phone
 from domains.platform.core.viewsets import TenantModelViewSet
 from domains.platform.leads.models import Lead, LeadComment
+from domains.platform.users.models import User
 from domains.scheduling.groups.models import Group
 
 from .absences import absence_map, lessons_of, uncovered_lessons
@@ -32,8 +33,11 @@ from .serializers import (
     LessonEnrollmentSerializer,
     LessonEnrollSerializer,
     LessonSerializer,
+    LessonSubstituteSerializer,
+    LessonSubstitutionRemoveSerializer,
     StaffAbsenceSerializer,
 )
+from .substitutions import SubstitutionError, remove_substitutions, substitute_lessons
 
 
 def _is_confirmed(request):
@@ -87,6 +91,8 @@ class LessonViewSet(TenantModelViewSet):
     pagination_class = None
 
     def get_permissions(self):
+        if self.action == "substitute":
+            return [IsOwnerOrManagerOrAdmin()]
         if self.action in ["create", "update", "partial_update", "destroy", "bulk_cancel"]:
             return [IsOwnerOrManager()]
         if self.action in ["who_to_call", "mark_called"]:
@@ -110,7 +116,7 @@ class LessonViewSet(TenantModelViewSet):
         # без запроса на каждую строку.
         qs = (
             Lesson.objects.for_tenant(self.request.organization)
-            .select_related("room", "teacher", "schedule_slot")
+            .select_related("room", "teacher", "original_teacher", "schedule_slot")
             .prefetch_related(
                 Prefetch("group", queryset=groups_qs),
                 Prefetch(
@@ -382,6 +388,47 @@ class LessonViewSet(TenantModelViewSet):
             LessonSerializer(new_lesson, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=False, methods=["post", "delete"], url_path="substitute")
+    def substitute(self, request):
+        """Assign or remove a teacher substitution for one or many lessons."""
+        if request.method == "DELETE":
+            payload = LessonSubstitutionRemoveSerializer(data=request.data)
+            payload.is_valid(raise_exception=True)
+            try:
+                lessons = remove_substitutions(
+                    organization=request.organization,
+                    lesson_ids=payload.validated_data["lesson_ids"],
+                    actor=request.user,
+                )
+            except SubstitutionError as exc:
+                raise DRFValidationError({"detail": str(exc)}) from exc
+        else:
+            payload = LessonSubstituteSerializer(data=request.data)
+            payload.is_valid(raise_exception=True)
+            teacher = User.objects.filter(
+                organization=request.organization,
+                id=payload.validated_data["teacher_id"],
+            ).first()
+            if teacher is None:
+                raise DRFValidationError({"teacher_id": "Преподаватель не найден."})
+            try:
+                lessons = substitute_lessons(
+                    organization=request.organization,
+                    lesson_ids=payload.validated_data["lesson_ids"],
+                    teacher=teacher,
+                    actor=request.user,
+                    notify_parents=payload.validated_data["notify_parents"],
+                )
+            except SubstitutionError as exc:
+                raise DRFValidationError({"detail": str(exc)}) from exc
+
+        serialized = LessonSerializer(
+            lessons,
+            many=True,
+            context={"request": request},
+        )
+        return Response({"updated_count": len(lessons), "results": serialized.data})
 
     @action(detail=False, methods=["get"])
     def conflicts(self, request):

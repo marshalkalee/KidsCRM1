@@ -35,6 +35,8 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
     direction_color = serializers.SerializerMethodField()
     room_name = serializers.SerializerMethodField()
     teacher_name = serializers.SerializerMethodField()
+    original_teacher_name = serializers.SerializerMethodField()
+    is_substitution = serializers.SerializerMethodField()
     capacity = serializers.SerializerMethodField()
     enrolled_count = serializers.SerializerMethodField()
     trial_count = serializers.SerializerMethodField()
@@ -62,6 +64,9 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
             "room_name",
             "teacher",
             "teacher_name",
+            "original_teacher",
+            "original_teacher_name",
+            "is_substitution",
             "starts_at",
             "ends_at",
             "starts_at_local",
@@ -87,7 +92,12 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "original_teacher",
+            "created_at",
+            "updated_at",
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -113,6 +123,12 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
 
     def get_teacher_name(self, obj):
         return obj.teacher.full_name if obj.teacher else None
+
+    def get_original_teacher_name(self, obj):
+        return obj.original_teacher.full_name if obj.original_teacher else None
+
+    def get_is_substitution(self, obj):
+        return obj.original_teacher_id is not None
 
     def get_capacity(self, obj):
         return obj.group.capacity if obj.group else None
@@ -277,6 +293,30 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
                 }
             )
         return attrs
+
+
+class LessonSubstituteSerializer(serializers.Serializer):
+    lesson_ids = serializers.ListField(
+        child=serializers.UUIDField(), allow_empty=False, max_length=500
+    )
+    teacher_id = serializers.UUIDField()
+    notify_parents = serializers.BooleanField(default=True)
+
+    def validate_lesson_ids(self, value):
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("Занятия не должны повторяться.")
+        return value
+
+
+class LessonSubstitutionRemoveSerializer(serializers.Serializer):
+    lesson_ids = serializers.ListField(
+        child=serializers.UUIDField(), allow_empty=False, max_length=500
+    )
+
+    def validate_lesson_ids(self, value):
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("Занятия не должны повторяться.")
+        return value
 
 
 class LessonEnrollmentSerializer(serializers.ModelSerializer):

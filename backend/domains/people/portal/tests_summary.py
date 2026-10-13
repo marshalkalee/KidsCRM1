@@ -103,6 +103,24 @@ class ParentHomeTests(PortalAuthBase):
         GroupMembership.objects.filter(child=self.child).update(left_at=date(2026, 9, 20))
         self.assertEqual(self.summary().data["next_lessons"], [])
 
+    def test_next_lesson_marks_teacher_substitution(self):
+        substitute = User.objects.create_user(
+            phone="+77010000057",
+            password="x",
+            full_name="Ольга Ким",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        lesson = self.lesson(24, self.group)
+        lesson.original_teacher = self.teacher
+        lesson.teacher = substitute
+        lesson.save(update_fields=["teacher", "original_teacher", "updated_at"])
+
+        row = self.summary().data["next_lessons"][0]
+        self.assertEqual(row["teacher"], "Ольга Ким")
+        self.assertTrue(row["teacher_is_substitute"])
+        self.assertEqual(row["original_teacher"], "Динара Сейтказы")
+
     def test_subscription_and_to_pay_match_admin(self):
         version = create_type(
             self.org,

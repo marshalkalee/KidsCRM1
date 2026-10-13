@@ -10,6 +10,7 @@ from domains.money.subscriptions.subscription_types import create_type
 from domains.people.clients.models import Child
 from domains.platform.tasks.models import Task
 from domains.platform.tenants.models import Direction
+from domains.platform.users.models import User
 from domains.scheduling.attendance.models import Attendance
 from domains.scheduling.groups.models import Group, GroupMembership
 from domains.scheduling.schedule.models import Lesson, LessonEnrollment
@@ -128,6 +129,31 @@ class ParentScheduleTests(PortalAuthBase):
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertNotIn(str(lesson.id), {str(row["id"]) for row in response.data["results"]})
+
+    def test_schedule_marks_teacher_substitution(self):
+        original = User.objects.create_user(
+            phone="+77010000201",
+            password="x",
+            full_name="Петрова Б.",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        substitute = User.objects.create_user(
+            phone="+77010000202",
+            password="x",
+            full_name="Иванова А.",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        lesson = self.lesson(self.today + datetime.timedelta(days=1))
+        lesson.teacher = substitute
+        lesson.original_teacher = original
+        lesson.save(update_fields=["teacher", "original_teacher", "updated_at"])
+
+        row = self.get().data["results"][0]
+        self.assertEqual(row["teacher_name"], "Иванова А.")
+        self.assertTrue(row["teacher_is_substitute"])
+        self.assertEqual(row["original_teacher_name"], "Петрова Б.")
 
     def test_schedule_respects_week_or_month_period(self):
         in_range = self.lesson(self.today + datetime.timedelta(days=2))

@@ -160,6 +160,42 @@ EVENTS = {
             link="/parent/schedule",
         ),
         Event(
+            key="teacher_substitute",
+            label="Замена преподавателя",
+            category=MessageCategory.UTILITY,
+            variables={
+                "child": "Имя ребёнка",
+                "teacher": "Заменяющий преподаватель",
+                "lessons": "Занятия, на которых назначена замена",
+            },
+            email={
+                "ru": (
+                    "{center}: замена преподавателя",
+                    "Здравствуйте, {parent}!\n\n"
+                    "Для {child} назначена замена преподавателя. "
+                    "Занятия: {lessons}. Преподаватель: {teacher}.\n\n"
+                    "{center}",
+                ),
+                "kk": (
+                    "{center}: оқытушы ауыстырылды",
+                    "Сәлеметсіз бе, {parent}!\n\n"
+                    "{child} үшін оқытушы ауыстырылды. Сабақтар: {lessons}. "
+                    "Оқытушы: {teacher}.\n\n{center}",
+                ),
+            },
+            push={
+                "ru": (
+                    "Замена преподавателя",
+                    "{child}: преподаватель {teacher}. {lessons}",
+                ),
+                "kk": (
+                    "Оқытушы ауыстырылды",
+                    "{child}: оқытушы {teacher}. {lessons}",
+                ),
+            },
+            link="/parent/schedule",
+        ),
+        Event(
             key="announcement",
             label="Новое объявление центра",
             category=MessageCategory.UTILITY,

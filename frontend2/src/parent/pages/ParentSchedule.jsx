@@ -315,7 +315,7 @@ function MakeupBooking({ child, attendanceId, options }) {
                   <p className="mt-2 font-semibold text-ink">{row.group_name}</p>
                   <div className="mt-2 space-y-1 text-[12.5px] text-ink-muted">
                     <p className="flex items-center gap-1.5"><MapPin className="size-4" />{[row.branch_name, row.room_name].filter(Boolean).join(' · ')}</p>
-                    {row.teacher_name && <p className="flex items-center gap-1.5"><UserRound className="size-4" />{row.teacher_name}</p>}
+                    {row.teacher_name && <p className="flex items-center gap-1.5"><UserRound className="size-4" />{row.teacher_name}{row.teacher_is_substitute && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">{t('замена')}</span>}</p>}
                     <p className="flex items-center gap-1.5"><UsersRound className="size-4" />{row.current_count}/{row.capacity}</p>
                   </div>
                 </div>
@@ -627,7 +627,7 @@ function LessonMeta({ row, className }) {
     <div className={className}>
       {place && <span className="inline-flex items-center gap-1.5 text-ink-muted"><MapPin className="size-4 shrink-0" />{place}</span>}
       {row.branch_address && <span className="inline-flex items-center gap-1.5 text-ink-muted"><MapPin className="size-4 shrink-0" />{row.branch_address}</span>}
-      {row.teacher_name && <span className="inline-flex items-center gap-1.5 text-ink-muted"><UserRound className="size-4 shrink-0" />{row.teacher_name}</span>}
+      {row.teacher_name && <span className="inline-flex items-center gap-1.5 text-ink-muted"><UserRound className="size-4 shrink-0" />{row.teacher_name}{row.teacher_is_substitute && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">{t('замена')}</span>}</span>}
       {row.status === 'cancelled' && cancellationReason && <p className="col-span-full font-semibold text-danger-600">{t('Причина отмены: {reason}', { reason: cancellationReason })}</p>}
       {row.status === 'rescheduled' && cancellationReason && <p className="col-span-full font-semibold text-warning-600">{t('Причина переноса: {reason}', { reason: cancellationReason })}</p>}
       {row.status === 'rescheduled' && row.rescheduled_to && (

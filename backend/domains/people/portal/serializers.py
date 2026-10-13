@@ -37,6 +37,10 @@ class ParentLessonSerializer(serializers.ModelSerializer):
     branch_address = serializers.SerializerMethodField()
     room_name = serializers.CharField(source="room.name", read_only=True, default=None)
     teacher_name = serializers.CharField(source="teacher.full_name", read_only=True, default=None)
+    teacher_is_substitute = serializers.SerializerMethodField()
+    original_teacher_name = serializers.CharField(
+        source="original_teacher.full_name", read_only=True, default=None
+    )
     enrollment_kind = serializers.SerializerMethodField()
     cancel_reason_category_display = serializers.CharField(
         source="get_cancel_reason_category_display", read_only=True
@@ -59,6 +63,8 @@ class ParentLessonSerializer(serializers.ModelSerializer):
             "branch_address",
             "room_name",
             "teacher_name",
+            "teacher_is_substitute",
+            "original_teacher_name",
             "enrollment_kind",
             "cancel_reason_category",
             "cancel_reason_category_display",
@@ -82,6 +88,9 @@ class ParentLessonSerializer(serializers.ModelSerializer):
     def get_enrollment_kind(self, obj):
         enrollments = getattr(obj, "parent_enrollments", [])
         return enrollments[0].kind if enrollments else None
+
+    def get_teacher_is_substitute(self, obj):
+        return obj.original_teacher_id is not None
 
     def _branch(self, obj):
         if obj.group_id:

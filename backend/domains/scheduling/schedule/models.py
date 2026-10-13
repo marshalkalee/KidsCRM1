@@ -64,6 +64,16 @@ class Lesson(TenantModel, TimestampedSoftDeleteModel):
         verbose_name=_("Преподаватель"),
         limit_choices_to={"role": "teacher"},
     )
+    original_teacher = models.ForeignKey(
+        "users.User",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="originally_taught_lessons",
+        verbose_name=_("Преподаватель по расписанию"),
+        limit_choices_to={"role": "teacher"},
+        help_text=_("Заполняется только на время замены преподавателя."),
+    )
 
     starts_at = models.DateTimeField(_("Начало (UTC)"))
     ends_at = models.DateTimeField(_("Конец (UTC)"))
