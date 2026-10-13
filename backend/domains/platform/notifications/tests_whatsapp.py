@@ -10,11 +10,20 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from domains.people.clients.models import ContactPhone, ParentContact
+from domains.people.clients.models import (
+    Child,
+    ChildContact,
+    CommunicationLog,
+    ContactPhone,
+    ParentContact,
+)
+from domains.platform.leads.models import Lead, LeadComment
+from domains.platform.tasks.models import Task
 from domains.platform.tenants.models import Organization
 from domains.platform.users.models import User
 
 from .messaging import service
+from .messaging.tasks import create_unanswered_whatsapp_tasks
 from .messaging.whatsapp import (
     ensure_default_templates,
     handle_webhook,
@@ -22,6 +31,7 @@ from .messaging.whatsapp import (
     within_service_window,
 )
 from .models import (
+    InboundWhatsAppMessage,
     MessageTemplate,
     MessagingConsent,
     OutboundMessage,
@@ -76,6 +86,29 @@ class WhatsAppMessagingTests(TestCase):
                     {"child": "Милана", "amount": "25 000 ₸", "_channel": "whatsapp"},
                     dedup_key=key,
                 )
+
+    def incoming(self, phone="77001234567", text="Здравствуйте", message_id="wamid.1"):
+        return {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "metadata": {"phone_number_id": "console-phone"},
+                                "messages": [
+                                    {
+                                        "id": message_id,
+                                        "from": phone,
+                                        "type": "text",
+                                        "text": {"body": text},
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
 
     def test_console_sync_approves_templates_and_sends(self):
         ensure_default_templates(self.connection)
@@ -179,6 +212,97 @@ class WhatsAppMessagingTests(TestCase):
         digest = hmac.new(b"test-secret", body, hashlib.sha256).hexdigest()
         self.assertTrue(valid_webhook_signature(body, f"sha256={digest}"))
         self.assertFalse(valid_webhook_signature(body, "sha256=wrong"))
+
+    def test_known_parent_message_is_added_to_child_communications_once(self):
+        child = Child.objects.create(
+            organization=self.organization,
+            full_name="Милана Исаева",
+            birth_date=datetime.date(2016, 4, 5),
+        )
+        ChildContact.objects.create(
+            organization=self.organization,
+            child=child,
+            parent_contact=self.parent,
+            role=ChildContact.Role.MOTHER,
+        )
+        payload = self.incoming()
+        handle_webhook(payload)
+        handle_webhook(payload)
+        inbound = InboundWhatsAppMessage.objects.get(provider_message_id="wamid.1")
+        self.assertEqual(inbound.status, InboundWhatsAppMessage.Status.LINKED)
+        self.assertEqual(inbound.child, child)
+        self.assertEqual(CommunicationLog.objects.filter(child=child).count(), 1)
+
+    def test_unknown_phone_creates_new_whatsapp_lead_and_comment(self):
+        handle_webhook(self.incoming("77007778899", "Хочу на балет", "wamid.new"))
+        lead = Lead.objects.get(phone="+77007778899")
+        self.assertEqual(lead.status, Lead.Status.NEW)
+        self.assertEqual(lead.source.name, "WhatsApp")
+        self.assertIn("Хочу на балет", LeadComment.objects.get(lead=lead).text)
+
+    def test_multiple_children_wait_for_manual_choice(self):
+        children = []
+        for index in range(2):
+            child = Child.objects.create(
+                organization=self.organization,
+                full_name=f"Ребёнок {index}",
+                birth_date=datetime.date(2015, 1, index + 1),
+            )
+            ChildContact.objects.create(
+                organization=self.organization,
+                child=child,
+                parent_contact=self.parent,
+                role=ChildContact.Role.MOTHER,
+            )
+            children.append(child)
+        handle_webhook(self.incoming(message_id="wamid.ambiguous"))
+        message = InboundWhatsAppMessage.objects.get(provider_message_id="wamid.ambiguous")
+        self.assertEqual(message.status, InboundWhatsAppMessage.Status.UNRESOLVED)
+        response = self.api.post(
+            f"/api/v1/messaging/whatsapp/inbox/{message.id}/resolve/",
+            {"child_id": str(children[1].id)},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        message.refresh_from_db()
+        self.assertEqual(message.child, children[1])
+        self.assertEqual(message.status, InboundWhatsAppMessage.Status.LINKED)
+
+    def test_webhook_api_queues_processing(self):
+        with mock.patch(
+            "domains.platform.notifications.messaging.tasks.process_whatsapp_webhook.delay"
+        ) as delay:
+            response = self.api.post(
+                "/api/v1/messaging/whatsapp/webhook/",
+                self.incoming(message_id="wamid.queued"),
+                format="json",
+            )
+        self.assertEqual(response.status_code, 200)
+        delay.assert_called_once()
+
+    def test_unanswered_inbound_creates_one_callback_task(self):
+        lead = Lead.objects.create(
+            organization=self.organization,
+            parent_name="Новый родитель",
+            phone="+77007770000",
+            assigned_to=self.owner,
+        )
+        message = InboundWhatsAppMessage.objects.create(
+            organization=self.organization,
+            provider_message_id="wamid.unanswered",
+            sender_phone=lead.phone,
+            text="Когда можно прийти?",
+            lead=lead,
+            status=InboundWhatsAppMessage.Status.LINKED,
+        )
+        InboundWhatsAppMessage.objects.filter(pk=message.pk).update(
+            created_at=timezone.now() - datetime.timedelta(hours=5)
+        )
+        create_unanswered_whatsapp_tasks()
+        create_unanswered_whatsapp_tasks()
+        task = Task.objects.get(source_key=f"whatsapp-inbound:{message.id}")
+        self.assertEqual(task.assigned_to, self.owner)
+        self.assertEqual(Task.objects.filter(source_key=task.source_key).count(), 1)
 
     def test_bulk_preview_shows_template_and_skipped_number_is_journalled(self):
         ensure_default_templates(self.connection)

@@ -44,6 +44,10 @@ def _active_or_current(queryset, current):
 
 
 class LeadSerializer(serializers.ModelSerializer):
+    # Staff-created leads still require a phone. Channel integrations may
+    # create a lead without one through the domain service (for example,
+    # Instagram does not disclose it).
+    phone = serializers.CharField(required=True, allow_blank=False, max_length=20)
     # Названия — этапов центра (TRU-154): переименованный «Связались»
     # подписывается по-новому везде, где показан статус.
     status_label = serializers.SerializerMethodField()

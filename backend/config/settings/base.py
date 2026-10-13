@@ -287,6 +287,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": ("domains.platform.notifications.messaging.tasks" ".dispatch_parent_notifications"),
         "schedule": crontab(minute=15),
     },
+    "create-unanswered-whatsapp-tasks": {
+        "task": (
+            "domains.platform.notifications.messaging.tasks" ".create_unanswered_whatsapp_tasks"
+        ),
+        "schedule": crontab(minute="*/15"),
+    },
 }
 
 # ИИ-помощник (эксперимент): без ключа функции выключены, экраны их не показывают.
@@ -358,6 +364,9 @@ MESSAGING_FROM_EMAIL = env("MESSAGING_FROM_EMAIL", default="noreply@kidscrm.kz")
 WHATSAPP_GRAPH_API_VERSION = env("WHATSAPP_GRAPH_API_VERSION", default="v23.0")
 WHATSAPP_HTTP_TIMEOUT = env.int("WHATSAPP_HTTP_TIMEOUT", default=15)
 WHATSAPP_APP_SECRET = env("WHATSAPP_APP_SECRET", default="")
+INSTAGRAM_GRAPH_API_VERSION = env("INSTAGRAM_GRAPH_API_VERSION", default="v23.0")
+INSTAGRAM_HTTP_TIMEOUT = env.int("INSTAGRAM_HTTP_TIMEOUT", default=15)
+INSTAGRAM_APP_SECRET = env("INSTAGRAM_APP_SECRET", default="")
 # Публичный адрес сайта — для ссылки «отписаться» в письме.
 PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="http://localhost")
 

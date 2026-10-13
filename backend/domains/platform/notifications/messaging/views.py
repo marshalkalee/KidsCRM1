@@ -1,12 +1,13 @@
 """API центра рассылок (TRU-168): настройки, тексты, журнал, согласие,
 публичная страница отписки."""
 
+from datetime import timedelta
 from html import escape
 
 from django.core import signing
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import status
 from rest_framework.decorators import (
     api_view,
@@ -16,9 +17,10 @@ from rest_framework.decorators import (
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from domains.people.clients.models import ChildContact, ParentContact
+from domains.people.clients.models import Child, ChildContact, ParentContact
 from domains.platform.core.permissions import IsOwner, IsOwnerOrManagerOrAdmin
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.leads.models import Lead
 from domains.platform.tenants.org_settings import (
     AUTO_NOTIFY_CHANGE_DELAY_MINUTES,
     AUTO_NOTIFY_LESSON_CHANGES_ENABLED,
@@ -34,6 +36,9 @@ from domains.platform.tenants.org_settings import (
 )
 
 from ..models import (
+    InboundInstagramMessage,
+    InboundWhatsAppMessage,
+    InstagramConnection,
     MessageCategory,
     MessageTemplate,
     MessagingConsent,
@@ -43,11 +48,32 @@ from ..models import (
 from . import automation, service
 from .channels import CHANNELS
 from .events import EVENTS, LANGUAGES
+from .instagram import (
+    InstagramError,
+)
+from .instagram import (
+    new_verify_token as new_instagram_verify_token,
+)
+from .instagram import (
+    resolve_inbound_message as resolve_instagram_message,
+)
+from .instagram import (
+    route_inbound_message as route_instagram_message,
+)
+from .instagram import (
+    send_reply as send_instagram_reply,
+)
+from .instagram import (
+    valid_webhook_signature as valid_instagram_signature,
+)
+from .instagram import (
+    verify_connection as verify_instagram_connection,
+)
 from .whatsapp import (
     WhatsAppError,
     ensure_default_templates,
-    handle_webhook,
     new_verify_token,
+    resolve_inbound_message,
     template_name,
     valid_webhook_signature,
     verify_connection,
@@ -305,8 +331,119 @@ def whatsapp_webhook(request, version=None):
         return HttpResponse("invalid verify token", status=403)
     if not valid_webhook_signature(request.body, request.headers.get("X-Hub-Signature-256", "")):
         return JsonResponse({"detail": "invalid signature"}, status=403)
-    handle_webhook(request.data)
+    from .tasks import process_whatsapp_webhook
+
+    process_whatsapp_webhook.delay(request.data.copy())
     return JsonResponse({"ok": True})
+
+
+def _inbound_row(message):
+    candidates = []
+    if message.status == InboundWhatsAppMessage.Status.UNRESOLVED:
+        if message.parent_id:
+            candidates.extend(
+                {
+                    "type": "child",
+                    "id": str(link.child_id),
+                    "name": link.child.full_name,
+                }
+                for link in ChildContact.objects.for_tenant(message.organization)
+                .filter(parent_contact=message.parent)
+                .select_related("child")
+            )
+        candidates.extend(
+            {
+                "type": "lead",
+                "id": str(lead.id),
+                "name": lead.child_name or lead.parent_name,
+            }
+            for lead in Lead.objects.for_tenant(message.organization)
+            .filter(phone=message.sender_phone)
+            .exclude(status__in=[Lead.Status.PURCHASED, Lead.Status.REJECTED])[:10]
+        )
+    return {
+        "id": str(message.id),
+        "created_at": message.created_at,
+        "provider_sent_at": message.provider_sent_at,
+        "phone": message.sender_phone,
+        "type": message.message_type,
+        "text": message.text,
+        "media": message.media,
+        "status": message.status,
+        "status_label": message.get_status_display(),
+        "resolution_note": message.resolution_note,
+        "parent": (
+            {"id": str(message.parent_id), "name": message.parent.full_name}
+            if message.parent_id
+            else None
+        ),
+        "child": (
+            {"id": str(message.child_id), "name": message.child.full_name}
+            if message.child_id
+            else None
+        ),
+        "lead": (
+            {
+                "id": str(message.lead_id),
+                "name": message.lead.child_name or message.lead.parent_name,
+            }
+            if message.lead_id
+            else None
+        ),
+        "reply_window_open": bool(message.parent_id and within_service_window(message.parent)),
+        "candidates": candidates,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def whatsapp_inbox(request, version=None):
+    rows = InboundWhatsAppMessage.objects.for_tenant(request.user.organization).select_related(
+        "parent", "child", "lead"
+    )
+    selected_status = request.query_params.get("status")
+    if selected_status in InboundWhatsAppMessage.Status.values:
+        rows = rows.filter(status=selected_status)
+    return Response(
+        {
+            "results": [_inbound_row(row) for row in rows[:200]],
+            "unresolved": rows.filter(status=InboundWhatsAppMessage.Status.UNRESOLVED).count(),
+            "statuses": [
+                {"key": key, "label": label} for key, label in InboundWhatsAppMessage.Status.choices
+            ],
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def whatsapp_inbox_resolve(request, message_id, version=None):
+    message = (
+        InboundWhatsAppMessage.objects.for_tenant(request.user.organization)
+        .filter(pk=message_id)
+        .first()
+    )
+    if message is None:
+        return Response({"detail": "Сообщение не найдено."}, status=404)
+    child = None
+    lead = None
+    if request.data.get("child_id"):
+        child = (
+            Child.objects.for_tenant(request.user.organization)
+            .filter(pk=request.data["child_id"])
+            .first()
+        )
+    if request.data.get("lead_id"):
+        lead = (
+            Lead.objects.for_tenant(request.user.organization)
+            .filter(pk=request.data["lead_id"])
+            .first()
+        )
+    try:
+        message = resolve_inbound_message(message, child=child, lead=lead, user=request.user)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    return Response(_inbound_row(message))
 
 
 def _reply_state(parent):
@@ -343,6 +480,244 @@ def whatsapp_reply(request, version=None):
     except service.MessagingError as exc:
         return Response({"detail": str(exc)}, status=400)
     return Response(_message_row(message), status=202)
+
+
+# --- Instagram Direct and comments (TRU-173) -------------------------------
+
+
+def _instagram_connection_payload(connection):
+    if not connection:
+        return {
+            "mode": "console",
+            "status": "disconnected",
+            "instagram_account_id": "",
+            "facebook_page_id": "",
+            "username": "",
+            "has_token": False,
+            "webhook_verify_token": "",
+            "token_expires_at": None,
+            "token_expiring": False,
+            "verified_at": None,
+            "last_error": "",
+        }
+    expires = connection.token_expires_at
+    return {
+        "mode": connection.mode,
+        "status": connection.status,
+        "instagram_account_id": connection.instagram_account_id,
+        "facebook_page_id": connection.facebook_page_id,
+        "username": connection.username,
+        "has_token": bool(connection.access_token),
+        "webhook_verify_token": connection.webhook_verify_token,
+        "token_expires_at": expires,
+        "token_expiring": bool(expires and expires <= timezone.now() + timedelta(days=7)),
+        "verified_at": connection.verified_at,
+        "last_error": connection.last_error,
+    }
+
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsOwner])
+def instagram_connection(request, version=None):
+    organization = request.user.organization
+    connection = InstagramConnection.objects.for_tenant(organization).first()
+    if request.method == "PUT":
+        connection = connection or InstagramConnection(organization=organization)
+        mode = request.data.get("mode", connection.mode or "console")
+        if mode not in InstagramConnection.Mode.values:
+            return Response({"mode": ["Неизвестный режим."]}, status=400)
+        connection.mode = mode
+        for field in ("instagram_account_id", "facebook_page_id"):
+            value = request.data.get(field, getattr(connection, field))
+            setattr(connection, field, str(value).strip())
+        if request.data.get("access_token"):
+            connection.access_token = str(request.data["access_token"]).strip()
+        if "token_expires_at" in request.data:
+            raw_expiry = request.data.get("token_expires_at")
+            parsed = parse_datetime(raw_expiry) if raw_expiry else None
+            if raw_expiry and parsed is None:
+                return Response({"token_expires_at": ["Укажите корректную дату."]}, status=400)
+            connection.token_expires_at = parsed
+        if not connection.webhook_verify_token:
+            connection.webhook_verify_token = new_instagram_verify_token()
+        connection.status = InstagramConnection.Status.DISCONNECTED
+        connection.last_error = ""
+        connection.save()
+    return Response(_instagram_connection_payload(connection))
+
+
+@api_view(["POST"])
+@permission_classes([IsOwner])
+def instagram_test(request, version=None):
+    connection = InstagramConnection.objects.for_tenant(request.user.organization).first()
+    if not connection:
+        return Response({"detail": "Сначала сохраните подключение."}, status=400)
+    try:
+        result = verify_instagram_connection(connection)
+        connection.username = str(result.get("username", connection.username))[:150]
+        connection.status = InstagramConnection.Status.CONNECTED
+        connection.verified_at = timezone.now()
+        connection.last_error = ""
+        connection.save()
+    except InstagramError as exc:
+        connection.status = InstagramConnection.Status.ERROR
+        connection.last_error = str(exc)
+        connection.save(update_fields=["status", "last_error", "updated_at"])
+        return Response({"detail": str(exc)}, status=400)
+    return Response(_instagram_connection_payload(connection))
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def instagram_webhook(request, version=None):
+    if request.method == "GET":
+        token = request.query_params.get("hub.verify_token", "")
+        challenge = request.query_params.get("hub.challenge", "")
+        if InstagramConnection.objects.filter(webhook_verify_token=token).exists():
+            return HttpResponse(challenge)
+        return HttpResponse("invalid verify token", status=403)
+    if not valid_instagram_signature(request.body, request.headers.get("X-Hub-Signature-256", "")):
+        return JsonResponse({"detail": "invalid signature"}, status=403)
+    from .tasks import process_instagram_webhook
+
+    process_instagram_webhook.delay(request.data.copy())
+    return JsonResponse({"ok": True})
+
+
+def _instagram_row(message):
+    candidates = []
+    if message.status == InboundInstagramMessage.Status.UNRESOLVED and message.parent_id:
+        candidates.extend(
+            {"type": "child", "id": str(link.child_id), "name": link.child.full_name}
+            for link in ChildContact.objects.for_tenant(message.organization)
+            .filter(parent_contact=message.parent)
+            .select_related("child")
+        )
+    return {
+        "id": str(message.id),
+        "created_at": message.created_at,
+        "provider_sent_at": message.provider_sent_at,
+        "kind": message.kind,
+        "kind_label": message.get_kind_display(),
+        "sender_id": message.sender_id,
+        "sender_name": message.sender_name,
+        "text": message.text,
+        "post_url": message.post_url,
+        "ad_id": message.ad_id,
+        "ad_name": message.ad_name,
+        "status": message.status,
+        "status_label": message.get_status_display(),
+        "lead_candidate": message.lead_candidate,
+        "manually_promoted": message.manually_promoted,
+        "resolution_note": message.resolution_note,
+        "reply_text": message.reply_text,
+        "parent": {"id": str(message.parent_id), "name": message.parent.full_name}
+        if message.parent_id
+        else None,
+        "child": {"id": str(message.child_id), "name": message.child.full_name}
+        if message.child_id
+        else None,
+        "lead": {
+            "id": str(message.lead_id),
+            "name": message.lead.child_name or message.lead.parent_name,
+        }
+        if message.lead_id
+        else None,
+        "candidates": candidates,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def instagram_inbox(request, version=None):
+    rows = InboundInstagramMessage.objects.for_tenant(request.user.organization).select_related(
+        "parent", "child", "lead"
+    )
+    selected_status = request.query_params.get("status")
+    if selected_status in InboundInstagramMessage.Status.values:
+        rows = rows.filter(status=selected_status)
+    return Response(
+        {
+            "results": [_instagram_row(row) for row in rows[:200]],
+            "unresolved": rows.filter(status=InboundInstagramMessage.Status.UNRESOLVED).count(),
+            "ignored": rows.filter(status=InboundInstagramMessage.Status.IGNORED).count(),
+            "statuses": [
+                {"key": key, "label": label}
+                for key, label in InboundInstagramMessage.Status.choices
+            ],
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def instagram_inbox_resolve(request, message_id, version=None):
+    message = (
+        InboundInstagramMessage.objects.for_tenant(request.user.organization)
+        .filter(pk=message_id)
+        .first()
+    )
+    if not message:
+        return Response({"detail": "Сообщение не найдено."}, status=404)
+    child = (
+        Child.objects.for_tenant(request.user.organization)
+        .filter(pk=request.data.get("child_id"))
+        .first()
+        if request.data.get("child_id")
+        else None
+    )
+    lead = (
+        Lead.objects.for_tenant(request.user.organization)
+        .filter(pk=request.data.get("lead_id"))
+        .first()
+        if request.data.get("lead_id")
+        else None
+    )
+    try:
+        message = resolve_instagram_message(message, child=child, lead=lead, user=request.user)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    return Response(_instagram_row(message))
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def instagram_promote(request, message_id, version=None):
+    message = (
+        InboundInstagramMessage.objects.for_tenant(request.user.organization)
+        .filter(pk=message_id)
+        .first()
+    )
+    if not message:
+        return Response({"detail": "Комментарий не найден."}, status=404)
+    message = route_instagram_message(message.id, user=request.user, force_lead=True)
+    return Response(_instagram_row(message))
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def instagram_reply(request, message_id, version=None):
+    message = (
+        InboundInstagramMessage.objects.for_tenant(request.user.organization)
+        .select_related("parent", "child")
+        .filter(pk=message_id)
+        .first()
+    )
+    if not message:
+        return Response({"detail": "Сообщение не найдено."}, status=404)
+    try:
+        provider_id = send_instagram_reply(message, request.data.get("body", ""))
+    except InstagramError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    message.reply_text = str(request.data.get("body", "")).strip()
+    message.reply_provider_id = provider_id
+    message.replied_by = request.user
+    message.replied_at = timezone.now()
+    message.save(
+        update_fields=["reply_text", "reply_provider_id", "replied_by", "replied_at", "updated_at"]
+    )
+    return Response(_instagram_row(message), status=202)
 
 
 def _bulk_candidates(organization, source, ids):

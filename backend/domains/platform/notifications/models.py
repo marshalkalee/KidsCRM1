@@ -209,3 +209,216 @@ class WhatsAppContactWindow(TenantModel):
                 fields=["organization", "parent"], name="whatsapp_window_unique_parent"
             )
         ]
+
+
+class InboundWhatsAppMessage(TenantModel):
+    """One idempotent inbound Meta message and its CRM routing result (TRU-170)."""
+
+    class Status(models.TextChoices):
+        RECEIVED = "received", "Получено"
+        PROCESSING = "processing", "Обрабатывается"
+        LINKED = "linked", "Привязано"
+        UNRESOLVED = "unresolved", "Нужно разобрать"
+        IGNORED = "ignored", "Пропущено"
+        FAILED = "failed", "Ошибка"
+
+    provider_message_id = models.CharField(max_length=255)
+    sender_phone = models.CharField(max_length=20, blank=True)
+    message_type = models.CharField(max_length=24, default="text")
+    text = models.TextField(blank=True)
+    media = models.JSONField(default=dict, blank=True)
+    raw_payload = models.JSONField(default=dict, blank=True)
+    provider_sent_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.RECEIVED)
+    resolution_note = models.CharField(max_length=500, blank=True)
+    parent = models.ForeignKey(
+        "clients.ParentContact",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_whatsapp_messages",
+    )
+    child = models.ForeignKey(
+        "clients.Child",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_whatsapp_messages",
+    )
+    lead = models.ForeignKey(
+        "leads.Lead",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_whatsapp_messages",
+    )
+    communication_log = models.OneToOneField(
+        "clients.CommunicationLog",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_whatsapp_message",
+    )
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="resolved_inbound_whatsapp_messages",
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "provider_message_id"],
+                name="inbound_whatsapp_unique_provider_message",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["organization", "status", "-created_at"]),
+            models.Index(fields=["organization", "sender_phone", "-created_at"]),
+        ]
+
+
+class InstagramConnection(TenantModel):
+    """Instagram Business connection owned by one CRM organization (TRU-173)."""
+
+    class Mode(models.TextChoices):
+        CONSOLE = "console", "Тестовый режим"
+        META = "meta", "Instagram Graph API"
+
+    class Status(models.TextChoices):
+        DISCONNECTED = "disconnected", "Не подключён"
+        CONNECTED = "connected", "Подключён"
+        ERROR = "error", "Ошибка"
+
+    mode = models.CharField(max_length=16, choices=Mode.choices, default=Mode.CONSOLE)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DISCONNECTED)
+    instagram_account_id = models.CharField(max_length=100, blank=True)
+    facebook_page_id = models.CharField(max_length=100, blank=True)
+    username = models.CharField(max_length=150, blank=True)
+    access_token = models.TextField(blank=True)
+    webhook_verify_token = models.CharField(max_length=100, blank=True)
+    token_expires_at = models.DateTimeField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["organization"], name="instagram_connection_unique_org")
+        ]
+
+
+class InstagramIdentity(TenantModel):
+    """Stable Meta scoped user id linked by an employee to a known parent."""
+
+    scoped_user_id = models.CharField(max_length=150)
+    username = models.CharField(max_length=150, blank=True)
+    parent = models.ForeignKey(
+        "clients.ParentContact", on_delete=models.CASCADE, related_name="instagram_identities"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "scoped_user_id"], name="instagram_identity_unique_user"
+            )
+        ]
+
+
+class InboundInstagramMessage(TenantModel):
+    """Idempotent Direct message or post comment and its CRM routing result."""
+
+    class Kind(models.TextChoices):
+        DIRECT = "direct", "Direct"
+        COMMENT = "comment", "Комментарий"
+
+    class Status(models.TextChoices):
+        RECEIVED = "received", "Получено"
+        LINKED = "linked", "Привязано"
+        UNRESOLVED = "unresolved", "Нужно разобрать"
+        IGNORED = "ignored", "Не похоже на заявку"
+        FAILED = "failed", "Ошибка"
+
+    provider_event_id = models.CharField(max_length=255)
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    sender_id = models.CharField(max_length=150, blank=True)
+    sender_name = models.CharField(max_length=150, blank=True)
+    text = models.TextField(blank=True)
+    post_id = models.CharField(max_length=150, blank=True)
+    post_url = models.URLField(max_length=1000, blank=True)
+    ad_id = models.CharField(max_length=150, blank=True)
+    ad_name = models.CharField(max_length=255, blank=True)
+    raw_payload = models.JSONField(default=dict, blank=True)
+    provider_sent_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.RECEIVED)
+    lead_candidate = models.BooleanField(default=True)
+    manually_promoted = models.BooleanField(default=False)
+    resolution_note = models.CharField(max_length=500, blank=True)
+    reply_text = models.TextField(blank=True)
+    reply_provider_id = models.CharField(max_length=255, blank=True)
+    replied_at = models.DateTimeField(null=True, blank=True)
+    parent = models.ForeignKey(
+        "clients.ParentContact",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_instagram_messages",
+    )
+    child = models.ForeignKey(
+        "clients.Child",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_instagram_messages",
+    )
+    lead = models.ForeignKey(
+        "leads.Lead",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_instagram_messages",
+    )
+    communication_log = models.OneToOneField(
+        "clients.CommunicationLog",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_instagram_message",
+    )
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="resolved_inbound_instagram_messages",
+    )
+    replied_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="replied_inbound_instagram_messages",
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "provider_event_id"],
+                name="inbound_instagram_unique_provider_event",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["organization", "status", "-created_at"],
+                name="instagram_org_status_idx",
+            ),
+            models.Index(
+                fields=["organization", "sender_id", "-created_at"],
+                name="instagram_org_sender_idx",
+            ),
+        ]
