@@ -7,7 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Assistant from './pages/Assistant'
 import ContentStudio from './pages/ContentStudio'
 import Digest from './pages/Digest'
-import { MessagingJournal, MessagingSettings, MessagingTemplates } from './pages/Messaging'
+import { MessagingInbox, MessagingJournal, MessagingSettings, MessagingTemplates } from './pages/Messaging'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import LegacyRedirect from './pages/LegacyRedirect'
@@ -110,6 +110,7 @@ function StaffApp() {
                 <Route path="digest" element={<RequirePermission permission="can_view_ai_digest"><Digest /></RequirePermission>} />
                 <Route path="messaging" element={<PageGroup title={t('Рассылки родителям')} tabs={[
                   { key: 'journal', label: t('Журнал'), permission: 'can_manage_children', element: <MessagingJournal /> },
+                  { key: 'inbox', label: t('Входящие WhatsApp'), permission: 'can_manage_children', element: <MessagingInbox /> },
                   { key: 'templates', label: t('Тексты писем'), permission: 'can_manage_org_settings', element: <MessagingTemplates /> },
                   { key: 'settings', label: t('Настройки'), permission: 'can_manage_org_settings', element: <MessagingSettings /> },
                 ]} />} />

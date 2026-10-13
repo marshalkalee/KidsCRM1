@@ -175,6 +175,125 @@ export function MessagingJournal() {
   )
 }
 
+export function MessagingInbox() {
+  const toast = useToast()
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(false)
+  const [status, setStatus] = useState('')
+  const [resolving, setResolving] = useState('')
+
+  const load = useCallback((quiet = false) => {
+    api.get('messaging/whatsapp/inbox/', { params: status ? { status } : {} })
+      .then(response => { setData(response.data); setError(false) })
+      .catch(() => { if (!quiet) setError(true) })
+  }, [status])
+
+  useEffect(() => {
+    load()
+    const timer = window.setInterval(() => load(true), 15000)
+    return () => window.clearInterval(timer)
+  }, [load])
+
+  async function bind(message, candidate) {
+    setResolving(message.id)
+    try {
+      await api.post(`messaging/whatsapp/inbox/${message.id}/resolve/`, {
+        [`${candidate.type}_id`]: candidate.id,
+      })
+      toast.success(t('Сообщение привязано'))
+      load()
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setResolving('')
+    }
+  }
+
+  if (error) return <Card><ErrorState onRetry={load} /></Card>
+  if (!data) return <Skeleton className="h-96" />
+
+  return (
+    <div>
+      <PageHeader description={t('Входящие сообщения автоматически попадают в историю ребёнка или заявки. Неоднозначные совпадения остаются здесь для ручной привязки.')} />
+      <Card padded={false} className="mt-4">
+        <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-4">
+          <div className="mr-auto">
+            <p className="font-bold text-ink">{t('Входящие WhatsApp')}</p>
+            <p className="text-[13px] text-ink-muted">{t('Нужно разобрать: {n}', { n: data.unresolved })}</p>
+          </div>
+          <div className="w-52">
+            <Dropdown
+              size="sm"
+              ariaLabel={t('Статус')}
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: '', label: t('Все статусы') },
+                ...data.statuses.map(item => ({ value: item.key, label: t(item.label) })),
+              ]}
+            />
+          </div>
+          <Button variant="secondary" icon={RefreshCw} onClick={() => load()}>{t('Обновить')}</Button>
+        </div>
+        {data.results.length === 0 ? (
+          <EmptyState
+            icon={MessageCircle}
+            title={t('Входящих сообщений пока нет')}
+            description={t('После подключения Meta Cloud API сообщения родителей появятся здесь автоматически.')}
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {data.results.map(message => (
+              <li key={message.id} className="space-y-3 px-5 py-4">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-ink">{message.phone}</p>
+                      <Badge tone={message.status === 'unresolved' ? 'warning' : message.status === 'failed' ? 'danger' : 'success'}>
+                        {t(message.status_label)}
+                      </Badge>
+                      {message.reply_window_open && <Badge tone="info">{t('Можно ответить в течение 24 часов')}</Badge>}
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{message.text || `[${message.type}]`}</p>
+                    <p className="mt-1 text-xs text-ink-muted">{formatDateTime(message.provider_sent_at || message.created_at)}</p>
+                  </div>
+                  {message.child && <Link className="text-sm font-semibold text-brand-600 hover:underline" to={`/children/${message.child.id}`}>{message.child.name}</Link>}
+                  {message.lead && <Link className="text-sm font-semibold text-brand-600 hover:underline" to={`/leads/${message.lead.id}`}>{message.lead.name}</Link>}
+                </div>
+                {Object.keys(message.media || {}).length > 0 && (
+                  <div className="rounded-lg bg-surface-muted px-3 py-2 text-xs text-ink-muted">
+                    {t('Вложение')}: {message.media.filename || message.media.mime_type || message.type}
+                  </div>
+                )}
+                {message.resolution_note && <p className="text-[13px] text-ink-muted">{message.resolution_note}</p>}
+                {message.status === 'unresolved' && (
+                  <div className="rounded-xl border border-warning-200 bg-warning-50 p-3">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-warning-800">{t('Выберите карточку вручную')}</p>
+                    {message.candidates.length ? (
+                      <div className="flex flex-wrap gap-2">
+                        {message.candidates.map(candidate => (
+                          <Button
+                            key={`${candidate.type}-${candidate.id}`}
+                            variant="secondary"
+                            loading={resolving === message.id}
+                            onClick={() => bind(message, candidate)}
+                          >
+                            {candidate.type === 'child' ? t('Ребёнок') : t('Заявка')}: {candidate.name}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : <p className="text-sm text-warning-800">{t('Подходящих карточек не найдено')}</p>}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
+  )
+}
+
 export function MessagingTemplates() {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState(false)

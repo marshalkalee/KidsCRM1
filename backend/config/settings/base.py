@@ -287,6 +287,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": ("domains.platform.notifications.messaging.tasks" ".dispatch_parent_notifications"),
         "schedule": crontab(minute=15),
     },
+    "create-unanswered-whatsapp-tasks": {
+        "task": (
+            "domains.platform.notifications.messaging.tasks" ".create_unanswered_whatsapp_tasks"
+        ),
+        "schedule": crontab(minute="*/15"),
+    },
 }
 
 # ИИ-помощник (эксперимент): без ключа функции выключены, экраны их не показывают.

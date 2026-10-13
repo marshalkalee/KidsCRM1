@@ -16,9 +16,10 @@ from rest_framework.decorators import (
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from domains.people.clients.models import ChildContact, ParentContact
+from domains.people.clients.models import Child, ChildContact, ParentContact
 from domains.platform.core.permissions import IsOwner, IsOwnerOrManagerOrAdmin
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.leads.models import Lead
 from domains.platform.tenants.org_settings import (
     AUTO_NOTIFY_CHANGE_DELAY_MINUTES,
     AUTO_NOTIFY_LESSON_CHANGES_ENABLED,
@@ -34,6 +35,7 @@ from domains.platform.tenants.org_settings import (
 )
 
 from ..models import (
+    InboundWhatsAppMessage,
     MessageCategory,
     MessageTemplate,
     MessagingConsent,
@@ -46,8 +48,8 @@ from .events import EVENTS, LANGUAGES
 from .whatsapp import (
     WhatsAppError,
     ensure_default_templates,
-    handle_webhook,
     new_verify_token,
+    resolve_inbound_message,
     template_name,
     valid_webhook_signature,
     verify_connection,
@@ -305,8 +307,119 @@ def whatsapp_webhook(request, version=None):
         return HttpResponse("invalid verify token", status=403)
     if not valid_webhook_signature(request.body, request.headers.get("X-Hub-Signature-256", "")):
         return JsonResponse({"detail": "invalid signature"}, status=403)
-    handle_webhook(request.data)
+    from .tasks import process_whatsapp_webhook
+
+    process_whatsapp_webhook.delay(request.data.copy())
     return JsonResponse({"ok": True})
+
+
+def _inbound_row(message):
+    candidates = []
+    if message.status == InboundWhatsAppMessage.Status.UNRESOLVED:
+        if message.parent_id:
+            candidates.extend(
+                {
+                    "type": "child",
+                    "id": str(link.child_id),
+                    "name": link.child.full_name,
+                }
+                for link in ChildContact.objects.for_tenant(message.organization)
+                .filter(parent_contact=message.parent)
+                .select_related("child")
+            )
+        candidates.extend(
+            {
+                "type": "lead",
+                "id": str(lead.id),
+                "name": lead.child_name or lead.parent_name,
+            }
+            for lead in Lead.objects.for_tenant(message.organization)
+            .filter(phone=message.sender_phone)
+            .exclude(status__in=[Lead.Status.PURCHASED, Lead.Status.REJECTED])[:10]
+        )
+    return {
+        "id": str(message.id),
+        "created_at": message.created_at,
+        "provider_sent_at": message.provider_sent_at,
+        "phone": message.sender_phone,
+        "type": message.message_type,
+        "text": message.text,
+        "media": message.media,
+        "status": message.status,
+        "status_label": message.get_status_display(),
+        "resolution_note": message.resolution_note,
+        "parent": (
+            {"id": str(message.parent_id), "name": message.parent.full_name}
+            if message.parent_id
+            else None
+        ),
+        "child": (
+            {"id": str(message.child_id), "name": message.child.full_name}
+            if message.child_id
+            else None
+        ),
+        "lead": (
+            {
+                "id": str(message.lead_id),
+                "name": message.lead.child_name or message.lead.parent_name,
+            }
+            if message.lead_id
+            else None
+        ),
+        "reply_window_open": bool(message.parent_id and within_service_window(message.parent)),
+        "candidates": candidates,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def whatsapp_inbox(request, version=None):
+    rows = InboundWhatsAppMessage.objects.for_tenant(request.user.organization).select_related(
+        "parent", "child", "lead"
+    )
+    selected_status = request.query_params.get("status")
+    if selected_status in InboundWhatsAppMessage.Status.values:
+        rows = rows.filter(status=selected_status)
+    return Response(
+        {
+            "results": [_inbound_row(row) for row in rows[:200]],
+            "unresolved": rows.filter(status=InboundWhatsAppMessage.Status.UNRESOLVED).count(),
+            "statuses": [
+                {"key": key, "label": label} for key, label in InboundWhatsAppMessage.Status.choices
+            ],
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def whatsapp_inbox_resolve(request, message_id, version=None):
+    message = (
+        InboundWhatsAppMessage.objects.for_tenant(request.user.organization)
+        .filter(pk=message_id)
+        .first()
+    )
+    if message is None:
+        return Response({"detail": "Сообщение не найдено."}, status=404)
+    child = None
+    lead = None
+    if request.data.get("child_id"):
+        child = (
+            Child.objects.for_tenant(request.user.organization)
+            .filter(pk=request.data["child_id"])
+            .first()
+        )
+    if request.data.get("lead_id"):
+        lead = (
+            Lead.objects.for_tenant(request.user.organization)
+            .filter(pk=request.data["lead_id"])
+            .first()
+        )
+    try:
+        message = resolve_inbound_message(message, child=child, lead=lead, user=request.user)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    return Response(_inbound_row(message))
 
 
 def _reply_state(parent):
