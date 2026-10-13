@@ -33,6 +33,14 @@ def process_whatsapp_webhook(payload: dict):
 
 
 @shared_task
+def process_instagram_webhook(payload: dict):
+    """Acknowledge Meta quickly and route Direct/comments in the worker."""
+    from .instagram import handle_webhook
+
+    return {"changed": handle_webhook(payload)}
+
+
+@shared_task
 def create_unanswered_whatsapp_tasks():
     """Create one callback task for every inbound message left unanswered."""
     from datetime import timedelta

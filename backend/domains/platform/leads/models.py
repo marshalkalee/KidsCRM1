@@ -163,7 +163,10 @@ class Lead(TenantModel):
         related_name="renewal_leads",
     )
     parent_name = models.CharField(max_length=255)
-    phone = models.CharField(max_length=20)
+    # Instagram Direct/comments do not expose the sender's phone number.
+    # Keep validation strict when a number is present, but allow channel leads
+    # to enter the funnel before an administrator asks for the contact details.
+    phone = models.CharField(max_length=20, blank=True)
     child_name = models.CharField(max_length=255, blank=True)
     child_age = models.PositiveSmallIntegerField(null=True, blank=True)
     direction = models.ForeignKey(
@@ -225,7 +228,8 @@ class Lead(TenantModel):
         return f"{self.parent_name} ({self.get_status_display()})"
 
     def save(self, *args, **kwargs):
-        self.phone = normalize_phone_number(self.phone)
+        if self.phone:
+            self.phone = normalize_phone_number(self.phone)
         super().save(*args, **kwargs)
 
     @classmethod
