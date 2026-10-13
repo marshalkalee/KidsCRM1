@@ -115,3 +115,27 @@ class RuleRun(TenantModel):
 
     def __str__(self):
         return f"{self.rule}: {self.tasks_created}"
+
+
+class TaskComment(TenantModel):
+    """Комментарий к задаче (TRU-184): «не взяли трубку», «мама просит
+    перенести на завтра». Вместе с журналом изменений — лента в карточке
+    задачи. Править и удалять может только автор, и только первые
+    EDIT_WINDOW после отправки; удаление мягкое (TenantModel)."""
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="task_comments",
+    )
+    text = models.CharField(max_length=2000)
+    edited_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["organization", "task", "created_at"])]
+
+    def __str__(self):
+        return self.text[:50]

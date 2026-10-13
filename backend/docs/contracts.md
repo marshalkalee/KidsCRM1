@@ -467,6 +467,24 @@ source: "manual" (человек, через API) или "auto" (правило/
 Права (ТЗ п. 2) — visible_tasks(user) в platform.tasks.services: тот же
 принцип, что у visible_leads в platform.leads.
 
+Комментарии и лента карточки задачи (TRU-184):
+
+    GET/POST     /api/v1/tasks/<id>/comments/              # {text} до 2000 символов
+    PATCH/DELETE /api/v1/tasks/<id>/comments/<comment_id>/  # автор, первые 15 минут
+    GET          /api/v1/tasks/<id>/timeline/               # {items: [{kind, at, author_name, text, comment}]}
+
+Права — те же, что у задачи: get_object → visible_tasks (чужая задача —
+404). Лента — комментарии (`TaskComment`) и события из AuditLog задачи,
+старые сверху; text — готовая строка по-русски. Чтобы событие попало в
+ленту, его пишут в AuditLog с before/after: `assigned_to` (имя), `due_at`
+(ISO), `status` + `closing_comment` — так делают partial_update, complete,
+cancel в tasks/views.py. Создание и закрытие мимо API (автоправила,
+запрос родителя) лента берёт из самой задачи. Название автоправила — по
+началу source_key, словарь `tasks/timeline.py → RULE_LABELS`: новое
+правило с новым ключом — новая строка там. В списке задач —
+`comments_count`; в колокольчике — вид `task_comments` (комментарии коллег
+к задачам, где сотрудник исполнитель, за 7 дней).
+
 Владелец: Bekzat. Потребители: Анель (TRU-71 — нет абонемента), Дарья
 (TRU-108 — предложить продление, TRU-72 — центр уведомлений).
 ## 10. Рассылки → всем (TRU-168, ADR-0010)

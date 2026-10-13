@@ -8,6 +8,8 @@ import {
   apiErrorMessage, cn, formatDate, formatDateTime, useToast,
 } from '../../ui'
 import { t } from '../../i18n'
+import CommentsCount from '../tasks/CommentsCount'
+import TaskPanel from '../tasks/TaskPanel'
 import { MANUAL_TYPES } from '../tasks/types'
 
 function todayLocalIso() {
@@ -34,6 +36,9 @@ export default function TasksTab({ child, card, permissions, onCountChange }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(false)
   const [creating, setCreating] = useState(false)
+  // Карточка задачи с лентой и комментариями (TRU-184).
+  const [opened, setOpened] = useState(null)
+  const closePanel = useCallback(() => setOpened(null), [])
 
   const load = useCallback(() => {
     api.get('tasks/for-child/', { params: { child: child.id } })
@@ -68,7 +73,7 @@ export default function TasksTab({ child, card, permissions, onCountChange }) {
         </Card>
       ) : (
         <div className="space-y-2">
-          {open.map(task => <OpenTaskCard key={task.id} task={task} childId={child.id} />)}
+          {open.map(task => <OpenTaskCard key={task.id} task={task} childId={child.id} onOpen={() => setOpened(task.id)} />)}
         </div>
       )}
 
@@ -77,7 +82,7 @@ export default function TasksTab({ child, card, permissions, onCountChange }) {
         <p className="text-sm text-ink-muted">{t('Закрытых задач пока нет.')}</p>
       ) : (
         <div className="space-y-2">
-          {closed.map(task => <ClosedTaskCard key={task.id} task={task} childId={child.id} />)}
+          {closed.map(task => <ClosedTaskCard key={task.id} task={task} childId={child.id} onOpen={() => setOpened(task.id)} />)}
           {closedTotal > closed.length && (
             <p className="text-[13px] text-ink-muted">
               {t('Показаны последние {n} из {total}', { n: closed.length, total: closedTotal })}
@@ -85,6 +90,8 @@ export default function TasksTab({ child, card, permissions, onCountChange }) {
           )}
         </div>
       )}
+
+      {opened && <TaskPanel taskId={opened} onClose={closePanel} onChanged={load} />}
 
       {creating && (
         <CreateTaskModal
@@ -98,7 +105,7 @@ export default function TasksTab({ child, card, permissions, onCountChange }) {
   )
 }
 
-function OpenTaskCard({ task, childId }) {
+function OpenTaskCard({ task, childId, onOpen }) {
   const { can } = useSession()
   const overdue = isOverdue(task)
   const viaLead = task.child !== childId
@@ -114,7 +121,7 @@ function OpenTaskCard({ task, childId }) {
           </span>
         )}
       </div>
-      <p className="mt-1 font-semibold text-ink">{task.title}</p>
+      <TaskTitle task={task} onOpen={onOpen} />
       {task.description && <p className="mt-0.5 whitespace-pre-line text-sm text-ink-muted">{task.description}</p>}
       <p className="mt-1 text-xs text-ink-subtle">
         {t('Исполнитель: {name}', { name: task.assigned_to_name || t('не назначен') })}
@@ -129,7 +136,7 @@ function OpenTaskCard({ task, childId }) {
   )
 }
 
-function ClosedTaskCard({ task, childId }) {
+function ClosedTaskCard({ task, childId, onOpen }) {
   const done = task.status === 'done'
   const viaLead = task.child !== childId
   return (
@@ -143,7 +150,7 @@ function ClosedTaskCard({ task, childId }) {
         {viaLead && <Badge tone="info">{t('По заявке')}</Badge>}
         <span className="text-[13px] text-ink-muted">{formatDateTime(task.updated_at)}</span>
       </div>
-      <p className="mt-1 font-semibold text-ink">{task.title}</p>
+      <TaskTitle task={task} onOpen={onOpen} />
       {task.closing_comment && (
         <p className="mt-1 rounded-md bg-surface-muted px-3 py-2 text-sm text-ink">{task.closing_comment}</p>
       )}
@@ -151,6 +158,15 @@ function ClosedTaskCard({ task, childId }) {
         {t('Исполнитель: {name}', { name: task.assigned_to_name || t('не назначен') })}
       </p>
     </Card>
+  )
+}
+
+function TaskTitle({ task, onOpen }) {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2">
+      <button type="button" onClick={onOpen} className="text-left font-semibold text-ink hover:text-brand-600">{task.title}</button>
+      <CommentsCount count={task.comments_count} onClick={onOpen} />
+    </div>
   )
 }
 

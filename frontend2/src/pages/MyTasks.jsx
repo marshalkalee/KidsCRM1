@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, MessageCircle, Phone, Plus, UserRoundPlus } from 'lucide-react'
 import api from '../api/axios'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
+import CommentsCount from '../components/tasks/CommentsCount'
 import NewTaskModal from '../components/tasks/NewTaskModal'
+import TaskPanel from '../components/tasks/TaskPanel'
 import { ROLE_LABELS, TASK_MANAGER_ROLES } from '../components/tasks/types'
 import { SellModal } from '../components/money/SubscriptionsTab'
 import { useSession } from '../session/SessionContext'
@@ -76,6 +78,9 @@ export default function MyTasks() {
   const { user } = useSession()
   const toast = useToast()
   const navigate = useNavigate()
+  // Карточка задачи (TRU-184): /tasks?open=<id> — ссылкой из уведомления.
+  const [params, setParams] = useSearchParams()
+  const openId = params.get('open')
   const [tab, setTab] = useState('today')
   const [tasks, setTasks] = useState(null)
   const [history, setHistory] = useState([])
@@ -163,6 +168,21 @@ export default function MyTasks() {
     }
   }
 
+  const openTask = useCallback(id => {
+    setParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.set('open', id)
+      return next
+    })
+  }, [setParams])
+  const closeTask = useCallback(() => {
+    setParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('open')
+      return next
+    })
+  }, [setParams])
+
   if (error) return <Card><ErrorState onRetry={load} /></Card>
   if (tasks === null) return <Skeleton className="h-60" />
 
@@ -231,6 +251,7 @@ export default function MyTasks() {
                     onReassign={() => setReassigning(task)}
                     onPay={() => setPaying(task)}
                     onSell={() => setSelling(task)}
+                    onDetails={() => openTask(task.id)}
                     onOpen={() => {
                       if (task.child) navigate(`/children/${task.child}`)
                       else if (task.lead) navigate(`/leads/${task.lead}`)
@@ -242,6 +263,8 @@ export default function MyTasks() {
           ))}
         </div>
       )}
+
+      {openId && <TaskPanel taskId={openId} onClose={closeTask} onChanged={load} />}
 
       {creating && (
         <NewTaskModal
@@ -282,7 +305,7 @@ export default function MyTasks() {
   )
 }
 
-function TaskCard({ task, overdue: late, closed, closing, center, me, canManage, canPay, onComplete, onPostpone, onReassign, onPay, onSell, onOpen }) {
+function TaskCard({ task, overdue: late, closed, closing, center, me, canManage, canPay, onComplete, onPostpone, onReassign, onPay, onSell, onOpen, onDetails }) {
   // Закрытая задача не «просрочена», даже если срок давно прошёл.
   const overdue = late && !closed
   const template = REMINDER_TEMPLATES[task.type]
@@ -296,8 +319,9 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, canManage,
       <div className="flex gap-3 px-5 py-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <p className="text-[15px] font-bold text-ink">{taskTitle(task)}</p>
+            <button type="button" onClick={onDetails} className="text-left text-[15px] font-bold text-ink hover:text-brand-600">{taskTitle(task)}</button>
             {closed && <Badge tone={task.status === 'done' ? 'success' : 'neutral'}>{task.status_display}</Badge>}
+            <CommentsCount count={task.comments_count} onClick={onDetails} />
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
             {task.due_at && !closed && (
@@ -360,3 +384,4 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, canManage,
     </div>
   )
 }
+

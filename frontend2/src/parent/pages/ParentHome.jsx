@@ -119,7 +119,7 @@ function NextLesson({ lessons, today, left }) {
             <span>{[next.branch, next.address, next.room].filter(Boolean).join(' · ')}</span>
           </p>
         )}
-        {next.teacher && <p className="flex items-center gap-1.5 text-ink-muted"><UserRound className="size-4 shrink-0" />{next.teacher}</p>}
+        {next.teacher && <p className="flex items-center gap-1.5 text-ink-muted"><UserRound className="size-4 shrink-0" />{next.teacher}{next.teacher_is_substitute && <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-semibold text-brand-700">{t('замена')}</span>}</p>}
       </div>
       {later.length > 0 && (
         <div className="border-t border-line px-5 py-3">

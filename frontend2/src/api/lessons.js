@@ -85,6 +85,18 @@ export function rescheduleLesson(id, payload) {
   return api.post(`schedule/${id}/reschedule/`, payload).then(res => res.data)
 }
 
+export function substituteLessons({ lessonIds, teacherId, notifyParents = true }) {
+  return api.post('schedule/substitute/', {
+    lesson_ids: lessonIds,
+    teacher_id: teacherId,
+    notify_parents: notifyParents,
+  }).then(res => res.data)
+}
+
+export function removeLessonSubstitutions(lessonIds) {
+  return api.delete('schedule/substitute/', { data: { lesson_ids: lessonIds } }).then(res => res.data)
+}
+
 export function fetchWhoToCall(lessonId) {
   return api.get(`schedule/${lessonId}/who-to-call/`).then(res => res.data)
 }
