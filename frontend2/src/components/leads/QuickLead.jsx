@@ -79,7 +79,6 @@ function QuickLeadModal({ onClose }) {
     source: value,
     campaign: campaigns.some(c => String(c.id) === f.campaign && String(c.source) === value) ? f.campaign : '',
   }))
-  const sourceCampaigns = campaigns.filter(c => String(c.source) === form.source)
 
   // Модалка при открытии фокусирует себя — телефон забираем кадром позже:
   // печатать номер можно сразу, без клика (бюджет — 30 секунд).
@@ -223,17 +222,6 @@ function QuickLeadModal({ onClose }) {
               )}
             </div>
           </div>
-        )}
-
-        {sourceCampaigns.length > 0 && (
-          <Field label={t('Публикация')} hint={t('С какого ролика или поста пришли — если родитель сказал')} error={fieldError('campaign')}>
-            {({ id, invalid }) => (
-              <Select id={id} invalid={invalid} value={form.campaign} onChange={e => set('campaign', e.target.value)}>
-                <option value="">{t('Не знаем')}</option>
-                {sourceCampaigns.map(c => <option key={c.id} value={c.id}>{c.name} · {c.code}</option>)}
-              </Select>
-            )}
-          </Field>
         )}
 
         {summary && (

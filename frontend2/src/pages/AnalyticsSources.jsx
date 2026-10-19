@@ -100,12 +100,6 @@ export default function AnalyticsSources() {
             <div className="p-5 pb-0"><CardHeader title={t('Все источники')} description={t('Новые заявки, созданные за период; продления не входят')} /></div>
             <SourcesTable items={items} />
           </Card>
-          {data.campaigns?.length > 0 && (
-            <Card padded={false} className="mt-4">
-              <div className="p-5 pb-0"><CardHeader title={t('Какие публикации приводят клиентов')} description={t('Заявки, пришедшие по ссылке с кодом публикации или отмеченные вручную')} /></div>
-              <SourcesTable items={data.campaigns} header={t('Публикация')} />
-            </Card>
-          )}
         </>
       )}
     </>
