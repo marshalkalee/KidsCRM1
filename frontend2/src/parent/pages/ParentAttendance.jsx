@@ -37,13 +37,37 @@ const ABSENCE_REASON = {
   family: 'Семейные обстоятельства',
 }
 
+// Что стало с абонементом при отметке «был». Родителю — только то, что ему
+// понятно и с чем можно что-то сделать; пустой результат (отметка шла в
+// обход списания, например в тестовых данных) не показываем совсем.
 const CONSUMPTION = {
-  no_active_subscription: 'Не списано: активного абонемента нет',
-  subscription_exhausted: 'Не списано: занятия закончились',
-  subscription_frozen: 'Не списано: абонемент заморожен',
-  rule_forbids: 'Не списано по условиям абонемента',
-  makeup_no_charge: 'Отработка не списывает новое занятие',
-  trial_no_charge: 'Пробное занятие не списывается',
+  subscription_frozen: { text: 'Не списано: абонемент был заморожен', tone: 'neutral' },
+  rule_forbids: { text: 'Не списано по условиям абонемента', tone: 'neutral' },
+  makeup_no_charge: { text: 'Отработка — новое занятие не списано', tone: 'neutral' },
+  trial_no_charge: { text: 'Пробное занятие бесплатно', tone: 'neutral' },
+}
+
+const NOTE_TONES = {
+  success: 'bg-success-50 text-success-600',
+  warning: 'bg-warning-50 text-warning-600',
+  neutral: 'bg-surface-muted text-ink-muted',
+}
+
+function consumptionNote(row) {
+  if (row.consumed_from_subscription) return { text: t('Списано с абонемента'), tone: 'success' }
+  if (row.consume_outcome === 'no_active_subscription') {
+    return {
+      text: row.lesson_name
+        ? t('Занятие не оплачено: нет абонемента по направлению «{direction}». Оформите его у администратора.', { direction: row.lesson_name })
+        : t('Занятие не оплачено: нет действующего абонемента. Оформите его у администратора.'),
+      tone: 'warning',
+    }
+  }
+  if (row.consume_outcome === 'subscription_exhausted') {
+    return { text: t('Занятие не оплачено: занятия в абонементе закончились. Продлите абонемент у администратора.'), tone: 'warning' }
+  }
+  const known = CONSUMPTION[row.consume_outcome]
+  return known ? { text: t(known.text), tone: known.tone } : null
 }
 
 function isoDate(date) {
@@ -202,7 +226,7 @@ function AttendanceHistory({ rows }) {
     <Card>
       <CardHeader
         title={t('Посещения за период')}
-        description={t('По каждой дате показан факт списания с абонемента.')}
+        description={t('Был ли ребёнок на занятии и списалось ли оно с абонемента.')}
       />
       {rows?.length ? (
         <ul className="divide-y divide-line">
@@ -271,9 +295,7 @@ function AttendanceRow({ row }) {
   const status = STATUS[row.status] || STATUS.absent
   const StatusIcon = status.icon
   const reason = ABSENCE_REASON[row.absence_reason]
-  const consumption = row.consumed_from_subscription
-    ? 'Списано с абонемента'
-    : CONSUMPTION[row.consume_outcome] || 'Не списано с абонемента'
+  const note = consumptionNote(row)
 
   return (
     <li className="py-4 first:pt-0 last:pb-0">
@@ -296,10 +318,12 @@ function AttendanceRow({ row }) {
         </Badge>
       </div>
 
-      <div className={`mt-3 flex items-center gap-2 rounded-md px-3 py-2 text-[12.5px] ${row.consumed_from_subscription ? 'bg-success-50 text-success-600' : 'bg-surface-muted text-ink-muted'}`}>
-        <CreditCard className="size-4 shrink-0" />
-        <span className="font-semibold">{t(consumption)}</span>
-      </div>
+      {note && (
+        <div className={`mt-3 flex items-start gap-2 rounded-md px-3 py-2 text-[12.5px] ${NOTE_TONES[note.tone]}`}>
+          <CreditCard className="mt-px size-4 shrink-0" />
+          <span className="font-semibold">{note.text}</span>
+        </div>
+      )}
       {reason && <p className="mt-2 text-[12.5px] text-ink-muted">{t('Причина пропуска: {reason}', { reason: t(reason) })}</p>}
     </li>
   )
