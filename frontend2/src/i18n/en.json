@@ -2949,5 +2949,9 @@
  "Не списано: абонемент был заморожен": "Not charged: the pass was frozen",
  "Отработка — новое занятие не списано": "Make-up — no new lesson charged",
  "Пробное занятие бесплатно": "Trial lesson is free",
- "Был ли ребёнок на занятии и списалось ли оно с абонемента.": "Whether your child attended and whether the lesson was charged to the pass."
+ "Был ли ребёнок на занятии и списалось ли оно с абонемента.": "Whether your child attended and whether the lesson was charged to the pass.",
+ "Все объявления": "All announcements",
+ "Здесь появятся объявления центра и заметки преподавателя.": "Center announcements and teacher notes will appear here.",
+ "Новые заметки преподавателя: {n}": "New teacher notes: {n}",
+ "Новых уведомлений нет": "No new notifications"
 }

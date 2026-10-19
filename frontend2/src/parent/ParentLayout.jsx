@@ -1,19 +1,21 @@
-import { useEffect, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Bell,
   Check,
   ChevronDown,
   CloudOff,
   LogOut,
+  Megaphone,
   Menu,
+  NotebookPen,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react'
-import { Avatar, Modal, cn, formatDateTime } from '../ui'
+import { Avatar, Modal, cn, formatDate, formatDateTime } from '../ui'
 import { t, useLang } from '../i18n'
 import { useParent } from './useParent'
-import { usePortalData } from './api'
+import portal, { usePortalData } from './api'
 import { installPwa } from './pwa'
 import { PARENT_NAV } from './nav'
 
@@ -121,7 +123,7 @@ export default function ParentLayout() {
 
           <ChildButton child={child} childOptions={children} onPick={() => setPicking(true)} />
           <div className="ml-auto">
-            <NewsBell />
+            <NotificationsBell noteUnread={noteUnread} />
           </div>
         </div>
       </header>
@@ -278,14 +280,103 @@ function ChildPicker({ onClose }) {
   )
 }
 
-/** Колокольчик объявлений центра в шапке — со счётчиком непрочитанных. */
-function NewsBell() {
-  const { data } = usePortalData('announcements/')
-  const unread = data?.unread || 0
+const BELL_LIMIT = 5
+
+/**
+ * Колокольчик в шапке — как у сотрудников: окно поверх страницы, а не
+ * переход. Внутри — новые заметки преподавателя и последние объявления
+ * центра; открыли объявление — оно прочитано.
+ */
+function NotificationsBell({ noteUnread }) {
+  const navigate = useNavigate()
+  const { data, reload } = usePortalData('announcements/', { refreshInterval: 60_000, refreshOnFocus: true })
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const rows = (data?.results || []).slice(0, BELL_LIMIT)
+  const unreadNews = data?.unread || 0
+  const unread = unreadNews + noteUnread
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onDown = e => { if (!ref.current?.contains(e.target)) setOpen(false) }
+    const onKey = e => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
+  async function markRead(ids) {
+    await Promise.all(ids.map(id => portal.post(`announcements/${id}/read/`).catch(() => {})))
+    reload()
+  }
+
+  function openAnnouncement(row) {
+    if (!row.read) markRead([row.id])
+    setOpen(false)
+    navigate('/parent/announcements')
+  }
+
   return (
-    <Link to="/parent/announcements" aria-label={unread ? t('Объявления, новых: {n}', { n: unread }) : t('Объявления')} className="relative flex size-10 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-canvas">
-      <Bell className="size-5" />
-      {unread > 0 && <span className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold text-white">{unread}</span>}
-    </Link>
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-label={unread ? t('Уведомления: новых {n}', { n: unread }) : t('Уведомления')}
+        className={cn('relative flex size-10 shrink-0 items-center justify-center rounded-lg hover:bg-canvas', unread ? 'text-brand-600' : 'text-ink-muted')}
+      >
+        <Bell className="size-5" />
+        {unread > 0 && <span className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold text-white">{unread}</span>}
+      </button>
+      {open && (
+        <div className="fixed inset-x-3 top-16 z-40 overflow-hidden rounded-lg border border-line bg-surface shadow-pop sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-96">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+            <p className="text-sm font-bold text-ink">{t('Уведомления')}</p>
+            {unreadNews > 0 && (
+              <button type="button" onClick={() => markRead(rows.filter(r => !r.read).map(r => r.id))} className="text-[13px] font-semibold text-brand-600 hover:underline">
+                {t('Прочитать все')}
+              </button>
+            )}
+          </div>
+          <div className="max-h-[60vh] overflow-y-auto">
+            {noteUnread > 0 && (
+              <Link to="/parent/notes" onClick={() => setOpen(false)} className="flex items-center gap-3 border-b border-line bg-brand-50/50 px-4 py-3 hover:bg-brand-50">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600"><NotebookPen className="size-4" /></span>
+                <span className="min-w-0 flex-1 text-sm font-semibold text-ink">{t('Новые заметки преподавателя: {n}', { n: noteUnread })}</span>
+                <span className="size-2 shrink-0 rounded-full bg-brand-600" />
+              </Link>
+            )}
+            {!data ? (
+              <p className="px-4 py-6 text-center text-sm text-ink-muted">{t('Загрузка…')}</p>
+            ) : rows.length === 0 && !noteUnread ? (
+              <div className="px-4 py-8 text-center">
+                <Bell className="mx-auto size-6 text-ink-subtle" />
+                <p className="mt-2 text-sm font-semibold text-ink">{t('Новых уведомлений нет')}</p>
+                <p className="mt-0.5 text-[13px] text-ink-muted">{t('Здесь появятся объявления центра и заметки преподавателя.')}</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-line">
+                {rows.map(row => (
+                  <li key={row.id}>
+                    <button type="button" onClick={() => openAnnouncement(row)} className={cn('flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-surface-muted', !row.read && 'bg-brand-50/30')}>
+                      <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-info-50 text-info-600"><Megaphone className="size-4" /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className={cn('block truncate text-sm text-ink', !row.read ? 'font-bold' : 'font-semibold')}>{row.title}</span>
+                        <span className="mt-0.5 line-clamp-2 text-[13px] text-ink-muted">{row.body}</span>
+                        <span className="mt-1 block text-[12px] text-ink-subtle">{formatDate(row.published_at)}</span>
+                      </span>
+                      {!row.read && <span className="mt-2 size-2 shrink-0 rounded-full bg-brand-600" />}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <Link to="/parent/announcements" onClick={() => setOpen(false)} className="block border-t border-line px-4 py-2.5 text-center text-[13px] font-semibold text-ink-muted hover:bg-surface-muted hover:text-ink">
+            {t('Все объявления')}
+          </Link>
+        </div>
+      )}
+    </div>
   )
 }
