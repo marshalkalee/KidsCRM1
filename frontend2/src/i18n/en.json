@@ -2942,5 +2942,12 @@
  "Нет занятий, на которые можно поставить этого преподавателя": "No lessons this teacher can take",
  "Поставить только там, где свободен(а) — остальные останутся в списке «Нужна замена»": "Assign only where free — the rest stay in the “Substitute needed” list",
  "Свободен на {free} из {total}": "Free for {free} of {total}",
- "Свободен на всех занятиях": "Free for all lessons"
+ "Свободен на всех занятиях": "Free for all lessons",
+ "Занятие не оплачено: занятия в абонементе закончились. Продлите абонемент у администратора.": "Lesson not paid: the pass has no lessons left. Renew it with the administrator.",
+ "Занятие не оплачено: нет абонемента по направлению «{direction}». Оформите его у администратора.": "Lesson not paid: no pass for “{direction}”. Get one from the administrator.",
+ "Занятие не оплачено: нет действующего абонемента. Оформите его у администратора.": "Lesson not paid: no active pass. Get one from the administrator.",
+ "Не списано: абонемент был заморожен": "Not charged: the pass was frozen",
+ "Отработка — новое занятие не списано": "Make-up — no new lesson charged",
+ "Пробное занятие бесплатно": "Trial lesson is free",
+ "Был ли ребёнок на занятии и списалось ли оно с абонемента.": "Whether your child attended and whether the lesson was charged to the pass."
 }
