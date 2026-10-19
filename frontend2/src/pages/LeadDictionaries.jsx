@@ -3,7 +3,6 @@ import { Archive, ArchiveRestore, ListChecks, Pencil, Plus } from 'lucide-react'
 import api from '../api/axios'
 import { Badge, Button, DataTable, EmptyState, Field, Input, Modal, PageHeader, Tabs, apiErrorMessage, plural, useToast } from '../ui'
 import { t } from '../i18n'
-import Campaigns from '../components/leads/Campaigns'
 import FunnelStages from '../components/leads/FunnelStages'
 
 // Два справочника воронки (TRU-93). usage — во что складывается число
@@ -53,8 +52,7 @@ export default function LeadDictionaries() {
   const toast = useToast()
   const [kind, setKind] = useState('stages')
   const stagesTab = kind === 'stages'
-  const campaignsTab = kind === 'campaigns'
-  const customTab = stagesTab || campaignsTab
+  const customTab = stagesTab
   const [data, setData] = useState({ sources: null, reasons: null, renewalReasons: null })
   const [error, setError] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -116,11 +114,10 @@ export default function LeadDictionaries() {
         onChange={setKind}
         tabs={[
           { key: 'stages', label: t('Этапы воронки') },
-          { key: 'campaigns', label: t('Публикации') },
           ...Object.entries(DICTIONARIES).map(([key, d]) => ({ key, label: d.tab, count: data[key] ? activeCount(key) : null })),
         ]}
       />
-      {stagesTab ? <FunnelStages /> : campaignsTab ? <Campaigns /> : <DataTable
+      {stagesTab ? <FunnelStages /> : <DataTable
         columns={columns}
         rows={rows || []}
         loading={!rows && !error}
