@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Download, Inbox, Search, X } from 'lucide-react'
+import { Inbox, Search } from 'lucide-react'
 import api from '../../api/axios'
 import { Avatar, Badge, Button, Checkbox, DataTable, Dropdown, EmptyState, apiErrorMessage, cn, formatDateTime, plural, useToast } from '../../ui'
+import { ListToolbar } from '../money/ListParts'
 import { t } from '../../i18n'
 import RejectModal from './RejectModal'
 import { LEAD_STATUSES, stageBadge } from './format'
@@ -11,10 +12,14 @@ const PAGE_SIZE = 50
 
 /**
  * Таблица заявок (TRU-95): те же фильтры, что у доски (из адреса), плюс
- * сортировка, страницы, массовые действия и выгрузка в Excel. На телефоне
- * DataTable сам превращает строки в карточки.
+ * сортировка, страницы и массовые действия. Поиск, фильтры и массовые
+ * действия — в верхней строке таблицы, как у «Денег»; Excel — в шапке.
+ * На телефоне DataTable сам превращает строки в карточки.
  */
-export default function LeadTable({ query, params, update, reloadKey, staff, onCount, onReset, hasFilters, returnTo }) {
+export default function LeadTable({
+  query, params, update, reloadKey, staff, onCount, onReset, hasFilters, returnTo,
+  search, filtersOpen, onToggleFilters, activeFilters, filtersPanel,
+}) {
   const navigate = useNavigate()
   const toast = useToast()
   const [data, setData] = useState({ key: null, results: [], count: 0, error: false })
@@ -69,18 +74,6 @@ export default function LeadTable({ query, params, update, reloadKey, staff, onC
     }
   }
 
-  async function exportExcel() {
-    try {
-      const res = await api.get('leads/export/', { params: { ...query, ordering }, responseType: 'blob' })
-      const url = URL.createObjectURL(res.data)
-      const link = Object.assign(document.createElement('a'), { href: url, download: `leads-${new Date().toISOString().slice(0, 10)}.xlsx` })
-      link.click()
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      toast.error(apiErrorMessage(err))
-    }
-  }
-
   const columns = [
     {
       key: 'select',
@@ -127,31 +120,35 @@ export default function LeadTable({ query, params, update, reloadKey, staff, onC
 
   // Массовая смена — по основным этапам (ролям), названия — центра (TRU-154).
   const statusOptions = LEAD_STATUSES.map(s => ({ value: s.value, label: stages.find(st => st.is_system && st.role === s.value)?.name || s.label }))
-  const staffOptions = [{ value: '', label: t('Не назначен') }, ...staff.map(u => ({ value: u.id, label: u.full_name }))]
+  // «Не назначен» — не пустое значение, иначе выпадашка показывала бы его вместо «Назначить…».
+  const staffOptions = [{ value: 'none', label: t('Не назначен') }, ...staff.map(u => ({ value: u.id, label: u.full_name }))]
 
   return (
     <>
-      <div className="mb-3 flex min-h-10 flex-wrap items-center gap-2">
-        {selected.size > 0 ? (
-          <>
-            <span className="text-[13px] font-semibold text-ink">{t('Выбрано: {n}', { n: selected.size })}</span>
-            <div className="w-48">
-              <Dropdown size="sm" value="" placeholder={t('Сменить статус…')} options={statusOptions} ariaLabel={t('Сменить статус')} disabled={busy}
-                onChange={to => (to === 'rejected' ? setRejecting(true) : bulk({ action: 'status', status: to }))} />
-            </div>
-            <div className="w-48">
-              <Dropdown size="sm" value="" placeholder={t('Назначить…')} options={staffOptions} ariaLabel={t('Назначить ответственного')} disabled={busy}
-                onChange={userId => bulk({ action: 'assign', assigned_to: userId || null })} />
-            </div>
-            <Button size="sm" variant="ghost" icon={X} onClick={() => setSelected(new Set())}>{t('Снять выбор')}</Button>
-          </>
-        ) : (
-          <span className="hidden text-[13px] text-ink-muted md:inline">{t('Отметьте заявки, чтобы сменить статус или ответственного сразу у нескольких.')}</span>
-        )}
-        <Button size="sm" icon={Download} onClick={exportExcel} className="ml-auto">{t('Excel')}</Button>
-      </div>
-
       <DataTable
+        toolbar={(
+          <ListToolbar
+            selectedCount={selected.size}
+            onClearSelection={() => setSelected(new Set())}
+            bulkActions={(
+              <>
+                <div className="w-48">
+                  <Dropdown size="sm" value="" placeholder={t('Сменить статус…')} options={statusOptions} ariaLabel={t('Сменить статус')} disabled={busy}
+                    onChange={to => (to === 'rejected' ? setRejecting(true) : bulk({ action: 'status', status: to }))} />
+                </div>
+                <div className="w-48">
+                  <Dropdown size="sm" value="" placeholder={t('Назначить…')} options={staffOptions} ariaLabel={t('Назначить ответственного')} disabled={busy}
+                    onChange={userId => bulk({ action: 'assign', assigned_to: userId === 'none' ? null : userId })} />
+                </div>
+              </>
+            )}
+            search={search}
+            filtersOpen={filtersOpen}
+            onToggleFilters={onToggleFilters}
+            activeFilters={activeFilters}
+            filtersPanel={filtersPanel}
+          />
+        )}
         columns={columns}
         rows={rows}
         loading={loading}
