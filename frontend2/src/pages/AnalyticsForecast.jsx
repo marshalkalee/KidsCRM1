@@ -2,7 +2,7 @@ import { CalendarClock, HandCoins, Info, Wallet } from 'lucide-react'
 import { Badge, Card, CardHeader, DataTable, ErrorState, PageHeader, Skeleton, cn } from '../ui'
 import { locale, t } from '../i18n'
 import {
-  AnalyticsNav, BranchPicker, ExportButton, formatValue,
+  BranchPicker, ExportButton, formatValue,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
 } from '../components/analytics'
 
@@ -28,7 +28,6 @@ export default function AnalyticsForecast() {
         description={t('Сколько денег уже получено, сколько должно прийти и чего ждать от продлений')}
         actions={<ExportButton report="forecast" filters={filters} />}
       />
-      <AnalyticsNav />
       <div className="mb-5 flex flex-col gap-3 rounded-xl border border-line bg-surface px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
         <p className="text-[13px] text-ink-muted">
           {data

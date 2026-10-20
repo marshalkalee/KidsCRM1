@@ -1,18 +1,21 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
-import { Button, Card, ErrorState, PageHeader } from '../ui'
+import { BarChart3, ChevronDown } from 'lucide-react'
+import { Card, ErrorState, PageHeader, cn } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, ExportButton, BarsChart, ChartCard, ComboChart, DonutChart, GaugeChart, HeatmapChart,
+  AnalyticsToolbar, ExportButton, BarsChart, ChartCard, ComboChart, DonutChart, GaugeChart, HeatmapChart,
   MetricTile, OwnerTiles, PALETTE, RankBars, TrendChart,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet, useBreakdown, useHeatmap, useMetrics,
 } from '../components/analytics'
 
-const TILES = [
-  'revenue', 'average_check', 'debt_total', 'new_leads',
-  'visits', 'attendance_rate', 'active_children', 'group_fill',
-]
-const METRICS = [...new Set([...TILES, 'payments_count'])]
+// Выручка, долг и заполняемость уже в плитках сверху — здесь то, чего там нет.
+const TILES = ['average_check', 'visits', 'attendance_rate', 'active_children']
+const METRICS = [...TILES, 'revenue', 'debt_total', 'group_fill', 'new_leads', 'payments_count']
+const CHARTS_KEY = 'kc:analytics-charts'
+
+function readChartsOpen() {
+  try { return localStorage.getItem(CHARTS_KEY) === '1' } catch { return false }
+}
 // Кольцо посещаемости: зелёный — был, синий — отработка, оранжевый — не был.
 const ATTENDANCE_COLORS = ['var(--color-success-600)', PALETTE[1], 'var(--color-warning-600)']
 const STATUS_ORDER = ['present', 'makeup', 'absent']
@@ -28,13 +31,12 @@ export default function Analytics() {
   const filters = useAnalyticsFilters()
   const catalog = useAnalyticsCatalog()
   const { data, loading, error, reload } = useAnalyticsGet('dashboard', '', filters)
-  const [charts, setCharts] = useState(false)
+  const [charts, setCharts] = useState(readChartsOpen)
   const branchNote = data && !data.all_branches ? data.branches.map(b => b.name).join(', ') : t('Все филиалы')
 
   return (
     <>
       <PageHeader title={t('Аналитика')} description={branchNote} actions={<ExportButton report="overview" filters={filters} />} />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} previous={data?.previous_period} />
 
       {error && !data ? (
@@ -43,15 +45,22 @@ export default function Analytics() {
         <OwnerTiles data={data} loading={loading} />
       )}
 
-      <Button
-        variant="secondary"
-        icon={charts ? ChevronUp : ChevronDown}
-        className="mb-5"
+      <button
+        type="button"
         aria-expanded={charts}
-        onClick={() => setCharts(open => !open)}
+        onClick={() => setCharts(open => {
+          try { localStorage.setItem(CHARTS_KEY, open ? '0' : '1') } catch { /* запомнить не вышло — не страшно */ }
+          return !open
+        })}
+        className="mb-5 flex w-full items-center gap-3 rounded-lg border border-line bg-surface px-4 py-3.5 text-left transition-shadow hover:shadow-pop sm:px-5"
       >
-        {charts ? t('Скрыть графики') : t('Графики')}
-      </Button>
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><BarChart3 className="size-[18px]" /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-ink">{charts ? t('Скрыть графики') : t('Графики и динамика')}</span>
+          <span className="block text-[12px] text-ink-muted">{t('Выручка по дням, посещаемость, когда ходят дети, откуда заявки')}</span>
+        </span>
+        <ChevronDown className={cn('size-5 shrink-0 text-ink-subtle transition-transform', charts && 'rotate-180')} />
+      </button>
       {charts && <OverviewCharts filters={filters} catalog={catalog} />}
     </>
   )
@@ -209,7 +218,9 @@ function OverviewCharts({ filters, catalog }) {
 function Section({ title, children }) {
   return (
     <section className="mb-6">
-      <h2 className="mb-3 text-[13px] font-bold uppercase tracking-[0.06em] text-ink-subtle">{title}</h2>
+      <h2 className="mb-3 flex items-center gap-3 text-[13px] font-bold uppercase tracking-[0.06em] text-ink-subtle">
+        {title}<span className="h-px flex-1 bg-line" />
+      </h2>
       <div className="grid gap-4 lg:grid-cols-3">{children}</div>
     </section>
   )

@@ -4,7 +4,7 @@ import { ArrowDownRight, ArrowUpRight, Building2, Lock } from 'lucide-react'
 import { Card, CardHeader, DataTable, Dropdown, EmptyState, ErrorState, PageHeader, Skeleton, cn } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, ExportButton, MultiLineChart, formatValue,
+  AnalyticsToolbar, ExportButton, MultiLineChart, formatValue,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
 } from '../components/analytics'
 
@@ -56,7 +56,6 @@ export default function AnalyticsBranches() {
         description={t('Где точка работает хорошо, где проседает')}
         actions={allowed && <ExportButton report="branches" filters={filters} />}
       />
-      <AnalyticsNav />
     </>
   )
 

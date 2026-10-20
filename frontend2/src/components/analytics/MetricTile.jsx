@@ -36,11 +36,15 @@ export function MetricTile({ name, metric, loading, onClick }) {
         loading && 'opacity-60',
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[13px] font-semibold text-ink-muted">{metricLabel(name, metric)}</p>
-        {Icon && <Icon className="size-4 shrink-0 text-ink-subtle" />}
+      <div className="flex items-center gap-3">
+        {Icon && (
+          <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', meta.goodWhenDown ? 'bg-danger-50 text-danger-600' : 'bg-brand-50 text-brand-600')}>
+            <Icon className="size-[18px]" />
+          </span>
+        )}
+        <p className="min-w-0 flex-1 hyphens-auto text-[13px] font-semibold leading-snug text-ink-muted [overflow-wrap:anywhere]">{metricLabel(name, metric)}</p>
       </div>
-      <p className={cn('mt-2 truncate text-[19px] font-bold leading-tight tracking-tight sm:text-[26px]', thin ? 'text-ink-subtle' : 'text-ink')}>
+      <p className={cn('mt-3 truncate text-[19px] font-bold leading-tight tracking-tight sm:text-[26px]', thin ? 'text-ink-subtle' : 'text-ink')}>
         {metric.unit === 'money' ? (
           <>
             {/* На телефоне в плитке пол-экрана: «1,1 млрд ₸», полностью — с планшета. */}

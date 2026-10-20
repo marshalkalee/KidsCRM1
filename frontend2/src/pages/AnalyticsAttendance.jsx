@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { CalendarCheck, CheckCheck, Percent, TrendingDown, TrendingUp, UserRound, XCircle } from 'lucide-react'
 import {
-  AnalyticsNav, AnalyticsToolbar, ComboChart, DonutChart, ExportButton, PALETTE, RankBars,
+  AnalyticsToolbar, ComboChart, DonutChart, ExportButton, PALETTE, RankBars,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
 } from '../components/analytics'
 import { Badge, Card, CardHeader, DataTable, ErrorState, PageHeader, Skeleton, cn } from '../ui'
@@ -29,7 +29,6 @@ export default function AnalyticsAttendance() {
         description={t('Динамика посещаемости, причины пропусков и отклонение от личной нормы ребёнка')}
         actions={<ExportButton report="attendance" filters={filters} />}
       />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} />
 
       {report.error && !data ? (

@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { ArrowDownRight, ArrowUpRight, ChevronRight, Minus } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Banknote, ChevronRight, Hourglass, Inbox, Minus, RefreshCw, TrendingUp, UserMinus, UsersRound, Wallet } from 'lucide-react'
 import { Card, Skeleton, cn } from '../../ui'
 import { locale, t } from '../../i18n'
 import { Change } from './MetricTile'
@@ -18,35 +18,54 @@ export function OwnerTiles({ data, loading }) {
   const { search } = useLocation()
   if (!data) {
     return (
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {[0, 1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className={cn('h-[132px]', i === 6 && 'col-span-2 lg:col-span-1')} />)}
+      <div className={GRID}>
+        {SPANS.map((span, i) => <Skeleton key={i} className={cn('h-[148px]', span)} />)}
       </div>
     )
   }
   const { tiles } = data
   const report = path => `${path}${search}`
+  // Сверху деньги — крупнее, ниже — продажи и дети.
   return (
-    <div className={cn('mb-5 grid grid-cols-2 gap-3 transition-opacity sm:gap-4 lg:grid-cols-4', loading && 'opacity-60')}>
-      <RevenueTile tile={tiles.revenue} to={report('/analytics/revenue')} />
-      <DebtTile tile={tiles.debt} to="/money?tab=debts" />
-      <FillTile tile={tiles.group_fill} to={report('/analytics/groups')} />
-      <LeadTile tile={tiles.lead_conversion} to={report('/analytics/funnel')} />
-      <RenewalTile tile={tiles.renewal_conversion} to={report('/analytics/renewals')} />
-      <RiskTile tile={tiles.risk} to={report('/analytics/risk')} />
-      <ForecastTile tile={tiles.forecast} to={report('/analytics/forecast')} className="col-span-2 lg:col-span-1" />
+    <div className={cn(GRID, 'transition-opacity', loading && 'opacity-60')}>
+      <RevenueTile tile={tiles.revenue} to={report('/analytics/revenue')} className={SPANS[0]} />
+      <ForecastTile tile={tiles.forecast} to={report('/analytics/forecast')} className={SPANS[1]} />
+      <DebtTile tile={tiles.debt} to="/money?tab=debts" className={SPANS[2]} />
+      <LeadTile tile={tiles.lead_conversion} to={report('/analytics/funnel')} className={SPANS[3]} />
+      <RenewalTile tile={tiles.renewal_conversion} to={report('/analytics/renewals')} className={SPANS[4]} />
+      <FillTile tile={tiles.group_fill} to={report('/analytics/groups')} className={SPANS[5]} />
+      <RiskTile tile={tiles.risk} to={report('/analytics/risk')} className={SPANS[6]} />
     </div>
   )
 }
 
-function Tile({ label, value, muted, tone, footer, hint, progress, to, className }) {
+const GRID = 'mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-12'
+const BIG = 'lg:col-span-4'
+const SMALL = 'lg:col-span-3'
+const SPANS = [`col-span-2 ${BIG}`, BIG, BIG, SMALL, SMALL, SMALL, SMALL]
+
+const TONES = {
+  success: 'bg-success-50 text-success-600',
+  danger: 'bg-danger-50 text-danger-600',
+  warning: 'bg-warning-50 text-warning-600',
+  info: 'bg-info-50 text-info-600',
+  brand: 'bg-brand-50 text-brand-600',
+}
+
+function Tile({ label, icon: Icon, iconTone = 'brand', value, muted, tone, footer, hint, progress, to, className }) {
   return (
     <Link to={to} className={cn('group block min-w-0', className)}>
-      <Card className="flex h-full min-h-[132px] flex-col px-4 py-4 transition-shadow group-hover:shadow-pop sm:px-5">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[13px] font-semibold text-ink-muted">{label}</p>
-          <ChevronRight className="size-4 shrink-0 text-ink-subtle transition-transform group-hover:translate-x-0.5" />
+      <Card className="flex h-full min-h-[148px] flex-col px-4 py-4 transition-shadow group-hover:shadow-pop sm:px-5">
+        <div className="flex items-center gap-3">
+          {Icon && (
+            <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg', TONES[iconTone])}>
+              <Icon className="size-[18px]" />
+            </span>
+          )}
+          <p className="min-w-0 flex-1 hyphens-auto text-[13px] font-semibold leading-snug text-ink-muted [overflow-wrap:anywhere]">{label}</p>
+          <ChevronRight className="hidden size-4 shrink-0 text-ink-subtle transition-transform group-hover:translate-x-0.5 sm:block" />
         </div>
-        <p className={cn('mt-2 truncate text-[19px] font-bold leading-tight tracking-tight sm:text-[26px]', muted ? 'text-ink-subtle' : tone || 'text-ink')}>
+        <p className={cn('mt-3 text-[20px] font-bold leading-tight tracking-tight sm:truncate sm:text-[26px]', muted ? 'text-ink-subtle' : tone || 'text-ink')}>
           {value}
         </p>
         {progress != null && (
@@ -60,6 +79,14 @@ function Tile({ label, value, muted, tone, footer, hint, progress, to, className
         </div>
       </Card>
     </Link>
+  )
+}
+
+function Waiting({ children }) {
+  return (
+    <p className="flex items-center gap-1.5 text-xs text-ink-subtle">
+      <Hourglass className="size-3.5 shrink-0" />{children}
+    </p>
   )
 }
 
@@ -97,33 +124,38 @@ function ChangePp({ current, previous, change }) {
   )
 }
 
-function Empty({ label, to, className }) {
-  return <Tile label={label} value="—" muted hint={t('Не удалось посчитать — откройте отчёт')} to={to} className={className} />
+function Empty({ label, icon, iconTone, to, className }) {
+  return <Tile label={label} icon={icon} iconTone={iconTone} value="—" muted hint={t('Не удалось посчитать — откройте отчёт')} to={to} className={className} />
 }
 
-function RevenueTile({ tile, to }) {
+function RevenueTile({ tile, to, className }) {
   const label = t('Выручка')
-  if (!tile) return <Empty label={label} to={to} />
+  if (!tile) return <Empty label={label} icon={Banknote} iconTone="success" to={to} className={className} />
   return (
     <Tile
       label={label}
+      icon={Banknote}
+      iconTone="success"
+      className={className}
       value={<Money value={tile.value} />}
-      muted={!tile.enough_data}
       footer={tile.enough_data
         ? <Change metric={{ ...tile, kind: 'event' }} />
-        : <p className="text-xs text-ink-subtle">{tile.data_since ? t('Данных пока мало для сравнения') : t('Данных за период нет')}</p>}
+        : <Waiting>{tile.data_since ? t('Данных пока мало для сравнения') : t('Данных за период нет')}</Waiting>}
       to={to}
     />
   )
 }
 
-function DebtTile({ tile, to }) {
+function DebtTile({ tile, to, className }) {
   const label = t('Задолженность')
-  if (!tile) return <Empty label={label} to={to} />
+  if (!tile) return <Empty label={label} icon={Wallet} iconTone="danger" to={to} className={className} />
   const owes = Number(tile.value) > 0
   return (
     <Tile
       label={label}
+      icon={Wallet}
+      iconTone="danger"
+      className={className}
       value={<Money value={tile.value} />}
       tone={owes ? 'text-danger-600' : 'text-success-600'}
       footer={<Change metric={{ ...tile, kind: 'snapshot' }} goodWhenDown />}
@@ -135,9 +167,9 @@ function DebtTile({ tile, to }) {
   )
 }
 
-function FillTile({ tile, to }) {
+function FillTile({ tile, to, className }) {
   const label = t('Заполняемость групп')
-  if (!tile) return <Empty label={label} to={to} />
+  if (!tile) return <Empty label={label} icon={UsersRound} iconTone="warning" to={to} className={className} />
   const hint = tile.capacity
     ? [
       t('{members} детей на {capacity} мест', { members: tile.members, capacity: tile.capacity }),
@@ -147,6 +179,9 @@ function FillTile({ tile, to }) {
   return (
     <Tile
       label={label}
+      icon={UsersRound}
+      iconTone="warning"
+      className={className}
       value={formatValue(tile.value, 'percent')}
       muted={tile.value == null}
       progress={tile.value == null ? null : Number(tile.value)}
@@ -157,12 +192,15 @@ function FillTile({ tile, to }) {
   )
 }
 
-function LeadTile({ tile, to }) {
+function LeadTile({ tile, to, className }) {
   const label = t('Конверсия заявок')
-  if (!tile) return <Empty label={label} to={to} />
+  if (!tile) return <Empty label={label} icon={Inbox} iconTone="info" to={to} className={className} />
   return (
     <Tile
       label={label}
+      icon={Inbox}
+      iconTone="info"
+      className={className}
       value={formatValue(tile.value, 'percent')}
       muted={tile.value == null}
       footer={<ChangePp current={tile.value} previous={tile.previous} change={tile.change_pp} />}
@@ -174,9 +212,9 @@ function LeadTile({ tile, to }) {
   )
 }
 
-function RenewalTile({ tile, to }) {
+function RenewalTile({ tile, to, className }) {
   const label = t('Конверсия продлений')
-  if (!tile) return <Empty label={label} to={to} />
+  if (!tile) return <Empty label={label} icon={RefreshCw} iconTone="brand" to={to} className={className} />
   // В начале месяца у всех закончившихся окно продления ещё идёт, и цифры
   // за период нет: показываем прошлый период той же длины с пометкой, а не
   // пустую плитку каждое утро первых двух недель.
@@ -195,6 +233,9 @@ function RenewalTile({ tile, to }) {
   return (
     <Tile
       label={label}
+      icon={RefreshCw}
+      iconTone="brand"
+      className={className}
       value={formatValue(fallback ? tile.previous : tile.value, 'percent')}
       muted={fallback || tile.value == null || tile.small}
       footer={fallback ? null : <ChangePp current={tile.value} previous={tile.previous} change={tile.change_pp} />}
@@ -204,12 +245,15 @@ function RenewalTile({ tile, to }) {
   )
 }
 
-function RiskTile({ tile, to }) {
+function RiskTile({ tile, to, className }) {
   const label = t('В зоне риска ухода')
-  if (!tile) return <Empty label={label} to={to} />
+  if (!tile) return <Empty label={label} icon={UserMinus} iconTone="danger" to={to} className={className} />
   return (
     <Tile
       label={label}
+      icon={UserMinus}
+      iconTone="danger"
+      className={className}
       value={formatValue(tile.value, 'count')}
       tone={tile.urgent ? 'text-danger-600' : null}
       hint={tile.value
@@ -222,7 +266,7 @@ function RiskTile({ tile, to }) {
 
 function ForecastTile({ tile, to, className }) {
   const label = t('Прогноз выручки')
-  if (!tile) return <Empty label={label} to={to} className={className} />
+  if (!tile) return <Empty label={label} icon={TrendingUp} iconTone="info" to={to} className={className} />
   const [y, m] = tile.month.split('-').map(Number)
   const month = new Intl.DateTimeFormat(locale, { month: 'long' }).format(new Date(y, m - 1, 1))
   let value
@@ -237,5 +281,5 @@ function ForecastTile({ tile, to, className }) {
     value = <Money value={tile.value} />
     hint = t('Продления на {month}, скорее всего {low} – {high} ₸', { month, low: formatAxis(tile.low, 'money'), high: formatAxis(tile.high, 'money') })
   }
-  return <Tile label={label} value={value} muted={tile.status === 'hidden'} hint={hint} to={to} className={className} />
+  return <Tile label={label} icon={TrendingUp} iconTone="info" value={value} muted={tile.status === 'hidden'} hint={hint} to={to} className={className} />
 }
