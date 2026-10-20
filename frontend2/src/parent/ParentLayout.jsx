@@ -100,7 +100,10 @@ export default function ParentLayout() {
         </div>
       )}
 
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
+      {/* Шапка закреплена через fixed, а не sticky: Safari на iPhone красит
+          полосу у строки состояния в цвет fixed-элемента у верхнего края; со
+          sticky там просвечивала прокрученная страница. */}
+      <header className={cn('fixed inset-x-0 top-0 z-20 border-b border-line bg-surface transition-[left] duration-200', collapsed ? 'lg:left-[76px]' : 'lg:left-64')}>
         <div className="mx-auto flex h-16 max-w-[1500px] items-center gap-3 px-4 sm:px-6 lg:max-w-none">
           <button
             type="button"
@@ -127,6 +130,7 @@ export default function ParentLayout() {
           </div>
         </div>
       </header>
+      <div className="h-16" aria-hidden="true" />
 
       <main className="mx-auto w-full max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
         {(!online || me.stale) && (
