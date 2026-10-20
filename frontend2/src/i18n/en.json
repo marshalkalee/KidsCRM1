@@ -2977,5 +2977,21 @@
  "Прошлые советы, которые больше не нужны. Нажмите, чтобы посмотреть.": "Earlier advice that is no longer needed. Click to see it.",
  "Открыт": "Open",
  "Свой этап": "Custom stage",
- "Так этапы называются на доске, в таблице, в истории заявки и в отчётах. Основные этапы нельзя скрыть — на них держатся пробные, продажи и аналитика; свои этапы добавляются внутрь основных.": "This is how stages are named on the board, in the table, in the lead history and in reports. Main stages cannot be hidden — trials, sales and analytics rely on them; custom stages are added inside main ones."
+ "Так этапы называются на доске, в таблице, в истории заявки и в отчётах. Основные этапы нельзя скрыть — на них держатся пробные, продажи и аналитика; свои этапы добавляются внутрь основных.": "This is how stages are named on the board, in the table, in the lead history and in reports. Main stages cannot be hidden — trials, sales and analytics rely on them; custom stages are added inside main ones.",
+ "Если одобрить": "If approved",
+ "ждёт": "waiting",
+ "занятие не спишется — предупредили вовремя": "the lesson will not be charged — notice was on time",
+ "занятие спишется — предупредили позже срока": "the lesson will be charged — notice was late",
+ "мест нет — группа уже заполнена": "no spots — the group is full",
+ "Новых запросов нет": "No new requests",
+ "Отметьте несколько запросов одного типа, чтобы решить их разом.": "Select several requests of the same type to decide them at once.",
+ "ребёнок займёт место — свободно {n}": "the child will take a spot — {n} free",
+ "Решено {when}": "Decided {when}",
+ "Занятие уже прошло — решить сейчас": "Lesson already passed — decide now",
+ "Занятие в ближайшие сутки": "Lesson within 24 hours",
+ "Ждут решения": "Awaiting decision",
+ "Новые": "New",
+ "Одобренные": "Approved",
+ "Отклонённые": "Rejected",
+ "Запись": "Enrollment"
 }
