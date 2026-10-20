@@ -56,7 +56,10 @@ export default function Layout() {
         </div>
       )}
 
-      <header className="sticky top-0 z-20 border-b border-line bg-surface">
+      {/* Шапка закреплена через fixed, а не sticky: Safari на iPhone красит
+          полосу у строки состояния в цвет fixed-элемента у верхнего края; со
+          sticky там просвечивала прокрученная страница. */}
+      <header className={cn('fixed inset-x-0 top-0 z-20 border-b border-line bg-surface transition-[left] duration-200', collapsed ? 'lg:left-[76px]' : 'lg:left-64')}>
         <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
           <button type="button" onClick={() => setDrawerOpen(true)} className="-ml-1 rounded-md p-2 text-ink-muted hover:bg-surface-muted lg:hidden" aria-label={t('Меню')}>
             <Menu className="size-5" />
@@ -79,6 +82,7 @@ export default function Layout() {
           </div>
         </div>
       </header>
+      <div className="h-16" aria-hidden="true" />
 
       <main className="w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <Outlet />
