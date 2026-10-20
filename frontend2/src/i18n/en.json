@@ -2970,5 +2970,10 @@
  "Каждую ночь CRM пересчитывает, сколько занятий осталось в каждом абонементе. Если что-то не сошлось — исправляет и показывает здесь.": "Every night the CRM recounts the lessons left in each pass. If something doesn't match, it fixes it and shows it here.",
  "Остатки занятий во всех абонементах сходятся с отметками посещений.": "Lessons left in all passes match the attendance marks.",
  "Графики и динамика": "Charts and trends",
- "Выручка по дням, посещаемость, когда ходят дети, откуда заявки": "Revenue by day, attendance, when children come, where leads come from"
+ "Выручка по дням, посещаемость, когда ходят дети, откуда заявки": "Revenue by day, attendance, when children come, where leads come from",
+ "Главное на неделю": "Top priorities this week",
+ "Цифры": "Numbers",
+ "Новые советы": "New advice",
+ "Прошлые советы, которые больше не нужны. Нажмите, чтобы посмотреть.": "Earlier advice that is no longer needed. Click to see it.",
+ "Открыт": "Open"
 }
