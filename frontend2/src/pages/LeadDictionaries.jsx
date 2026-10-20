@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Archive, ArchiveRestore, ListChecks, Pencil, Plus } from 'lucide-react'
 import api from '../api/axios'
 import { Badge, Button, DataTable, EmptyState, Field, Input, Modal, PageHeader, Tabs, apiErrorMessage, plural, useToast } from '../ui'
 import { t } from '../i18n'
 import FunnelStages from '../components/leads/FunnelStages'
+import { PageGroupContext } from '../ui/pageGroup'
 
 // Два справочника воронки (TRU-93). usage — во что складывается число
 // рядом с названием: заявки для источника, отказы для причины.
@@ -52,7 +53,9 @@ export default function LeadDictionaries() {
   const toast = useToast()
   const [kind, setKind] = useState('stages')
   const stagesTab = kind === 'stages'
-  const customTab = stagesTab
+  const [stageCount, setStageCount] = useState(null)
+  const [addingStage, setAddingStage] = useState(false)
+  const onStagesLoaded = useCallback(list => setStageCount(list.filter(s => !s.is_hidden).length), [])
   const [data, setData] = useState({ sources: null, reasons: null, renewalReasons: null })
   const [error, setError] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -79,7 +82,7 @@ export default function LeadDictionaries() {
     }
   }
 
-  const rows = customTab ? [] : data[kind]
+  const rows = stagesTab ? [] : data[kind]
   const activeCount = count => (data[count] || []).filter(item => item.is_active).length
 
   const columns = [
@@ -101,23 +104,33 @@ export default function LeadDictionaries() {
     },
   ]
 
-  return (
-    <div>
-      <PageHeader
-        title={t('Справочники продаж')}
-        description={customTab ? t('Этапы воронки, источники заявок и причины отказа — общие для всех филиалов.') : dict.hint}
-        actions={!customTab && <Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>{t('Добавить')}</Button>}
-      />
+  // Вкладки — в шапке страницы, как у «Денег» и «Аналитики».
+  const group = useMemo(() => ({
+    title: t('Справочники продаж'),
+    tabs: (
       <Tabs
-        className="mb-4"
         value={kind}
         onChange={setKind}
         tabs={[
-          { key: 'stages', label: t('Этапы воронки') },
+          { key: 'stages', label: t('Этапы воронки'), count: stageCount },
           ...Object.entries(DICTIONARIES).map(([key, d]) => ({ key, label: d.tab, count: data[key] ? activeCount(key) : null })),
         ]}
       />
-      {stagesTab ? <FunnelStages /> : <DataTable
+    ),
+  // activeCount читает data — её и считаем зависимостью.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [kind, stageCount, data])
+
+  return (
+    <PageGroupContext.Provider value={group}>
+      <PageHeader
+        title={t('Справочники продаж')}
+        description={stagesTab
+          ? t('Так этапы называются на доске, в таблице, в истории заявки и в отчётах. Основные этапы нельзя скрыть — на них держатся пробные, продажи и аналитика; свои этапы добавляются внутрь основных.')
+          : dict.hint}
+        actions={<Button variant="primary" icon={Plus} onClick={() => (stagesTab ? setAddingStage(true) : setEditing('new'))}>{stagesTab ? t('Добавить этап') : t('Добавить')}</Button>}
+      />
+      {stagesTab ? <FunnelStages creating={addingStage} onCreatingChange={setAddingStage} onLoaded={onStagesLoaded} /> : <DataTable
         columns={columns}
         rows={rows || []}
         loading={!rows && !error}
@@ -134,7 +147,7 @@ export default function LeadDictionaries() {
           onSaved={() => { setEditing(null); load() }}
         />
       )}
-    </div>
+    </PageGroupContext.Provider>
   )
 }
 

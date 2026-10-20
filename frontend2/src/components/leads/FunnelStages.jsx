@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, Eye, EyeOff, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Eye, EyeOff, Pencil, Trash2 } from 'lucide-react'
 import api from '../../api/axios'
-import { Badge, Button, Card, CardHeader, ErrorState, Field, Input, Modal, Select, Skeleton, apiErrorMessage, cn, plural, useConfirm, useToast } from '../../ui'
+import { Badge, Button, DataTable, Field, Input, Modal, Select, apiErrorMessage, cn, plural, useConfirm, useToast } from '../../ui'
 import { t } from '../../i18n'
 import { STAGE_COLORS, STAGE_DOT } from './format'
 
@@ -13,8 +13,11 @@ const CUSTOM_ROLES = ['new', 'contacted', 'trial_scheduled', 'trial_attended', '
  * пробные, продажу, отказы и аналитику, поэтому их можно переименовать,
  * перекрасить и переставить, но не скрыть. Свои этапы живут внутри
  * основного: «Тестирование уровня» — это ещё «Связались» для отчётов.
+ *
+ * Та же таблица, что у остальных справочников продаж; «Добавить» — в
+ * шапке страницы (creating / onCreatingChange), число этапов — onLoaded.
  */
-export default function FunnelStages() {
+export default function FunnelStages({ creating = false, onCreatingChange, onLoaded }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [stages, setStages] = useState(null)
@@ -22,11 +25,16 @@ export default function FunnelStages() {
   const [editing, setEditing] = useState(null)
   const [busy, setBusy] = useState(null)
 
-  const fetchStages = useCallback(() => api.get('leads/stages/').then(res => setStages(res.data)).catch(() => setError(true)), [])
+  const fetchStages = useCallback(() => api.get('leads/stages/').then(res => {
+    setStages(res.data)
+    onLoaded?.(res.data)
+  }).catch(() => setError(true)), [onLoaded])
   useEffect(() => { fetchStages() }, [fetchStages])
   const retry = () => { setError(false); fetchStages() }
 
   const roleName = role => stages?.find(s => s.is_system && s.role === role)?.name || role
+  const modal = creating ? 'new' : editing
+  const closeModal = () => { setEditing(null); onCreatingChange?.(false) }
 
   async function run(key, request, success) {
     setBusy(key)
@@ -69,55 +77,74 @@ export default function FunnelStages() {
     if (ok) run(`delete:${stage.id}`, () => api.delete(`leads/stages/${stage.id}/`), t('Этап удалён'))
   }
 
-  if (error) return <Card><ErrorState onRetry={retry} /></Card>
-  if (!stages) return <Skeleton className="h-96" />
+  const columns = [
+    {
+      key: 'name',
+      header: t('Название'),
+      primary: true,
+      render: stage => (
+        <span className={cn('inline-flex min-w-0 items-center gap-2.5', stage.is_hidden && 'opacity-60')}>
+          <span className={cn('size-2.5 shrink-0 rounded-full', STAGE_DOT[stage.color])} />
+          <span className="min-w-0">
+            <span className="block truncate font-semibold text-ink">{stage.name}</span>
+            {!stage.is_system && <span className="block text-xs font-normal text-ink-muted">{t('Внутри «{main}»', { main: roleName(stage.role) })}</span>}
+          </span>
+        </span>
+      ),
+    },
+    { key: 'usage', header: t('Использовано'), render: stage => <span className="text-ink-muted">{stage.lead_count} {plural(stage.lead_count, ['заявка', 'заявки', 'заявок'])}</span> },
+    {
+      key: 'status',
+      header: t('Статус'),
+      mobileAside: true,
+      render: stage => (stage.is_hidden
+        ? <Badge>{t('Скрыт')}</Badge>
+        : stage.is_system ? <Badge tone="success">{t('Основной этап')}</Badge> : <Badge tone="info">{t('Свой этап')}</Badge>),
+    },
+    {
+      key: 'actions',
+      header: '',
+      align: 'right',
+      render: stage => {
+        const index = stages.indexOf(stage)
+        return (
+          <span className="inline-flex gap-1" onClick={e => e.stopPropagation()}>
+            <Button variant="ghost" size="icon" aria-label={t('Выше')} disabled={index === 0 || busy !== null} onClick={() => moveStage(index, -1)}><ArrowUp className="size-4" /></Button>
+            <Button variant="ghost" size="icon" aria-label={t('Ниже')} disabled={index === stages.length - 1 || busy !== null} onClick={() => moveStage(index, 1)}><ArrowDown className="size-4" /></Button>
+            <Button variant="ghost" size="icon" aria-label={t('Изменить')} onClick={() => setEditing(stage)}><Pencil className="size-4" /></Button>
+            {!stage.is_system && (
+              <Button variant="ghost" size="icon" aria-label={stage.is_hidden ? t('Показать') : t('Скрыть')} loading={busy === `hide:${stage.id}`} onClick={() => toggleHidden(stage)}>
+                {stage.is_hidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+              </Button>
+            )}
+            {!stage.is_system && stage.lead_count === 0 && (
+              <Button variant="danger-ghost" size="icon" aria-label={t('Удалить')} loading={busy === `delete:${stage.id}`} onClick={() => remove(stage)}><Trash2 className="size-4" /></Button>
+            )}
+          </span>
+        )
+      },
+    },
+  ]
 
   return (
-    <Card>
-      <CardHeader
-        title={t('Этапы воронки')}
-        description={t('Так этапы называются на доске, в таблице и в отчётах. Основные этапы нельзя скрыть — на них держатся пробные, продажи и аналитика; свои этапы добавляются внутрь основных.')}
-        actions={<Button variant="primary" size="sm" icon={Plus} onClick={() => setEditing('new')}>{t('Добавить этап')}</Button>}
+    <>
+      <DataTable
+        columns={columns}
+        rows={stages || []}
+        loading={!stages && !error}
+        error={error}
+        onRetry={retry}
+        onRowClick={stage => setEditing(stage)}
       />
-      <ol className="divide-y divide-line">
-        {stages.map((stage, index) => (
-          <li key={stage.id} className={cn('flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5', stage.is_hidden && 'opacity-60')}>
-            <span className={cn('size-2.5 shrink-0 rounded-full', STAGE_DOT[stage.color])} />
-            {/* min-w: длинное название не сжимается в «Тестирова…» — кнопки уходят на строку ниже. */}
-            <div className="min-w-[10rem] flex-1">
-              <p className="truncate text-sm font-semibold text-ink">{stage.name}</p>
-              <p className="text-xs text-ink-muted">
-                {stage.is_system ? t('Основной этап') : t('Внутри «{main}»', { main: roleName(stage.role) })}
-                {' · '}
-                {stage.lead_count} {plural(stage.lead_count, ['заявка', 'заявки', 'заявок'])}
-              </p>
-            </div>
-            {stage.is_hidden && <Badge>{t('Скрыт')}</Badge>}
-            <span className="ml-auto inline-flex gap-1">
-              <Button variant="ghost" size="icon" aria-label={t('Выше')} disabled={index === 0 || busy !== null} onClick={() => moveStage(index, -1)}><ArrowUp className="size-4" /></Button>
-              <Button variant="ghost" size="icon" aria-label={t('Ниже')} disabled={index === stages.length - 1 || busy !== null} onClick={() => moveStage(index, 1)}><ArrowDown className="size-4" /></Button>
-              <Button variant="ghost" size="icon" aria-label={t('Изменить')} onClick={() => setEditing(stage)}><Pencil className="size-4" /></Button>
-              {!stage.is_system && (
-                <Button variant="ghost" size="icon" aria-label={stage.is_hidden ? t('Показать') : t('Скрыть')} loading={busy === `hide:${stage.id}`} onClick={() => toggleHidden(stage)}>
-                  {stage.is_hidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-                </Button>
-              )}
-              {!stage.is_system && stage.lead_count === 0 && (
-                <Button variant="danger-ghost" size="icon" aria-label={t('Удалить')} loading={busy === `delete:${stage.id}`} onClick={() => remove(stage)}><Trash2 className="size-4" /></Button>
-              )}
-            </span>
-          </li>
-        ))}
-      </ol>
-      {editing && (
+      {modal && (
         <StageModal
-          stage={editing === 'new' ? null : editing}
+          stage={modal === 'new' ? null : modal}
           roleName={roleName}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); fetchStages() }}
+          onClose={closeModal}
+          onSaved={() => { closeModal(); fetchStages() }}
         />
       )}
-    </Card>
+    </>
   )
 }
 
