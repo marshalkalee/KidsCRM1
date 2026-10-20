@@ -66,8 +66,8 @@ export function ListToolbar({
         {selectedCount > 0 ? (
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-ink">{t('Выбрано: {n}', { n: selectedCount })}</span>
-            {bulkActions}
             <Button size="sm" variant="ghost" icon={X} onClick={onClearSelection}>{t('Снять выбор')}</Button>
+            <div className="ml-auto flex flex-wrap items-center gap-2">{bulkActions}</div>
           </div>
         ) : (
           <div className="min-w-0 flex-1">
