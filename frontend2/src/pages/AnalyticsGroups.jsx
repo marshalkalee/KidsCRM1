@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowRight, Megaphone, Merge, Percent, TriangleAlert, UsersRound } from 'lucide-react'
-import { AnalyticsNav, AnalyticsToolbar, ExportButton, RankBars, TrendChart, useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet } from '../components/analytics'
+import { AnalyticsToolbar, ExportButton, RankBars, TrendChart, useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet } from '../components/analytics'
 import { Badge, Card, CardHeader, ErrorState, PageHeader, Select, Skeleton, cn } from '../ui'
 import { t } from '../i18n'
 import { useSession } from '../session/SessionContext'
@@ -40,7 +40,6 @@ export default function AnalyticsGroups() {
         description={t('Занятость, недобор и динамика состава')}
         actions={<ExportButton report="group_occupancy" filters={filters} extra={extra} />}
       />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} />
 
       <Card className="mb-5">

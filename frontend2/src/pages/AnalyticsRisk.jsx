@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CalendarX, CircleDollarSign, ClipboardPlus, MessageCircle, Phone, ShieldAlert, TicketCheck } from 'lucide-react'
 import api from '../api/axios'
-import { AnalyticsNav, AnalyticsToolbar, ExportButton, useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet } from '../components/analytics'
+import { AnalyticsToolbar, ExportButton, useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet } from '../components/analytics'
 import { Badge, Button, Card, ErrorState, PageHeader, Skeleton, apiErrorMessage, cn, formatDate, money, useToast } from '../ui'
 import { t } from '../i18n'
 
@@ -25,7 +25,6 @@ export default function AnalyticsRisk() {
         description={t('Семьи, которым стоит позвонить до того, как они перестанут ходить')}
         actions={<ExportButton report="risk_list" filters={filters} />}
       />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} />
 
       {report.error && !data ? (

@@ -3,7 +3,7 @@ import { Info } from 'lucide-react'
 import { Badge, Card, CardHeader, DataTable, ErrorState, PageHeader, Skeleton, Tabs, cn } from '../ui'
 import { locale, plural, t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, ComboChart, ExportButton, PALETTE, formatValue,
+  AnalyticsToolbar, ComboChart, ExportButton, PALETTE, formatValue,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
 } from '../components/analytics'
 
@@ -48,7 +48,6 @@ export default function AnalyticsRenewals() {
         description={t('Сколько абонементов продлили из закончившихся')}
         actions={<ExportButton report="renewal_conversion" filters={filters} />}
       />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} />
 
       {error ? (

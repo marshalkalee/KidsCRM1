@@ -3,7 +3,7 @@ import { Info, TriangleAlert } from 'lucide-react'
 import { Card, CardHeader, DataTable, EmptyState, ErrorState, PageHeader, Skeleton, Tabs, formatDate } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, ChartCard, DonutChart, ExportButton, MetricTile, MultiLineChart, PALETTE,
+  AnalyticsToolbar, ChartCard, DonutChart, ExportButton, MetricTile, MultiLineChart, PALETTE,
   RankBars, StackedBars, breakdownLabel, formatValue, useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
   useMetrics,
 } from '../components/analytics'
@@ -50,7 +50,6 @@ export default function AnalyticsCheckDebt() {
   return (
     <>
       <PageHeader title={t('Аналитика')} description={t('Средний чек и задолженности')} actions={<ExportButton report="check_debt" filters={filters} />} />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={metrics.data?.period} previous={metrics.data?.previous_period} />
       <CheckSection metrics={metrics} check={check} />
       <DebtSection debt={debt} />

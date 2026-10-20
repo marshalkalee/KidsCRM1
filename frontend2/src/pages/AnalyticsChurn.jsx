@@ -5,7 +5,7 @@ import api from '../api/axios'
 import { Badge, Button, Card, CardHeader, DataTable, ErrorState, PageHeader, Skeleton, Tabs, apiErrorMessage, cn, formatDate, useToast } from '../ui'
 import { locale, t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, ExportButton, MultiLineChart, PALETTE, formatValue,
+  AnalyticsToolbar, ExportButton, MultiLineChart, PALETTE, formatValue,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
 } from '../components/analytics'
 
@@ -60,7 +60,6 @@ export default function AnalyticsChurn() {
         description={t('Кто ушёл и почему — чтобы позвонить и вернуть')}
         actions={<ExportButton report="churn" filters={filters} />}
       />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} />
 
       {error ? (

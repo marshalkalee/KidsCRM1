@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, CardHeader, DataTable, Dropdown, ErrorState, PageHeader, Skeleton, Tabs, formatDate } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, DonutChart, ExportButton, PALETTE, StackedBars, breakdownLabel, formatValue,
+  AnalyticsToolbar, DonutChart, ExportButton, PALETTE, StackedBars, breakdownLabel, formatValue,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
 } from '../components/analytics'
 
@@ -57,7 +57,6 @@ export default function AnalyticsRejections() {
         description={t('Почему отказываются и на каком этапе')}
         actions={<ExportButton report="rejections" filters={filters} extra={extra} />}
       />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} />
 
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">

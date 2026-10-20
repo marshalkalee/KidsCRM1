@@ -3,7 +3,7 @@ import { Info } from 'lucide-react'
 import { Badge, Card, CardHeader, DataTable, Dropdown, ErrorState, PageHeader, Skeleton } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, ExportButton, QualityBars, StackedBars, breakdownLabel, formatValue,
+  AnalyticsToolbar, ExportButton, QualityBars, StackedBars, breakdownLabel, formatValue,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
 } from '../components/analytics'
 
@@ -42,7 +42,6 @@ export default function AnalyticsSources() {
         description={t('Какой источник приносит клиентов, а не только заявки')}
         actions={<ExportButton report="sources" filters={filters} extra={extra} />}
       />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} />
 
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">

@@ -30,7 +30,7 @@ export function AnalyticsToolbar({ filters, catalog, period, previous }) {
 
 export function PeriodPicker({ filters }) {
   return (
-    <div role="radiogroup" aria-label={t('Период')} className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5">
+    <div role="radiogroup" aria-label={t('Период')} className="flex w-full gap-1 overflow-x-auto rounded-lg bg-surface-muted p-1 lg:inline-flex lg:w-auto">
       {PERIODS.map(option => {
         const active = filters.period === option.value
         return (
@@ -41,8 +41,8 @@ export function PeriodPicker({ filters }) {
             aria-checked={active}
             onClick={() => filters.setPeriod(option.value)}
             className={cn(
-              'h-9 shrink-0 rounded-md px-3.5 text-[13px] font-semibold transition-colors',
-              active ? 'bg-brand-50 text-brand-700' : 'text-ink-muted hover:bg-surface-muted hover:text-ink',
+              'h-8 shrink-0 grow rounded-md px-3 text-[13px] font-semibold transition lg:grow-0',
+              active ? 'bg-surface text-brand-600 shadow-card ring-1 ring-line' : 'text-ink-muted hover:text-ink',
             )}
           >
             {option.label}

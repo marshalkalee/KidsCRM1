@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Card, CardHeader, DataTable, Dropdown, ErrorState, PageHeader, Skeleton, Tabs, cn } from '../ui'
 import { t } from '../i18n'
 import {
-  AnalyticsNav, AnalyticsToolbar, ExportButton, FunnelChart, breakdownLabel, formatValue,
+  AnalyticsToolbar, ExportButton, FunnelChart, breakdownLabel, formatValue,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
 } from '../components/analytics'
 
@@ -86,7 +86,6 @@ export default function AnalyticsFunnel() {
         description={t('Воронка новых заявок · продления считаются отдельно')}
         actions={<ExportButton report="funnel" filters={filters} extra={extra} />}
       />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={period} previous={data?.previous_period} />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
