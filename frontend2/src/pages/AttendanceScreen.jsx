@@ -413,7 +413,7 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 380px), 420px))', justifyContent: 'start', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 14 }}>
         {rows.map(row => (
           <AttendanceRow
             key={row.child}

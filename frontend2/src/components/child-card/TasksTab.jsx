@@ -4,7 +4,7 @@ import { CalendarClock, CheckCircle2, ListTodo, Plus, XCircle } from 'lucide-rea
 import api from '../../api/axios'
 import { useSession } from '../../session/SessionContext'
 import {
-  Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton, Textarea,
+  Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton, Textarea,
   apiErrorMessage, cn, formatDate, formatDateTime, useToast,
 } from '../../ui'
 import { t } from '../../i18n'
@@ -58,38 +58,40 @@ export default function TasksTab({ child, card, permissions, onCountChange }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-semibold text-ink">{t('Открытые задачи')}</p>
-        {permissions?.can_edit && (
-          <Button variant="primary" size="sm" icon={Plus} onClick={() => setCreating(true)}>
-            {t('Создать задачу')}
-          </Button>
-        )}
-      </div>
-
-      {open.length === 0 ? (
-        <Card>
-          <EmptyState icon={ListTodo} title={t('Открытых задач нет')} description={t('Всё, что обещали семье, выполнено.')} />
-        </Card>
-      ) : (
-        <div className="space-y-2">
-          {open.map(task => <OpenTaskCard key={task.id} task={task} childId={child.id} onOpen={() => setOpened(task.id)} />)}
-        </div>
-      )}
-
-      <p className="pt-2 font-semibold text-ink">{t('История')}</p>
-      {closed.length === 0 ? (
-        <p className="text-sm text-ink-muted">{t('Закрытых задач пока нет.')}</p>
-      ) : (
-        <div className="space-y-2">
-          {closed.map(task => <ClosedTaskCard key={task.id} task={task} childId={child.id} onOpen={() => setOpened(task.id)} />)}
-          {closedTotal > closed.length && (
-            <p className="text-[13px] text-ink-muted">
-              {t('Показаны последние {n} из {total}', { n: closed.length, total: closedTotal })}
-            </p>
+      <Card>
+        <CardHeader
+          title={t('Открытые задачи')}
+          description={open.length ? t('Что нужно сделать по этому ребёнку') : null}
+          actions={permissions?.can_edit && (
+            <Button variant="primary" size="sm" icon={Plus} onClick={() => setCreating(true)}>
+              {t('Создать задачу')}
+            </Button>
           )}
-        </div>
-      )}
+        />
+        {open.length === 0 ? (
+          <EmptyState icon={ListTodo} title={t('Открытых задач нет')} description={t('Всё, что обещали семье, выполнено.')} className="py-6" />
+        ) : (
+          <div className="space-y-2">
+            {open.map(task => <OpenTaskCard key={task.id} task={task} childId={child.id} onOpen={() => setOpened(task.id)} />)}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader title={t('История')} description={t('Выполненные и отменённые задачи')} />
+        {closed.length === 0 ? (
+          <p className="text-sm text-ink-muted">{t('Закрытых задач пока нет.')}</p>
+        ) : (
+          <div className="space-y-2">
+            {closed.map(task => <ClosedTaskCard key={task.id} task={task} childId={child.id} onOpen={() => setOpened(task.id)} />)}
+            {closedTotal > closed.length && (
+              <p className="text-[13px] text-ink-muted">
+                {t('Показаны последние {n} из {total}', { n: closed.length, total: closedTotal })}
+              </p>
+            )}
+          </div>
+        )}
+      </Card>
 
       {opened && <TaskPanel taskId={opened} onClose={closePanel} onChanged={load} />}
 
@@ -110,7 +112,7 @@ function OpenTaskCard({ task, childId, onOpen }) {
   const overdue = isOverdue(task)
   const viaLead = task.child !== childId
   return (
-    <Card className={overdue ? 'border-danger-600' : undefined}>
+    <div className={cn('rounded-lg border bg-surface p-4', overdue ? 'border-danger-600' : 'border-line')}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={overdue ? 'danger' : 'neutral'}>{task.type_display}</Badge>
         {viaLead && <Badge tone="info">{t('По заявке')}</Badge>}
@@ -132,7 +134,7 @@ function OpenTaskCard({ task, childId, onOpen }) {
           {t('Открыть заявку')}
         </Link>
       )}
-    </Card>
+    </div>
   )
 }
 
@@ -140,7 +142,7 @@ function ClosedTaskCard({ task, childId, onOpen }) {
   const done = task.status === 'done'
   const viaLead = task.child !== childId
   return (
-    <Card>
+    <div className="rounded-lg border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center gap-2">
         {done
           ? <CheckCircle2 className="size-4 text-success-600" />
@@ -157,7 +159,7 @@ function ClosedTaskCard({ task, childId, onOpen }) {
       <p className="mt-1 text-xs text-ink-subtle">
         {t('Исполнитель: {name}', { name: task.assigned_to_name || t('не назначен') })}
       </p>
-    </Card>
+    </div>
   )
 }
 

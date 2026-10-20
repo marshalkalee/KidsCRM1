@@ -2953,5 +2953,7 @@
  "Все объявления": "All announcements",
  "Здесь появятся объявления центра и заметки преподавателя.": "Center announcements and teacher notes will appear here.",
  "Новые заметки преподавателя: {n}": "New teacher notes: {n}",
- "Новых уведомлений нет": "No new notifications"
+ "Новых уведомлений нет": "No new notifications",
+ "Выполненные и отменённые задачи": "Completed and cancelled tasks",
+ "Что нужно сделать по этому ребёнку": "What needs to be done for this child"
 }
