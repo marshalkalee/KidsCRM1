@@ -2975,5 +2975,7 @@
  "Цифры": "Numbers",
  "Новые советы": "New advice",
  "Прошлые советы, которые больше не нужны. Нажмите, чтобы посмотреть.": "Earlier advice that is no longer needed. Click to see it.",
- "Открыт": "Open"
+ "Открыт": "Open",
+ "Свой этап": "Custom stage",
+ "Так этапы называются на доске, в таблице, в истории заявки и в отчётах. Основные этапы нельзя скрыть — на них держатся пробные, продажи и аналитика; свои этапы добавляются внутрь основных.": "This is how stages are named on the board, in the table, in the lead history and in reports. Main stages cannot be hidden — trials, sales and analytics rely on them; custom stages are added inside main ones."
 }
