@@ -97,6 +97,17 @@ class RenewalsApiTests(APITestCase):
         not_called = self.list(not_contacted="1")
         self.assertEqual([r["child_name"] for r in not_called["results"]], ["Мало Занятий"])
 
+    def test_summary_counts_ended_week_and_not_contacted(self):
+        self.sub("Уже Закончился", ends_in=-3, left=2)
+        summary = self.list()["summary"]
+        self.assertEqual(summary, {"ended": 1, "this_week": 1, "not_contacted": 3})
+        # Две отметки «связались» по одному абонементу — он всё равно один.
+        for note in ("Подумают", "Перезвонить в пятницу"):
+            self.client.post(
+                f"/api/v1/subscriptions/renewals/{self.soon.pk}/contacted/", {"note": note}
+            )
+        self.assertEqual(self.list()["summary"]["not_contacted"], 2)
+
     def test_open_renewal_lead_is_shown(self):
         lead, _ = create_renewal_lead(self.soon.child, actor=self.admin)
         row = self.list(q="Скоро")["results"][0]

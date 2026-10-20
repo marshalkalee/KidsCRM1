@@ -18,7 +18,7 @@ import { t } from '../i18n'
  */
 export function DataTable({
   columns, rows, rowKey = row => row.id, loading, error, onRetry,
-  sort, onSortChange, pagination, onPageChange, onRowClick, empty,
+  sort, onSortChange, pagination, onPageChange, onRowClick, empty, toolbar,
 }) {
   const primary = columns.find(c => c.primary) || columns[0]
   const aside = columns.find(c => c.mobileAside)
@@ -128,6 +128,7 @@ export function DataTable({
 
   return (
     <Card padded={false} className="overflow-hidden">
+      {toolbar && <div className="border-b border-line">{toolbar}</div>}
       {body}
       {pagination && pagination.total > pagination.pageSize && (
         <Pagination {...pagination} onPageChange={onPageChange} />
