@@ -2955,5 +2955,8 @@
  "Новые заметки преподавателя: {n}": "New teacher notes: {n}",
  "Новых уведомлений нет": "No new notifications",
  "Выполненные и отменённые задачи": "Completed and cancelled tasks",
- "Что нужно сделать по этому ребёнку": "What needs to be done for this child"
+ "Что нужно сделать по этому ребёнку": "What needs to be done for this child",
+ "Будущие": "Upcoming",
+ "У кого сколько просрочено — можно передать всё коллеге": "Who has how much overdue — you can hand it all to a colleague",
+ "Что чаще всего не успевают": "What gets missed most often"
 }

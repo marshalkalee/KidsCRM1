@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, UserCheck } from 'lucide-react'
 import api from '../api/axios'
 import { useSession } from '../session/SessionContext'
-import { Badge, Button, Card, EmptyState, ErrorState, Modal, PageHeader, Select, Skeleton, apiErrorMessage, useToast } from '../ui'
+import { Avatar, Badge, Button, Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, Select, Skeleton, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
 
 const TYPE_LABELS = {
@@ -66,44 +66,54 @@ export default function TaskEscalation() {
         )}
       />
 
-      <p className="mb-2 font-semibold text-ink">{t('По сотрудникам')}</p>
-      {data.by_employee.length === 0 ? (
-        <Card className="mb-4"><EmptyState title={t('Просрочек нет')} /></Card>
-      ) : (
-        <div className="mb-6 space-y-2">
-          {data.by_employee.map(row => (
-            <Card key={row.assigned_to || 'unassigned'} className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-semibold text-ink">{row.name}</p>
-                <p className="text-[13px] text-ink-muted">
-                  {t('Открыто: {open}, просрочено: {overdue}', { open: row.open, overdue: row.overdue })}
-                  {row.oldest_due_at && ` · ${t('самая старая с {date}', { date: new Date(row.oldest_due_at).toLocaleDateString('ru-RU') })}`}
-                </p>
-              </div>
-              {row.assigned_to && (
-                <Button size="sm" variant="secondary" icon={UserCheck} onClick={() => setReassigning(row)}>
-                  {t('Передать всё')}
-                </Button>
-              )}
-            </Card>
-          ))}
-        </div>
-      )}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <Card padded={false} className="overflow-hidden">
+          <div className="px-5 pt-5"><CardHeader title={t('По сотрудникам')} description={t('У кого сколько просрочено — можно передать всё коллеге')} /></div>
+          {data.by_employee.length === 0 ? (
+            <EmptyState title={t('Просрочек нет')} className="py-8" />
+          ) : (
+            <ul className="divide-y divide-line border-t border-line">
+              {data.by_employee.map(row => (
+                <li key={row.assigned_to || 'unassigned'} className="flex items-center gap-3 px-5 py-3">
+                  <Avatar name={row.name} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-ink">{row.name}</p>
+                    <p className="text-[13px] text-ink-muted">
+                      {t('Открыто: {open}, просрочено: {overdue}', { open: row.open, overdue: row.overdue })}
+                      {row.oldest_due_at && ` · ${t('самая старая с {date}', { date: new Date(row.oldest_due_at).toLocaleDateString('ru-RU') })}`}
+                    </p>
+                  </div>
+                  <Badge tone="danger">{row.overdue}</Badge>
+                  {row.assigned_to && (
+                    <Button size="sm" variant="secondary" icon={UserCheck} onClick={() => setReassigning(row)} aria-label={t('Передать всё')} title={t('Передать всё')}>
+                      <span className="hidden sm:inline">{t('Передать всё')}</span>
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
 
-      <p className="mb-2 font-semibold text-ink">{t('По типу задачи')}</p>
-      <Card>
-        <div className="divide-y divide-line">
-          {data.by_type.map(row => (
-            <div key={row.type} className="flex items-center justify-between py-2">
-              <span className="flex items-center gap-2 text-ink">
-                <AlertTriangle className="size-4 text-danger-600" />
-                {t(row.label || TYPE_LABELS[row.type] || row.type)}
-              </span>
-              <Badge tone="danger">{row.count}</Badge>
-            </div>
-          ))}
-        </div>
-      </Card>
+        <Card padded={false} className="self-start overflow-hidden">
+          <div className="px-5 pt-5"><CardHeader title={t('По типу задачи')} description={t('Что чаще всего не успевают')} /></div>
+          {data.by_type.length === 0 ? (
+            <EmptyState title={t('Просрочек нет')} className="py-8" />
+          ) : (
+            <ul className="divide-y divide-line border-t border-line">
+              {data.by_type.map(row => (
+                <li key={row.type} className="flex items-center justify-between gap-3 px-5 py-2.5">
+                  <span className="flex min-w-0 items-center gap-2 text-ink">
+                    <AlertTriangle className="size-4 shrink-0 text-danger-600" />
+                    <span className="truncate">{t(row.label || TYPE_LABELS[row.type] || row.type)}</span>
+                  </span>
+                  <Badge tone="danger">{row.count}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
 
       {reassigning && (
         <Modal open onClose={() => setReassigning(null)} title={t('Передать все открытые задачи {name}', { name: reassigning.name })}>
