@@ -2958,5 +2958,15 @@
  "Что нужно сделать по этому ребёнку": "What needs to be done for this child",
  "Будущие": "Upcoming",
  "У кого сколько просрочено — можно передать всё коллеге": "Who has how much overdue — you can hand it all to a colleague",
- "Что чаще всего не успевают": "What gets missed most often"
+ "Что чаще всего не успевают": "What gets missed most often",
+ "Абонементов с долгом": "Passes with debt",
+ "Закончатся за 7 дней": "Ending within 7 days",
+ "Нажмите — покажем только их": "Click to show only these",
+ "Фильтр включён — нажмите, чтобы снять": "Filter on — click to clear",
+ "просрочено: {n}": "overdue: {n}",
+ "продлите в первую очередь": "renew these first",
+ "пора предложить продление": "time to offer a renewal",
+ "Уже закончились": "Already ended",
+ "Каждую ночь CRM пересчитывает, сколько занятий осталось в каждом абонементе. Если что-то не сошлось — исправляет и показывает здесь.": "Every night the CRM recounts the lessons left in each pass. If something doesn't match, it fixes it and shows it here.",
+ "Остатки занятий во всех абонементах сходятся с отметками посещений.": "Lessons left in all passes match the attendance marks."
 }

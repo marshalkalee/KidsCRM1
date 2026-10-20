@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { CalendarClock, Check, Download, Inbox, MessageCircle, Phone, RefreshCw, Search } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Check, Download, Inbox, MessageCircle, Phone, PhoneOff, RefreshCw, Search } from 'lucide-react'
 import api from '../api/axios'
+import { ListToolbar, StatCard, StatRow } from '../components/money/ListParts'
 import RenewModal from '../components/money/RenewModal'
 import WhatsAppBulkModal from '../components/messaging/WhatsAppBulkModal'
 import { useSession } from '../session/SessionContext'
 import {
-  Badge, Button, DataTable, EmptyState, FilterBar, FilterCheck, FilterPanel, FilterSelect,
+  Badge, Button, DataTable, EmptyState, FilterCheck, FilterPanel, FilterSelect,
   PageHeader, SearchInput, apiErrorMessage, cn, formatDate, formatDateTime, plural, useFilterDraft, useToast,
 } from '../ui'
 import { t } from '../i18n'
@@ -243,34 +244,39 @@ export default function Renewals() {
       <PageHeader
         title={t('Продления')}
         description={loading && !data.count ? t('Загрузка…') : `${countLabel} ${t('скоро заканчиваются')}${hasAnyFilter ? ` ${t('по фильтрам')}` : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
-        actions={(
-          <>
-            <Button icon={MessageCircle} disabled={!selected.size} onClick={() => setBulkOpen(true)}>{t('Напомнить в WhatsApp')} {selected.size ? `(${selected.size})` : ''}</Button>
-            <Button icon={Download} loading={exporting} onClick={exportExcel} disabled={!data.count}>{t('Скачать Excel')}</Button>
-          </>
-        )}
+        actions={<Button icon={Download} loading={exporting} onClick={exportExcel} disabled={!data.count}>{t('Скачать Excel')}</Button>}
       />
 
-      <div className="mb-4 space-y-3">
-        <FilterBar
-          search={<SearchInput value={params.get('q') || ''} onChange={setQuery} placeholder={t('Поиск по имени ребёнка')} />}
-          filtersOpen={filtersOpen}
-          onToggleFilters={() => setFiltersOpen(o => !o)}
-          activeCount={activeFilters}
+      <StatRow>
+        <StatCard icon={AlertTriangle} tone="danger" label={t('Уже закончились')} value={data.summary?.ended ?? 0} hint={t('продлите в первую очередь')} />
+        <StatCard icon={CalendarClock} tone="warning" label={t('Закончатся за 7 дней')} value={data.summary?.this_week ?? 0} hint={t('пора предложить продление')} />
+        <StatCard
+          icon={PhoneOff}
+          tone="info"
+          label={t('Ещё не звонили')}
+          value={data.summary?.not_contacted ?? 0}
+          hint={params.get('not_contacted') ? t('Фильтр включён — нажмите, чтобы снять') : t('Нажмите — покажем только их')}
+          active={params.get('not_contacted') === '1'}
+          onClick={() => update({ not_contacted: params.get('not_contacted') ? '' : '1' })}
         />
-        {filtersOpen && (
-          <RenewalFilters params={params} update={update} branches={branches} directions={directions} groups={branchGroups} onReset={resetFilters} />
-        )}
-      </div>
-
-      {data.results.length > 0 && (
-        <label className="mb-3 inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink-muted">
-          <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} className="size-4 accent-[var(--color-brand-500)]" />
-          {t('Выбрать все на странице')}
-        </label>
-      )}
+      </StatRow>
 
       <DataTable
+        toolbar={(
+          <ListToolbar
+            canSelect={data.results.length > 0}
+            selectedCount={selected.size}
+            allSelected={allVisibleSelected}
+            onToggleAll={toggleVisible}
+            onClearSelection={() => setSelected(new Set())}
+            bulkActions={<Button size="sm" variant="primary" icon={MessageCircle} onClick={() => setBulkOpen(true)}>{t('Напомнить в WhatsApp')}</Button>}
+            search={<SearchInput value={params.get('q') || ''} onChange={setQuery} placeholder={t('Поиск по имени ребёнка')} />}
+            filtersOpen={filtersOpen}
+            onToggleFilters={() => setFiltersOpen(o => !o)}
+            activeFilters={activeFilters}
+            filtersPanel={<RenewalFilters params={params} update={update} branches={branches} directions={directions} groups={branchGroups} onReset={resetFilters} />}
+          />
+        )}
         columns={columns}
         rows={data.results}
         rowKey={row => row.subscription_id}
