@@ -230,10 +230,10 @@ function ParentSidebar({ collapsed, noteUnread }) {
           <NavLink
             to="/parent/profile"
             title={collapsed ? (profile?.full_name || t('Родитель')) : t('Профиль')}
-            className={({ isActive }) => cn(
-              'flex min-w-0 flex-1 items-center gap-3 rounded-md py-2 transition-colors',
+            // Карточка — ссылка на профиль, а не пункт меню: подсветка только по наведению.
+            className={cn(
+              'flex min-w-0 flex-1 items-center gap-3 rounded-md py-2 transition-colors hover:bg-surface-muted',
               collapsed ? 'justify-center px-1' : 'px-2',
-              isActive ? 'bg-brand-50' : 'hover:bg-surface-muted',
             )}
           >
             <Avatar name={profile?.full_name || t('Родитель')} />
