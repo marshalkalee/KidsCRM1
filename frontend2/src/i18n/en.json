@@ -2725,8 +2725,6 @@
   "Оценка на неделю: около {n} сообщений": "Weekly estimate: about {n} messages",
   "Оплата: {payment}, абонементы: {subscriptions}, занятия: {lessons}": "Payments: {payment}, subscriptions: {subscriptions}, lessons: {lessons}",
   "Изменения расписания заранее неизвестны и в оценку не входят.": "Schedule changes are unknown in advance and are not included in the estimate.",
-  "Последние уведомления": "Recent notifications",
-  "Уведомлений пока нет.": "No notifications yet.",
   "Выдайте пароль, чтобы родитель мог войти.": "Issue a password so the parent can sign in.",
   "Выдать новый": "Issue new",
   "Выдать новый пароль": "Issue a new password",
@@ -2957,7 +2955,6 @@
  "Пробное занятие бесплатно": "Trial lesson is free",
  "Был ли ребёнок на занятии и списалось ли оно с абонемента.": "Whether your child attended and whether the lesson was charged to the pass.",
  "Все объявления": "All announcements",
- "Здесь появятся объявления центра и заметки преподавателя.": "Center announcements and teacher notes will appear here.",
  "Новые заметки преподавателя: {n}": "New teacher notes: {n}",
  "Новых уведомлений нет": "No new notifications",
  "Звонки": "Calls",
@@ -3032,5 +3029,6 @@
  "Новые": "New",
  "Одобренные": "Approved",
  "Отклонённые": "Rejected",
- "Запись": "Enrollment"
+ "Запись": "Enrollment",
+ "Здесь появятся напоминания центра, объявления и заметки преподавателя.": "Center reminders, announcements and teacher notes will appear here."
 }

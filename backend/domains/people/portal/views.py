@@ -580,6 +580,22 @@ class NotificationsView(ParentView):
             return _error(exc)
 
 
+class NotificationFeedView(ParentView):
+    """Колокольчик: служебные уведомления центра (абонемент, оплата, отмена…)."""
+
+    def get(self, request, version=None):
+        return Response(push.feed(request.user))
+
+
+class NotificationFeedReadView(ParentView):
+    """POST {ids: [...]} — прочитать эти; без ids — все."""
+
+    def post(self, request, version=None):
+        ids = request.data.get("ids") if isinstance(request.data, dict) else None
+        push.mark_feed_read(request.user, ids if isinstance(ids, list) else None)
+        return Response(push.feed(request.user))
+
+
 class PushSubscriptionView(ParentView):
     """POST — подписать это устройство (PushSubscription.toJSON()),
     DELETE — отписать по {endpoint}."""

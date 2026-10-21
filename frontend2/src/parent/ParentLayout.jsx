@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
+  AlarmClock,
   Bell,
+  CalendarX,
   Check,
   ChevronDown,
   CloudOff,
@@ -11,6 +13,8 @@ import {
   NotebookPen,
   PanelLeftClose,
   PanelLeftOpen,
+  UserRound,
+  Wallet,
 } from 'lucide-react'
 import { Avatar, Modal, cn, formatDate, formatDateTime } from '../ui'
 import { t, useLang } from '../i18n'
@@ -284,20 +288,44 @@ function ChildPicker({ onClose }) {
   )
 }
 
-const BELL_LIMIT = 5
+const BELL_LIMIT = 8
+
+// Иконка служебного уведомления — по событию центра рассылок.
+const SERVICE_ICONS = {
+  subscription_ending: { icon: Wallet, tone: 'bg-warning-50 text-warning-600' },
+  payment_due: { icon: Wallet, tone: 'bg-danger-50 text-danger-600' },
+  lesson_cancelled: { icon: CalendarX, tone: 'bg-danger-50 text-danger-600' },
+  lesson_reminder: { icon: AlarmClock, tone: 'bg-brand-50 text-brand-600' },
+  teacher_substitute: { icon: UserRound, tone: 'bg-brand-50 text-brand-600' },
+}
+const NEWS_ICON = { icon: Megaphone, tone: 'bg-info-50 text-info-600' }
 
 /**
  * Колокольчик в шапке — как у сотрудников: окно поверх страницы, а не
- * переход. Внутри — новые заметки преподавателя и последние объявления
- * центра; открыли объявление — оно прочитано.
+ * переход. Внутри — новые заметки преподавателя, напоминания центра
+ * (абонемент, оплата, отмена — даже если push не дошёл) и объявления.
+ * Нажали — прочитано и открыт нужный раздел.
  */
 function NotificationsBell({ noteUnread }) {
   const navigate = useNavigate()
-  const { data, reload } = usePortalData('announcements/', { refreshInterval: 60_000, refreshOnFocus: true })
+  const live = { refreshInterval: 60_000, refreshOnFocus: true }
+  const { data, reload } = usePortalData('announcements/', live)
+  const { data: feed, reload: reloadFeed } = usePortalData('notifications/feed/', live)
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
-  const rows = (data?.results || []).slice(0, BELL_LIMIT)
-  const unreadNews = data?.unread || 0
+  const rows = data && feed
+    ? [
+      ...feed.results.map(row => ({
+        key: `s:${row.id}`, id: row.id, service: true, title: row.title, text: row.text,
+        date: row.created_at, read: row.read, link: row.link, look: SERVICE_ICONS[row.event] || NEWS_ICON,
+      })),
+      ...data.results.map(row => ({
+        key: `a:${row.id}`, id: row.id, service: false, title: row.title, text: row.body,
+        date: row.published_at, read: row.read, link: '/parent/announcements', look: NEWS_ICON,
+      })),
+    ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, BELL_LIMIT)
+    : null
+  const unreadNews = (data?.unread || 0) + (feed?.unread || 0)
   const unread = unreadNews + noteUnread
 
   useEffect(() => {
@@ -309,15 +337,30 @@ function NotificationsBell({ noteUnread }) {
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
   }, [open])
 
-  async function markRead(ids) {
-    await Promise.all(ids.map(id => portal.post(`announcements/${id}/read/`).catch(() => {})))
+  async function markRead(items) {
+    const news = items.filter(item => !item.service).map(item => item.id)
+    const service = items.filter(item => item.service).map(item => item.id)
+    await Promise.all([
+      ...news.map(id => portal.post(`announcements/${id}/read/`).catch(() => {})),
+      service.length ? portal.post('notifications/feed/read/', { ids: service }).catch(() => {}) : null,
+    ])
     reload()
+    reloadFeed()
   }
 
-  function openAnnouncement(row) {
-    if (!row.read) markRead([row.id])
+  async function markAllRead() {
+    await Promise.all([
+      ...(data?.results || []).filter(row => !row.read).map(row => portal.post(`announcements/${row.id}/read/`).catch(() => {})),
+      portal.post('notifications/feed/read/', {}).catch(() => {}),
+    ])
+    reload()
+    reloadFeed()
+  }
+
+  function openItem(item) {
+    if (!item.read) markRead([item])
     setOpen(false)
-    navigate('/parent/announcements')
+    navigate(item.link)
   }
 
   return (
@@ -337,7 +380,7 @@ function NotificationsBell({ noteUnread }) {
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <p className="text-sm font-bold text-ink">{t('Уведомления')}</p>
             {unreadNews > 0 && (
-              <button type="button" onClick={() => markRead(rows.filter(r => !r.read).map(r => r.id))} className="text-[13px] font-semibold text-brand-600 hover:underline">
+              <button type="button" onClick={markAllRead} className="text-[13px] font-semibold text-brand-600 hover:underline">
                 {t('Прочитать все')}
               </button>
             )}
@@ -350,29 +393,32 @@ function NotificationsBell({ noteUnread }) {
                 <span className="size-2 shrink-0 rounded-full bg-brand-600" />
               </Link>
             )}
-            {!data ? (
+            {!rows ? (
               <p className="px-4 py-6 text-center text-sm text-ink-muted">{t('Загрузка…')}</p>
             ) : rows.length === 0 && !noteUnread ? (
               <div className="px-4 py-8 text-center">
                 <Bell className="mx-auto size-6 text-ink-subtle" />
                 <p className="mt-2 text-sm font-semibold text-ink">{t('Новых уведомлений нет')}</p>
-                <p className="mt-0.5 text-[13px] text-ink-muted">{t('Здесь появятся объявления центра и заметки преподавателя.')}</p>
+                <p className="mt-0.5 text-[13px] text-ink-muted">{t('Здесь появятся напоминания центра, объявления и заметки преподавателя.')}</p>
               </div>
             ) : (
               <ul className="divide-y divide-line">
-                {rows.map(row => (
-                  <li key={row.id}>
-                    <button type="button" onClick={() => openAnnouncement(row)} className={cn('flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-surface-muted', !row.read && 'bg-brand-50/30')}>
-                      <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-info-50 text-info-600"><Megaphone className="size-4" /></span>
-                      <span className="min-w-0 flex-1">
-                        <span className={cn('block truncate text-sm text-ink', !row.read ? 'font-bold' : 'font-semibold')}>{row.title}</span>
-                        <span className="mt-0.5 line-clamp-2 text-[13px] text-ink-muted">{row.body}</span>
-                        <span className="mt-1 block text-[12px] text-ink-subtle">{formatDate(row.published_at)}</span>
-                      </span>
-                      {!row.read && <span className="mt-2 size-2 shrink-0 rounded-full bg-brand-600" />}
-                    </button>
-                  </li>
-                ))}
+                {rows.map(item => {
+                  const Icon = item.look.icon
+                  return (
+                    <li key={item.key}>
+                      <button type="button" onClick={() => openItem(item)} className={cn('flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-surface-muted', !item.read && 'bg-brand-50/30')}>
+                        <span className={cn('mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full', item.look.tone)}><Icon className="size-4" /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className={cn('block truncate text-sm text-ink', !item.read ? 'font-bold' : 'font-semibold')}>{item.title}</span>
+                          <span className="mt-0.5 line-clamp-2 text-[13px] text-ink-muted">{item.text}</span>
+                          <span className="mt-1 block text-[12px] text-ink-subtle">{item.service ? formatDateTime(item.date) : formatDate(item.date)}</span>
+                        </span>
+                        {!item.read && <span className="mt-2 size-2 shrink-0 rounded-full bg-brand-600" />}
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>

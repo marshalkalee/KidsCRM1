@@ -43,6 +43,8 @@ CASES = {
     "profile": ("own", "get"),
     "password": ("own", "post"),
     "notifications": ("own", "get"),
+    "notification-feed": ("own", "get"),
+    "notification-feed-read": ("own", "post"),
     "push": ("own", "post"),
     "announcements": ("own", "get"),
     "child": ("child", "get"),
