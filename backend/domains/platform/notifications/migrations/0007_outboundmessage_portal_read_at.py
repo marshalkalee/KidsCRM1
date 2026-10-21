@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('notifications', '0005_instagram'),
+        ('notifications', '0006_telephony'),
     ]
 
     operations = [
