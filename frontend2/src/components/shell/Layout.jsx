@@ -10,6 +10,7 @@ import { NotificationList, useNotifications } from '../notifications/Notificatio
 import { visibleSections } from './navigation'
 import { useAI } from '../ai/ai'
 import { t } from '../../i18n'
+import IncomingCallPopup from '../telephony/IncomingCallPopup'
 
 const COLLAPSED_KEY = 'kc:sidebar-collapsed'
 
@@ -87,6 +88,7 @@ export default function Layout() {
       <main className="w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <Outlet />
       </main>
+      <IncomingCallPopup />
     </div>
   )
 }
