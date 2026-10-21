@@ -199,11 +199,6 @@ export default function ParentRequests() {
                 </Select>
               </div>
             )}
-            {filters.status === 'new' && newRows.length > 1 && (
-              <p className="text-[12px] text-ink-subtle sm:order-first sm:hidden lg:order-none lg:block">
-                {t('Отметьте несколько запросов одного типа, чтобы решить их разом.')}
-              </p>
-            )}
           </div>
         )}
       </Card>
