@@ -221,10 +221,10 @@ function UserMenu({ collapsed = false, onNavigate }) {
           to="/profile"
           onClick={onNavigate}
           title={collapsed ? `${user?.full_name} · ${roleLabel}` : t('Профиль')}
-          className={({ isActive }) => cn(
-            'flex min-w-0 flex-1 items-center gap-3 rounded-md py-2 transition-colors',
+          // Карточка — ссылка на профиль, а не пункт меню: подсветка только по наведению.
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-3 rounded-md py-2 transition-colors hover:bg-surface-muted',
             collapsed ? 'justify-center px-1' : 'px-2',
-            isActive ? 'bg-brand-50' : 'hover:bg-surface-muted',
           )}
         >
           <span className="bg-brand-gradient flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-[13px] font-bold text-white">
