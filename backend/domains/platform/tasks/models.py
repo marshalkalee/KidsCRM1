@@ -19,6 +19,7 @@ class Task(TenantModel):
         MISSING_SUBSCRIPTION = "missing_subscription", "Нет абонемента"
         RETENTION = "retention", "Удержание клиента"
         PARENT_REQUEST = "parent_request", "Запрос родителя"
+        CONTACT = "contact", "Связаться"
         CALL_BACK = "call_back", "Перезвонить"
         PAYMENT_REMINDER = "payment_reminder", "Напомнить об оплате"
         TRIAL_SIGNUP = "trial_signup", "Записать на пробное"

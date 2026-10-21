@@ -18,6 +18,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from domains.people.clients.models import Child, ChildContact, ParentContact
+from domains.platform.core.audit import AuditLog
 from domains.platform.core.permissions import IsOwner, IsOwnerOrManagerOrAdmin
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.leads.models import Lead
@@ -36,6 +37,7 @@ from domains.platform.tenants.org_settings import (
 )
 
 from ..models import (
+    CallRecord,
     InboundInstagramMessage,
     InboundWhatsAppMessage,
     InstagramConnection,
@@ -43,9 +45,10 @@ from ..models import (
     MessageTemplate,
     MessagingConsent,
     OutboundMessage,
+    TelephonyConnection,
     WhatsAppConnection,
 )
-from . import automation, service
+from . import automation, service, telephony
 from .channels import CHANNELS
 from .events import EVENTS, LANGUAGES
 from .instagram import (
@@ -1150,3 +1153,193 @@ def unsubscribe(request, token, version=None):
             form="",
         )
     )
+
+
+# --- Телефония (TRU-174) ------------------------------------------------------
+
+
+def _call_payload(call):
+    target = None
+    if call.child_id:
+        target = {"type": "child", "id": str(call.child_id), "name": call.child.full_name}
+    elif call.parent_id:
+        target = {"type": "parent", "id": str(call.parent_id), "name": call.parent.full_name}
+    elif call.lead_id:
+        target = {
+            "type": "lead",
+            "id": str(call.lead_id),
+            "name": call.lead.child_name or call.lead.parent_name,
+        }
+    return {
+        "id": str(call.id),
+        "provider_call_id": call.provider_call_id,
+        "direction": call.direction,
+        "status": call.status,
+        "phone": call.phone,
+        "started_at": call.started_at.isoformat(),
+        "duration_seconds": call.duration_seconds,
+        "result": call.result,
+        "has_recording": bool(call.recording_url),
+        "seen": bool(call.seen_at),
+        "employee_name": call.employee.full_name if call.employee_id else "",
+        "target": target,
+    }
+
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsOwner])
+def telephony_connection(request, version=None):
+    connection = telephony.connection_for(request.user.organization)
+    if request.method == "PUT":
+        provider = request.data.get("provider", connection.provider)
+        if provider not in TelephonyConnection.Provider.values:
+            return Response({"detail": "Неизвестный провайдер."}, status=400)
+        recording_enabled = bool(request.data.get("recording_enabled", False))
+        notice_confirmed = bool(request.data.get("recording_notice_confirmed", False))
+        if recording_enabled and not notice_confirmed:
+            return Response(
+                {"detail": "Подтвердите, что звонящий предупреждён о записи разговора."},
+                status=400,
+            )
+        allowed_roles = {"owner", "manager", "admin"}
+        recording_roles = request.data.get("recording_roles", connection.recording_roles)
+        if not isinstance(recording_roles, list) or not set(recording_roles) <= allowed_roles:
+            return Response({"detail": "Некорректные роли доступа к записям."}, status=400)
+        connection.provider = provider
+        connection.virtual_number = str(request.data.get("virtual_number", ""))[:20]
+        connection.api_key = str(request.data.get("api_key") or connection.api_key)[:255]
+        connection.api_secret = str(request.data.get("api_secret") or connection.api_secret)
+        connection.recording_enabled = recording_enabled
+        connection.recording_notice_confirmed = notice_confirmed
+        connection.recording_roles = recording_roles
+        connection.webhook_secret = connection.webhook_secret or telephony.new_webhook_secret()
+        connection.status = (
+            TelephonyConnection.Status.CONNECTED
+            if provider == TelephonyConnection.Provider.CONSOLE
+            else TelephonyConnection.Status.DISCONNECTED
+        )
+        connection.save()
+    return Response(
+        {
+            "provider": connection.provider,
+            "status": connection.status,
+            "virtual_number": connection.virtual_number,
+            "recording_enabled": connection.recording_enabled,
+            "recording_notice_confirmed": connection.recording_notice_confirmed,
+            "recording_roles": connection.recording_roles,
+            "has_api_key": bool(connection.api_key),
+            "webhook_path": f"/api/v1/messaging/telephony/webhook/{connection.webhook_secret}/",
+            "last_error": connection.last_error,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def telephony_calls(request, version=None):
+    calls = (
+        CallRecord.objects.for_tenant(request.user.organization)
+        .select_related("employee", "parent", "child", "lead")
+        .order_by("-started_at")
+    )
+    if request.query_params.get("ringing") == "1":
+        calls = calls.filter(status=CallRecord.Status.RINGING)
+    if request.query_params.get("unseen") == "1":
+        calls = calls.filter(seen_at__isnull=True)
+    return Response([_call_payload(item) for item in calls[:200]])
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def telephony_outgoing(request, version=None):
+    try:
+        result = telephony.start_outgoing_call(
+            organization=request.user.organization,
+            employee=request.user,
+            phone=request.data.get("phone", ""),
+        )
+    except telephony.TelephonyError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    return Response(result)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def telephony_webhook(request, secret, version=None):
+    connection = TelephonyConnection.objects.filter(webhook_secret=secret).first()
+    if not connection:
+        return Response({"detail": "Not found."}, status=404)
+    if request.method == "GET":
+        echo = request.query_params.get("zd_echo")
+        if echo:
+            return HttpResponse(echo, content_type="text/plain")
+        return Response({"detail": "Bad request."}, status=400)
+    payload = {key: request.data.get(key) for key in request.data}
+    if connection.provider == TelephonyConnection.Provider.ZADARMA and payload.get("event"):
+        signature = request.headers.get("Signature") or request.headers.get("X-Zadarma-Signature")
+        if not telephony.valid_zadarma_webhook_signature(payload, signature, connection.api_secret):
+            return Response({"detail": "Invalid signature."}, status=403)
+        existing = (
+            CallRecord.objects.for_tenant(connection.organization)
+            .filter(provider_call_id=payload.get("pbx_call_id"))
+            .first()
+        )
+        try:
+            payload = telephony.zadarma_event_payload(payload, existing)
+        except (telephony.TelephonyError, ValueError) as exc:
+            return Response({"detail": str(exc)}, status=400)
+    for field in ("started_at", "answered_at", "ended_at", "recording_expires_at"):
+        if payload.get(field) and isinstance(payload[field], str):
+            payload[field] = parse_datetime(payload[field])
+    try:
+        call = telephony.record_event(connection.organization, payload)
+    except (telephony.TelephonyError, ValueError) as exc:
+        return Response({"detail": str(exc)}, status=400)
+    return Response(_call_payload(call))
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def telephony_seen(request, call_id, version=None):
+    call = CallRecord.objects.for_tenant(request.user.organization).filter(pk=call_id).first()
+    if not call:
+        return Response({"detail": "Звонок не найден."}, status=404)
+    call.seen_at = timezone.now()
+    call.save(update_fields=["seen_at", "updated_at"])
+    return Response(_call_payload(call))
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def telephony_promote(request, call_id, version=None):
+    call = CallRecord.objects.for_tenant(request.user.organization).filter(pk=call_id).first()
+    if not call:
+        return Response({"detail": "Звонок не найден."}, status=404)
+    try:
+        lead = telephony.promote_unknown_call(call, request.user)
+    except telephony.TelephonyError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    return Response({"lead_id": str(lead.id)})
+
+
+@api_view(["GET"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def telephony_recording(request, call_id, version=None):
+    call = CallRecord.objects.for_tenant(request.user.organization).filter(pk=call_id).first()
+    if not call:
+        return Response({"detail": "Звонок не найден."}, status=404)
+    connection = telephony.connection_for(request.user.organization)
+    if not connection.recording_enabled or request.user.role not in connection.recording_roles:
+        return Response({"detail": "Нет доступа к записи разговора."}, status=403)
+    if not call.recording_url:
+        return Response({"detail": "Запись недоступна или истекла."}, status=404)
+    if call.recording_expires_at and call.recording_expires_at <= timezone.now():
+        return Response({"detail": "Запись недоступна или истекла."}, status=404)
+    AuditLog.record(
+        actor=request.user,
+        action=AuditLog.Action.PLAY_CALL_RECORDING,
+        entity=call,
+        after={"provider_call_id": call.provider_call_id},
+    )
+    return Response({"url": call.recording_url})

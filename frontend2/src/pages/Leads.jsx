@@ -3,8 +3,10 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { AlarmClock, ArrowRightLeft, Columns3, Inbox, Plus, Search, Table2 } from 'lucide-react'
 import api from '../api/axios'
 import { LEAD_CREATED_EVENT, openQuickLead } from '../components/leads/QuickLead'
+import LeadModal from '../components/leads/LeadModal'
 import LeadTable from '../components/leads/LeadTable'
 import RejectModal from '../components/leads/RejectModal'
+import TrialBookingModal from '../components/leads/TrialBookingModal'
 import { STAGE_DOT, leadTitle } from '../components/leads/format'
 import { getLeadsViewPreference, setLeadsViewPreference } from '../components/leads/viewPreference'
 import { useSession } from '../session/SessionContext'
@@ -29,7 +31,6 @@ const LIMIT = 20
  */
 export default function Leads() {
   const toast = useToast()
-  const navigate = useNavigate()
   const { branches } = useSession()
   const location = useLocation()
   const [params, setParams] = useSearchParams()
@@ -39,6 +40,8 @@ export default function Leads() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [lists, setLists] = useState({ sources: [], directions: [], staff: [] })
   const [rejecting, setRejecting] = useState(null)
+  const [bookingTrial, setBookingTrial] = useState(null)
+  const [editingTrialLead, setEditingTrialLead] = useState(null)
   const [mobileStage, setMobileStage] = useState(null)
   const [tableCount, setTableCount] = useState(null)
   // URL сохраняет конкретный возврат с фильтрами, localStorage — ручной
@@ -123,9 +126,6 @@ export default function Leads() {
       const res = await api.post(`leads/${lead.id}/status/`, { stage: to, ...extra })
       setBoard(current => replaceCard(current, res.data))
       toast.success(t('«{name}» → {status}', { name: leadTitle(lead), status: target.label }))
-      if (target.status === 'trial_attended' && !res.data.converted_child) {
-        navigate(`/leads/${lead.id}`, { state: { leadsReturnTo: returnTo } })
-      }
     } catch (err) {
       setBoard(snapshot)
       toast.error(apiErrorMessage(err))
@@ -140,6 +140,7 @@ export default function Leads() {
       return
     }
     if (target.status === 'rejected') setRejecting({ lead, stage: to })
+    else if (target.status === 'trial_scheduled') setBookingTrial(lead)
     else move(lead, to)
   }
 
@@ -233,6 +234,34 @@ export default function Leads() {
           lead={rejecting.lead}
           onCancel={() => setRejecting(null)}
           onConfirm={async extra => { const { lead, stage } = rejecting; setRejecting(null); await move(lead, stage, extra) }}
+        />
+      )}
+      {bookingTrial && (
+        <TrialBookingModal
+          lead={bookingTrial}
+          onClose={() => setBookingTrial(null)}
+          onEdit={() => {
+            setEditingTrialLead(bookingTrial)
+            setBookingTrial(null)
+          }}
+          onBooked={() => {
+            setBookingTrial(null)
+            setReloadKey(key => key + 1)
+          }}
+        />
+      )}
+      {editingTrialLead && (
+        <LeadModal
+          lead={editingTrialLead}
+          onClose={() => {
+            setBookingTrial(editingTrialLead)
+            setEditingTrialLead(null)
+          }}
+          onSaved={saved => {
+            setBoard(current => replaceCard(current, saved))
+            setEditingTrialLead(null)
+            setBookingTrial(saved)
+          }}
         />
       )}
     </div>

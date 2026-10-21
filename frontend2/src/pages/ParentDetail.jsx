@@ -5,6 +5,7 @@ import api from '../api/axios'
 import ParentModal from '../components/ParentModal'
 import ParentMessaging from '../components/messaging/ParentMessaging'
 import PortalAccessCard from '../components/parents/PortalAccessCard'
+import CallButton from '../components/telephony/CallButton'
 import { useSession } from '../session/SessionContext'
 import { Communications } from '../components/communications/Communications'
 import {
@@ -132,9 +133,7 @@ function ContactsCard({ parent }) {
         <>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {phones[0] && (
-              <a href={`tel:${phones[0].number}`} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-brand-600 text-sm font-semibold text-white shadow-card hover:bg-brand-700">
-                <Phone className="size-4" /> {t('Позвонить')}
-              </a>
+              <CallButton phone={phones[0].number} className="h-10 rounded-md bg-brand-600 text-sm font-semibold text-white shadow-card hover:bg-brand-700" />
             )}
             {whatsapp && (
               <a href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-success-50 text-sm font-semibold text-success-600 hover:brightness-95">

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowRight, CalendarPlus, CreditCard, ListTodo, MessageCircle, Pencil, Phone, RefreshCw, SearchX, Send, Sparkles, Trash2, UserRound, XCircle,
+  ArrowRight, CalendarPlus, CreditCard, ListTodo, MessageCircle, Pencil, RefreshCw, SearchX, Send, Sparkles, Trash2, UserRound, XCircle,
 } from 'lucide-react'
 import api from '../api/axios'
 import LeadConversionModal from '../components/leads/LeadConversionModal'
@@ -12,6 +12,7 @@ import RejectModal from '../components/leads/RejectModal'
 import LeadSaleModal from '../components/leads/LeadSaleModal'
 import TrialBookingModal from '../components/leads/TrialBookingModal'
 import TrialCancelModal from '../components/leads/TrialCancelModal'
+import CallButton from '../components/telephony/CallButton'
 import { STAGE_DOT, leadTitle, stageBadge } from '../components/leads/format'
 import { getLeadsViewPreference } from '../components/leads/viewPreference'
 import { useSession } from '../session/SessionContext'
@@ -151,25 +152,27 @@ export default function LeadDetail() {
     setConverting(true)
   }
 
-  async function createCallBackTask() {
+  async function createContactTask() {
     setCreatingTask(true)
     try {
+      const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       const existing = await api.get('tasks/', {
-        params: { lead: lead.id, type: 'call_back', status: 'open' },
+        params: { lead: lead.id, type: 'contact', status: 'open' },
       })
       const rows = existing.data.results || existing.data
       if (rows.length > 0) {
-        toast.success(t('По этой заявке уже есть открытая задача «Перезвонить»'))
+        toast.success(t('По этой заявке уже есть открытая задача «Связаться»'))
         return
       }
       await api.post('tasks/', {
-        type: 'call_back',
-        title: t('Перезвонить: {name}', { name: lead.parent_name }),
+        type: 'contact',
+        title: t('Связаться: {name}', { name: lead.parent_name }),
         lead: lead.id,
         branch: lead.branch || null,
         assigned_to: lead.assigned_to || user.id,
+        due_at: dueAt,
       })
-      toast.success(t('Задача создана'))
+      toast.success(t('Задача создана со сроком на сутки'))
     } catch (err) {
       toast.error(apiErrorMessage(err))
     } finally {
@@ -209,9 +212,7 @@ export default function LeadDetail() {
             <p className="text-[15px] font-bold text-ink">{t('Связаться')}</p>
             <p className="mt-1 text-sm text-ink-muted">{lead.parent_name} · <a href={`tel:${lead.phone}`} className="font-medium text-ink hover:text-brand-700">{lead.phone}</a></p>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <a href={`tel:${lead.phone}`} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-brand-600 text-sm font-semibold text-white shadow-card hover:bg-brand-700">
-                <Phone className="size-4" /> {t('Позвонить')}
-              </a>
+              <CallButton phone={lead.phone} className="h-10 rounded-md bg-brand-600 text-sm font-semibold text-white shadow-card hover:bg-brand-700" />
               <a href={whatsappUrl(lead, user?.organization_name)} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-success-50 text-sm font-semibold text-success-600 hover:brightness-95">
                 <MessageCircle className="size-4" /> WhatsApp
               </a>
@@ -304,7 +305,7 @@ export default function LeadDetail() {
             onStartSale={startSale}
             stages={stages}
             onChange={stage => (stage.role === 'rejected' ? setRejecting(stage.id) : changeStatus(stage.id))}
-            onCreateTask={createCallBackTask}
+            onCreateTask={createContactTask}
             creatingTask={creatingTask}
           />
           <CommentsCard leadId={lead.id} comments={comments} onAdded={comment => setComments(list => [...list, comment])} />
@@ -337,36 +338,6 @@ export default function LeadDetail() {
           onCancelled={saved => {
             setLead(saved)
             setCancellingTrial(false)
-            loadExtras()
-          }}
-        />
-      )}
-      {converting && (
-        <LeadConversionModal
-          lead={lead}
-          forSale={saleAfterConversion}
-          onClose={() => {
-            setConverting(false)
-            setSaleAfterConversion(false)
-          }}
-          onConverted={saved => {
-            setLead(saved)
-            setConverting(false)
-            if (saleAfterConversion) {
-              setSaleAfterConversion(false)
-              setSelling(true)
-            }
-            loadExtras()
-          }}
-        />
-      )}
-      {selling && (
-        <LeadSaleModal
-          lead={lead}
-          onClose={() => setSelling(false)}
-          onSold={saved => {
-            setLead(saved)
-            setSelling(false)
             loadExtras()
           }}
         />

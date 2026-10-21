@@ -5,6 +5,29 @@ from . import views
 app_name = "messaging"
 
 urlpatterns = [
+    path("telephony/", views.telephony_connection, name="telephony-connection"),
+    path("telephony/calls/", views.telephony_calls, name="telephony-calls"),
+    path("telephony/outgoing/", views.telephony_outgoing, name="telephony-outgoing"),
+    path(
+        "telephony/webhook/<str:secret>/",
+        views.telephony_webhook,
+        name="telephony-webhook",
+    ),
+    path(
+        "telephony/calls/<uuid:call_id>/seen/",
+        views.telephony_seen,
+        name="telephony-seen",
+    ),
+    path(
+        "telephony/calls/<uuid:call_id>/promote/",
+        views.telephony_promote,
+        name="telephony-promote",
+    ),
+    path(
+        "telephony/calls/<uuid:call_id>/recording/",
+        views.telephony_recording,
+        name="telephony-recording",
+    ),
     path("settings/", views.messaging_settings, name="settings"),
     path("whatsapp/", views.whatsapp_connection, name="whatsapp-connection"),
     path("whatsapp/test/", views.whatsapp_test, name="whatsapp-test"),
