@@ -149,6 +149,8 @@ class OutboundMessage(TenantModel):
     error = models.CharField(max_length=500, blank=True)
     scheduled_for = models.DateTimeField(null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
+    # Прочитано в колокольчике кабинета родителя — независимо от канала.
+    portal_read_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
     )

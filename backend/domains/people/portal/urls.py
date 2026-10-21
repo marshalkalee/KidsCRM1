@@ -64,5 +64,11 @@ urlpatterns = [
     path("profile/", views.ProfileView.as_view(), name="profile"),
     path("profile/password/", views.PasswordView.as_view(), name="password"),
     path("notifications/", views.NotificationsView.as_view(), name="notifications"),
+    path("notifications/feed/", views.NotificationFeedView.as_view(), name="notification-feed"),
+    path(
+        "notifications/feed/read/",
+        views.NotificationFeedReadView.as_view(),
+        name="notification-feed-read",
+    ),
     path("push/", views.PushSubscriptionView.as_view(), name="push"),
 ]

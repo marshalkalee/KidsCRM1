@@ -163,6 +163,18 @@ def render(text: str, values: dict) -> str:
     return text.format_map(Missing(values)).strip()
 
 
+def portal_text(message, language: str) -> tuple[str, str]:
+    """Текст для колокольчика кабинета — короткий, как push: без
+    приветствия и без подвала письма со ссылкой отписки."""
+    values = {
+        "parent": _first_name(message.parent.full_name),
+        "center": message.organization.name,
+        **{key: value for key, value in message.context.items() if not key.startswith("_")},
+    }
+    title, body = template_for(message.organization, message.event, "push", language)
+    return render(title, values), render(body, values)
+
+
 def parent_language(parent) -> str:
     """Язык кабинета родителя (по любому его номеру), иначе русский."""
     language = accounts_for_parent(parent).values_list("language", flat=True).first()

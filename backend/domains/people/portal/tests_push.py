@@ -13,7 +13,7 @@ from domains.platform.notifications.messaging import service
 from domains.platform.notifications.models import MessagingConsent, OutboundMessage
 
 from .models import ParentAccount, PushSubscription
-from .tests_auth import PortalAuthBase
+from .tests_auth import PortalAuthBase, family
 
 NOON = datetime.datetime(2026, 10, 7, 12, 0, tzinfo=ZoneInfo("Asia/Almaty"))
 SUBSCRIPTION = {
@@ -122,3 +122,70 @@ class ParentPushTests(PortalAuthBase):
         webpush.assert_not_called()
         self.assertEqual(message.channel, "email")
         self.assertIn("ключи VAPID", message.attempts[0]["reason"])
+
+
+@override_settings(
+    WEBPUSH_VAPID_PUBLIC_KEY="",
+    WEBPUSH_VAPID_PRIVATE_KEY="",
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+)
+class ParentBellFeedTests(PortalAuthBase):
+    """Колокольчик кабинета: что центр сообщал семье — коротко, без подвала письма."""
+
+    FEED = "/api/v1/portal/notifications/feed/"
+
+    def setUp(self):
+        super().setUp()
+        self.parent.email = "mama@example.kz"
+        self.parent.save()
+        service.set_consent(
+            self.parent, "utility", MessagingConsent.Status.OPTED_IN, "parent_portal"
+        )
+        self.client_parent = self.as_parent(self.login())
+        mock.patch("domains.platform.notifications.messaging.tasks.deliver_message.delay").start()
+        self.addCleanup(mock.patch.stopall)
+
+    def send(self, key="pay:1", event="payment_due", parent=None):
+        message = service.notify(
+            parent or self.parent, event, {"child": "Айлин", "amount": "25 000 ₸"}, dedup_key=key
+        )
+        return service.deliver(message.id, now=NOON)
+
+    def test_email_message_shows_as_short_text_without_footer(self):
+        message = self.send()
+        self.assertEqual(message.channel, "email")
+        self.assertIn("unsubscribe", message.body)
+        data = self.client_parent.get(self.FEED).data
+        self.assertEqual(data["unread"], 1)
+        row = data["results"][0]
+        self.assertEqual(row["title"], "Напоминание об оплате")
+        self.assertEqual(row["text"], "Айлин: к оплате 25 000 ₸.")
+        self.assertEqual(row["link"], "/parent/subscription")
+        self.assertNotIn("unsubscribe", str(row))
+
+    def test_undelivered_message_is_still_in_the_bell(self):
+        self.parent.email = ""
+        self.parent.save()
+        self.assertEqual(self.send().status, OutboundMessage.Status.NO_CHANNEL)
+        self.assertEqual(len(self.client_parent.get(self.FEED).data["results"]), 1)
+
+    def test_turned_off_types_announcements_and_other_families_are_hidden(self):
+        self.client_parent.patch(
+            "/api/v1/portal/notifications/", {"events": {"payment_due": False}}, format="json"
+        )
+        self.send()
+        self.send(key="news:1", event="announcement")
+        stranger, _ = family(self.org, "Чужая мама", "+77019990000", "Чужой ребёнок")
+        self.send(key="pay:2", event="subscription_ending", parent=stranger)
+        self.assertEqual(self.client_parent.get(self.FEED).data["results"], [])
+
+    def test_mark_one_then_all_read(self):
+        first = self.send()
+        self.send(key="pay:2", event="subscription_ending")
+        data = self.client_parent.post(
+            self.FEED + "read/", {"ids": [str(first.id), "not-a-uuid"]}, format="json"
+        ).data
+        self.assertEqual(data["unread"], 1)
+        self.assertTrue(next(r for r in data["results"] if r["id"] == str(first.id))["read"])
+        data = self.client_parent.post(self.FEED + "read/", {}, format="json").data
+        self.assertEqual(data["unread"], 0)

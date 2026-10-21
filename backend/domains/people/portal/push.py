@@ -9,11 +9,18 @@
 удаление подписок всех его устройств.
 """
 
+import uuid
+
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
-from domains.platform.notifications.messaging.events import EVENTS
-from domains.platform.notifications.messaging.service import consent_status, set_consent
+from domains.platform.notifications.messaging.events import EVENTS, LANGUAGES
+from domains.platform.notifications.messaging.service import (
+    consent_status,
+    portal_text,
+    set_consent,
+)
 from domains.platform.notifications.models import (
     MessageCategory,
     MessagingConsent,
@@ -33,11 +40,6 @@ def status(account, endpoint: str = "") -> dict:
     contacts = _contacts(account)
     statuses = {consent_status(c, MessageCategory.UTILITY) for c in contacts}
     prefs = account.notification_prefs or {}
-    messages = (
-        OutboundMessage.objects.filter(parent__in=contacts, deleted_at__isnull=True)
-        .exclude(event="whatsapp_reply")
-        .order_by("-created_at")[:30]
-    )
     return {
         "public_key": settings.WEBPUSH_VAPID_PUBLIC_KEY,
         # Включено, если хоть один центр может писать: согласие есть и не все отписаны.
@@ -49,19 +51,59 @@ def status(account, endpoint: str = "") -> dict:
             {"key": e.key, "label": e.label, "enabled": prefs.get(e.key) is not False}
             for e in EVENTS.values()
         ],
-        "feed": [
+    }
+
+
+# --- Колокольчик: что центр сообщал семье ------------------------------------
+
+# Объявления — своим списком в колокольчике (ответы оператора в WhatsApp не в EVENTS).
+FEED_HIDDEN = {"announcement"}
+FEED_LIMIT = 30
+
+
+def _feed_queryset(account):
+    events = [key for key in EVENTS if key not in FEED_HIDDEN]
+    return OutboundMessage.objects.filter(
+        parent__in=_contacts(account), deleted_at__isnull=True, event__in=events
+    ).exclude(status=OutboundMessage.Status.OPTED_OUT)  # отключил этот тип в профиле
+
+
+def feed(account) -> dict:
+    """Служебные уведомления в колокольчике — даже если push не дошёл и ни
+    WhatsApp, ни почты нет: кабинет — запасной канал."""
+    language = account.language if account.language in LANGUAGES else "ru"
+    messages = _feed_queryset(account).select_related("organization", "parent")
+    rows = []
+    for message in messages.order_by("-created_at")[:FEED_LIMIT]:
+        title, text = portal_text(message, language)
+        rows.append(
             {
                 "id": str(message.id),
                 "event": message.event,
-                "label": EVENTS[message.event].label if message.event in EVENTS else message.event,
-                "subject": message.subject,
-                "body": message.body,
-                "status": message.status,
+                "title": title,
+                "text": text,
+                "link": EVENTS[message.event].link,
+                "center": message.organization.name,
                 "created_at": message.created_at,
+                "read": message.portal_read_at is not None,
             }
-            for message in messages
-        ],
-    }
+        )
+    unread = _feed_queryset(account).filter(portal_read_at__isnull=True).count()
+    return {"unread": unread, "results": rows}
+
+
+def mark_feed_read(account, ids=None) -> None:
+    """ids — прочитать эти; None — все."""
+    qs = _feed_queryset(account).filter(portal_read_at__isnull=True)
+    if ids is not None:
+        valid = []
+        for value in ids:
+            try:
+                valid.append(uuid.UUID(str(value)))
+            except ValueError:
+                continue
+        qs = qs.filter(id__in=valid)
+    qs.update(portal_read_at=timezone.now())
 
 
 def _consent_everywhere(account, status_value, categories):
