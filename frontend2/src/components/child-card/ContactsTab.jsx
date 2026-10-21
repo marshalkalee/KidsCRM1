@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { MessageCircle, Pencil, Phone, Plus, Unlink, UserRound } from 'lucide-react'
+import { MessageCircle, Pencil, Plus, Unlink, UserRound } from 'lucide-react'
 import api from '../../api/axios'
 import {
   Badge, Button, CONTACT_ROLES, Card, Checkbox, EmptyState, ErrorState, Field, Input, Modal, Select,
   Skeleton, apiErrorMessage, cn, useConfirm, useToast,
 } from '../../ui'
 import { t } from '../../i18n'
+import CallButton from '../telephony/CallButton'
 import { personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../../utils/formValidation'
 
 /**
@@ -122,9 +123,7 @@ function ContactCard({ link, canManage, onEdit, onDetach }) {
       {phones && (
         <div className="flex flex-wrap gap-2">
           {phones.map(phone => (
-            <a key={phone.number} href={`tel:${phone.number}`} className="inline-flex items-center gap-1.5 rounded-md bg-surface-muted px-2.5 py-1.5 text-[13px] font-medium text-ink hover:bg-brand-50 hover:text-brand-700">
-              <Phone className="size-3.5" /> {phone.number}
-            </a>
+            <CallButton key={phone.number} phone={phone.number} className="rounded-md bg-surface-muted px-2.5 py-1.5 text-[13px] font-medium text-ink hover:bg-brand-50 hover:text-brand-700">{phone.number}</CallButton>
           ))}
           {whatsapp && (
             <a href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md bg-success-50 px-2.5 py-1.5 text-[13px] font-medium text-success-600 hover:brightness-95">

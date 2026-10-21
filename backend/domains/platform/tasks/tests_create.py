@@ -66,6 +66,27 @@ class CreateTaskTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("branch", response.data)
 
+    def test_list_filters_tasks_by_type(self):
+        callback = self.post(
+            self.owner,
+            type=Task.Type.CALL_BACK,
+            assigned_to=str(self.owner.id),
+        )
+        other = self.post(
+            self.owner,
+            type=Task.Type.OTHER,
+            assigned_to=str(self.owner.id),
+        )
+        self.assertEqual(callback.status_code, 201, callback.data)
+        self.assertEqual(other.status_code, 201, other.data)
+
+        client = APIClient()
+        client.force_authenticate(self.owner)
+        data = client.get(URL, {"type": Task.Type.CALL_BACK}).data
+        rows = data["results"] if isinstance(data, dict) else data
+
+        self.assertEqual([row["id"] for row in rows], [callback.data["id"]])
+
 
 class OwnTasksTests(CreateTaskTests):
     """Бухгалтер и преподаватель получают задачи и работают со своими."""

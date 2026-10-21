@@ -59,8 +59,17 @@ export default function LeadConversionModal({ lead, onClose, onConverted, forSal
 
   async function submit(e) {
     e.preventDefault()
-    if (!choice) {
-      setErrors({ decision: [t('Выберите, какую карточку использовать.')] })
+    const validationErrors = {}
+    if (form.child_name.trim().length < 3) validationErrors.child_name = [t('Минимум 3 символа')]
+    if (!form.birth_date) validationErrors.birth_date = [t('Укажите дату рождения')]
+    if (!form.gender) validationErrors.gender = [t('Выберите пол')]
+    if (form.parent_name.trim().length < 3) validationErrors.parent_name = [t('Минимум 3 символа')]
+    if (!form.consent_given) {
+      validationErrors.consent_given = [t('Подтвердите согласие на обработку персональных данных')]
+    }
+    if (!choice) validationErrors.decision = [t('Выберите, какую карточку использовать.')]
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors)
       return
     }
     const [decision, targetId] = choice.split(':')
@@ -105,7 +114,7 @@ export default function LeadConversionModal({ lead, onClose, onConverted, forSal
       ) : state === 'error' ? (
         <ErrorState onRetry={() => window.location.reload()} />
       ) : (
-        <form id="lead-conversion-form" onSubmit={submit} className="space-y-6">
+        <form id="lead-conversion-form" onSubmit={submit} noValidate className="space-y-6">
           <section>
             <h3 className="font-semibold text-ink">{t('Данные ребёнка и родителя')}</h3>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">

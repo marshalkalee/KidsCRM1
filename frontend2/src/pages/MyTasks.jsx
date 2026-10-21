@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, MessageCircle, Phone, Plus, UserRoundPlus } from 'lucide-react'
+import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, MessageCircle, Plus, UserRoundPlus } from 'lucide-react'
 import api from '../api/axios'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
 import CommentsCount from '../components/tasks/CommentsCount'
 import NewTaskModal from '../components/tasks/NewTaskModal'
 import TaskPanel from '../components/tasks/TaskPanel'
+import CallButton from '../components/telephony/CallButton'
 import { ROLE_LABELS, TASK_MANAGER_ROLES } from '../components/tasks/types'
 import { SellModal } from '../components/money/SubscriptionsTab'
 import { useSession } from '../session/SessionContext'
@@ -368,10 +369,9 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, canManage,
 
       <div className="flex flex-wrap items-center gap-1.5 px-5 pb-3">
         {task.contact_phone && (
-          <a href={`tel:${task.contact_phone}`} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-semibold text-ink-muted hover:bg-surface hover:text-ink">
-            <Phone className="size-4" />
+          <CallButton phone={task.contact_phone} className="h-8 rounded-md px-2.5 text-[13px] font-semibold text-ink-muted hover:bg-surface hover:text-ink">
             <span className="hidden sm:inline">{t('Позвонить')}</span>
-          </a>
+          </CallButton>
         )}
         {(task.contact_whatsapp || task.contact_phone) && template && (
           <a
@@ -401,4 +401,3 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, canManage,
     </div>
   )
 }
-

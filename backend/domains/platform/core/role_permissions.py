@@ -240,6 +240,11 @@ def can_manage_parent_requests(user) -> bool:
     return user.role in CHILD_MANAGE_ROLES
 
 
+def can_use_telephony(user) -> bool:
+    """Calls and recordings contain parent personal data; teachers are excluded."""
+    return user.role in CHILD_MANAGE_ROLES
+
+
 def can_view_ai_digest(user) -> bool:
     """Еженедельный дайджест ИИ (TRU-163) — владелец и управляющий:
     в нём выручка и что делать центру. Маркетолога как роли нет."""
@@ -274,6 +279,7 @@ def get_user_permissions(user) -> dict:
         "can_use_ai_chat": can_use_ai_chat(user),
         "can_manage_announcements": can_manage_announcements(user),
         "can_manage_parent_requests": can_manage_parent_requests(user),
+        "can_use_telephony": can_use_telephony(user),
         "can_view_ai_digest": can_view_ai_digest(user),
         "can_reconcile_balances": can_reconcile_balances(user),
     }

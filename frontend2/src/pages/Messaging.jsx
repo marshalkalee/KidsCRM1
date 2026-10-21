@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  ArrowDown, ArrowUp, Camera, CheckCircle2, ChevronDown, Mail, MessageCircle, Moon, RefreshCw, Send, Undo2, X,
+  ArrowDown, ArrowUp, Camera, CheckCircle2, ChevronDown, Mail, MessageCircle, Moon, Phone,
+  PhoneIncoming, Play, RefreshCw, Send, Undo2, X,
 } from 'lucide-react'
 import api from '../api/axios'
 import { STATUS_TONE } from '../components/messaging/status'
@@ -28,6 +29,133 @@ const LANGS = [
   { key: 'ru', label: 'Русский' },
   { key: 'kk', label: 'Қазақша' },
 ]
+
+export function TelephonyCalls() {
+  const toast = useToast()
+  const [calls, setCalls] = useState(null)
+  const [connection, setConnection] = useState(null)
+  const [connectionForm, setConnectionForm] = useState(null)
+  const [savingConnection, setSavingConnection] = useState(false)
+  const [error, setError] = useState(false)
+  const load = useCallback(() => Promise.all([
+    api.get('messaging/telephony/calls/'),
+    api.get('messaging/telephony/').catch(() => ({ data: null })),
+  ]).then(([callsResponse, connectionResponse]) => {
+    setCalls(callsResponse.data)
+    setConnection(connectionResponse.data)
+    if (connectionResponse.data) {
+      setConnectionForm(current => current || {
+        provider: connectionResponse.data.provider,
+        virtual_number: connectionResponse.data.virtual_number || '',
+        api_key: '',
+        api_secret: '',
+        recording_enabled: connectionResponse.data.recording_enabled,
+        recording_notice_confirmed: connectionResponse.data.recording_notice_confirmed,
+      })
+    }
+    setError(false)
+  }).catch(() => setError(true)), [])
+  useEffect(() => { load() }, [load])
+
+  async function promote(call) {
+    try {
+      const { data } = await api.post(`messaging/telephony/calls/${call.id}/promote/`)
+      toast.success(t('Заявка создана'))
+      window.location.assign(`/leads/${data.lead_id}`)
+    } catch (requestError) { toast.error(apiErrorMessage(requestError)) }
+  }
+
+  async function play(call) {
+    try {
+      const { data } = await api.get(`messaging/telephony/calls/${call.id}/recording/`)
+      window.open(data.url, '_blank', 'noopener,noreferrer')
+    } catch (requestError) { toast.error(apiErrorMessage(requestError)) }
+  }
+
+  async function saveConnection() {
+    setSavingConnection(true)
+    try {
+      const { data } = await api.put('messaging/telephony/', connectionForm)
+      setConnection(data)
+      setConnectionForm({ ...connectionForm, api_key: '', api_secret: '' })
+      toast.success(t('Настройки телефонии сохранены'))
+    } catch (requestError) { toast.error(apiErrorMessage(requestError)) }
+    finally { setSavingConnection(false) }
+  }
+
+  if (error) return <Card><ErrorState onRetry={load} /></Card>
+  if (!calls) return <Skeleton className="h-80" />
+  return (
+    <div>
+      <PageHeader description={t('Входящие, исходящие и пропущенные звонки. Если АТС недоступна, CRM откроет номер в телефоне.')} />
+      {connection && (
+        <Card className="mb-4">
+          <CardHeader
+            title={t('Телефония')}
+            description={connection.provider === 'console'
+              ? t('Тестовый режим: звонок открывается через телефон устройства.')
+              : t('Подключение Zadarma для виртуального номера Казахстана.')}
+            actions={<Badge tone={connection.status === 'connected' ? 'success' : 'neutral'} dot>{t(connection.status === 'connected' ? 'Подключена' : 'Не подключена')}</Badge>}
+          />
+        </Card>
+      )}
+      {connectionForm && (
+        <Card className="mb-4">
+          <CardHeader title={t('Настройки АТС')} description={t('Ключи доступны только владельцу и никогда не возвращаются из API.')} />
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label={t('Провайдер')}>
+              {({ id }) => (
+                <Select id={id} value={connectionForm.provider} onChange={event => setConnectionForm({ ...connectionForm, provider: event.target.value })}>
+                  <option value="console">{t('Тестовый режим')}</option>
+                  <option value="zadarma">Zadarma</option>
+                </Select>
+              )}
+            </Field>
+            <Field label={t('Виртуальный номер')}>
+              {({ id }) => <Input id={id} value={connectionForm.virtual_number} onChange={event => setConnectionForm({ ...connectionForm, virtual_number: event.target.value })} placeholder="+7 700 000 00 00" />}
+            </Field>
+            <Field label={t('API-ключ')}>
+              {({ id }) => <Input id={id} value={connectionForm.api_key} onChange={event => setConnectionForm({ ...connectionForm, api_key: event.target.value })} placeholder={connection.has_api_key ? t('Ключ уже сохранён') : ''} />}
+            </Field>
+            <Field label={t('API-секрет')}>
+              {({ id }) => <Input id={id} type="password" value={connectionForm.api_secret} onChange={event => setConnectionForm({ ...connectionForm, api_secret: event.target.value })} placeholder={connection.has_api_key ? t('Секрет уже сохранён') : ''} />}
+            </Field>
+          </div>
+          <div className="mt-4 grid gap-3">
+            <Checkbox checked={connectionForm.recording_enabled} onChange={event => setConnectionForm({ ...connectionForm, recording_enabled: event.target.checked })} label={t('Хранить ссылки на записи разговоров')} />
+            {connectionForm.recording_enabled && <Checkbox checked={connectionForm.recording_notice_confirmed} onChange={event => setConnectionForm({ ...connectionForm, recording_notice_confirmed: event.target.checked })} label={t('Подтверждаю, что звонящий предупреждается о записи разговора')} />}
+          </div>
+          <Button className="mt-5" variant="primary" loading={savingConnection} onClick={saveConnection}>{t('Сохранить настройки')}</Button>
+        </Card>
+      )}
+      <Card>
+        <CardHeader title={t('Журнал звонков')} description={t('Карточка клиента открывается по известному номеру. Пропущенные звонки создают задачу перезвонить.')} />
+        {!calls.length ? <EmptyState icon={Phone} title={t('Звонков пока нет')} description={t('После подключения АТС входящие и исходящие появятся здесь.')} /> : (
+          <div className="divide-y divide-line">
+            {calls.map(call => {
+              const targetUrl = call.target?.type === 'child' ? `/children/${call.target.id}` : call.target?.type === 'parent' ? `/parents/${call.target.id}` : call.target?.type === 'lead' ? `/leads/${call.target.id}` : ''
+              return (
+                <div key={call.id} className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600"><PhoneIncoming className="size-5" /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-ink">{call.target?.name || t('Неизвестный номер')}</p>
+                    <p className="text-sm text-ink-muted">{call.phone} · {t(call.direction === 'inbound' ? 'Входящий' : 'Исходящий')} · {t(call.status === 'missed' ? 'Пропущен' : call.status === 'completed' ? 'Завершён' : call.status === 'external' ? 'Передан на устройство' : call.status === 'failed' ? 'Ошибка' : 'Звонит')}</p>
+                    <p className="text-xs text-ink-subtle">{formatDateTime(call.started_at)} · {call.duration_seconds} {t('сек.')}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {targetUrl && <Button to={targetUrl}>{t('Открыть карточку')}</Button>}
+                    {!call.target && <Button onClick={() => promote(call)}>{t('Создать заявку')}</Button>}
+                    {call.has_recording && <Button icon={Play} onClick={() => play(call)}>{t('Слушать запись')}</Button>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Card>
+    </div>
+  )
+}
 
 export function MessagingJournal() {
   const toast = useToast()

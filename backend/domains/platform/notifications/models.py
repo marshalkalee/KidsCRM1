@@ -14,6 +14,10 @@ from django.db import models
 from domains.platform.core.models import TenantModel, UUIDPrimaryKeyModel
 
 
+def default_recording_roles():
+    return ["owner", "manager"]
+
+
 class NotificationSeen(UUIDPrimaryKeyModel):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications_seen"
@@ -422,5 +426,118 @@ class InboundInstagramMessage(TenantModel):
             models.Index(
                 fields=["organization", "sender_id", "-created_at"],
                 name="instagram_org_sender_idx",
+            ),
+        ]
+
+
+class TelephonyConnection(TenantModel):
+    """Cloud PBX connection and recording policy for one organization."""
+
+    class Provider(models.TextChoices):
+        CONSOLE = "console", "Тестовый режим"
+        ZADARMA = "zadarma", "Zadarma"
+
+    class Status(models.TextChoices):
+        DISCONNECTED = "disconnected", "Не подключена"
+        CONNECTED = "connected", "Подключена"
+        ERROR = "error", "Ошибка"
+
+    provider = models.CharField(max_length=16, choices=Provider.choices, default=Provider.CONSOLE)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DISCONNECTED)
+    api_key = models.CharField(max_length=255, blank=True)
+    api_secret = models.TextField(blank=True)
+    virtual_number = models.CharField(max_length=20, blank=True)
+    webhook_secret = models.CharField(max_length=100, blank=True)
+    recording_enabled = models.BooleanField(default=False)
+    recording_notice_confirmed = models.BooleanField(default=False)
+    recording_roles = models.JSONField(default=default_recording_roles)
+    recording_retention_days = models.PositiveSmallIntegerField(default=90)
+    last_error = models.CharField(max_length=500, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["organization"], name="telephony_connection_unique_org")
+        ]
+
+
+class CallRecord(TenantModel):
+    """Provider call event; media remains at the PBX, only its URL is stored."""
+
+    class Direction(models.TextChoices):
+        INBOUND = "inbound", "Входящий"
+        OUTBOUND = "outbound", "Исходящий"
+
+    class Status(models.TextChoices):
+        RINGING = "ringing", "Звонит"
+        ANSWERED = "answered", "Отвечен"
+        COMPLETED = "completed", "Завершён"
+        EXTERNAL = "external", "Передан на устройство"
+        MISSED = "missed", "Пропущен"
+        FAILED = "failed", "Ошибка"
+
+    provider_call_id = models.CharField(max_length=255)
+    direction = models.CharField(max_length=16, choices=Direction.choices)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.RINGING)
+    phone = models.CharField(max_length=20)
+    started_at = models.DateTimeField()
+    answered_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    duration_seconds = models.PositiveIntegerField(default=0)
+    result = models.CharField(max_length=255, blank=True)
+    recording_url = models.URLField(max_length=1000, blank=True)
+    recording_expires_at = models.DateTimeField(null=True, blank=True)
+    seen_at = models.DateTimeField(null=True, blank=True)
+    employee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calls",
+    )
+    parent = models.ForeignKey(
+        "clients.ParentContact",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calls",
+    )
+    child = models.ForeignKey(
+        "clients.Child",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calls",
+    )
+    lead = models.ForeignKey(
+        "leads.Lead",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="calls",
+    )
+    communication_log = models.OneToOneField(
+        "clients.CommunicationLog",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="call_record",
+    )
+
+    class Meta:
+        ordering = ["-started_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "provider_call_id"], name="call_unique_provider_id"
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["organization", "status", "-started_at"],
+                name="call_org_status_idx",
+            ),
+            models.Index(
+                fields=["organization", "phone", "-started_at"],
+                name="call_org_phone_idx",
             ),
         ]

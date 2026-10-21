@@ -100,10 +100,13 @@ class TaskViewSet(
             "branch",
         )
         status_param = self.request.query_params.get("status")
+        type_param = self.request.query_params.get("type")
         assignee_param = self.request.query_params.get("assigned_to")
         branch_param = self.request.query_params.get("branch")
         if status_param:
             qs = qs.filter(status=status_param)
+        if type_param:
+            qs = qs.filter(type=type_param)
         if assignee_param:
             qs = qs.filter(assigned_to_id=assignee_param)
         if branch_param:

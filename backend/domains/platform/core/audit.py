@@ -26,6 +26,7 @@ class AuditLog(UUIDPrimaryKeyModel):
         IMPORT = "import", "Импорт"
         IMPORT_ROLLBACK = "import_rollback", "Откат импорта"
         PARENT_LOGIN = "parent_login", "Вход родителя в кабинет"
+        PLAY_CALL_RECORDING = "play_call_recording", "Прослушивание записи звонка"
 
     organization = models.ForeignKey(
         "tenants.Organization",
