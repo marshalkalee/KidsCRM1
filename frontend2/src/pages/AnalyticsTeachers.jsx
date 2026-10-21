@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CalendarCheck, CalendarX, Info, Presentation, UserRoundCheck, UsersRound } from 'lucide-react'
 import {
-  AnalyticsNav, AnalyticsToolbar, ExportButton, RankBars, StackedBars, formatValue,
+  AnalyticsToolbar, ExportButton, RankBars, StackedBars, formatValue,
   useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet,
 } from '../components/analytics'
 import { Badge, Card, CardHeader, DataTable, ErrorState, PageHeader, Select, Skeleton, cn } from '../ui'
@@ -53,7 +53,6 @@ export default function AnalyticsTeachers() {
         description={t('Объём нагрузки по расписанию — не оценка качества работы')}
         actions={<ExportButton report="teacher_workload" filters={filters} extra={extra} />}
       />
-      <AnalyticsNav />
       <AnalyticsToolbar filters={filters} catalog={catalog} period={data?.period} />
 
       <Card className="mb-5">

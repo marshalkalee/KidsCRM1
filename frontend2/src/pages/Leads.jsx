@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { AlarmClock, ArrowRightLeft, Columns3, Inbox, Plus, Search, Table2 } from 'lucide-react'
+import { AlarmClock, ArrowRightLeft, Columns3, Download, Inbox, Plus, Search, Table2 } from 'lucide-react'
 import api from '../api/axios'
 import { LEAD_CREATED_EVENT, openQuickLead } from '../components/leads/QuickLead'
 import LeadModal from '../components/leads/LeadModal'
@@ -10,6 +10,7 @@ import TrialBookingModal from '../components/leads/TrialBookingModal'
 import { STAGE_DOT, leadTitle } from '../components/leads/format'
 import { getLeadsViewPreference, setLeadsViewPreference } from '../components/leads/viewPreference'
 import { useSession } from '../session/SessionContext'
+import { PageGroupContext } from '../ui/pageGroup'
 import {
   Avatar, Button, DateInput, Dropdown, EmptyState, ErrorState, FilterBar, FilterPanel, FilterSelect, PageHeader, SearchInput,
   Skeleton, Tabs, ageLabel, apiErrorMessage, cn, plural, useFilterDraft, useToast,
@@ -161,35 +162,53 @@ export default function Leads() {
   const resetFilters = () => update(Object.fromEntries(FILTER_KEYS.map(key => [key, ''])))
   const count = view === 'table' ? tableCount : board ? total : null
 
+  async function exportExcel() {
+    try {
+      const res = await api.get('leads/export/', { params: { ...query, ordering: params.get('ordering') || '-created_at' }, responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const link = Object.assign(document.createElement('a'), { href: url, download: `leads-${new Date().toISOString().slice(0, 10)}.xlsx` })
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    }
+  }
+
+  const search = <SearchInput value={params.get('q') || ''} onChange={value => update({ q: value })} placeholder={t('Имя родителя, ребёнка или телефон')} />
+  const filtersPanel = <LeadFilters params={params} update={update} lists={lists} branches={branches} onReset={resetFilters} />
+  // Новые заявки и продления — вкладки в шапке, как у других разделов.
+  const group = {
+    title: t('Заявки'),
+    tabs: (
+      <Tabs
+        value={kind}
+        onChange={next => update({ kind: next === 'renewal' ? 'renewal' : '' })}
+        tabs={[{ key: 'new', label: t('Новые заявки') }, { key: 'renewal', label: t('Продления') }]}
+      />
+    ),
+  }
+
   return (
-    <div>
+    <PageGroupContext.Provider value={group}>
       <PageHeader
         title={t('Заявки')}
         description={count == null ? t('Загрузка…') : `${count} ${plural(count, ['заявка', 'заявки', 'заявок'])}`}
         actions={
           <>
             <ViewToggle view={view} onChange={changeView} />
+            {view === 'table' && <Button icon={Download} onClick={exportExcel}>{t('Скачать Excel')}</Button>}
             {kind === 'new' && <Button variant="primary" icon={Plus} onClick={openQuickLead}>{t('Новая заявка')}</Button>}
           </>
         }
       />
 
-      <Tabs
-        className="mb-4"
-        value={kind}
-        onChange={next => update({ kind: next === 'renewal' ? 'renewal' : '' })}
-        tabs={[{ key: 'new', label: t('Новые заявки') }, { key: 'renewal', label: t('Продления') }]}
-      />
-
-      <div className="mb-4 space-y-3">
-        <FilterBar
-          search={<SearchInput value={params.get('q') || ''} onChange={value => update({ q: value })} placeholder={t('Имя родителя, ребёнка или телефон')} />}
-          filtersOpen={filtersOpen}
-          onToggleFilters={() => setFiltersOpen(o => !o)}
-          activeCount={activeFilters}
-        />
-        {filtersOpen && <LeadFilters params={params} update={update} lists={lists} branches={branches} onReset={resetFilters} />}
-      </div>
+      {/* У таблицы поиск и фильтры — в её верхней строке; у доски — над колонками. */}
+      {view !== 'table' && (
+        <div className="mb-4 space-y-3">
+          <FilterBar search={search} filtersOpen={filtersOpen} onToggleFilters={() => setFiltersOpen(o => !o)} activeCount={activeFilters} />
+          {filtersOpen && filtersPanel}
+        </div>
+      )}
 
       {view === 'table' ? (
         <LeadTable
@@ -202,6 +221,11 @@ export default function Leads() {
           onReset={resetFilters}
           hasFilters={Boolean(activeFilters || params.get('q'))}
           returnTo={returnTo}
+          search={search}
+          filtersOpen={filtersOpen}
+          onToggleFilters={() => setFiltersOpen(o => !o)}
+          activeFilters={activeFilters}
+          filtersPanel={filtersPanel}
         />
       ) : error ? (
         <ErrorState onRetry={() => setReloadKey(k => k + 1)} />
@@ -264,7 +288,7 @@ export default function Leads() {
           }}
         />
       )}
-    </div>
+    </PageGroupContext.Provider>
   )
 }
 
@@ -322,7 +346,7 @@ function Board({ board, onMove, onLoadMore, returnTo }) {
 
   return (
     <div className="hidden overflow-x-auto pb-2 md:block">
-      <div className="flex min-w-max gap-3">
+      <div className="flex gap-3">
         {board.columns.map(column => {
           const canDrop = dragging && allowed.includes(column.stage)
           return (
@@ -338,13 +362,13 @@ function Board({ board, onMove, onLoadMore, returnTo }) {
                 setDragging(null)
               }}
               className={cn(
-                'flex w-[264px] shrink-0 flex-col rounded-xl border bg-surface-muted/60 transition-colors',
+                'flex min-w-[200px] flex-1 basis-0 flex-col overflow-hidden rounded-xl border bg-surface-muted/60 transition-colors',
                 over === column.stage ? 'border-brand-400 bg-brand-50' : canDrop ? 'border-dashed border-brand-300' : 'border-line',
                 dragging && !canDrop && column.stage !== dragging.stage && 'opacity-50',
               )}
             >
               <ColumnHeader column={column} />
-              <div className="flex min-h-24 flex-col gap-2 p-2">
+              <div className="flex max-h-[calc(100dvh-300px)] min-h-24 flex-col gap-2 overflow-y-auto p-2">
                 {column.results.map(lead => (
                   <LeadCard
                     key={lead.id}
@@ -435,10 +459,13 @@ function MobileColumn({ board, stage, onStageChange, onMove, onLoadMore, returnT
 
 function ColumnHeader({ column }) {
   return (
-    <header className="flex items-center gap-2 px-3 pb-1 pt-3">
-      <span className={cn('size-2 shrink-0 rounded-full', STAGE_DOT[column.color])} />
-      <h2 className="truncate text-[13px] font-bold text-ink">{column.label}</h2>
-      <span className="ml-auto rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink-muted">{column.count}</span>
+    <header className="border-b border-line bg-surface">
+      <span className={cn('block h-1', STAGE_DOT[column.color])} />
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <span className={cn('size-2 shrink-0 rounded-full', STAGE_DOT[column.color])} />
+        <h2 className="truncate text-[13px] font-bold text-ink">{column.label}</h2>
+        <span className="ml-auto rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-ink-muted">{column.count}</span>
+      </div>
     </header>
   )
 }
@@ -456,7 +483,7 @@ function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDr
       onKeyDown={e => { if (e.key === 'Enter') navigate(`/leads/${lead.id}`, { state: { leadsReturnTo: returnTo } }) }}
       tabIndex={0}
       className={cn(
-        'cursor-pointer rounded-lg border bg-surface p-3 shadow-xs transition hover:border-brand-300 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand-50',
+        'group cursor-pointer rounded-lg border bg-surface p-3 shadow-xs transition hover:border-brand-300 hover:shadow-card focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand-50',
 
         draggable && 'cursor-grab active:cursor-grabbing',
         lead.is_stale ? 'border-warning-600/40' : 'border-line',
@@ -490,7 +517,7 @@ function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDr
 function MoveMenu({ lead, columns, targets, onMove }) {
   const options = columns.filter(c => targets.includes(c.stage)).map(c => ({ value: c.stage, label: c.label }))
   return (
-    <span className="shrink-0" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+    <span className="shrink-0 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
       <Dropdown
         size="sm"
         value=""

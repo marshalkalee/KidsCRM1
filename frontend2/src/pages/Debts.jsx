@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, Download, MessageCircle, Phone, Search, Wallet } from 'lucide-react'
+import { AlertTriangle, Download, MessageCircle, Phone, Receipt, Search, Wallet } from 'lucide-react'
 import api from '../api/axios'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
+import { ListToolbar, StatCard, StatRow } from '../components/money/ListParts'
 import WhatsAppBulkModal from '../components/messaging/WhatsAppBulkModal'
 import { useSession } from '../session/SessionContext'
 import {
-  Button, Card, DataTable, EmptyState, FilterBar, FilterCheck, FilterPanel, FilterSelect,
+  Button, DataTable, EmptyState, FilterCheck, FilterPanel, FilterSelect,
   PageHeader, SearchInput, apiErrorMessage, cn, money, plural, useFilterDraft, useToast,
 } from '../ui'
 import { t } from '../i18n'
@@ -180,61 +181,39 @@ export default function Debts() {
       <PageHeader
         title={t('Задолженности')}
         description={loading && !data.count ? t('Загрузка…') : `${countLabel} ${t('с долгом')}${hasAnyFilter ? ` ${t('по фильтрам')}` : ''}${activeBranch ? ` · ${activeBranch.name}` : ''}`}
-        actions={(
-          <>
-            <Button icon={MessageCircle} disabled={!selected.size} onClick={() => setBulkOpen(true)}>{t('Напомнить в WhatsApp')} {selected.size ? `(${selected.size})` : ''}</Button>
-            <Button icon={Download} loading={exporting} onClick={exportExcel} disabled={!data.count}>{t('Скачать Excel')}</Button>
-          </>
-        )}
+        actions={<Button icon={Download} loading={exporting} onClick={exportExcel} disabled={!data.count}>{t('Скачать Excel')}</Button>}
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <Card className="flex items-center gap-4">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-danger-50 text-danger-600"><Wallet className="size-5" /></span>
-          <div>
-            <p className="text-[13px] text-ink-muted">{hasAnyFilter ? t('Долг по выборке') : t('Всего долгов')}</p>
-            <p className="text-2xl font-bold text-ink">{money(data.total_debt ?? 0)}</p>
-          </div>
-        </Card>
-        <button
-          type="button"
+      <StatRow>
+        <StatCard icon={Wallet} tone="danger" label={hasAnyFilter ? t('Долг по выборке') : t('Всего долгов')} value={money(data.total_debt ?? 0)} />
+        <StatCard
+          icon={AlertTriangle}
+          tone="warning"
+          label={t('Просрочено — дольше {n} дн.', { n: overdueDays })}
+          value={money(data.overdue_debt ?? 0)}
+          hint={params.get('overdue') ? t('Фильтр включён — нажмите, чтобы снять') : t('Нажмите — покажем только их')}
+          active={Boolean(params.get('overdue'))}
           onClick={() => update({ overdue: params.get('overdue') ? '' : '1' })}
-          className={cn(
-            'flex items-center gap-4 rounded-lg border bg-surface p-5 text-left transition',
-            params.get('overdue') ? 'border-warning-600 ring-3 ring-warning-50' : 'border-line hover:border-warning-600',
-          )}
-        >
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-warning-50 text-warning-600"><AlertTriangle className="size-5" /></span>
-          <div>
-            <p className="text-[13px] text-ink-muted">{t('Просрочено — дольше {n} дн.', { n: overdueDays })}</p>
-            <p className="text-2xl font-bold text-ink">
-              {money(data.overdue_debt ?? 0)}
-              <span className="ml-2 text-sm font-medium text-ink-muted">{t('{n} шт.', { n: data.overdue_count ?? 0 })}</span>
-            </p>
-          </div>
-        </button>
-      </div>
-
-      <div className="mb-4 space-y-3">
-        <FilterBar
-          search={<SearchInput value={params.get('q') || ''} onChange={setQuery} placeholder={t('Поиск по имени ребёнка')} />}
-          filtersOpen={filtersOpen}
-          onToggleFilters={() => setFiltersOpen(o => !o)}
-          activeCount={activeFilters}
         />
-        {filtersOpen && (
-          <DebtFilters params={params} update={update} branches={branches} directions={directions} overdueDays={overdueDays} onReset={resetFilters} />
-        )}
-      </div>
-
-      {data.results.length > 0 && (
-        <label className="mb-3 inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink-muted">
-          <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} className="size-4 accent-[var(--color-brand-500)]" />
-          {t('Выбрать все на странице')}
-        </label>
-      )}
+        <StatCard icon={Receipt} tone="info" label={t('Абонементов с долгом')} value={data.count ?? 0} hint={t('просрочено: {n}', { n: data.overdue_count ?? 0 })} />
+      </StatRow>
 
       <DataTable
+        toolbar={(
+          <ListToolbar
+            canSelect={data.results.length > 0}
+            selectedCount={selected.size}
+            allSelected={allVisibleSelected}
+            onToggleAll={toggleVisible}
+            onClearSelection={() => setSelected(new Set())}
+            bulkActions={<Button size="sm" variant="primary" icon={MessageCircle} onClick={() => setBulkOpen(true)}>{t('Напомнить в WhatsApp')}</Button>}
+            search={<SearchInput value={params.get('q') || ''} onChange={setQuery} placeholder={t('Поиск по имени ребёнка')} />}
+            filtersOpen={filtersOpen}
+            onToggleFilters={() => setFiltersOpen(o => !o)}
+            activeFilters={activeFilters}
+            filtersPanel={<DebtFilters params={params} update={update} branches={branches} directions={directions} overdueDays={overdueDays} onReset={resetFilters} />}
+          />
+        )}
         columns={columns}
         rows={data.results}
         rowKey={row => row.subscription_id}

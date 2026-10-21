@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowRight, CalendarClock, CheckSquare, ChevronRight, History, Loader2, Newspaper, RefreshCw, Sprout, TrendingDown, TrendingUp, X } from 'lucide-react'
+import { ArrowRight, CalendarClock, CheckSquare, ChevronDown, ChevronRight, History, Loader2, Newspaper, Plus, RefreshCw, Sprout, TrendingDown, TrendingUp, X } from 'lucide-react'
 import api from '../api/axios'
 import { AIBadge } from '../components/ai/ai'
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, Modal, PageHeader, Select, Skeleton, apiErrorMessage, cn, formatDateTime, useToast } from '../ui'
@@ -112,7 +112,12 @@ export default function Digest() {
     <div>
       <PageHeader
         title={t('Дайджест недели')}
-        description={`${t('Что сделать на этой неделе — по данным центра.')} ${schedule}`}
+        description={shown && !(selectedId && !selected) ? (
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <AIBadge />
+            {t('Неделя с {date}', { date: dayMonth(shown.week_start) })} · {t('собран {when}', { when: formatDateTime(shown.ready_at) })}
+          </span>
+        ) : t('Что сделать на этой неделе — по данным центра.')}
         actions={
           <Button icon={RefreshCw} loading={refreshing || building} onClick={refresh}>
             {building ? t('Собираем…') : t('Обновить')}
@@ -153,7 +158,7 @@ export default function Digest() {
           <DigestView digest={shown} />
         )}
 
-        <Archive items={data.archive} activeId={shown?.id} onOpen={id => setParams(id === data.latest?.id ? {} : { id })} />
+        <Archive items={data.archive} activeId={shown?.id} schedule={schedule} onOpen={id => setParams(id === data.latest?.id ? {} : { id })} />
       </div>
     </div>
   )
@@ -188,38 +193,35 @@ function DigestView({ digest }) {
 
   return (
     <>
-      <p className="flex flex-wrap items-center gap-2 px-1 text-[13px] text-ink-muted">
-        <AIBadge />
-        {t('Неделя с {date}', { date: dayMonth(digest.week_start) })} · {t('собран {when}', { when: formatDateTime(digest.ready_at) })}
-      </p>
-
       <Changes changes={content.changes} />
 
-      <section>
-        <h2 className="mb-2 px-1 text-[15px] font-bold text-ink">{t('Главное')}</h2>
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {highlights.map(item => (
-            <Advice key={item.id} item={item} onTask={() => setTaskItem(item)} onDismiss={() => dismiss(item)} />
+      <Section title={t('Главное на неделю')}>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {highlights.map((item, index) => (
+            <Advice key={item.id} item={item} number={index + 1} onTask={() => setTaskItem(item)} onDismiss={() => dismiss(item)} />
           ))}
         </div>
-      </section>
+      </Section>
 
       {rest.length > 0 && (
-        <Card>
-          <CardHeader title={t('Ещё советы')} />
-          <ul className="divide-y divide-line">
-            {rest.map(item => (
-              <li key={item.id} className="py-3">
-                <p className="text-sm font-semibold text-ink">{item.title}</p>
-                <p className="mt-0.5 text-[13px] text-ink-muted">{item.action}</p>
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" variant="secondary" icon={CheckSquare} onClick={() => setTaskItem(item)}>{t('Поставить задачу')}</Button>
-                  <Button size="sm" variant="ghost" icon={X} onClick={() => dismiss(item)}>{t('Не актуально')}</Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        <Section title={t('Ещё советы')}>
+          <Card padded={false}>
+            <ul className="divide-y divide-line">
+              {rest.map(item => (
+                <li key={item.id} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-ink">{item.title}</p>
+                    <p className="mt-0.5 text-[13px] text-ink-muted">{item.action}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <Button size="sm" variant="secondary" icon={CheckSquare} onClick={() => setTaskItem(item)}>{t('Поставить задачу')}</Button>
+                    <Button size="sm" variant="ghost" icon={X} onClick={() => dismiss(item)}>{t('Не актуально')}</Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </Section>
       )}
       {content.failed_blocks > 0 && (
         <p className="px-1 text-[13px] text-ink-muted">{t('Часть блоков не собралась — в следующий раз попробуем снова.')}</p>
@@ -229,7 +231,20 @@ function DigestView({ digest }) {
   )
 }
 
+function Section({ title, children }) {
+  return (
+    <section>
+      <h2 className="mb-3 flex items-center gap-3 px-1 text-[13px] font-bold uppercase tracking-[0.06em] text-ink-subtle">
+        {title}<span className="h-px flex-1 bg-line" />
+      </h2>
+      {children}
+    </section>
+  )
+}
+
+/** «Что изменилось»: цифры, новые советы и ушедшие — колонками; ушедшие свёрнуты. */
 function Changes({ changes }) {
+  const [showGone, setShowGone] = useState(false)
   if (!changes) return null
   const since = dayMonth(changes.since)
   if (changes.unchanged) {
@@ -239,48 +254,103 @@ function Changes({ changes }) {
       </Card>
     )
   }
+  const columns = [
+    changes.values.length > 0 && (
+      <div key="values">
+        <ColumnTitle>{t('Цифры')}</ColumnTitle>
+        <ul className="space-y-2 text-[13px]">
+          {changes.values.map(v => (
+            <li key={v.key} className="flex items-start gap-2">
+              {v.after > v.before ? <TrendingUp className="mt-0.5 size-4 shrink-0 text-success-600" /> : <TrendingDown className="mt-0.5 size-4 shrink-0 text-danger-600" />}
+              <span className="min-w-0">
+                <span className="text-ink-muted">{shortLabel(v.label)}: </span>
+                <span className="font-semibold text-ink">{factValue({ value: v.before, label: v.label })} → {factValue({ value: v.after, label: v.label })}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ),
+    changes.new.length > 0 && (
+      <div key="new">
+        <ColumnTitle count={changes.new.length} tone="info">{t('Новые советы')}</ColumnTitle>
+        <ul className="space-y-2 text-[13px] text-ink">
+          {changes.new.map(title => (
+            <li key={`new-${title}`} className="flex items-start gap-2">
+              <Plus className="mt-0.5 size-4 shrink-0 text-info-600" /><span>{title}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ),
+    changes.gone.length > 0 && (
+      <div key="gone">
+        <button type="button" onClick={() => setShowGone(v => !v)} aria-expanded={showGone} className="w-full text-left">
+          <ColumnTitle count={changes.gone.length}>
+            {t('Уже не актуально')}
+            <ChevronDown className={cn('size-3.5 transition-transform', showGone && 'rotate-180')} />
+          </ColumnTitle>
+        </button>
+        {showGone ? (
+          <ul className="space-y-2 text-[13px] text-ink-subtle">
+            {changes.gone.map(title => (
+              <li key={`gone-${title}`} className="flex items-start gap-2">
+                <X className="mt-0.5 size-4 shrink-0" /><span className="line-through">{title}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[13px] text-ink-subtle">{t('Прошлые советы, которые больше не нужны. Нажмите, чтобы посмотреть.')}</p>
+        )}
+      </div>
+    ),
+  ].filter(Boolean)
   return (
     <Card>
       <CardHeader title={t('Что изменилось с {date}', { date: since })} />
-      <ul className="space-y-2 text-sm">
-        {changes.values.map(v => (
-          <li key={v.key} className="flex flex-wrap items-center gap-x-2">
-            {v.after > v.before ? <TrendingUp className="size-4 text-success-600" /> : <TrendingDown className="size-4 text-danger-600" />}
-            <span className="text-ink-muted">{shortLabel(v.label)}:</span>
-            <span className="font-semibold text-ink">{factValue({ value: v.before, label: v.label })} → {factValue({ value: v.after, label: v.label })}</span>
-          </li>
-        ))}
-        {changes.new.map(title => (
-          <li key={`new-${title}`} className="flex items-center gap-2"><Badge tone="info">{t('Новое')}</Badge><span className="text-ink">{title}</span></li>
-        ))}
-        {changes.gone.map(title => (
-          <li key={`gone-${title}`} className="flex items-center gap-2 text-ink-muted"><Badge>{t('Уже не актуально')}</Badge><span className="line-through">{title}</span></li>
-        ))}
-      </ul>
+      <div className={cn('grid gap-5', columns.length > 1 && 'lg:grid-cols-2', columns.length > 2 && 'xl:grid-cols-3')}>{columns}</div>
     </Card>
   )
 }
 
-function Advice({ item, onTask, onDismiss }) {
+function ColumnTitle({ count, tone, children }) {
+  return (
+    <p className="mb-2 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wide text-ink-subtle">
+      {children}
+      {count != null && <Badge tone={tone}>{count}</Badge>}
+    </p>
+  )
+}
+
+function Advice({ item, number, onTask, onDismiss }) {
   const priority = PRIORITY[item.priority] || PRIORITY.low
   return (
     <Card className="flex flex-col">
-      <div className="mb-2"><Badge tone={priority.tone}>{priority.label}</Badge></div>
-      <h3 className="text-[15px] font-bold leading-snug text-ink">{item.title}</h3>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {item.evidence.map(e => (
-          <div key={e.key} className="min-w-0 rounded-lg bg-surface-muted px-3 py-2">
-            <p className="text-lg font-bold leading-none text-ink">{factValue(e)}</p>
-            <p className="mt-1 text-[12px] leading-snug text-ink-muted">{shortLabel(e.label)}</p>
-          </div>
-        ))}
+      <div className="flex items-start gap-3">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-sm font-bold text-brand-600">{number}</span>
+        <div className="min-w-0 flex-1">
+          <Badge tone={priority.tone}>{priority.label}</Badge>
+          <h3 className="mt-1.5 text-[15px] font-bold leading-snug text-ink">{item.title}</h3>
+        </div>
       </div>
-      <p className="mt-3 flex gap-2 text-sm font-medium text-ink">
-        <ArrowRight className="mt-0.5 size-4 shrink-0 text-brand-600" />
-        <span>{item.action}</span>
-      </p>
-      <p className="mt-1.5 pl-6 text-[13px] text-ink-muted">{item.rationale}</p>
-      <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-3">
+      {item.evidence.length > 0 && (
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))]">
+          {item.evidence.map(e => (
+            <div key={e.key} className="min-w-0 rounded-lg bg-surface-muted px-3 py-2.5">
+              <p className="text-lg font-bold leading-none text-ink">{factValue(e)}</p>
+              <p className="mt-1 text-[12px] leading-snug text-ink-muted">{shortLabel(e.label)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-4 rounded-lg border border-brand-100 bg-brand-50/50 p-3">
+        <p className="flex gap-2 text-sm font-semibold text-ink">
+          <ArrowRight className="mt-0.5 size-4 shrink-0 text-brand-600" />
+          <span>{item.action}</span>
+        </p>
+        <p className="mt-1.5 pl-6 text-[13px] text-ink-muted">{item.rationale}</p>
+      </div>
+      <div className="mt-auto flex flex-wrap gap-2 pt-4">
         <Button size="sm" variant="secondary" icon={CheckSquare} onClick={onTask}>{t('Поставить задачу')}</Button>
         <Button size="sm" variant="ghost" icon={X} onClick={onDismiss}>{t('Не актуально')}</Button>
       </div>
@@ -400,23 +470,27 @@ function DigestTaskModal({ digestId, item, onClose }) {
   )
 }
 
-function Archive({ items, activeId, onOpen }) {
-  if (items.length < 2) return null
+function Archive({ items, activeId, schedule, onOpen }) {
+  if (items.length < 2) return <p className="px-1 text-[13px] text-ink-subtle">{schedule}</p>
   return (
     <Card>
-      <CardHeader title={t('Прошлые недели')} description={t('Что советовали раньше — видно, что сработало.')} />
+      <CardHeader title={t('Прошлые недели')} description={`${t('Что советовали раньше — видно, что сработало.')} ${schedule}`} />
       <ul className="divide-y divide-line">
         {items.map(item => (
           <li key={item.id}>
             <button
               type="button"
               onClick={() => onOpen(item.id)}
-              className={cn('flex w-full items-center gap-3 py-3 text-left', item.id === activeId && 'font-semibold')}
+              className={cn('-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-lg px-2 py-3 text-left hover:bg-surface-muted', item.id === activeId && 'bg-brand-50/60')}
             >
-              <History className="size-4 shrink-0 text-ink-subtle" />
-              <span className="min-w-0 flex-1 text-sm text-ink">
-                {t('Неделя с {date}', { date: dayMonth(item.week_start) })}
-                <span className="ml-2 text-[13px] font-normal text-ink-muted">
+              <History className={cn('size-4 shrink-0', item.id === activeId ? 'text-brand-600' : 'text-ink-subtle')} />
+              <span className="min-w-0 flex-1">
+                <span className={cn('block text-sm text-ink', item.id === activeId && 'font-semibold')}>
+                  {t('Неделя с {date}', { date: dayMonth(item.week_start) })}
+                  {item.id === activeId && <Badge tone="brand" className="ml-2">{t('Открыт')}</Badge>}
+                </span>
+                <span className="block text-[12px] text-ink-muted">
+                  {item.ready_at && `${t('собран {when}', { when: formatDateTime(item.ready_at) })} · `}
                   {item.unchanged ? t('без изменений') : `${item.highlights} ${plural(item.highlights, ['главный совет', 'главных совета', 'главных советов'])}`}
                 </span>
               </span>

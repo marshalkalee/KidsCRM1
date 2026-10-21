@@ -10,7 +10,7 @@ import CallButton from '../components/telephony/CallButton'
 import { ROLE_LABELS, TASK_MANAGER_ROLES } from '../components/tasks/types'
 import { SellModal } from '../components/money/SubscriptionsTab'
 import { useSession } from '../session/SessionContext'
-import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, PageHeader, Select, Skeleton, Tabs, apiErrorMessage, cn, money, useToast } from '../ui'
+import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, PageHeader, Select, Skeleton, apiErrorMessage, cn, money, useToast } from '../ui'
 import { locale, t } from '../i18n'
 
 function waLink(phone, text) {
@@ -209,61 +209,78 @@ export default function MyTasks() {
         actions={canManage && <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>{t('Новая задача')}</Button>}
       />
 
-      <Tabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { key: 'today', label: t('Сегодня и просроченные'), count: overdue.length + today.length },
-          { key: 'future', label: t('На будущее'), count: future.length },
-          { key: 'history', label: t('История'), count: history.length },
-        ]}
-      />
+      <Card padded={false} className="overflow-hidden">
+        {/* Вкладки внутри списка — переключатель, а не вторая полоса вкладок под
+            «Мои / Просроченные у команды»: два уровня не спорят друг с другом. */}
+        <div className="border-b border-line px-4 py-3 sm:px-5">
+          <div role="tablist" aria-label={t('Задачи')} className="flex w-full gap-1 rounded-lg bg-surface-muted p-1 sm:inline-flex sm:w-auto">
+            {[
+              { key: 'today', label: t('Сегодня и просроченные'), short: t('Сегодня'), count: overdue.length + today.length },
+              { key: 'future', label: t('На будущее'), short: t('Будущие'), count: future.length },
+              { key: 'history', label: t('История'), short: t('История'), count: history.length },
+            ].map(item => (
+              <button
+                key={item.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === item.key}
+                onClick={() => setTab(item.key)}
+                className={cn(
+                  'inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-[13px] font-semibold transition sm:flex-none sm:px-3',
+                  tab === item.key ? 'bg-surface text-brand-600 shadow-card ring-1 ring-line' : 'text-ink-muted hover:text-ink',
+                )}
+              >
+                <span className="sm:hidden">{item.short}</span>
+                <span className="hidden sm:inline">{item.label}</span>
+                <span className={cn('rounded-full px-1.5 text-[11px]', tab === item.key ? 'bg-brand-50 text-brand-600' : 'bg-line text-ink-muted')}>{item.count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
-      {visible.length === 0 ? (
-        <Card className="mt-4">
+        {visible.length === 0 ? (
           <EmptyState
             title={tab === 'history' ? t('История задач пуста') : t('Задач нет')}
             description={tab === 'history' ? t('Выполненные задачи появятся здесь.') : t('На сегодня всё сделано.')}
+            className="py-12"
           />
-        </Card>
-      ) : (
-        <div className="mt-4 space-y-4">
-          {groups.map(group => (
-            <Card key={group.key} padded={false} className="overflow-hidden">
-              <div className="flex items-center gap-2 border-b border-line px-5 py-3">
-                {group.icon && <group.icon className={cn('size-4', group.tone)} />}
-                <p className={cn('text-[15px] font-bold', group.tone || 'text-ink')}>{group.title}</p>
+        ) : (
+          groups.map(group => (
+            <section key={group.key} className="border-b border-line last:border-b-0">
+              <div className={cn('flex items-center gap-2 border-b border-line px-5 py-2.5', group.key === 'overdue' ? 'bg-danger-50/50' : 'bg-surface-muted')}>
+                {group.icon && <group.icon className={cn('size-4', group.tone || 'text-ink-muted')} />}
+                <p className={cn('text-[14px] font-bold', group.tone || 'text-ink')}>{group.title}</p>
                 <span className="text-[13px] font-semibold text-ink-subtle">{group.tasks.length}</span>
               </div>
               <div className="divide-y divide-line">
                 {group.tasks.map(task => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    closed={tab === 'history'}
-                    overdue={isOverdue(task.due_at)}
-                    closing={closing === task.id}
-                    center={user?.organization_name}
-                    me={user?.id}
-                    canManage={canManage}
-                    canPay={Boolean(user?.permissions?.can_accept_payments)}
-                    onComplete={() => complete(task)}
-                    onPostpone={() => postpone(task)}
-                    onReassign={() => setReassigning(task)}
-                    onPay={() => setPaying(task)}
-                    onSell={() => setSelling(task)}
-                    onDetails={() => openTask(task.id)}
-                    onOpen={() => {
-                      if (task.child) navigate(`/children/${task.child}`)
-                      else if (task.lead) navigate(`/leads/${task.lead}`)
-                    }}
-                  />
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      closed={tab === 'history'}
+                      overdue={isOverdue(task.due_at)}
+                      closing={closing === task.id}
+                      center={user?.organization_name}
+                      me={user?.id}
+                      canManage={canManage}
+                      canPay={Boolean(user?.permissions?.can_accept_payments)}
+                      onComplete={() => complete(task)}
+                      onPostpone={() => postpone(task)}
+                      onReassign={() => setReassigning(task)}
+                      onPay={() => setPaying(task)}
+                      onSell={() => setSelling(task)}
+                      onDetails={() => openTask(task.id)}
+                      onOpen={() => {
+                        if (task.child) navigate(`/children/${task.child}`)
+                        else if (task.lead) navigate(`/leads/${task.lead}`)
+                      }}
+                    />
                 ))}
               </div>
-            </Card>
-          ))}
-        </div>
-      )}
+            </section>
+          ))
+        )}
+      </Card>
 
       {openId && <TaskPanel taskId={openId} onClose={closeTask} onChanged={load} />}
 

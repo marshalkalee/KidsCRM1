@@ -360,7 +360,33 @@ def renewals_api(request):
         _page(qs, request.query_params),
         show_phones=can_view_phone(request.user),
     )
-    return Response({"results": rows, "count": qs.count()})
+    return Response(
+        {"results": rows, "count": qs.count(), "summary": _renewals_summary(request, qs)}
+    )
+
+
+def _renewals_summary(request, qs):
+    """Сводка над списком продлений: сколько уже закончилось, сколько
+    закончится за неделю и скольким семьям ещё не звонили."""
+    today = today_for_org(request.user.organization)
+    recent = today - timedelta(days=CONTACT_COOLDOWN_DAYS)
+    totals = qs.order_by().aggregate(
+        total=Count("pk", distinct=True),
+        ended=Count("pk", filter=Q(ends_on__lt=today), distinct=True),
+        this_week=Count(
+            "pk",
+            filter=Q(ends_on__gte=today, ends_on__lte=today + timedelta(days=7)),
+            distinct=True,
+        ),
+        contacted=Count(
+            "pk", filter=Q(renewal_contacts__contacted_at__date__gte=recent), distinct=True
+        ),
+    )
+    return {
+        "ended": totals["ended"],
+        "this_week": totals["this_week"],
+        "not_contacted": totals["total"] - totals["contacted"],
+    }
 
 
 @api_view(["GET"])
