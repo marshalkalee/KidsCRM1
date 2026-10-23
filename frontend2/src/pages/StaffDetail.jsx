@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { CalendarOff, MapPin, Phone, SearchX, UsersRound } from 'lucide-react'
+import { CalendarOff, KeyRound, MapPin, Phone, RotateCcw, SearchX, UsersRound } from 'lucide-react'
 import api from '../api/axios'
-import { ROLE_LABELS } from '../session/SessionContext'
-import { Avatar, Badge, Card, EmptyState, ErrorState, PageHeader, Skeleton } from '../ui'
+import { ROLE_LABELS, useSession } from '../session/SessionContext'
+import { Avatar, Badge, Card, EmptyState, ErrorState, PageHeader, Skeleton, apiErrorMessage, cn, useToast } from '../ui'
 import { t } from '../i18n'
 
 const listOf = response => response.data.results || response.data
@@ -17,6 +17,7 @@ function formatPhone(phone = '') {
 export default function StaffDetail() {
   const { id } = useParams()
   const location = useLocation()
+  const { can } = useSession()
   const [data, setData] = useState(null)
   const [status, setStatus] = useState('loading')
 
@@ -77,6 +78,7 @@ export default function StaffDetail() {
           <UpcomingAbsences staffId={staff.id} />
         </Card>
 
+        <div className="min-w-0 space-y-5">
         <Card>
           <div className="mb-4 flex items-center gap-3">
             <span className="flex size-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><UsersRound className="size-5" /></span>
@@ -102,6 +104,8 @@ export default function StaffDetail() {
             <EmptyState icon={UsersRound} title={t('Преподаватель пока не назначен ни в одну группу')} className="py-10" />
           )}
         </Card>
+        {can('can_manage_staff') && <AccessCard staff={staff} />}
+        </div>
       </div>
     </div>
   )
@@ -138,5 +142,105 @@ function UpcomingAbsences({ staffId }) {
         ))}
       </ul>
     </div>
+  )
+}
+
+/**
+ * Доступ сотрудника: права роли и особые права поверх неё. Меняет только
+ * владелец (сервер проверяет то же); управляющий видит, но не меняет.
+ */
+function AccessCard({ staff }) {
+  const toast = useToast()
+  const [data, setData] = useState(null)
+  const [busy, setBusy] = useState(null)
+  const url = `users/${staff.id}/access/`
+
+  useEffect(() => {
+    let alive = true
+    api.get(url).then(res => { if (alive) setData(res.data) }).catch(() => { if (alive) setData(false) })
+    return () => { alive = false }
+  }, [url])
+
+  async function save(key, value) {
+    setBusy(key)
+    try {
+      const res = await api.put(url, { overrides: { [key]: value } })
+      setData(res.data)
+      toast.success(t('Доступ сохранён'))
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (data === false) return null
+  const changed = data?.items.filter(item => item.override !== null).length || 0
+  return (
+    <Card>
+      <div className="mb-4 flex items-start gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><KeyRound className="size-5" /></span>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-bold text-ink">{t('Доступ')}</h2>
+          <p className="text-xs text-ink-muted">
+            {staff.role === 'owner'
+              ? t('У владельца все права.')
+              : t('Основу даёт роль «{role}». Отдельному сотруднику можно открыть или закрыть разделы ниже.', { role: ROLE_LABELS[staff.role] || staff.role })}
+          </p>
+        </div>
+        {changed > 0 && <Badge tone="warning">{t('Особых прав: {n}', { n: changed })}</Badge>}
+      </div>
+      {!data ? <Skeleton className="h-48" /> : staff.role !== 'owner' && (
+        <>
+          <ul className="divide-y divide-line">
+            {data.items.map(item => (
+              <li key={item.key} className="flex items-center gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink">
+                    {t(item.label)}
+                    {item.override !== null && (
+                      <Badge tone={item.override ? 'success' : 'danger'}>{item.override ? t('Открыто особо') : t('Закрыто особо')}</Badge>
+                    )}
+                  </p>
+                  <p className="text-[12px] text-ink-muted">
+                    {t(item.hint)}
+                    {item.override !== null && ` ${item.role_default ? t('По роли — есть.') : t('По роли — нет.')}`}
+                  </p>
+                </div>
+                {data.editable && item.override !== null && (
+                  <button
+                    type="button"
+                    onClick={() => save(item.key, null)}
+                    disabled={busy !== null}
+                    title={t('Как у роли')}
+                    aria-label={t('Вернуть как у роли: {name}', { name: t(item.label) })}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-ink-subtle hover:bg-surface-muted hover:text-ink"
+                  >
+                    <RotateCcw className="size-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={item.effective}
+                  aria-label={t(item.label)}
+                  disabled={!data.editable || busy !== null}
+                  onClick={() => save(item.key, !item.effective)}
+                  className={cn(
+                    'relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed',
+                    item.effective ? 'bg-brand-500' : 'bg-[#d1d5db]',
+                    !data.editable && 'opacity-60',
+                  )}
+                >
+                  <span className={cn('absolute top-0.5 size-5 rounded-full bg-white shadow transition-all', item.effective ? 'left-[22px]' : 'left-0.5')} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!data.editable && <p className="mt-3 text-[12px] text-ink-subtle">{t('Менять доступ может только владелец центра.')}</p>}
+          <p className="mt-3 text-[12px] text-ink-subtle">{t('Сотрудники, настройки центра, финансовые отчёты и справочники — только по роли.')}</p>
+        </>
+      )}
+    </Card>
   )
 }

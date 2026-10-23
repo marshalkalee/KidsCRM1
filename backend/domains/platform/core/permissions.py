@@ -63,6 +63,24 @@ class CanViewClientMoney(IsStaffOfOrganization):
         return can_change_client_money(request.user)
 
 
+class CanAcceptPayments(IsStaffOfOrganization):
+    """Принять и отменить оплату — по роли или особому праву сотрудника."""
+
+    def has_permission(self, request, view):
+        from domains.platform.core.role_permissions import can_accept_payments
+
+        return super().has_permission(request, view) and can_accept_payments(request.user)
+
+
+class CanViewAIDigest(IsStaffOfOrganization):
+    """Дайджест недели — по роли или особому праву сотрудника."""
+
+    def has_permission(self, request, view):
+        from domains.platform.core.role_permissions import can_view_ai_digest
+
+        return super().has_permission(request, view) and can_view_ai_digest(request.user)
+
+
 class IsNotAccountant(IsStaffOfOrganization):
     def has_permission(self, request, view):
         return super().has_permission(request, view) and request.user.role != User.Role.ACCOUNTANT

@@ -66,6 +66,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         blank=True,
     )
     branches = models.ManyToManyField("tenants.Branch", related_name="staff", blank=True)
+    # Особые права поверх роли: {"can_view_phone": true, "can_accept_payments": false}.
+    # Меняет только владелец; какие ключи можно — role_permissions.OVERRIDABLE.
+    permission_overrides = models.JSONField(default=dict, blank=True)
 
     full_name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20, unique=True)
