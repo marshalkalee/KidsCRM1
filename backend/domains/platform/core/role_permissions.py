@@ -20,6 +20,35 @@ def _org_allows(user, role, key) -> bool:
     return user.role == role and bool(get_org_setting(user.organization, key))
 
 
+# Права, которые владелец может дать или забрать конкретному сотруднику
+# поверх роли (карточка сотрудника → «Доступ»). Только те, что API проверяет
+# через функции ниже, — иначе галочка разошлась бы с сервером. Сотрудники,
+# настройки центра, финансовые отчёты и справочники — только по роли.
+OVERRIDABLE = {
+    "can_view_phone": (
+        "Телефоны родителей",
+        "Видит номера родителей в карточках детей и родителей.",
+    ),
+    "can_view_client_money": (
+        "Деньги по детям",
+        "Видит абонементы, оплаты и долги детей (только смотреть).",
+    ),
+    "can_accept_payments": ("Приём оплат", "Принимает и отменяет оплаты."),
+    "can_manage_leads": ("Заявки", "Ведёт заявки: доска, таблица, пробные, продажа."),
+    "can_view_analytics": ("Аналитика", "Отчёты по своим филиалам: выручка, посещаемость, отток."),
+    "can_view_ai_digest": ("Дайджест недели", "Советы ИИ на неделю с цифрами центра."),
+    "can_use_ai_chat": ("ИИ-помощник", "Вопросы ИИ по данным CRM в пределах своих прав."),
+}
+
+
+def _with_override(user, key, base: bool) -> bool:
+    """Право роли с поправкой из карточки сотрудника. Владельцу — всё по роли."""
+    if user.role == User.Role.OWNER or key not in OVERRIDABLE:
+        return base
+    value = (getattr(user, "permission_overrides", None) or {}).get(key)
+    return value if isinstance(value, bool) else base
+
+
 FINANCE_ROLES = {
     User.Role.OWNER,
     User.Role.ACCOUNTANT,
@@ -156,6 +185,10 @@ def can_manage_groups(user) -> bool:
 
 
 def can_view_phone(user) -> bool:
+    return _with_override(user, "can_view_phone", role_can_view_phone(user))
+
+
+def role_can_view_phone(user) -> bool:
     return user.role in PHONE_VIEW_ROLES or _org_allows(
         user, User.Role.TEACHER, TEACHER_SEES_PARENT_PHONES
     )
@@ -170,6 +203,10 @@ def can_view_child_sensitive_fields(user) -> bool:
 
 
 def can_view_client_money(user) -> bool:
+    return _with_override(user, "can_view_client_money", role_can_view_client_money(user))
+
+
+def role_can_view_client_money(user) -> bool:
     return user.role in CLIENT_MONEY_VIEW_ROLES or _org_allows(
         user, User.Role.TEACHER, TEACHER_SEES_FINANCES
     )
@@ -187,12 +224,12 @@ def can_manage_children(user) -> bool:
 
 
 def can_accept_payments(user) -> bool:
-    """Принять и отменить оплату — как в API оплат (IsOwnerOrManagerOrAdmin)."""
-    return user.role in CHILD_MANAGE_ROLES
+    """Принять и отменить оплату — API оплат и продажа с оплатой (record_payment)."""
+    return _with_override(user, "can_accept_payments", user.role in CHILD_MANAGE_ROLES)
 
 
 def can_manage_leads(user) -> bool:
-    return user.role in LEAD_MANAGE_ROLES
+    return _with_override(user, "can_manage_leads", user.role in LEAD_MANAGE_ROLES)
 
 
 def can_manage_lead_dictionaries(user) -> bool:
@@ -211,9 +248,10 @@ ANALYTICS_VIEW_ROLES = {
 def can_view_analytics(user) -> bool:
     # Сводка организации для администратора (TRU-153) — та же аналитика,
     # ограниченная его филиалами (analytics.scope).
-    return user.role in ANALYTICS_VIEW_ROLES or _org_allows(
+    base = user.role in ANALYTICS_VIEW_ROLES or _org_allows(
         user, User.Role.ADMIN, ADMIN_SEES_ORG_SUMMARY
     )
+    return _with_override(user, "can_view_analytics", base)
 
 
 # Чат с ИИ на главной (ai/chat.py) — руководители и администратор: он
@@ -227,7 +265,7 @@ AI_CHAT_ROLES = {
 
 
 def can_use_ai_chat(user) -> bool:
-    return user.role in AI_CHAT_ROLES
+    return _with_override(user, "can_use_ai_chat", user.role in AI_CHAT_ROLES)
 
 
 def can_manage_announcements(user) -> bool:
@@ -247,13 +285,38 @@ def can_use_telephony(user) -> bool:
 
 def can_view_ai_digest(user) -> bool:
     """Еженедельный дайджест ИИ (TRU-163) — владелец и управляющий:
-    в нём выручка и что делать центру. Маркетолога как роли нет."""
-    return user.role in (User.Role.OWNER, User.Role.MANAGER)
+    в нём выручка и что делать центру. Маркетолога как роли нет —
+    отдельному сотруднику владелец даёт его в карточке."""
+    return _with_override(
+        user, "can_view_ai_digest", user.role in (User.Role.OWNER, User.Role.MANAGER)
+    )
 
 
 def can_reconcile_balances(user) -> bool:
     """Отчёт сверки остатков (TRU-61) — те же роли, что у API (IsOwnerOrManager)."""
     return user.role in (User.Role.OWNER, User.Role.MANAGER)
+
+
+def access_items(user) -> list[dict]:
+    """Карточка сотрудника → «Доступ»: что даёт роль, что поменяно, что в итоге."""
+    role_default = User(role=user.role, organization=user.organization)
+    overrides = user.permission_overrides or {}
+    items = []
+    for key, (label, hint) in OVERRIDABLE.items():
+        check = globals()[key]
+        default = check(role_default)
+        override = overrides.get(key)
+        items.append(
+            {
+                "key": key,
+                "label": label,
+                "hint": hint,
+                "role_default": default,
+                "override": override if isinstance(override, bool) else None,
+                "effective": check(user),
+            }
+        )
+    return items
 
 
 def get_user_permissions(user) -> dict:

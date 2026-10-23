@@ -11,8 +11,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
 from domains.platform.core.permissions import (
+    CanViewAIDigest,
     IsOwner,
-    IsOwnerOrManager,
     IsOwnerOrManagerOrAdmin,
     IsStaffOfOrganization,
 )
@@ -643,7 +643,7 @@ def _digest_full(item, language="ru"):
 
 
 @api_view(["GET", "POST"])
-@permission_classes([IsOwnerOrManager, HasAIOption])
+@permission_classes([CanViewAIDigest, HasAIOption])
 def digests(request, version=None):
     """GET — последний готовый дайджест, что собирается сейчас, архив.
     POST — «Обновить»: генерация в фоне, повторные нажатия не плодят новых."""
@@ -692,7 +692,7 @@ def digests(request, version=None):
 
 
 @api_view(["GET"])
-@permission_classes([IsOwnerOrManager, HasAIOption])
+@permission_classes([CanViewAIDigest, HasAIOption])
 def digest_detail(request, digest_id, version=None):
     item = AIDigest.objects.for_tenant(request.user.organization).filter(pk=digest_id).first()
     if item is None:
@@ -709,7 +709,7 @@ def _digest_and_item(request, digest_id):
 
 
 @api_view(["POST"])
-@permission_classes([IsOwnerOrManager, HasAIOption])
+@permission_classes([CanViewAIDigest, HasAIOption])
 def digest_task_preview(request, digest_id, version=None):
     try:
         item, recommendation = _digest_and_item(request, digest_id)
@@ -722,7 +722,7 @@ def digest_task_preview(request, digest_id, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([IsOwnerOrManager, HasAIOption])
+@permission_classes([CanViewAIDigest, HasAIOption])
 def digest_task_create(request, digest_id, version=None):
     try:
         item, recommendation = _digest_and_item(request, digest_id)
@@ -743,7 +743,7 @@ def digest_task_create(request, digest_id, version=None):
 
 
 @api_view(["POST"])
-@permission_classes([IsOwnerOrManager, HasAIOption])
+@permission_classes([CanViewAIDigest, HasAIOption])
 def dismiss_digest_recommendation(request, digest_id, version=None):
     try:
         item, recommendation = _digest_and_item(request, digest_id)

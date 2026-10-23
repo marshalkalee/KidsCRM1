@@ -2,6 +2,7 @@ from django.db.models import Exists, OuterRef
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -9,9 +10,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from domains.platform.core.active_branch import branch_scope
+from domains.platform.core.audit import AuditLog
 from domains.platform.core.images import clean_image, delete_image, save_image
 from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
-from domains.platform.core.role_permissions import get_user_permissions
+from domains.platform.core.role_permissions import OVERRIDABLE, access_items, get_user_permissions
 from domains.platform.users.serializers import (
     ChangePasswordSerializer,
     CustomTokenObtainSerializer,
@@ -36,7 +38,7 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [IsStaffOfOrganization]
 
     def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy"):
+        if self.action in ("create", "update", "partial_update", "destroy", "access"):
             return [IsOwnerOrManager()]
         return [IsStaffOfOrganization()]
 
@@ -65,6 +67,51 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(organization=self.request.user.organization)
+
+    @action(detail=True, methods=["get", "put"])
+    def access(self, request, pk=None, version=None):
+        """Особые права сотрудника поверх роли. Смотрят владелец и управляющий,
+        меняет только владелец — иначе управляющий открыл бы себе что угодно.
+        PUT {"overrides": {"can_view_phone": true, "can_accept_payments": null}}:
+        null или совпадение с ролью — «как у роли»."""
+        target = self.get_object()
+        editable = request.user.role == User.Role.OWNER and target.role != User.Role.OWNER
+        if request.method == "PUT":
+            if not editable:
+                detail = (
+                    "У владельца все права — менять нечего."
+                    if target.role == User.Role.OWNER
+                    else "Особые права меняет только владелец."
+                )
+                return Response({"detail": detail}, status=status.HTTP_403_FORBIDDEN)
+            incoming = request.data.get("overrides") if isinstance(request.data, dict) else None
+            if not isinstance(incoming, dict) or any(
+                key not in OVERRIDABLE or not (value is None or isinstance(value, bool))
+                for key, value in incoming.items()
+            ):
+                return Response(
+                    {"detail": "Неизвестное право или значение."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            before = dict(target.permission_overrides or {})
+            merged = {**before, **incoming}
+            defaults = {item["key"]: item["role_default"] for item in access_items(target)}
+            # Храним только отличия от роли: сменят роль — лишнего не останется.
+            target.permission_overrides = {
+                key: value
+                for key, value in merged.items()
+                if isinstance(value, bool) and value != defaults[key]
+            }
+            if target.permission_overrides != before:
+                target.save(update_fields=["permission_overrides", "updated_at"])
+                AuditLog.record(
+                    actor=request.user,
+                    action=AuditLog.Action.GRANT,
+                    entity=target,
+                    before={"permission_overrides": before},
+                    after={"permission_overrides": target.permission_overrides},
+                )
+        return Response({"editable": editable, "role": target.role, "items": access_items(target)})
 
 
 @method_decorator(ratelimit(key="ip", rate="5/m", method="POST", block=True), name="post")

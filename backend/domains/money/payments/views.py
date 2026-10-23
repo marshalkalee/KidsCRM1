@@ -4,7 +4,7 @@ from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from domains.platform.core.permissions import CanViewClientMoney, IsOwnerOrManagerOrAdmin
+from domains.platform.core.permissions import CanAcceptPayments, CanViewClientMoney
 
 from .models import Payment
 from .serializers import PaymentSerializer
@@ -40,7 +40,7 @@ class PaymentViewSet(
 
     def get_permissions(self):
         if self.action in ("create", "cancel"):
-            return [IsOwnerOrManagerOrAdmin()]
+            return [CanAcceptPayments()]
         return [CanViewClientMoney()]
 
     def get_queryset(self):

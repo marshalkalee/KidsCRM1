@@ -48,7 +48,12 @@ def record_payment(
     idempotency_key=None,
     paid_on=None,
 ) -> Payment:
+    from domains.platform.core.role_permissions import can_accept_payments
+
     from .providers import ManualProvider
+
+    if actor is not None and not can_accept_payments(actor):
+        raise ValueError("У вас нет права принимать оплаты.")
 
     return ManualProvider(method).record(
         subscription=subscription,
@@ -63,6 +68,10 @@ def record_payment(
 
 @transaction.atomic
 def cancel_payment(payment: Payment, *, actor, reason: str) -> Payment:
+    from domains.platform.core.role_permissions import can_accept_payments
+
+    if actor is not None and not can_accept_payments(actor):
+        raise ValueError("У вас нет права отменять оплаты.")
     # Строка блокируется до конца транзакции: два одновременных запроса
     # отмены не пройдут оба, второй увидит deleted_at первого (TRU-131).
     deleted_at = (
