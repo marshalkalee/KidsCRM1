@@ -9,7 +9,7 @@ from domains.money.subscriptions.models import Subscription
 from domains.money.subscriptions.subscription_types import create_type
 from domains.people.clients.models import Child
 from domains.platform.tasks.models import Task
-from domains.platform.tenants.models import Direction
+from domains.platform.tenants.models import Branch, Direction
 from domains.platform.users.models import User
 from domains.scheduling.attendance.models import Attendance
 from domains.scheduling.groups.models import Group, GroupMembership
@@ -354,6 +354,58 @@ class ParentScheduleTests(PortalAuthBase):
         self.assertIn("Предупредили позже срока — занятие спишется.", task.description)
         # Только человеческий текст: без служебных id организации и занятия.
         self.assertNotIn(str(self.org.id), task.description)
+
+    def staff(self, name, role, *branches):
+        user = User.objects.create_user(
+            phone=f"+7701000{User.objects.count():04d}",
+            password="x",
+            full_name=name,
+            organization=self.org,
+            role=role,
+        )
+        user.branches.set(branches)
+        return user
+
+    def request_task(self):
+        lesson = self.lesson(self.today + datetime.timedelta(days=2))
+        response = self.as_parent(self.login()).post(
+            f"/api/v1/portal/children/{self.child.id}/lesson-requests/",
+            {"type": "cancel", "lesson_id": str(lesson.id), "cancel_reason": "illness"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        return Task.objects.get(source_key=f"parent-request:{response.data['id']}")
+
+    def test_request_task_goes_to_admin_of_lesson_branch(self):
+        other = Branch.objects.create(organization=self.org, name="Орбита")
+        self.staff("Админ Орбиты", User.Role.ADMIN, other)
+        self.staff("Админ всех", User.Role.ADMIN)
+        # По алфавиту последний — раньше задача ушла бы «Админу всех».
+        own = self.staff("Яна, админ Алмалы", User.Role.ADMIN, self.branch)
+
+        task = self.request_task()
+
+        self.assertEqual(task.assigned_to, own)
+        self.assertEqual(task.branch, self.branch)
+
+    def test_request_task_skips_other_branch_staff(self):
+        other = Branch.objects.create(organization=self.org, name="Орбита")
+        self.staff("Админ Орбиты", User.Role.ADMIN, other)
+        anywhere = self.staff("Управляющий", User.Role.MANAGER)
+        self.staff("Владелец", User.Role.OWNER)
+
+        self.assertEqual(self.request_task().assigned_to, anywhere)
+
+    def test_request_task_falls_back_to_owner_then_anyone(self):
+        other = Branch.objects.create(organization=self.org, name="Орбита")
+        stranger = self.staff("Админ Орбиты", User.Role.ADMIN, other)
+        owner = self.staff("Владелец", User.Role.OWNER)
+
+        self.assertEqual(self.request_task().assigned_to, owner)
+
+        owner.is_active = False
+        owner.save(update_fields=["is_active"])
+        self.assertEqual(self.request_task().assigned_to, stranger)
 
     def test_regular_options_match_direction_age_and_capacity(self):
         suitable_group = Group.objects.create(

@@ -87,16 +87,31 @@ def makeup_candidates(child, source_attendance):
     ]
 
 
-def _assignee(organization):
-    return (
+def _assignee(organization, branch=None):
+    """Кому поставить задачу по запросу (Д36): администратор, затем
+    управляющий филиала занятия; затем тот, кто работает во всех филиалах;
+    затем владелец. Сотрудник другого филиала — только если больше некому."""
+    staff = (
         User.objects.filter(
             organization=organization,
             is_active=True,
             role__in=[User.Role.ADMIN, User.Role.MANAGER, User.Role.OWNER],
         )
+        .prefetch_related("branches")
         .order_by("role", "full_name")
-        .first()
     )
+
+    def rank(user):
+        if user.role == User.Role.OWNER:
+            return 2
+        # Как allowed_branch_ids: отключённые филиалы не считаются.
+        branch_ids = {item.id for item in user.branches.all() if item.is_active}
+        if branch is not None and branch.id in branch_ids:
+            return 0
+        return 1 if not branch_ids else 3
+
+    # min() берёт первого с наименьшим рангом — порядок role, full_name сохраняется.
+    return min(staff, key=rank, default=None)
 
 
 def task_text(parent_request) -> tuple[str, str]:
@@ -144,7 +159,7 @@ def _create_task(parent_request):
         type=Task.Type.PARENT_REQUEST,
         source_key=f"parent-request:{parent_request.id}",
         defaults={
-            "assigned_to": _assignee(parent_request.organization),
+            "assigned_to": _assignee(parent_request.organization, branch),
             "child": parent_request.child,
             "branch": branch,
             "source": Task.Source.AUTO,
