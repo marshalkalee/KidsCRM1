@@ -7,6 +7,7 @@ import {
 } from '../../ui'
 import { t } from '../../i18n'
 import { personNameInput, personNameInputProps } from '../../utils/formValidation'
+import { oldestBirthDateISO } from '../../utils/calendarDate'
 
 const EMPTY = {
   child_name: '', birth_date: '', gender: '', parent_name: '',
@@ -122,7 +123,7 @@ export default function LeadConversionModal({ lead, onClose, onConverted, forSal
                 {({ id, invalid }) => <Input id={id} invalid={invalid} value={form.child_name} onChange={e => set('child_name', personNameInput(e.target.value))} required minLength={3} {...personNameInputProps} />}
               </Field>
               <Field label={t('Точная дата рождения')} required error={errors.birth_date}>
-                {({ id, invalid }) => <DateInput id={id} invalid={invalid} value={form.birth_date} onChange={value => set('birth_date', value)} max={new Date().toISOString().slice(0, 10)} required />}
+                {({ id, invalid }) => <DateInput id={id} invalid={invalid} value={form.birth_date} onChange={value => set('birth_date', value)} min={oldestBirthDateISO()} max={new Date().toISOString().slice(0, 10)} required />}
               </Field>
               <Field label={t('Пол')} required error={errors.gender}>
                 {({ id, invalid }) => (

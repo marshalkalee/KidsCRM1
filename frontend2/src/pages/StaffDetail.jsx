@@ -66,10 +66,12 @@ export default function StaffDetail() {
           <Badge className="mt-2" tone="brand">{ROLE_LABELS[staff.role] || staff.role}</Badge>
 
           <div className="mt-6 w-full space-y-3 border-t border-line pt-5 text-left">
-            <a href={`tel:${staff.phone}`} className="flex items-center gap-3 rounded-lg px-2 py-2 text-sm text-ink hover:bg-brand-50 hover:text-brand-700">
-              <Phone className="size-4 shrink-0 text-brand-500" />
-              <span>{formatPhone(staff.phone)}</span>
-            </a>
+            {staff.phone && (
+              <a href={`tel:${staff.phone}`} className="flex items-center gap-3 rounded-lg px-2 py-2 text-sm text-ink hover:bg-brand-50 hover:text-brand-700">
+                <Phone className="size-4 shrink-0 text-brand-500" />
+                <span>{formatPhone(staff.phone)}</span>
+              </a>
+            )}
             <div className="flex items-start gap-3 px-2 py-2 text-sm text-ink">
               <MapPin className="mt-0.5 size-4 shrink-0 text-brand-500" />
               <span>{allBranches ? t('Все филиалы') : branchNames.join(', ')}</span>

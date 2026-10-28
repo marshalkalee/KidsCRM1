@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ListChecks, PlusCircle, RefreshCw, Snowflake } from 'lucide-react'
 import { fetchBranches, fetchDirections } from '../../api/lessons'
-import { addDays, toISODate } from '../../utils/calendarDate'
+import { addDays, fromTodayISO, toISODate } from '../../utils/calendarDate'
 import {
   fetchChildSubscriptions, fetchLedger, fetchNextLesson, fetchSubscriptionTypes,
   freezeSubscription, recomputeSubscription, sellSubscription, unfreezeSubscription,
@@ -470,6 +470,7 @@ export function SellModal({ child, onClose, onDone }) {
             {startMode === 'specific' && (
               <Input
                 type="date" className="mt-2"
+                min={fromTodayISO(-1)} max={fromTodayISO(0, 365)}
                 value={form.starts_on}
                 onChange={e => setForm({ ...form, starts_on: e.target.value })}
                 required
