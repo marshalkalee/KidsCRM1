@@ -322,6 +322,89 @@ class EnrollmentAttendanceChargingTest(EnrollmentFixtureMixin, TestCase):
         self.assertEqual(sub.sessions_remaining_cache, 7)
 
 
+class MakeupRulesApiTest(EnrollmentFixtureMixin, APITestCase):
+    """Отработки по правилам типа абонемента: 0 — отработок нет."""
+
+    def _subscribe(self, child, **rules):
+        st = create_type(
+            self.org,
+            name="8 занятий",
+            price=25000,
+            quota_sessions=8,
+            duration_days=60,
+            directions=[self.direction],
+            rules=rules,
+        )
+        today = datetime.date.today()
+        return Subscription.objects.create(
+            organization=self.org,
+            child=child,
+            subscription_type_version=st.versions.latest(),
+            direction=self.direction,
+            starts_on=today - datetime.timedelta(days=10),
+            ends_on=today + datetime.timedelta(days=50),
+            list_price=25000,
+            price=25000,
+        )
+
+    def _missed(self, child, days_ago):
+        starts = timezone.now() - datetime.timedelta(days=days_ago)
+        lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            starts_at=starts,
+            ends_at=starts + datetime.timedelta(hours=1),
+        )
+        return Attendance.objects.create(
+            organization=self.org, lesson=lesson, child=child, status=Attendance.Status.ABSENT
+        )
+
+    def _enroll(self, child, lesson=None, source=None):
+        lesson = lesson or self.lesson
+        payload = {"lesson": str(lesson.id), "child": str(child.id), "kind": "makeup"}
+        if source is not None:
+            payload["source_attendance"] = str(source.id)
+        return _authenticated_client(self.owner).post("/api/v1/schedule/enrollments/", payload)
+
+    def test_makeup_without_source_is_rejected_when_makeups_are_off(self):
+        self._subscribe(self.outsider, makeups_limit=0)
+
+        response = self._enroll(self.outsider)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("отработок нет", response.data["detail"])
+        self.assertFalse(LessonEnrollment.objects.exists())
+
+    def test_makeup_for_a_miss_is_rejected_when_makeups_are_off(self):
+        self._subscribe(self.outsider, makeups_limit=0)
+        missed = self._missed(self.outsider, days_ago=2)
+
+        response = self._enroll(self.outsider, source=missed)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_exceeded_makeup_limit_is_readable_not_500(self):
+        self._subscribe(self.outsider, makeups_limit=1)
+        first, second = self._missed(self.outsider, 2), self._missed(self.outsider, 3)
+        starts = timezone.now() + datetime.timedelta(days=2)
+        other_lesson = Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            starts_at=starts,
+            ends_at=starts + datetime.timedelta(hours=1),
+        )
+        self.assertEqual(self._enroll(self.outsider, source=first).status_code, 201)
+
+        response = self._enroll(self.outsider, lesson=other_lesson, source=second)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Лимит отработок", response.data["detail"])
+
+    def test_makeups_allowed_by_default(self):
+        self._subscribe(self.outsider)
+        self.assertEqual(self._enroll(self.outsider).status_code, status.HTTP_201_CREATED)
+
+
 class LessonEnrollmentApiTest(EnrollmentFixtureMixin, APITestCase):
     def test_owner_can_enroll(self):
         client = _authenticated_client(self.owner)

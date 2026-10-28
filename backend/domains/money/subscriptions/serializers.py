@@ -4,7 +4,7 @@ from domains.money.payments.models import Payment
 
 from .debt import subscription_debt
 from .models import (
-    FREEZE_RULE_KEYS,
+    EDITABLE_RULE_KEYS,
     Subscription,
     SubscriptionFreeze,
     SubscriptionLedgerEntry,
@@ -133,13 +133,22 @@ class SellRequestSerializer(SaleRequestSerializer):
 
 
 class SubscriptionTypeSerializer(serializers.ModelSerializer):
-    # Правила заморозки — ключи rules (FREEZE_RULE_KEYS), не колонки модели.
+    # Правила — ключи rules (EDITABLE_RULE_KEYS), не колонки модели.
     # null — без ограничения; 0 заморозок в год — заморозка запрещена.
     freezes_per_year = serializers.IntegerField(
         min_value=0, max_value=100, allow_null=True, required=False
     )
     freeze_max_days = serializers.IntegerField(
         min_value=1, max_value=365, allow_null=True, required=False
+    )
+    # Пропуск без отмены из кабинета списывает занятие.
+    expire_on_miss = serializers.BooleanField(required=False)
+    # null — 14 дней; makeups_limit: null — без ограничения, 0 — отработок нет.
+    makeup_window_days = serializers.IntegerField(
+        min_value=1, max_value=365, allow_null=True, required=False
+    )
+    makeups_limit = serializers.IntegerField(
+        min_value=0, max_value=100, allow_null=True, required=False
     )
 
     class Meta:
@@ -157,22 +166,27 @@ class SubscriptionTypeSerializer(serializers.ModelSerializer):
             "is_public",
             "freezes_per_year",
             "freeze_max_days",
+            "expire_on_miss",
+            "makeup_window_days",
+            "makeups_limit",
         ]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        for key in FREEZE_RULE_KEYS:
+        for key in EDITABLE_RULE_KEYS:
             data[key] = instance.rules.get(key)
+        data["expire_on_miss"] = bool(data["expire_on_miss"])
         return data
 
 
-def merge_freeze_rules(rules, data):
-    """rules типа с правилами заморозки из формы: число — задать, null — снять."""
+def merge_type_rules(rules, data):
+    """rules типа с правилами из формы: значение — задать, null/false — снять
+    (нет ключа — поведение по умолчанию). 0 — значение, а не «снять»."""
     merged = dict(rules)
-    for key in FREEZE_RULE_KEYS:
+    for key in EDITABLE_RULE_KEYS:
         if key not in data:
             continue
-        if data[key] is None:
+        if data[key] is None or data[key] is False:
             merged.pop(key, None)
         else:
             merged[key] = data[key]

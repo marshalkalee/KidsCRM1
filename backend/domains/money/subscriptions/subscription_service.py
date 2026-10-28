@@ -54,15 +54,9 @@ def _has_sessions(subscription: Subscription) -> bool:
     )
 
 
-def _lock_candidates(child, direction_id, lesson_date):
-    """Абонементы направления, чей срок покрывает дату занятия, под
-    блокировкой строк до конца транзакции (TRU-130: два одновременных
-    consume на последнем занятии иначе оба видят остаток 1). Порядок
-    ends_on, id одинаков у всех вызовов — блокировки берутся в одном
-    порядке, без взаимоблокировок."""
-    return list(
+def _candidates(child, direction_id, lesson_date):
+    return (
         Subscription.objects.for_tenant(child.organization)
-        .select_for_update(of=("self",))
         .select_related("subscription_type_version")
         .filter(
             child=child,
@@ -73,6 +67,21 @@ def _lock_candidates(child, direction_id, lesson_date):
         )
         .order_by("ends_on", "id")
     )
+
+
+def _lock_candidates(child, direction_id, lesson_date):
+    """Абонементы направления, чей срок покрывает дату занятия, под
+    блокировкой строк до конца транзакции (TRU-130: два одновременных
+    consume на последнем занятии иначе оба видят остаток 1). Порядок
+    ends_on, id одинаков у всех вызовов — блокировки берутся в одном
+    порядке, без взаимоблокировок."""
+    return list(_candidates(child, direction_id, lesson_date).select_for_update(of=("self",)))
+
+
+def subscription_for_lesson(child, direction_id, lesson_date) -> Subscription | None:
+    """Абонемент, с которого спишется занятие этой даты, — без блокировки:
+    чтобы прочитать его правила (пропуски, отработки) до отметки."""
+    return _pick_subscription(list(_candidates(child, direction_id, lesson_date)))
 
 
 def _pick_subscription(candidates):

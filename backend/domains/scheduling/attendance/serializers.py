@@ -5,6 +5,7 @@ from rest_framework import serializers
 
 from domains.people.clients.models import Child
 from domains.platform.core.utils import now_for_org
+from domains.scheduling.schedule.enrollment_service import makeups_disabled
 from domains.scheduling.schedule.models import Lesson
 
 from .models import Attendance, ParentNote
@@ -200,6 +201,12 @@ class AttendanceMarkSerializer(serializers.Serializer):
         # «Не был» заранее допустим: родитель предупредил о пропуске.
         if attrs["status"] != Attendance.Status.ABSENT and lesson_is_upcoming(lesson):
             raise serializers.ValidationError({"status": UPCOMING_LESSON_ERROR})
+        # «Отработка» не списывает занятие: при выключенных отработках это
+        # было бы бесплатное посещение.
+        if attrs["status"] == Attendance.Status.MAKEUP and makeups_disabled(lesson, child.id):
+            raise serializers.ValidationError(
+                {"status": "По абонементу ребёнка отработок нет — отметьте «Был»."}
+            )
         if attrs["status"] == Attendance.Status.ABSENT and not attrs.get("absence_reason"):
             attrs["absence_reason"] = Attendance.AbsenceReason.NO_REASON
         return attrs
@@ -230,6 +237,8 @@ class AttendanceRosterEntrySerializer(serializers.Serializer):
     enrollment_kind = serializers.SerializerMethodField()
     source_lead_id = serializers.SerializerMethodField()
     parent_cancel_notice = serializers.SerializerMethodField()
+    # Отработки не выключены в абонементе ребёнка — показывать ли «Отработку».
+    makeups_allowed = serializers.BooleanField()
 
     def get_enrollment_kind(self, obj):
         return obj.get("enrollment_kind")

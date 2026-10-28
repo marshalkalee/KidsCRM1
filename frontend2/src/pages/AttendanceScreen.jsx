@@ -711,7 +711,10 @@ function AttendanceRow({ row, mobile, saving, upcoming, onOpenReasonPicker, onMa
     <div style={{ display: 'flex', gap: mobile ? 8 : 6, flexShrink: 0, width: mobile ? '100%' : 'auto' }}>
       <StatusButton mobile={mobile} active={isPresent} color="#16A34A" icon={Check} label={t('Пришёл')} saving={saving} disabled={upcoming} onClick={() => onMark('present')} />
       <StatusButton mobile={mobile} active={isAbsent} color="#DC2626" icon={X} label={t('Не был')} saving={saving} onClick={handleAbsentClick} />
-      <StatusButton mobile={mobile} active={isMakeup} color={ACCENT} icon={RotateCcw} label={t('Отработка')} saving={saving} disabled={upcoming} onClick={() => onMark('makeup')} />
+      {/* Отработки выключены в абонементе — «Отработка» была бы бесплатным посещением. */}
+      {(row.makeups_allowed !== false || isMakeup) && (
+        <StatusButton mobile={mobile} active={isMakeup} color={ACCENT} icon={RotateCcw} label={t('Отработка')} saving={saving} disabled={upcoming} onClick={() => onMark('makeup')} />
+      )}
       {row.status && <StatusButton mobile={mobile} active={false} color="#6B7280" icon={Undo2} label={t('Сбросить')} saving={saving} onClick={onReset} />}
     </div>
   )
@@ -744,6 +747,11 @@ function AttendanceRow({ row, mobile, saving, upcoming, onOpenReasonPicker, onMa
       {!row._error && row.status === 'present' && row.consumed_from_subscription && (
         <div style={{ fontSize: 11, color: '#16A34A', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
           <Check size={11} /> {t('Списано с абонемента')}
+        </div>
+      )}
+      {!row._error && row.status === 'absent' && row.consumed_from_subscription && (
+        <div style={{ fontSize: 11, color: '#DC2626', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
+          <X size={11} /> {t('Пропуск — занятие списано')}
         </div>
       )}
       {!row._error && row.status === 'present' && !row.consumed_from_subscription && row.no_subscription_flag && (

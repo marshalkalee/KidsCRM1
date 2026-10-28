@@ -82,6 +82,33 @@ class SubscriptionTypeApiTests(TestCase):
         self.assertEqual(st.versions.latest().rules, {"freezes_per_year": 2})
         self.assertEqual(st.versions.count(), 2)
 
+    def test_miss_and_makeup_rules_are_set_from_type_form(self):
+        client = APIClient()
+        client.force_authenticate(self.owner)
+        st = create_type(
+            self.org, name="8 занятий", price=25000, quota_sessions=8, duration_days=30
+        )
+        url = f"/api/v1/subscriptions/subscription-types/{st.id}/"
+
+        response = client.get(url)
+        self.assertFalse(response.data["expire_on_miss"])
+        self.assertIsNone(response.data["makeups_limit"])
+
+        # «Пропуск сгорает, отработок нет»: 0 — значение, а не «снять».
+        response = client.patch(url, {"expire_on_miss": True, "makeups_limit": 0}, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(response.data["expire_on_miss"])
+        self.assertEqual(response.data["makeups_limit"], 0)
+        self.assertEqual(st.versions.latest().rules, {"expire_on_miss": True, "makeups_limit": 0})
+
+        # Вернуть как было: false/null убирают ключи.
+        client.patch(
+            url,
+            {"expire_on_miss": False, "makeups_limit": None, "makeup_window_days": 21},
+            format="json",
+        )
+        self.assertEqual(st.versions.latest().rules, {"makeup_window_days": 21})
+
     def test_freeze_rule_change_does_not_touch_sold_subscriptions(self):
         st = create_type(
             self.org, name="8 занятий", price=25000, quota_sessions=8, duration_days=30

@@ -600,6 +600,14 @@ _ENROLL_ERROR_STATUS = {
         status.HTTP_400_BAD_REQUEST,
         "Отработать можно только в том же направлении, где пропустили.",
     ),
+    EnrollOutcome.SOURCE_LIMIT_EXCEEDED: (
+        status.HTTP_400_BAD_REQUEST,
+        "Лимит отработок по абонементу уже исчерпан.",
+    ),
+    EnrollOutcome.MAKEUPS_DISABLED: (
+        status.HTTP_400_BAD_REQUEST,
+        "По абонементу ребёнка отработок нет — пропущенное занятие сгорает.",
+    ),
     EnrollOutcome.SOURCE_LEAD_INVALID: (
         status.HTTP_400_BAD_REQUEST,
         "Заявка не подходит для пробного занятия.",

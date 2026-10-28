@@ -49,6 +49,7 @@ class EnrollOutcome(enum.Enum):
     SOURCE_DIRECTION_MISMATCH = "source_direction_mismatch"
     SOURCE_LEAD_INVALID = "source_lead_invalid"
     SOURCE_LEAD_ALREADY_BOOKED = "source_lead_already_booked"
+    MAKEUPS_DISABLED = "makeups_disabled"
 
 
 @dataclass
@@ -71,31 +72,52 @@ def _direction_id(lesson):
     return lesson.group.direction_id if lesson.group_id else None
 
 
+def _lesson_date(lesson):
+    tz = timezone.zoneinfo.ZoneInfo(lesson.organization.timezone or "Asia/Almaty")
+    return lesson.starts_at.astimezone(tz).date()
+
+
+def _subscription_on(organization, child_id, direction_id, day):
+    from domains.money.subscriptions.models import Subscription
+
+    return (
+        Subscription.objects.for_tenant(organization)
+        .filter(
+            child_id=child_id,
+            direction_id=direction_id,
+            starts_on__lte=day,
+            ends_on__gte=day,
+        )
+        .select_related("subscription_type_version")
+        .order_by("-starts_on")
+        .first()
+    )
+
+
+def makeups_disabled(lesson, child_id):
+    """Отработки выключены в типе абонемента (makeups_limit = 0): пропуск
+    просто сгорает, отработку не предлагают и не записывают."""
+    subscription = _subscription_on(
+        lesson.organization, child_id, _direction_id(lesson), _lesson_date(lesson)
+    )
+    return bool(subscription) and makeup_policy_for_subscription(subscription)["limit"] == 0
+
+
 def makeup_policy_for_attendance(attendance):
     """Return the sold subscription's immutable makeup rules for a missed lesson.
 
     Old subscriptions and demo data without a matching sale keep the M1 defaults:
     14 days and no numeric limit.
     """
-    from domains.money.subscriptions.models import Subscription
-
     lesson = attendance.lesson
-    organization = lesson.organization
-    tz = timezone.zoneinfo.ZoneInfo(organization.timezone or "Asia/Almaty")
-    missed_on = lesson.starts_at.astimezone(tz).date()
-    direction_id = _direction_id(lesson)
-    subscription = (
-        Subscription.objects.for_tenant(organization)
-        .filter(
-            child_id=attendance.child_id,
-            direction_id=direction_id,
-            starts_on__lte=missed_on,
-            ends_on__gte=missed_on,
+    return makeup_policy_for_subscription(
+        _subscription_on(
+            lesson.organization, attendance.child_id, _direction_id(lesson), _lesson_date(lesson)
         )
-        .select_related("subscription_type_version")
-        .order_by("-starts_on")
-        .first()
     )
+
+
+def makeup_policy_for_subscription(subscription):
     rules = subscription.subscription_type_version.rules if subscription else {}
     window = rules.get("makeup_window_days")
     limit = rules.get("makeups_limit")
@@ -145,6 +167,11 @@ class LessonService:
 
         if lesson.participants().filter(pk=child_id).exists():
             return EnrollResult(EnrollOutcome.ALREADY_ENROLLED)
+
+        # И без привязки к пропуску: иначе запись «отработкой» обходила бы
+        # выключенные в абонементе отработки.
+        if kind == LessonEnrollment.Kind.MAKEUP and makeups_disabled(lesson, child_id):
+            return EnrollResult(EnrollOutcome.MAKEUPS_DISABLED)
 
         source_attendance = None
         if source_attendance_id is not None:
