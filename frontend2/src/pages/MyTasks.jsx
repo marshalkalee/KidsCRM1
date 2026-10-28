@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, MessageCircle, Plus, UserRoundPlus } from 'lucide-react'
 import api from '../api/axios'
@@ -7,10 +7,10 @@ import CommentsCount from '../components/tasks/CommentsCount'
 import NewTaskModal from '../components/tasks/NewTaskModal'
 import TaskPanel from '../components/tasks/TaskPanel'
 import CallButton from '../components/telephony/CallButton'
-import { ROLE_LABELS, TASK_MANAGER_ROLES } from '../components/tasks/types'
+import { ROLE_LABELS, TASK_MANAGER_ROLES, TASK_TYPES } from '../components/tasks/types'
 import { SellModal } from '../components/money/SubscriptionsTab'
 import { useSession } from '../session/SessionContext'
-import { Badge, Button, Card, EmptyState, ErrorState, Field, Modal, PageHeader, Select, Skeleton, apiErrorMessage, cn, money, useToast } from '../ui'
+import { Badge, Button, Card, Dropdown, EmptyState, ErrorState, Field, Modal, PageHeader, SearchInput, Select, Skeleton, apiErrorMessage, cn, money, useToast } from '../ui'
 import { locale, t } from '../i18n'
 
 function waLink(phone, text) {
@@ -75,6 +75,47 @@ function dueLabel(iso) {
   return endOfDay ? day : `${day}, ${time}`
 }
 
+// История: закрытые задачи за период, свежие сверху, по 50 с «Показать ещё» —
+// иначе за полгода работы она растёт одним бесконечным списком.
+const HISTORY_PERIODS = [
+  { value: '7', get label() { return t('7 дней') } },
+  { value: '30', get label() { return t('30 дней') } },
+  { value: '90', get label() { return t('3 месяца') } },
+  { value: 'all', get label() { return t('Всё время') } },
+]
+
+const HISTORY_STATUSES = [
+  { value: 'closed', get label() { return t('Выполненные и отменённые') } },
+  { value: 'done', get label() { return t('Выполненные') } },
+  { value: 'cancelled', get label() { return t('Отменённые') } },
+]
+
+const HISTORY_DEFAULTS = { period: '7', status: 'closed', type: '', q: '' }
+
+/** Начало дня N дней назад (сегодня входит в период). */
+function closedAfter(period) {
+  if (period === 'all') return undefined
+  const since = new Date()
+  since.setHours(0, 0, 0, 0)
+  since.setDate(since.getDate() - Number(period) + 1)
+  return since.toISOString()
+}
+
+/** «Сегодня» / «Вчера» / «пн, 20 окт.» — шапка дня в истории. */
+function closedDayLabel(iso) {
+  const day = new Date(iso)
+  const today = new Date()
+  const yesterday = new Date(); yesterday.setDate(today.getDate() - 1)
+  if (day.toDateString() === today.toDateString()) return t('Сегодня')
+  if (day.toDateString() === yesterday.toDateString()) return t('Вчера')
+  return day.toLocaleDateString(locale, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(day.getFullYear() !== today.getFullYear() && { year: 'numeric' }),
+  })
+}
+
 export default function MyTasks() {
   const { user } = useSession()
   const toast = useToast()
@@ -84,7 +125,11 @@ export default function MyTasks() {
   const openId = params.get('open')
   const [tab, setTab] = useState('today')
   const [tasks, setTasks] = useState(null)
-  const [history, setHistory] = useState([])
+  const [historyFilters, setHistoryFilters] = useState(HISTORY_DEFAULTS)
+  const [history, setHistory] = useState({ rows: [], count: 0, page: 1, next: null, failed: false })
+  const [loadingMore, setLoadingMore] = useState(false)
+  // Ответ на старый фильтр не должен затереть ответ на новый.
+  const historyRequest = useRef(0)
   const [error, setError] = useState(false)
   const [colleagues, setColleagues] = useState([])
   const [reassigning, setReassigning] = useState(null)
@@ -96,21 +141,76 @@ export default function MyTasks() {
   // преподаватель только выполняют и переносят свои.
   const canManage = TASK_MANAGER_ROLES.includes(user?.role)
 
-  const load = useCallback(() => {
-    Promise.all([
-      api.get('tasks/', { params: { assigned_to: user.id, status: 'open' } }),
-      api.get('tasks/', { params: { assigned_to: user.id, status: 'done' } }),
-      api.get('tasks/', { params: { assigned_to: user.id, status: 'cancelled' } }),
-    ])
-      .then(([openResponse, doneResponse, cancelledResponse]) => {
-        const rows = response => response.data.results || response.data
-        setTasks(rows(openResponse))
-        setHistory([...rows(doneResponse), ...rows(cancelledResponse)])
+  const loadOpen = useCallback(() => {
+    api.get('tasks/', { params: { assigned_to: user.id, status: 'open' } })
+      .then(response => {
+        setTasks(response.data.results || response.data)
         setError(false)
       })
       .catch(() => setError(true))
   }, [user.id])
-  useEffect(() => { load() }, [load])
+  useEffect(() => { loadOpen() }, [loadOpen])
+
+  const loadHistory = useCallback((page = 1) => {
+    const request = ++historyRequest.current
+    return api.get('tasks/', {
+      params: {
+        assigned_to: user.id,
+        status: historyFilters.status,
+        type: historyFilters.type || undefined,
+        q: historyFilters.q || undefined,
+        closed_after: closedAfter(historyFilters.period),
+        ordering: '-closed',
+        page,
+      },
+    })
+      .then(response => {
+        if (request !== historyRequest.current) return
+        const rows = response.data.results || response.data
+        setHistory(prev => ({
+          rows: page === 1 ? rows : [...prev.rows, ...rows],
+          count: response.data.count ?? rows.length,
+          page,
+          next: response.data.next || null,
+          failed: false,
+        }))
+      })
+      .catch(() => {
+        if (request === historyRequest.current) setHistory(prev => ({ ...prev, failed: true }))
+      })
+  }, [user.id, historyFilters])
+  useEffect(() => { loadHistory() }, [loadHistory])
+
+  // Закрыли, перенесли или передали задачу — обновить и открытые, и историю.
+  const load = useCallback(() => {
+    loadOpen()
+    loadHistory()
+  }, [loadOpen, loadHistory])
+
+  function changeHistory(patch) {
+    setHistoryFilters(prev => ({ ...prev, ...patch }))
+  }
+
+  function showMore() {
+    setLoadingMore(true)
+    loadHistory(history.page + 1).finally(() => setLoadingMore(false))
+  }
+
+  const historyGroups = useMemo(() => {
+    const groups = []
+    for (const task of history.rows) {
+      const key = new Date(task.updated_at).toDateString()
+      let group = groups.find(item => item.key === key)
+      if (!group) {
+        group = { key, title: closedDayLabel(task.updated_at), icon: CheckCircle2, tasks: [] }
+        groups.push(group)
+      }
+      group.tasks.push(task)
+    }
+    return groups
+  }, [history.rows])
+  const historyFiltered = historyFilters.status !== HISTORY_DEFAULTS.status
+    || Boolean(historyFilters.type) || Boolean(historyFilters.q)
 
   useEffect(() => {
     api.get('users/').then(res => {
@@ -187,8 +287,9 @@ export default function MyTasks() {
   if (error) return <Card><ErrorState onRetry={load} /></Card>
   if (tasks === null) return <Skeleton className="h-60" />
 
-  const visible = tab === 'today' ? [...overdue, ...today] : tab === 'future' ? future : history
+  const visible = tab === 'today' ? [...overdue, ...today] : tab === 'future' ? future : history.rows
   // Каждая группа — один блок с шапкой, а не подписи между карточками.
+  // История — по дням закрытия, свежие сверху.
   const groups = (tab === 'today'
     ? [
         { key: 'overdue', title: t('Просрочено'), icon: AlertTriangle, tone: 'text-danger-600', tasks: overdue },
@@ -196,7 +297,7 @@ export default function MyTasks() {
       ]
     : tab === 'future'
       ? [{ key: 'future', title: t('Запланировано'), icon: CalendarClock, tasks: future }]
-      : [{ key: 'history', title: t('Выполненные и отменённые'), icon: CheckCircle2, tasks: history }]
+      : historyGroups
   ).filter(group => group.tasks.length > 0)
 
   return (
@@ -217,7 +318,7 @@ export default function MyTasks() {
             {[
               { key: 'today', label: t('Сегодня и просроченные'), short: t('Сегодня'), count: overdue.length + today.length },
               { key: 'future', label: t('На будущее'), short: t('Будущие'), count: future.length },
-              { key: 'history', label: t('История'), short: t('История'), count: history.length },
+              { key: 'history', label: t('История'), short: t('История'), count: history.count },
             ].map(item => (
               <button
                 key={item.key}
@@ -238,10 +339,69 @@ export default function MyTasks() {
           </div>
         </div>
 
-        {visible.length === 0 ? (
+        {tab === 'history' && (
+          <div className="flex flex-col gap-2 border-b border-line px-4 py-3 sm:px-5 lg:flex-row lg:items-center">
+            <div role="radiogroup" aria-label={t('Период')} className="flex gap-1 overflow-x-auto">
+              {HISTORY_PERIODS.map(period => (
+                <button
+                  key={period.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={historyFilters.period === period.value}
+                  onClick={() => changeHistory({ period: period.value })}
+                  className={cn(
+                    'h-8 shrink-0 rounded-md border px-3 text-[13px] font-semibold transition',
+                    historyFilters.period === period.value
+                      ? 'border-brand-400 bg-brand-50 text-brand-600'
+                      : 'border-line bg-surface text-ink-muted hover:text-ink',
+                  )}
+                >
+                  {period.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 lg:flex">
+              <Dropdown
+                size="sm"
+                ariaLabel={t('Статус')}
+                value={historyFilters.status === HISTORY_DEFAULTS.status ? '' : historyFilters.status}
+                onChange={value => changeHistory({ status: value || HISTORY_DEFAULTS.status })}
+                options={HISTORY_STATUSES.map(item => ({ value: item.value === HISTORY_DEFAULTS.status ? '' : item.value, label: item.label }))}
+                placeholder={HISTORY_STATUSES[0].label}
+                className="lg:w-52"
+              />
+              <Dropdown
+                size="sm"
+                ariaLabel={t('Тип задачи')}
+                value={historyFilters.type}
+                onChange={value => changeHistory({ type: value })}
+                options={[{ value: '', label: t('Все типы') }, ...TASK_TYPES.map(type => ({ value: type.value, label: type.label }))]}
+                placeholder={t('Все типы')}
+                className="lg:w-48"
+              />
+            </div>
+            <SearchInput
+              value={historyFilters.q}
+              onChange={q => changeHistory({ q })}
+              placeholder={t('Поиск: ребёнок, заявка, задача')}
+              className="h-8 lg:ml-auto lg:w-64"
+            />
+          </div>
+        )}
+
+        {tab === 'history' && history.failed ? (
+          <ErrorState onRetry={() => loadHistory()} />
+        ) : visible.length === 0 ? (
           <EmptyState
-            title={tab === 'history' ? t('История задач пуста') : t('Задач нет')}
-            description={tab === 'history' ? t('Выполненные задачи появятся здесь.') : t('На сегодня всё сделано.')}
+            title={tab === 'history'
+              ? (historyFiltered ? t('Ничего не нашлось') : t('За этот период закрытых задач нет'))
+              : t('Задач нет')}
+            description={tab === 'history'
+              ? (historyFilters.period === 'all' ? t('Выполненные задачи появятся здесь.') : t('Выберите период побольше.'))
+              : t('На сегодня всё сделано.')}
+            action={tab === 'history' && historyFiltered && (
+              <Button size="sm" onClick={() => setHistoryFilters(prev => ({ ...HISTORY_DEFAULTS, period: prev.period }))}>{t('Сбросить фильтры')}</Button>
+            )}
             className="py-12"
           />
         ) : (
@@ -279,6 +439,13 @@ export default function MyTasks() {
               </div>
             </section>
           ))
+        )}
+
+        {tab === 'history' && history.next && !history.failed && (
+          <div className="flex flex-col items-center gap-2 border-t border-line px-5 py-4 sm:flex-row sm:justify-between">
+            <p className="text-[13px] text-ink-muted">{t('Показано {shown} из {total}', { shown: history.rows.length, total: history.count })}</p>
+            <Button size="sm" loading={loadingMore} onClick={showMore}>{t('Показать ещё')}</Button>
+          </div>
         )}
       </Card>
 

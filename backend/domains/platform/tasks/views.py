@@ -2,6 +2,7 @@ import uuid
 
 from django.db.models import Count, F, Q
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -103,7 +104,9 @@ class TaskViewSet(
         type_param = self.request.query_params.get("type")
         assignee_param = self.request.query_params.get("assigned_to")
         branch_param = self.request.query_params.get("branch")
-        if status_param:
+        if status_param == "closed":
+            qs = qs.filter(status__in=[Task.Status.DONE, Task.Status.CANCELLED])
+        elif status_param:
             qs = qs.filter(status=status_param)
         if type_param:
             qs = qs.filter(type=type_param)
@@ -117,6 +120,25 @@ class TaskViewSet(
             qs = qs.filter(lead_id=lead_param)
         if child_param:
             qs = qs.filter(child_id=child_param)
+        # История на «Задачах»: закрытые за период, поиск, свежие сверху —
+        # иначе за полгода список растёт без конца. Дата закрытия — updated_at
+        # (complete_task / cancel_task сохраняют его при закрытии).
+        try:
+            closed_after = parse_datetime(self.request.query_params.get("closed_after") or "")
+        except ValueError:
+            closed_after = None
+        if closed_after:
+            qs = qs.filter(updated_at__gte=closed_after)
+        search = (self.request.query_params.get("q") or "").strip()
+        if search:
+            qs = qs.filter(
+                Q(title__icontains=search)
+                | Q(child__full_name__icontains=search)
+                | Q(lead__parent_name__icontains=search)
+                | Q(lead__child_name__icontains=search)
+            )
+        if self.request.query_params.get("ordering") == "-closed":
+            qs = qs.order_by("-updated_at", "-created_at")
         return qs
 
     def perform_create(self, serializer):

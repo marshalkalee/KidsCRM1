@@ -21,3 +21,15 @@ export const MANUAL_TYPES = [
   { value: 'renewal_offer', get label() { return t('Предложить продление') } },
   { value: 'other', get label() { return t('Другое') } },
 ]
+
+// Все типы, как Task.Type на сервере, — для фильтра истории: в ней есть и
+// задачи, созданные системой.
+export const TASK_TYPES = [
+  ...MANUAL_TYPES.filter(type => type.value !== 'other'),
+  { value: 'trial_no_show', get label() { return t('Не пришёл на пробное') } },
+  { value: 'missing_subscription', get label() { return t('Нет абонемента') } },
+  { value: 'retention', get label() { return t('Удержание клиента') } },
+  { value: 'parent_request', get label() { return t('Запрос родителя') } },
+  { value: 'contact', get label() { return t('Связаться') } },
+  ...MANUAL_TYPES.filter(type => type.value === 'other'),
+]
