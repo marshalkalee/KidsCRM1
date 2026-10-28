@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from domains.money.subscriptions.models import Subscription
-from domains.platform.core.utils import today_for_org
+from domains.platform.core.utils import today_for_org, years_ago
 
 from .models import Payment
 
@@ -64,8 +64,11 @@ class PaymentSerializer(serializers.ModelSerializer):
     def validate_paid_on(self, value):
         request = self.context.get("request")
         if value and request is not None and request.user.is_authenticated:
-            if value > today_for_org(request.user.organization):
+            today = today_for_org(request.user.organization)
+            if value > today:
                 raise serializers.ValidationError("Дата оплаты не может быть в будущем.")
+            if value < years_ago(today, 1):
+                raise serializers.ValidationError("Дата оплаты — не раньше чем год назад.")
         return value
 
     def validate_amount(self, value):

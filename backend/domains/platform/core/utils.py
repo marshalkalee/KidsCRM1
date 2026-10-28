@@ -34,3 +34,11 @@ def format_tenge(value):
     amount = to_tenge(value)
     formatted = f"{amount:,}".replace(",", " ")
     return f"{formatted} ₸"
+
+
+def years_ago(day, years):
+    """Та же дата N лет назад; 29 февраля — 28-е, если года не високосного."""
+    try:
+        return day.replace(year=day.year - years)
+    except ValueError:
+        return day.replace(year=day.year - years, day=28)

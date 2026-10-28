@@ -255,11 +255,14 @@ class LessonSerializer(TenantCreateMixin, serializers.ModelSerializer):
         return [str(i) for i in self._conflicting_ids(obj)]
 
     def validate(self, attrs):
-        if attrs.get("ends_at") and attrs.get("starts_at"):
-            if attrs["ends_at"] <= attrs["starts_at"]:
-                raise serializers.ValidationError(
-                    {"ends_at": "Конец занятия должен быть позже начала."}
-                )
+        # PATCH одного конца сверяется с сохранённым другим — иначе занятие
+        # могло закончиться раньше, чем началось.
+        starts_at = attrs.get("starts_at", getattr(self.instance, "starts_at", None))
+        ends_at = attrs.get("ends_at", getattr(self.instance, "ends_at", None))
+        if starts_at and ends_at and ends_at <= starts_at:
+            raise serializers.ValidationError(
+                {"ends_at": "Конец занятия должен быть позже начала."}
+            )
 
         # TRU-47: группа и individual_children взаимоисключающие источники
         # участников — либо групповое (участники из Group.memberships),

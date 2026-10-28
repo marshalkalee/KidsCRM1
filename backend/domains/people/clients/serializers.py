@@ -4,9 +4,24 @@ from rest_framework import serializers
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.role_permissions import can_view_child_sensitive_fields, can_view_phone
 from domains.platform.core.text_validation import normalize_person_name
+from domains.platform.core.utils import years_ago
 from domains.platform.tenants.models import Direction
 
 from .models import Child, ChildContact, CommunicationLog, ContactPhone, ParentContact
+
+# Как у возраста в заявке (leads): старше — почти наверняка опечатка в годе.
+MAX_CHILD_AGE = 25
+
+
+def check_birth_date(value):
+    today = timezone.localdate()
+    if value > today:
+        raise serializers.ValidationError("Дата рождения не может быть в будущем.")
+    if value <= years_ago(today, MAX_CHILD_AGE + 1):
+        raise serializers.ValidationError(
+            f"Проверьте дату рождения: ребёнку больше {MAX_CHILD_AGE} лет."
+        )
+    return value
 
 
 class ChildSerializer(serializers.ModelSerializer):
@@ -52,9 +67,7 @@ class ChildSerializer(serializers.ModelSerializer):
             )
 
     def validate_birth_date(self, value):
-        if value > timezone.now().date():
-            raise serializers.ValidationError("Дата рождения не может быть в будущем.")
-        return value
+        return check_birth_date(value)
 
     def validate_full_name(self, value):
         return normalize_person_name(value)

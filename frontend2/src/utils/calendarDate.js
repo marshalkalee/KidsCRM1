@@ -28,6 +28,18 @@ export function toISODate(date) {
   return `${y}-${m}-${d}`
 }
 
+/** Сегодняшняя дата, сдвинутая на years лет и days дней (минус — назад), в YYYY-MM-DD. */
+export function fromTodayISO(years, days = 0) {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() + years)
+  d.setDate(d.getDate() + days)
+  return toISODate(d)
+}
+
+// Те же границы, что проверяет сервер: ребёнку не больше 25 лет
+// (clients.MAX_CHILD_AGE), абонемент и оплата — в пределах года.
+export const oldestBirthDateISO = () => fromTodayISO(-26, 1)
+
 export function isSameDay(date, isoDateStr) {
   return toISODate(date) === isoDateStr
 }

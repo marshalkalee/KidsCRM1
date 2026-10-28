@@ -4,6 +4,7 @@ import api from '../api/axios'
 import { Button, Checkbox, DateInput, Field, Input, Modal, Select, Textarea, apiErrorMessage, cn, useToast } from '../ui'
 import { t } from '../i18n'
 import { personNameInput, personNameInputProps } from '../utils/formValidation'
+import { oldestBirthDateISO } from '../utils/calendarDate'
 
 const EMPTY = {
   full_name: '',
@@ -88,7 +89,7 @@ export default function ChildModal({ child, onClose, onSaved }) {
         </Field>
         <Field label={t('Дата рождения')} required error={errors.birth_date}>
           {({ id, invalid }) => (
-            <DateInput id={id} invalid={invalid} value={form.birth_date} onChange={v => set('birth_date', v)} max={new Date().toISOString().slice(0, 10)} required />
+            <DateInput id={id} invalid={invalid} value={form.birth_date} onChange={v => set('birth_date', v)} min={oldestBirthDateISO()} max={new Date().toISOString().slice(0, 10)} required />
           )}
         </Field>
         {child?.birth_date_is_estimated && (

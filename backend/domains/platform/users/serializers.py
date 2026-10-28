@@ -8,6 +8,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+from domains.platform.core.role_permissions import can_manage_staff, can_view_phone
 from domains.platform.core.text_validation import normalize_entity_name, normalize_person_name
 from domains.platform.tenants.models import Branch, Organization
 
@@ -78,6 +79,19 @@ class UserSerializer(serializers.ModelSerializer):
                 request.user.organization
             )
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        # Список сотрудников открыт всем (выбор исполнителя, преподавателя),
+        # а телефоны — как у родителей: только с правом их видеть. Свой — всегда.
+        if (
+            request is not None
+            and instance.pk != request.user.pk
+            and not (can_view_phone(request.user) or can_manage_staff(request.user))
+        ):
+            data.pop("phone", None)
+        return data
+
     def validate(self, attrs):
         request = self.context.get("request")
         if request is not None:
@@ -91,7 +105,14 @@ class UserSerializer(serializers.ModelSerializer):
                     )
             else:
                 check_role_change(request.user, role)
+        if self.instance is None and not attrs.get("password"):
+            raise serializers.ValidationError({"password": "Задайте пароль для входа."})
         return attrs
+
+    def validate_password(self, value):
+        # Те же правила, что при регистрации и смене своего пароля.
+        validate_password(value, user=self.instance)
+        return value
 
     def validate_full_name(self, value):
         return normalize_person_name(value)

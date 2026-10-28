@@ -7,6 +7,7 @@ from rest_framework import serializers
 from domains.money.payments.models import Payment
 from domains.money.subscriptions.models import Subscription
 from domains.people.clients.models import Child, ChildContact
+from domains.people.clients.serializers import check_birth_date
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.text_validation import normalize_entity_name, normalize_person_name
 from domains.platform.tenants.models import Branch, Direction
@@ -365,9 +366,7 @@ class LeadConversionSerializer(serializers.Serializer):
         return value
 
     def validate_birth_date(self, value):
-        if value > timezone.localdate():
-            raise serializers.ValidationError("Дата рождения не может быть в будущем.")
-        return value
+        return check_birth_date(value)
 
     def validate_consent_given(self, value):
         if not value:

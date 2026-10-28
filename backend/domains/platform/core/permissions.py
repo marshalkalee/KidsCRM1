@@ -1,5 +1,6 @@
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
+from domains.platform.core.active_branch import allowed_branch_ids
 from domains.platform.users.models import User
 
 
@@ -94,5 +95,7 @@ class BranchScopedPermission(IsStaffOfOrganization):
             branch = getattr(obj, "branch", obj if hasattr(obj, "staff") else None)
             if branch is None:
                 return True
-            return request.user.branches.filter(pk=branch.pk).exists()
+            # Филиалы не выбраны — сотруднику доступны все (как в списках).
+            allowed = allowed_branch_ids(request.user)
+            return allowed is None or branch.pk in allowed
         return True

@@ -5,7 +5,7 @@ import { fetchChildSubscriptions } from '../../api/subscriptions'
 import { Button, Field, Input, Modal, Select, Skeleton, apiErrorMessage, cn, money, useToast } from '../../ui'
 import { t } from '../../i18n'
 import api from '../../api/axios'
-import { toISODate } from '../../utils/calendarDate'
+import { fromTodayISO, toISODate } from '../../utils/calendarDate'
 
 // Kaspi первым — самый частый случай у стойки (ТЗ п. 10.4).
 const METHODS = [
@@ -196,6 +196,7 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
                 id={id}
                 invalid={invalid}
                 type="date"
+                min={fromTodayISO(-1)}
                 max={today}
                 value={form.paid_on}
                 onChange={e => setForm({ ...form, paid_on: e.target.value })}

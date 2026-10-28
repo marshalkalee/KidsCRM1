@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { renewSubscription } from '../../api/subscriptions'
 import api from '../../api/axios'
-import { addDays, toISODate } from '../../utils/calendarDate'
+import { addDays, fromTodayISO, toISODate } from '../../utils/calendarDate'
 import { Button, Field, Input, Modal, Select, Skeleton, apiErrorMessage, formatDate, money, useToast } from '../../ui'
 import { t } from '../../i18n'
 import { MethodPicker } from './AcceptPaymentModal'
@@ -88,7 +88,7 @@ export default function RenewModal({ row, onClose, onDone }) {
             )}
           </Field>
           <Field label={t('Начало')} required error={errors.starts_on} hint={endsOn ? t('Действует до {date}', { date: formatDate(endsOn) }) : null}>
-            {({ id }) => <Input id={id} type="date" value={form.starts_on} onChange={e => setForm({ ...form, starts_on: e.target.value })} required />}
+            {({ id }) => <Input id={id} type="date" min={fromTodayISO(-1)} max={fromTodayISO(0, 365)} value={form.starts_on} onChange={e => setForm({ ...form, starts_on: e.target.value })} required />}
           </Field>
           <Field label={t('Оплачено сейчас, ₸')} error={errors.paid_amount} hint={t('0 — если оплатят позже: появится долг.')}>
             {({ id }) => <Input id={id} type="number" inputMode="numeric" min="0" value={form.paid_amount} onChange={e => setForm({ ...form, paid_amount: e.target.value })} />}

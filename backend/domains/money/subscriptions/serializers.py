@@ -1,6 +1,10 @@
+from datetime import timedelta
+
+from django.utils import timezone
 from rest_framework import serializers
 
 from domains.money.payments.models import Payment
+from domains.platform.core.utils import years_ago
 
 from .debt import subscription_debt
 from .models import (
@@ -125,6 +129,15 @@ class SaleRequestSerializer(serializers.Serializer):
         choices=Payment.Method.choices, required=False, default=Payment.Method.KASPI_TRANSFER
     )
 
+    def validate_starts_on(self, value):
+        # Задним числом и наперёд — да, но не опечатка в годе (1900, 2100).
+        today = timezone.localdate()
+        if not years_ago(today, 1) <= value <= today + timedelta(days=365):
+            raise serializers.ValidationError(
+                "Дата начала — не раньше чем год назад и не позже чем через год."
+            )
+        return value
+
 
 class SellRequestSerializer(SaleRequestSerializer):
     child_id = serializers.UUIDField()
@@ -177,6 +190,25 @@ class SubscriptionTypeSerializer(serializers.ModelSerializer):
             data[key] = instance.rules.get(key)
         data["expire_on_miss"] = bool(data["expire_on_miss"])
         return data
+
+    def validate(self, attrs):
+        # Ограничение модели «безлимит XOR число занятий» иначе всплывало
+        # 500-й из full_clean, когда PATCH менял только одно из полей.
+        is_unlimited = attrs.get("is_unlimited", getattr(self.instance, "is_unlimited", False))
+        if is_unlimited:
+            if "is_unlimited" in attrs:
+                attrs["quota_sessions"] = None
+            elif attrs.get("quota_sessions") is not None:
+                raise serializers.ValidationError(
+                    {"quota_sessions": "У безлимитного абонемента нет числа занятий."}
+                )
+            return attrs
+        quota = attrs.get("quota_sessions", getattr(self.instance, "quota_sessions", None))
+        if not quota:
+            raise serializers.ValidationError(
+                {"quota_sessions": "Укажите, сколько занятий в абонементе."}
+            )
+        return attrs
 
 
 def merge_type_rules(rules, data):
