@@ -252,8 +252,13 @@ function LedgerModal({ subscription, canRecompute, onClose, onRecomputed }) {
 
 function FreezeModal({ subscription, onClose, onDone }) {
   const toast = useToast()
-  const [startsOn, setStartsOn] = useState(todayIso())
-  const [endsOn, setEndsOn] = useState(toISODate(addDays(new Date(), 14)))
+  // Начало заморозки — только внутри срока абонемента (бэк проверяет то же):
+  // вне срока она не морозит ни дня, а конец абонемента сдвинула бы.
+  const firstDay = subscription.starts_on > todayIso() ? subscription.starts_on : todayIso()
+  // Лимит дней одной заморозки из типа абонемента (null — без ограничения).
+  const maxDays = subscription.freeze_max_days
+  const [startsOn, setStartsOn] = useState(firstDay)
+  const [endsOn, setEndsOn] = useState(toISODate(addDays(new Date(firstDay), Math.min(14, maxDays ?? 14))))
   const days = startsOn && endsOn ? daysBetween(startsOn, endsOn) : 0
   const newEnd = days > 0 ? toISODate(addDays(new Date(subscription.ends_on), days)) : null
   const [reason, setReason] = useState('')
@@ -294,10 +299,25 @@ function FreezeModal({ subscription, onClose, onDone }) {
     >
       <form id="freeze-subscription-form" onSubmit={submit} className="flex flex-col gap-3.5">
         <Field label={t('Дата начала')} required error={errors.starts_on}>
-          {({ id }) => <Input id={id} autoFocus type="date" value={startsOn} onChange={e => setStartsOn(e.target.value)} required />}
+          {({ id }) => <Input id={id} autoFocus type="date" value={startsOn} min={subscription.starts_on} max={subscription.ends_on} onChange={e => setStartsOn(e.target.value)} required />}
         </Field>
-        <Field label={t('Дата окончания')} required error={errors.ends_on}>
-          {({ id }) => <Input id={id} type="date" value={endsOn} onChange={e => setEndsOn(e.target.value)} required />}
+        <Field
+          label={t('Дата окончания')}
+          required
+          error={errors.ends_on}
+          hint={maxDays ? t('Не больше {n} дн. за одну заморозку', { n: maxDays }) : undefined}
+        >
+          {({ id }) => (
+            <Input
+              id={id}
+              type="date"
+              value={endsOn}
+              min={startsOn ? toISODate(addDays(new Date(startsOn), 1)) : undefined}
+              max={startsOn && maxDays ? toISODate(addDays(new Date(startsOn), maxDays)) : undefined}
+              onChange={e => setEndsOn(e.target.value)}
+              required
+            />
+          )}
         </Field>
         <Field label={t('Причина')} error={errors.reason}>
           {({ id }) => <Input id={id} value={reason} onChange={e => setReason(e.target.value)} placeholder={t('Например, болезнь')} />}

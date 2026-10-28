@@ -29,6 +29,23 @@ def check_role_change(actor, new_role, target=None):
         raise serializers.ValidationError({"role": "Свою роль изменить нельзя."})
 
 
+def clean_staff_phone(value, instance=None):
+    """Телефон — логин сотрудника, уникален во всей системе. Уникальность —
+    по нормализованному номеру: «8 701…» и «+7 701…» — один номер, иначе
+    дубль проходил проверку и падал IntegrityError (500). _base_manager —
+    как в регистрации: номер удалённого пользователя тоже занят."""
+    try:
+        phone = normalize_phone_number(value)
+    except InvalidPhoneNumberError as exc:
+        raise serializers.ValidationError("Не похоже на номер телефона.") from exc
+    taken = User._base_manager.filter(phone=phone)
+    if instance is not None:
+        taken = taken.exclude(pk=instance.pk)
+    if taken.exists():
+        raise serializers.ValidationError("Этот номер уже занят другим пользователем.")
+    return phone
+
+
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True, required=False, style={"input_type": "password"}
@@ -50,6 +67,8 @@ class UserSerializer(serializers.ModelSerializer):
             "password",
         ]
         read_only_fields = ["id", "photo_url", "organization", "created_at", "updated_at"]
+        # Уникальность проверяет validate_phone по нормализованному номеру.
+        extra_kwargs = {"phone": {"validators": []}}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -78,10 +97,7 @@ class UserSerializer(serializers.ModelSerializer):
         return normalize_person_name(value)
 
     def validate_phone(self, value):
-        try:
-            return normalize_phone_number(value)
-        except InvalidPhoneNumberError as exc:
-            raise serializers.ValidationError("Не похоже на номер телефона.") from exc
+        return clean_staff_phone(value, self.instance)
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)
@@ -199,10 +215,7 @@ class InviteStaffSerializer(serializers.Serializer):
         return normalize_person_name(value)
 
     def validate_phone(self, value):
-        try:
-            return normalize_phone_number(value)
-        except InvalidPhoneNumberError as exc:
-            raise serializers.ValidationError("Не похоже на номер телефона.") from exc
+        return clean_staff_phone(value)
 
     def validate(self, attrs):
         check_role_change(self.context["request"].user, attrs.get("role"))

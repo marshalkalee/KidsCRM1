@@ -29,6 +29,7 @@ from .serializers import (
     SubscriptionSerializer,
     SubscriptionTypeSerializer,
     UnfreezeRequestSerializer,
+    merge_freeze_rules,
 )
 from .subscription_types import (
     VERSIONED_FIELDS,
@@ -306,6 +307,7 @@ class SubscriptionTypeViewSet(viewsets.ModelViewSet):
             is_unlimited=data.get("is_unlimited", False),
             quota_sessions=data.get("quota_sessions"),
             duration_days=data["duration_days"],
+            rules=merge_freeze_rules({}, data),
             directions=data.get("directions", []),
             branches=data.get("branches", []),
         )
@@ -321,6 +323,11 @@ class SubscriptionTypeViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data
 
         versioned_changes = {f: data[f] for f in VERSIONED_FIELDS if f in data}
+        # Правила заморозки — в rules: новая версия типа, проданные
+        # абонементы остаются на своих правилах.
+        rules = merge_freeze_rules(instance.rules, data)
+        if rules != instance.rules:
+            versioned_changes["rules"] = rules
         if versioned_changes:
             update_rules(instance, **versioned_changes)
         if "directions" in data:

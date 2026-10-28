@@ -99,6 +99,28 @@ class FreezeDatesTests(FreezeChecksBase):
             self.freeze(0, 0)
         self.assertFalse(SubscriptionFreeze.objects.exists())
 
+    def test_start_before_subscription_is_rejected(self):
+        # Абонемент начался 5 дней назад: заморозка до этого не морозит ни
+        # одного его дня, но продлила бы срок.
+        with self.assertRaisesMessage(ValueError, "в пределах срока абонемента"):
+            self.freeze(-400, -390)
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.ends_on, self.original_end)
+        self.assertFalse(SubscriptionFreeze.objects.exists())
+
+    def test_start_after_subscription_end_is_rejected(self):
+        with self.assertRaisesMessage(ValueError, "в пределах срока абонемента"):
+            self.freeze(26, 40)
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.ends_on, self.original_end)
+
+    def test_start_on_first_and_last_day_is_allowed(self):
+        self.freeze(-5, -3)
+        self.sub.refresh_from_db()
+        last_day = (self.sub.ends_on - self.today).days
+        self.freeze(last_day, last_day + 7)
+        self.assertEqual(SubscriptionFreeze.objects.count(), 2)
+
 
 class FreezeOverlapTests(FreezeChecksBase):
     """Пункт 2: пересечения с другими заморозками того же абонемента."""
@@ -316,6 +338,48 @@ class FreezeInactiveTests(FreezeChecksBase):
             self.freeze(1, 5, sub=stale)
 
 
+class FreezeMaxDaysTests(FreezeChecksBase):
+    """Лимит дней одной заморозки — rules.freeze_max_days версии абонемента."""
+
+    def setUp(self):
+        super().setUp()
+        version = self.sub.subscription_type_version
+        version.rules = {"freeze_max_days": 14}
+        version.save(update_fields=["rules"])
+
+    def test_freeze_up_to_limit_is_allowed(self):
+        self.freeze(1, 15)
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.ends_on, self.original_end + timedelta(days=14))
+
+    def test_longer_freeze_is_rejected(self):
+        with self.assertRaisesMessage(ValueError, "не больше 14 дн."):
+            self.freeze(1, 16)
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.ends_on, self.original_end)
+        self.assertFalse(SubscriptionFreeze.objects.exists())
+
+    def test_unfreeze_cannot_stretch_past_limit(self):
+        self.freeze(-2, 5)
+        with self.assertRaisesMessage(ValueError, "не больше 14 дн."):
+            unfreeze_subscription(
+                self.sub, actor=self.admin, actual_end_date=self.today + timedelta(days=20)
+            )
+
+    def test_early_unfreeze_is_not_affected(self):
+        self.freeze(-2, 5)
+        unfreeze_subscription(self.sub, actor=self.admin)
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.status, Subscription.Status.ACTIVE)
+
+    def test_no_rule_means_no_limit(self):
+        version = self.sub.subscription_type_version
+        version.rules = {}
+        version.save(update_fields=["rules"])
+        self.freeze(1, 25)
+        self.assertEqual(SubscriptionFreeze.objects.count(), 1)
+
+
 class FreezeChecksApiTests(APITestCase):
     def setUp(self):
         self.org, admin, self.sub = make_subscription("true-ballet", "77001112233")
@@ -335,6 +399,11 @@ class FreezeChecksApiTests(APITestCase):
         response = self.freeze(5, 2)
         self.assertEqual(response.status_code, 400)
         self.assertIn("ends_on", response.data)
+
+    def test_freeze_outside_subscription_is_readable(self):
+        response = self.freeze(-2000, -1990)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("в пределах срока абонемента", response.data["detail"])
 
     def test_overlap_is_readable(self):
         self.assertEqual(self.freeze(3, 10).status_code, 200)

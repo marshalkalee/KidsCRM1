@@ -6,8 +6,9 @@
 Поведение consume() во время заморозки уже решено в TRU-60 (SUBSCRIPTION_FROZEN,
 без списания) — здесь не трогаем, только сам процесс заморозки/разморозки.
 
-Лимит "сколько заморозок в год" не выяснен (Discovery, вопрос №1, ТЗ п. 13.1).
-При отсутствии rules.freezes_per_year ограничения нет — до ответа True Ballet.
+Лимиты задаёт центр в типе абонемента (rules версии, по которой продан
+абонемент): freezes_per_year — сколько заморозок в год, freeze_max_days —
+сколько дней в одной заморозке. Ключа нет — ограничения нет.
 
 TRU-132: статус FROZEN — только пока сегодняшний день внутри заморозки
 [starts_on, ends_on] (оба конца включительно). Заморозка с будущим стартом
@@ -64,6 +65,15 @@ def _check_no_overlap(
         )
 
 
+def _check_max_days(subscription: Subscription, days: int) -> None:
+    max_days = subscription.subscription_type_version.rules.get("freeze_max_days")
+    if max_days is not None and days > max_days:
+        raise ValueError(
+            f"Заморозка на {days} дн. длиннее разрешённой для этого абонемента: "
+            f"не больше {max_days} дн."
+        )
+
+
 def _lock(subscription: Subscription) -> None:
     # Две заморозки одновременно не должны обе пройти проверку пересечений:
     # блокируем строку абонемента и перечитываем её (статус, срок) уже под замком.
@@ -88,9 +98,17 @@ def freeze_subscription(
             "Заморозить можно только действующий абонемент, "
             f"сейчас он: «{subscription.get_status_display()}»"
         )
+    # Заморозка вне срока не заморозила ни одного дня абонемента, но сдвинула
+    # бы его конец — бесплатные дни. Задним числом внутри срока — можно.
+    if not subscription.starts_on <= starts_on <= subscription.ends_on:
+        raise ValueError(
+            "Заморозка должна начинаться в пределах срока абонемента: "
+            f"{subscription.starts_on:%d.%m.%Y} – {subscription.ends_on:%d.%m.%Y}"
+        )
     limit = subscription.subscription_type_version.rules.get("freezes_per_year")
     if limit is not None and _freezes_used_last_year(subscription) >= limit:
         raise ValueError("Превышен лимит заморозок для этого абонемента за год")
+    _check_max_days(subscription, (ends_on - starts_on).days)
     _check_no_overlap(subscription, starts_on, ends_on)
 
     before = {"ends_on": subscription.ends_on.isoformat()}
@@ -138,7 +156,8 @@ def unfreeze_subscription(
     # Раньше начала заморозки закончить нельзя — иначе срок уедет назад.
     actual_end_date = max(actual_end_date, freeze.starts_on)
     if freeze.ends_on is not None and actual_end_date > freeze.ends_on:
-        # Продление заморозки не должно наехать на следующую.
+        # Продление заморозки не должно наехать на следующую и обойти лимит дней.
+        _check_max_days(subscription, (actual_end_date - freeze.starts_on).days)
         _check_no_overlap(subscription, freeze.starts_on, actual_end_date, exclude=freeze)
     planned_days = (freeze.ends_on - freeze.starts_on).days
     actual_days = (actual_end_date - freeze.starts_on).days

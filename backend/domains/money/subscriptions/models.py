@@ -25,7 +25,10 @@ RULES_KEYS = {
     "makeup_window_days",  # int | None — срок отработки, дней
     "makeups_limit",  # int | None — максимум отработок за срок абонемента
     "freezes_per_year",  # int | None — сколько заморозок разрешено в год
+    "freeze_max_days",  # int | None — максимум дней в одной заморозке
 }
+# Правила заморозки, которые центр задаёт сам в карточке типа абонемента.
+FREEZE_RULE_KEYS = ("freezes_per_year", "freeze_max_days")
 
 
 class SubscriptionType(TenantModel):

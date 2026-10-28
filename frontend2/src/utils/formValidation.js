@@ -3,7 +3,10 @@ export const NAME_MAX_LENGTH = 255
 
 export function phoneDigits(value) {
   const raw = String(value ?? '')
-  const digits = raw.replace(/\D/g, '').slice(0, PHONE_MAX_LENGTH)
+  let digits = raw.replace(/\D/g, '').slice(0, PHONE_MAX_LENGTH)
+  // «8 701…» без плюса — местный формат того же +7 (так его понимает и
+  // сервер); иначе в поле оставалось «+8701…», похожее на ошибку.
+  if (digits.startsWith('8') && !raw.trimStart().startsWith('+')) digits = `7${digits.slice(1)}`
   // Храним значение поля в привычном международном виде. Важно очищать всю
   // вставленную строку до ограничения количества цифр: иначе пробелы, скобки
   // и дефисы занимают maxLength, и браузер отбрасывает конец номера.

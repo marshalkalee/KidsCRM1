@@ -116,6 +116,62 @@ class UserAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("branches", response.data)
 
+    def _create_staff(self, phone):
+        return self.client.post(
+            "/api/v1/users/",
+            {
+                "phone": phone,
+                "full_name": "Дубль Номера",
+                "password": "pass12345",
+                "role": User.Role.TEACHER,
+            },
+            format="json",
+        )
+
+    def test_duplicate_phone_in_other_format_is_field_error(self):
+        # Раньше «8…» проходил проверку уникальности и падал IntegrityError (500).
+        self.client.force_authenticate(self.owner_a)
+
+        for phone in ("+77010000001", "87010000001", "8 (701) 000-00-01"):
+            response = self._create_staff(phone)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, phone)
+            self.assertEqual(response.data["phone"], ["Этот номер уже занят другим пользователем."])
+
+    def test_phone_of_other_organization_user_is_taken(self):
+        self.client.force_authenticate(self.owner_a)
+
+        response = self._create_staff("87010000002")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("phone", response.data)
+
+    def test_phone_of_deleted_user_is_taken(self):
+        deleted = User.objects.create_user(
+            phone="+77010000030", full_name="Уволен", password="pass12345", organization=self.org_a
+        )
+        deleted.delete()
+        self.client.force_authenticate(self.owner_a)
+
+        response = self._create_staff("87010000030")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("phone", response.data)
+
+    def test_editing_staff_keeps_own_phone(self):
+        teacher = User.objects.create_user(
+            phone="+77010000031", full_name="Учитель", password="pass12345", organization=self.org_a
+        )
+        self.client.force_authenticate(self.owner_a)
+
+        response = self.client.patch(
+            f"/api/v1/users/{teacher.id}/",
+            {"phone": "87010000031", "full_name": "Учитель Новый"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["phone"], "+77010000031")
+
     def test_user_list_is_scoped_to_own_organization(self):
         self.client.force_authenticate(self.owner_a)
 
@@ -319,6 +375,27 @@ class AuthTests(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["role"], "admin")
+
+    def test_invite_staff_with_taken_phone_is_field_error(self):
+        refresh = RefreshToken.for_user(self.owner)
+        refresh["organization_id"] = str(self.org.id)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {str(refresh.access_token)}")
+        User.objects.create_user(
+            phone="+77007777777", full_name="Уже есть", password="pass12345", organization=self.org
+        )
+
+        response = self.client.post(
+            "/api/v1/users/auth/invite/",
+            {
+                "full_name": "Администратор",
+                "phone": "87007777777",
+                "role": "admin",
+                "password": "StrongPass123!",
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("phone", response.data)
 
     def test_change_password(self):
         refresh = RefreshToken.for_user(self.owner)
