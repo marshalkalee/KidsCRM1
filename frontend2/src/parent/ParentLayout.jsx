@@ -16,7 +16,7 @@ import {
   UserRound,
   Wallet,
 } from 'lucide-react'
-import { Avatar, Modal, cn, formatDate, formatDateTime } from '../ui'
+import { Avatar, ErrorBoundary, Modal, cn, formatDate, formatDateTime } from '../ui'
 import { t, useLang } from '../i18n'
 import { useParent } from './useParent'
 import portal, { usePortalData } from './api'
@@ -145,7 +145,9 @@ export default function ParentLayout() {
               : t('Нет связи. Данные могут быть неактуальны.')}
           </p>
         )}
-        <Outlet />
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
 
 

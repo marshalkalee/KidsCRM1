@@ -13,3 +13,10 @@ def create_lead_stale_tasks_task() -> int:
 @shared_task
 def create_debt_reminder_tasks_task() -> int:
     return create_tasks_for_overdue_debt()
+
+
+@shared_task
+def create_unmarked_attendance_tasks_task() -> int:
+    from domains.scheduling.attendance.rules import create_tasks_for_unmarked_lessons
+
+    return create_tasks_for_unmarked_lessons()

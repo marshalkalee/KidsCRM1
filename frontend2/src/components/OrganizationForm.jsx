@@ -34,6 +34,7 @@ const RULES = [
   { key: 'rule_debt_reminder_enabled', get label() { return t('Напоминать о просроченном долге') } },
   { key: 'rule_missing_subscription_enabled', get label() { return t('Напоминать оформить абонемент без него') } },
   { key: 'rule_trial_no_show_enabled', get label() { return t('Напоминать перезвонить после пропуска пробного') } },
+  { key: 'rule_unmarked_attendance_enabled', get label() { return t('Напоминать отметить посещаемость') } },
 ]
 
 /**

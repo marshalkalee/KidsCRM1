@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Bell, Building2, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
 import { useSession } from '../../session/SessionContext'
-import { cn, initials } from '../../ui'
+import { ErrorBoundary, cn, initials } from '../../ui'
 import { GlobalSearch } from './GlobalSearch'
 import LanguageSwitcher from './LanguageSwitcher'
 import { QuickLeadLauncher } from '../leads/QuickLead'
@@ -26,6 +26,7 @@ function readCollapsed() {
  * экранах уже 1024px меню — выезжающая шторка.
  */
 export default function Layout() {
+  const location = useLocation()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(readCollapsed)
 
@@ -86,7 +87,9 @@ export default function Layout() {
       <div className="h-16" aria-hidden="true" />
 
       <main className="w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <Outlet />
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
       <IncomingCallPopup />
     </div>

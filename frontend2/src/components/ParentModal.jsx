@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Plus, X } from 'lucide-react'
 import api from '../api/axios'
+import { findParentsByPhones } from './parents/duplicates'
 import { Button, Field, Input, Modal, Select, apiErrorMessage, useToast } from '../ui'
 import { t } from '../i18n'
 import { personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../utils/formValidation'
@@ -22,16 +24,31 @@ export default function ParentModal({ parent, onClose, onSaved }) {
   })
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
+  // Другие родители с теми же номерами: показаны — следующее «Сохранить» сохраняет.
+  const [duplicates, setDuplicates] = useState(null)
 
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
-  const setPhone = (index, key, value) => set('phones', form.phones.map((p, i) => (i === index ? { ...p, [key]: value } : p)))
+  const setPhones = phones => { set('phones', phones); setDuplicates(null) }
+  const setPhone = (index, key, value) => setPhones(form.phones.map((p, i) => (i === index ? { ...p, [key]: value } : p)))
 
   async function submit(e) {
     e.preventDefault()
     setSaving(true)
     setErrors({})
-    const payload = { ...form, phones: form.phones.filter(p => p.number.trim()) }
+    // Пустые строки не отправляем, но помним их места: ошибки сервера
+    // приходят по индексам отправленного списка.
+    const filled = form.phones.map((phone, index) => ({ phone, index })).filter(({ phone }) => phone.number.trim())
+    const payload = { ...form, phones: filled.map(({ phone }) => phone) }
     try {
+      if (!duplicates) {
+        const before = new Set((parent?.phones || []).map(p => phoneDigits(p.number)))
+        const added = filled.map(({ phone }) => phone.number).filter(number => !before.has(number))
+        const found = added.length ? await findParentsByPhones(added, parent?.id) : []
+        if (found.length) {
+          setDuplicates(found)
+          return
+        }
+      }
       const response = isEdit
         ? await api.patch(`clients/parents/${parent.id}/`, payload)
         : await api.post('clients/parents/', payload)
@@ -39,8 +56,17 @@ export default function ParentModal({ parent, onClose, onSaved }) {
       onSaved(response.data)
     } catch (err) {
       const data = err.response?.data
-      if (data && typeof data === 'object' && !data.detail) setErrors(data)
-      else toast.error(apiErrorMessage(err))
+      if (data && typeof data === 'object' && !data.detail) {
+        if (Array.isArray(data.phones) && typeof data.phones[0] !== 'string') {
+          const phones = []
+          data.phones.forEach((error, k) => { phones[filled[k].index] = error })
+          setErrors({ ...data, phones })
+        } else {
+          setErrors(data)
+        }
+      } else {
+        toast.error(apiErrorMessage(err))
+      }
     } finally {
       setSaving(false)
     }
@@ -58,7 +84,9 @@ export default function ParentModal({ parent, onClose, onSaved }) {
       footer={
         <>
           <Button onClick={onClose}>{t('Отмена')}</Button>
-          <Button variant="primary" type="submit" form="parent-form" loading={saving}>{isEdit ? t('Сохранить') : t('Добавить')}</Button>
+          <Button variant="primary" type="submit" form="parent-form" loading={saving}>
+            {duplicates ? t('Сохранить всё равно') : isEdit ? t('Сохранить') : t('Добавить')}
+          </Button>
         </>
       }
     >
@@ -85,7 +113,7 @@ export default function ParentModal({ parent, onClose, onSaved }) {
                     {Object.entries(PHONE_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </Select>
                   {form.phones.length > 1 && (
-                    <Button variant="ghost" size="icon" aria-label={t('Убрать телефон')} onClick={() => set('phones', form.phones.filter((_, i) => i !== index))}>
+                    <Button variant="ghost" size="icon" aria-label={t('Убрать телефон')} onClick={() => setPhones(form.phones.filter((_, i) => i !== index))}>
                       <X className="size-4" />
                     </Button>
                   )}
@@ -93,11 +121,12 @@ export default function ParentModal({ parent, onClose, onSaved }) {
                 {phoneError(index) && <p className="mt-1 text-xs text-danger-600">{phoneError(index)}</p>}
               </div>
             ))}
-            <Button variant="ghost" size="sm" icon={Plus} className="self-start" onClick={() => set('phones', [...form.phones, { number: '', phone_type: 'mobile' }])}>
+            <Button variant="ghost" size="sm" icon={Plus} className="self-start" onClick={() => setPhones([...form.phones, { number: '', phone_type: 'mobile' }])}>
               {t('Ещё телефон')}
             </Button>
           </div>
         </Field>
+        {duplicates && <DuplicateParents parents={duplicates} />}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="WhatsApp" hint={t('Если отличается от телефона')} error={errors.whatsapp}>
@@ -109,5 +138,20 @@ export default function ParentModal({ parent, onClose, onSaved }) {
         </div>
       </form>
     </Modal>
+  )
+}
+
+function DuplicateParents({ parents }) {
+  return (
+    <div role="alert" className="rounded-md bg-warning-50 px-3 py-2.5 text-[13px] text-warning-600">
+      <p className="font-semibold">{t('Этот номер уже есть у другого родителя')}</p>
+      <ul className="mt-1 flex flex-col gap-0.5">
+        {parents.map(p => (
+          <li key={p.id}>
+            <Link to={`/parents/${p.id}`} target="_blank" className="underline hover:opacity-80">{p.full_name}</Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

@@ -24,6 +24,8 @@ class TaskSerializer(serializers.ModelSerializer):
     contact_whatsapp = serializers.SerializerMethodField()
     child_debt = serializers.SerializerMethodField()
     comments_count = serializers.SerializerMethodField()
+    # Куда перейти, чтобы выполнить задачу, если это не карточка ребёнка/заявки.
+    link = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -51,6 +53,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "contact_whatsapp",
             "child_debt",
             "comments_count",
+            "link",
             "created_at",
             "updated_at",
         ]
@@ -93,6 +96,12 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def get_comments_count(self, obj):
         return comments_count(obj)
+
+    def get_link(self, obj):
+        if obj.type == Task.Type.MARK_ATTENDANCE and obj.source_key:
+            lesson_id = obj.source_key.removeprefix("unmarked_attendance:")
+            return f"/attendance?lesson={lesson_id}"
+        return None
 
     def get_contact_phone(self, obj):
         contact = self._payer_contact(obj)

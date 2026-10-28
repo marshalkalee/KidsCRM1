@@ -145,6 +145,14 @@ export default function TaskPanel({ taskId, onClose, onChanged }) {
 }
 
 function About({ task, canOpenLead }) {
+  if (task.link) {
+    return (
+      <Link to={task.link} className="inline-flex items-center gap-0.5 self-start text-sm font-semibold text-brand-600 hover:underline">
+        {t('Открыть отметку посещаемости')}
+        <ChevronRight className="size-4" />
+      </Link>
+    )
+  }
   if (task.child) {
     return (
       <Link to={`/children/${task.child}`} className="inline-flex items-center gap-0.5 self-start text-sm font-semibold text-brand-600 hover:underline">
