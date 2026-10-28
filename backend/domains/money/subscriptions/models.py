@@ -21,14 +21,20 @@ RULES_SCHEMA_VERSION = 1
 # Отсутствующий ключ = правило ещё не решено с Дарьей/True Ballet — UI
 # обязан допускать любое значение до ответа (Discovery, вопрос №1).
 RULES_KEYS = {
-    "expire_on_miss",  # bool | None — сгорает ли пропущенное занятие
+    "expire_on_miss",  # bool | None — списывает ли «не был» без отмены из кабинета
     "makeup_window_days",  # int | None — срок отработки, дней
-    "makeups_limit",  # int | None — максимум отработок за срок абонемента
+    "makeups_limit",  # int | None — максимум отработок за срок абонемента; 0 — отработок нет
     "freezes_per_year",  # int | None — сколько заморозок разрешено в год
     "freeze_max_days",  # int | None — максимум дней в одной заморозке
 }
-# Правила заморозки, которые центр задаёт сам в карточке типа абонемента.
-FREEZE_RULE_KEYS = ("freezes_per_year", "freeze_max_days")
+# Правила, которые центр задаёт сам в карточке типа абонемента.
+EDITABLE_RULE_KEYS = (
+    "freezes_per_year",
+    "freeze_max_days",
+    "expire_on_miss",
+    "makeup_window_days",
+    "makeups_limit",
+)
 
 
 class SubscriptionType(TenantModel):

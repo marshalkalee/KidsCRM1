@@ -904,6 +904,95 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(response.data["marked_count"], 3)
 
+    def _set_rules(self, **rules):
+        version = self.sub.subscription_type_version
+        version.rules = rules
+        version.save(update_fields=["rules"])
+
+    def _mark(self, status_value, child=None, lesson=None):
+        return _authenticated_client(self.owner).post(
+            "/api/v1/attendance/mark/",
+            {
+                "lesson": str((lesson or self.lesson).id),
+                "child": str((child or self.children[0]).id),
+                "status": status_value,
+            },
+        )
+
+    def _sessions_left(self):
+        self.sub.refresh_from_db()
+        return self.sub.sessions_remaining_cache
+
+    def test_absence_is_free_by_default(self):
+        before = self._sessions_left()
+        response = self._mark("absent")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertFalse(response.data["consumed_from_subscription"])
+        self.assertEqual(self._sessions_left(), before)
+
+    def test_absence_burns_session_when_type_says_so(self):
+        self._set_rules(expire_on_miss=True)
+        before = self._sessions_left()
+
+        response = self._mark("absent")
+
+        self.assertTrue(response.data["consumed_from_subscription"])
+        self.assertEqual(self._sessions_left(), before - 1)
+        # Сменили на «пришёл» — списание одно, не два.
+        self._mark("present")
+        self.assertEqual(self._sessions_left(), before - 1)
+        # Сняли отметку — занятие вернулось.
+        _authenticated_client(self.owner).post(
+            "/api/v1/attendance/reset/",
+            {"lesson": str(self.lesson.id), "child": str(self.children[0].id)},
+        )
+        self.assertEqual(self._sessions_left(), before)
+
+    def test_timely_parent_cancel_is_free_even_when_miss_burns(self):
+        self._set_rules(expire_on_miss=True)
+        ParentLessonRequest.objects.create(
+            organization=self.org,
+            requested_by=ParentAccount.objects.create(phone="+77017770003"),
+            child=self.children[0],
+            lesson=self.lesson,
+            type=ParentLessonRequest.Type.CANCEL,
+            cancel_reason=ParentLessonRequest.CancelReason.ILLNESS,
+            notice_hours_required=24,
+            notice_is_timely=True,
+            will_be_charged=False,
+        )
+        before = self._sessions_left()
+
+        response = self._mark("absent")
+
+        self.assertFalse(response.data["consumed_from_subscription"])
+        self.assertEqual(self._sessions_left(), before)
+
+    def test_absence_without_subscription_creates_no_task(self):
+        self._set_rules(expire_on_miss=True)
+        # У children[1] абонемента нет: пропуск не повод для задачи «оформить».
+        response = self._mark("absent", child=self.children[1])
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertFalse(response.data["no_subscription_flag"])
+
+    def test_makeup_status_is_rejected_when_makeups_are_off(self):
+        self._set_rules(makeups_limit=0)
+
+        response = self._mark("makeup")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data)
+        roster = _authenticated_client(self.owner).get(
+            "/api/v1/attendance/roster/", {"lesson": str(self.lesson.id)}
+        )
+        rows = {row["child"]: row for row in roster.data["results"]}
+        self.assertFalse(rows[str(self.children[0].id)]["makeups_allowed"])
+        # Без абонемента правил нет — как раньше.
+        self.assertTrue(rows[str(self.children[1].id)]["makeups_allowed"])
+
+    def test_makeup_status_is_allowed_by_default(self):
+        self.assertEqual(self._mark("makeup").status_code, status.HTTP_200_OK)
+
     def test_teacher_marking_trial_present_moves_lead_to_attended(self):
         lead, child = self._create_trial_enrollment()
         client = _authenticated_client(self.teacher)

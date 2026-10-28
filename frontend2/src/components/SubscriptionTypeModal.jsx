@@ -18,6 +18,11 @@ export default function SubscriptionTypeModal({ type, directions, branches, onCl
     is_public: type?.is_public || false,
     freezes_per_year: type?.freezes_per_year ?? '',
     freeze_max_days: type?.freeze_max_days ?? '',
+    expire_on_miss: type?.expire_on_miss || false,
+    // makeups_limit = 0 на бэке — «отработок нет»; в форме это галочка.
+    makeups_enabled: type?.makeups_limit !== 0,
+    makeup_window_days: type?.makeup_window_days ?? '',
+    makeups_limit: type?.makeups_limit ? type.makeups_limit : '',
   })
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
@@ -28,12 +33,15 @@ export default function SubscriptionTypeModal({ type, directions, branches, onCl
     e.preventDefault()
     setSaving(true)
     setErrors({})
+    const { makeups_enabled, ...rest } = form
     const payload = {
-      ...form,
+      ...rest,
       quota_sessions: form.is_unlimited ? null : Number(form.quota_sessions),
       // Пусто — без ограничения (null снимает правило на бэке).
       freezes_per_year: form.freezes_per_year === '' ? null : Number(form.freezes_per_year),
       freeze_max_days: form.freeze_max_days === '' ? null : Number(form.freeze_max_days),
+      makeups_limit: !makeups_enabled ? 0 : form.makeups_limit === '' ? null : Number(form.makeups_limit),
+      makeup_window_days: !makeups_enabled || form.makeup_window_days === '' ? null : Number(form.makeup_window_days),
     }
     try {
       const response = isEdit
@@ -103,6 +111,36 @@ export default function SubscriptionTypeModal({ type, directions, branches, onCl
             </Field>
           </div>
           <p className="mt-1 text-[12px] text-ink-muted">{t('Пусто — без ограничения. 0 заморозок в год — заморозка запрещена.')}</p>
+        </div>
+        <div className="flex flex-col gap-2.5 rounded-lg bg-surface-muted px-3 py-2.5">
+          <div>
+            <p className="mb-1 text-sm text-ink">{t('Если ребёнок не пришёл')}</p>
+            <div className="flex flex-col gap-1" role="radiogroup" aria-label={t('Если ребёнок не пришёл')}>
+              <label className="flex items-center gap-2 text-[13px]">
+                <input type="radio" checked={!form.expire_on_miss} onChange={() => set('expire_on_miss', false)} />
+                {t('Занятие остаётся на абонементе')}
+              </label>
+              <label className="flex items-center gap-2 text-[13px]">
+                <input type="radio" checked={form.expire_on_miss} onChange={() => set('expire_on_miss', true)} />
+                {t('Занятие сгорает')}
+              </label>
+            </div>
+          </div>
+          <Checkbox
+            checked={form.makeups_enabled}
+            onChange={e => set('makeups_enabled', e.target.checked)}
+            label={<span className="text-sm text-ink">{t('Разрешить отработки')}</span>}
+          />
+          {form.makeups_enabled && (
+            <div className="flex gap-3.5 pl-7">
+              <Field label={t('Срок отработки, дней')} error={errors.makeup_window_days} className="flex-1">
+                {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={1} max={365} value={form.makeup_window_days} onChange={e => set('makeup_window_days', e.target.value)} placeholder="14" />}
+              </Field>
+              <Field label={t('Отработок за абонемент')} error={errors.makeups_limit} className="flex-1">
+                {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={1} max={100} value={form.makeups_limit} onChange={e => set('makeups_limit', e.target.value)} placeholder={t('Без ограничения')} />}
+              </Field>
+            </div>
+          )}
         </div>
         <Field label={t('Направления')} error={errors.directions}>
           <CheckList

@@ -28,6 +28,7 @@ ENROLL_ERRORS = {
     EnrollOutcome.SOURCE_ALREADY_USED: "Этот пропуск уже использован для другой отработки.",
     EnrollOutcome.SOURCE_EXPIRED: "Срок отработки уже истёк.",
     EnrollOutcome.SOURCE_LIMIT_EXCEEDED: "Лимит отработок по абонементу уже исчерпан.",
+    EnrollOutcome.MAKEUPS_DISABLED: "По абонементу отработок нет.",
     EnrollOutcome.SOURCE_DIRECTION_MISMATCH: "Занятие больше не подходит для этой отработки.",
 }
 

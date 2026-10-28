@@ -15,6 +15,7 @@ from domains.platform.tasks.services import cancel_trial_no_show_task
 from domains.scheduling.schedule.enrollment_service import (
     available_makeups_for_child,
     makeup_candidate_lessons,
+    makeups_disabled,
 )
 from domains.scheduling.schedule.models import Lesson, LessonEnrollment
 from domains.scheduling.schedule.serializers import (
@@ -327,6 +328,7 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
                     enrollments[child.id].source_lead_id if child.id in enrollments else None
                 ),
                 "parent_cancel_notice": parent_cancellations.get(child.id),
+                "makeups_allowed": not makeups_disabled(lesson, child.id),
             }
             for child in participants
         ]

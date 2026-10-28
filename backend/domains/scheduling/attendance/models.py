@@ -119,10 +119,7 @@ class Attendance(TenantModel):
 
         if status == Attendance.Status.PRESENT:
             self._consume()
-        elif status == Attendance.Status.ABSENT and self._parent_cancel_requires_charge():
-            # TRU-144: позднее предупреждение (либо политика центра,
-            # которая списывает и своевременную отмену) не должно
-            # обходить биллинг только из-за статуса «не был».
+        elif status == Attendance.Status.ABSENT and self._absence_is_charged():
             self._consume()
         else:
             self._revert()
@@ -148,12 +145,33 @@ class Attendance(TenantModel):
         )
         return self
 
-    def _parent_cancel_requires_charge(self):
+    def _absence_is_charged(self):
+        """Списывается ли «не был». Отмена из кабинета решает сама (TRU-144):
+        позднее предупреждение — или политика центра, которая списывает и
+        своевременное, — не должно обходить биллинг из-за статуса «не был».
+        Без отмены — правило абонемента «пропуск сгорает» (expire_on_miss)."""
+        request = self._parent_cancel_request()
+        if request is not None:
+            return bool(request.will_be_charged)
+        return self._miss_expires()
+
+    def _miss_expires(self):
+        from domains.money.subscriptions.subscription_service import subscription_for_lesson
+
+        direction_id = self._resolve_direction_id()
+        if direction_id is None:
+            return False
+        subscription = subscription_for_lesson(self.child, direction_id, self._lesson_local_date())
+        return bool(
+            subscription and subscription.subscription_type_version.rules.get("expire_on_miss")
+        )
+
+    def _parent_cancel_request(self):
         """Snapshot правила хранится в запросе — изменение настроек позже
         не переписывает уже принятое родителем решение."""
         from domains.people.portal.models import ParentLessonRequest
 
-        request = (
+        return (
             ParentLessonRequest.objects.for_tenant(self.organization)
             .filter(
                 child_id=self.child_id,
@@ -167,7 +185,6 @@ class Attendance(TenantModel):
             .order_by("-created_at")
             .first()
         )
-        return bool(request and request.will_be_charged)
 
     @transaction.atomic
     def clear_mark(self, *, actor):
