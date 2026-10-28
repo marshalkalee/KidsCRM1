@@ -4,9 +4,20 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from domains.people.clients.models import Child
+from domains.platform.core.utils import now_for_org
 from domains.scheduling.schedule.models import Lesson
 
 from .models import Attendance, ParentNote
+
+UPCOMING_LESSON_ERROR = "Занятие ещё не наступило — «Был» можно отметить в день занятия."
+
+
+def lesson_is_upcoming(lesson):
+    """Занятие в будущий день по часам центра. «Был»/«Отработка» — факт,
+    заранее его не бывает, а отметка списывает занятие с абонемента.
+    Сегодняшнее занятие отмечать можно и до начала урока."""
+    now = now_for_org(lesson.organization)
+    return lesson.starts_at.astimezone(now.tzinfo).date() > now.date()
 
 
 class AttendanceSerializer(serializers.ModelSerializer):
@@ -186,6 +197,9 @@ class AttendanceMarkSerializer(serializers.Serializer):
         child = attrs["child"]
         if not lesson.participants().filter(pk=child.pk).exists():
             raise serializers.ValidationError({"child": "Ребёнок не записан на это занятие."})
+        # «Не был» заранее допустим: родитель предупредил о пропуске.
+        if attrs["status"] != Attendance.Status.ABSENT and lesson_is_upcoming(lesson):
+            raise serializers.ValidationError({"status": UPCOMING_LESSON_ERROR})
         if attrs["status"] == Attendance.Status.ABSENT and not attrs.get("absence_reason"):
             attrs["absence_reason"] = Attendance.AbsenceReason.NO_REASON
         return attrs

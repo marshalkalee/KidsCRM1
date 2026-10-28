@@ -268,6 +268,10 @@ class LeadSaleApiTests(TestCase):
             format="json",
         )
         enrollment = LessonEnrollment.objects.get(source_lead=lead)
+        # Пробное прошло: «Был» на будущий день не отмечается.
+        Lesson.objects.filter(pk=lesson.pk).update(
+            starts_at=timezone.now() - datetime.timedelta(hours=1), ends_at=timezone.now()
+        )
         attended = self.client.post(
             "/api/v1/attendance/mark/",
             {

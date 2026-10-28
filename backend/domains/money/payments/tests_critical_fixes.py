@@ -176,6 +176,11 @@ class QuickPaymentApiPermissionTests(TestCase):
 class NightlyStatusFreezeTests(TestCase):
     def setUp(self):
         self.org, self.child, self.users, self.sub = make_org("a", "7701000000")
+        # Заморозки в тестах начинаются в прошлом — внутри срока абонемента.
+        Subscription.objects.filter(pk=self.sub.pk).update(
+            starts_on=date.today() - timedelta(days=20)
+        )
+        self.sub.refresh_from_db()
 
     def test_finished_freeze_unfreezes_without_crash(self):
         freeze_subscription(

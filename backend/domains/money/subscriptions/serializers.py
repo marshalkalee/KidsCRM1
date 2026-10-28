@@ -3,7 +3,13 @@ from rest_framework import serializers
 from domains.money.payments.models import Payment
 
 from .debt import subscription_debt
-from .models import Subscription, SubscriptionFreeze, SubscriptionLedgerEntry, SubscriptionType
+from .models import (
+    FREEZE_RULE_KEYS,
+    Subscription,
+    SubscriptionFreeze,
+    SubscriptionLedgerEntry,
+    SubscriptionType,
+)
 from .statuses import DISPLAY_LABELS, get_display_status
 
 
@@ -33,6 +39,9 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     freezes = SubscriptionFreezeSerializer(many=True, read_only=True)
     # Долг по этому абонементу — сумма по умолчанию в «Принять оплату» (TRU-67).
     debt = serializers.SerializerMethodField()
+    # Лимит дней одной заморозки по версии, с которой продан абонемент, —
+    # форма заморозки не даёт выбрать больше.
+    freeze_max_days = serializers.SerializerMethodField()
 
     class Meta:
         model = Subscription
@@ -56,10 +65,14 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "debt",
             "renewed_from",
             "freezes",
+            "freeze_max_days",
         ]
 
     def get_debt(self, obj):
         return str(subscription_debt(obj))
+
+    def get_freeze_max_days(self, obj):
+        return obj.subscription_type_version.rules.get("freeze_max_days")
 
     def get_display_status(self, obj):
         return get_display_status(obj)
@@ -120,6 +133,15 @@ class SellRequestSerializer(SaleRequestSerializer):
 
 
 class SubscriptionTypeSerializer(serializers.ModelSerializer):
+    # Правила заморозки — ключи rules (FREEZE_RULE_KEYS), не колонки модели.
+    # null — без ограничения; 0 заморозок в год — заморозка запрещена.
+    freezes_per_year = serializers.IntegerField(
+        min_value=0, max_value=100, allow_null=True, required=False
+    )
+    freeze_max_days = serializers.IntegerField(
+        min_value=1, max_value=365, allow_null=True, required=False
+    )
+
     class Meta:
         model = SubscriptionType
         fields = [
@@ -133,4 +155,25 @@ class SubscriptionTypeSerializer(serializers.ModelSerializer):
             "branches",
             "is_active",
             "is_public",
+            "freezes_per_year",
+            "freeze_max_days",
         ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for key in FREEZE_RULE_KEYS:
+            data[key] = instance.rules.get(key)
+        return data
+
+
+def merge_freeze_rules(rules, data):
+    """rules типа с правилами заморозки из формы: число — задать, null — снять."""
+    merged = dict(rules)
+    for key in FREEZE_RULE_KEYS:
+        if key not in data:
+            continue
+        if data[key] is None:
+            merged.pop(key, None)
+        else:
+            merged[key] = data[key]
+    return merged

@@ -840,6 +840,70 @@ class AttendanceRosterAndBulkApiTest(APITestCase):
         self.assertEqual(response.data["marked_count"], 0)
         self.assertEqual(Attendance.objects.filter(lesson=self.lesson).count(), 3)
 
+    def _lesson_on(self, day, hour=12):
+        tz = timezone.zoneinfo.ZoneInfo("Asia/Almaty")
+        starts_at = datetime.datetime.combine(day, datetime.time(hour), tzinfo=tz)
+        return Lesson.objects.create(
+            organization=self.org,
+            group=self.group,
+            teacher=self.teacher,
+            starts_at=starts_at,
+            ends_at=starts_at + datetime.timedelta(hours=1),
+        )
+
+    def _org_today(self):
+        return timezone.now().astimezone(timezone.zoneinfo.ZoneInfo("Asia/Almaty")).date()
+
+    def test_mark_present_on_future_lesson_is_rejected_without_consuming(self):
+        lesson = self._lesson_on(self._org_today() + datetime.timedelta(days=5))
+        client = _authenticated_client(self.owner)
+
+        for status_value in ("present", "makeup"):
+            response = client.post(
+                "/api/v1/attendance/mark/",
+                {
+                    "lesson": str(lesson.id),
+                    "child": str(self.children[0].id),
+                    "status": status_value,
+                },
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("status", response.data)
+
+        self.assertFalse(Attendance.objects.filter(lesson=lesson).exists())
+        self.assertEqual(SubscriptionLedgerEntry.objects.filter(subscription=self.sub).count(), 1)
+
+    def test_mark_absent_on_future_lesson_is_allowed(self):
+        # Родитель заранее предупредил о пропуске.
+        lesson = self._lesson_on(self._org_today() + datetime.timedelta(days=5))
+
+        response = _authenticated_client(self.owner).post(
+            "/api/v1/attendance/mark/",
+            {"lesson": str(lesson.id), "child": str(self.children[0].id), "status": "absent"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+    def test_mark_all_present_on_future_lesson_is_rejected(self):
+        lesson = self._lesson_on(self._org_today() + datetime.timedelta(days=1))
+
+        response = _authenticated_client(self.owner).post(
+            "/api/v1/attendance/mark-all-present/", {"lesson": str(lesson.id)}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Attendance.objects.filter(lesson=lesson).exists())
+
+    def test_todays_lesson_can_be_marked_before_it_starts(self):
+        lesson = self._lesson_on(self._org_today(), hour=23)
+
+        response = _authenticated_client(self.owner).post(
+            "/api/v1/attendance/mark-all-present/", {"lesson": str(lesson.id)}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["marked_count"], 3)
+
     def test_teacher_marking_trial_present_moves_lead_to_attended(self):
         lead, child = self._create_trial_enrollment()
         client = _authenticated_client(self.teacher)

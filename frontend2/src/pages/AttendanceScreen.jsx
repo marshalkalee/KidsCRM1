@@ -361,6 +361,9 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
 
   const markedCount = rows.filter(r => r.status).length
   const reasonPickerRow = rows.find(r => r.child === reasonPickerFor)
+  // «Пришёл» и «Отработка» списывают занятие — для будущего дня бэк их
+  // отклоняет; «Не был» заранее можно (родитель предупредил о пропуске).
+  const upcoming = Boolean(lesson) && localDatePart(lesson.starts_at_local) > toISODate(new Date())
 
   if (loading) {
     return (
@@ -397,7 +400,7 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
             <Button icon={Undo2} loading={bulkSaving} disabled={markedCount === 0} onClick={handleResetAll}>
               {t('Сбросить')}
             </Button>
-            <Button variant="primary" icon={Check} loading={bulkSaving} disabled={markedCount === rows.length} onClick={handleMarkAllPresent}>
+            <Button variant="primary" icon={Check} loading={bulkSaving} disabled={upcoming || markedCount === rows.length} onClick={handleMarkAllPresent}>
               {t('Отметить всех пришедшими')}
             </Button>
           </>
@@ -413,6 +416,15 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
         </div>
       )}
 
+      {upcoming && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', marginBottom: 14,
+          borderRadius: 10, background: '#EFF6FF', color: '#1E40AF', fontSize: 12.5, fontWeight: 600,
+        }}>
+          <CalendarDays size={15} /> {t('Занятие ещё не наступило: «Пришёл» и «Отработку» можно отметить в день занятия. «Не был» — если родитель предупредил заранее.')}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 14 }}>
         {rows.map(row => (
           <AttendanceRow
@@ -420,6 +432,7 @@ function AttendanceLessonScreen({ lessonId, listDate }) {
             row={row}
             mobile={isMobile}
             saving={!!savingIds[row.child]}
+            upcoming={upcoming}
             onOpenReasonPicker={() => setReasonPickerFor(row.child)}
             onMark={(statusValue, reason) => handleMark(row.child, statusValue, reason)}
             onReset={() => handleReset(row.child)}
@@ -679,7 +692,7 @@ function ParentNoteModal({ lessonId, hasGroup, rows, templates, lessonStartsAt, 
   )
 }
 
-function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark, onReset }) {
+function AttendanceRow({ row, mobile, saving, upcoming, onOpenReasonPicker, onMark, onReset }) {
   const isPresent = row.status === 'present'
   const isAbsent = row.status === 'absent'
   const isMakeup = row.status === 'makeup'
@@ -696,9 +709,9 @@ function AttendanceRow({ row, mobile, saving, onOpenReasonPicker, onMark, onRese
 
   const statusButtons = (
     <div style={{ display: 'flex', gap: mobile ? 8 : 6, flexShrink: 0, width: mobile ? '100%' : 'auto' }}>
-      <StatusButton mobile={mobile} active={isPresent} color="#16A34A" icon={Check} label={t('Пришёл')} saving={saving} onClick={() => onMark('present')} />
+      <StatusButton mobile={mobile} active={isPresent} color="#16A34A" icon={Check} label={t('Пришёл')} saving={saving} disabled={upcoming} onClick={() => onMark('present')} />
       <StatusButton mobile={mobile} active={isAbsent} color="#DC2626" icon={X} label={t('Не был')} saving={saving} onClick={handleAbsentClick} />
-      <StatusButton mobile={mobile} active={isMakeup} color={ACCENT} icon={RotateCcw} label={t('Отработка')} saving={saving} onClick={() => onMark('makeup')} />
+      <StatusButton mobile={mobile} active={isMakeup} color={ACCENT} icon={RotateCcw} label={t('Отработка')} saving={saving} disabled={upcoming} onClick={() => onMark('makeup')} />
       {row.status && <StatusButton mobile={mobile} active={false} color="#6B7280" icon={Undo2} label={t('Сбросить')} saving={saving} onClick={onReset} />}
     </div>
   )
@@ -845,27 +858,28 @@ function AbsenceReasonSheet({ childName, onSelect, onClose }) {
   )
 }
 
-function StatusButton({ mobile, active, color, icon: Icon, label, saving, onClick }) {
+function StatusButton({ mobile, active, color, icon: Icon, label, saving, disabled = false, onClick }) {
+  const inactive = saving || disabled
   return (
     <button
       onClick={onClick}
-      disabled={saving}
+      disabled={inactive}
       title={label}
       style={mobile ? {
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
-        flex: 1, padding: '12px 4px', borderRadius: 12, cursor: saving ? 'default' : 'pointer',
+        flex: 1, padding: '12px 4px', borderRadius: 12, cursor: inactive ? 'default' : 'pointer',
         border: active ? `1.5px solid ${color}` : '1.5px solid #EBEBF0',
         background: active ? `${color}14` : '#fff',
         color: active ? color : '#6B7280',
-        opacity: saving ? 0.6 : 1,
+        opacity: saving ? 0.6 : disabled ? 0.4 : 1,
         fontFamily: 'Manrope', fontSize: 12, fontWeight: 700,
       } : {
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-        width: 58, padding: '8px 4px', borderRadius: 10, cursor: saving ? 'default' : 'pointer',
+        width: 58, padding: '8px 4px', borderRadius: 10, cursor: inactive ? 'default' : 'pointer',
         border: active ? `1.5px solid ${color}` : '1.5px solid #EBEBF0',
         background: active ? `${color}14` : '#fff',
         color: active ? color : '#9CA3AF',
-        opacity: saving ? 0.6 : 1,
+        opacity: saving ? 0.6 : disabled ? 0.4 : 1,
         fontFamily: 'Manrope', fontSize: 10, fontWeight: 700,
       }}
     >

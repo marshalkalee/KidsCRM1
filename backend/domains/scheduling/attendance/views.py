@@ -25,6 +25,7 @@ from domains.scheduling.schedule.serializers import (
 from .history import attendance_history_queryset, attendance_history_summary
 from .models import Attendance, ParentNote
 from .serializers import (
+    UPCOMING_LESSON_ERROR,
     AttendanceHistoryQuerySerializer,
     AttendanceHistorySerializer,
     AttendanceMarkSerializer,
@@ -33,6 +34,7 @@ from .serializers import (
     ParentNoteCreateSerializer,
     ParentNoteSerializer,
     ParentNoteUpdateSerializer,
+    lesson_is_upcoming,
 )
 
 PARENT_NOTE_TEMPLATES = [
@@ -352,6 +354,8 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
         if not lesson_id:
             raise ValidationError({"lesson": "Обязателен."})
         lesson = _get_lesson_scoped(request, lesson_id)
+        if lesson_is_upcoming(lesson):
+            raise ValidationError({"lesson": UPCOMING_LESSON_ERROR})
 
         with transaction.atomic():
             participants = list(lesson.participants())

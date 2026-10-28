@@ -16,6 +16,8 @@ export default function SubscriptionTypeModal({ type, directions, branches, onCl
     directions: (type?.directions || []).map(String),
     branches: (type?.branches || []).map(String),
     is_public: type?.is_public || false,
+    freezes_per_year: type?.freezes_per_year ?? '',
+    freeze_max_days: type?.freeze_max_days ?? '',
   })
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
@@ -29,6 +31,9 @@ export default function SubscriptionTypeModal({ type, directions, branches, onCl
     const payload = {
       ...form,
       quota_sessions: form.is_unlimited ? null : Number(form.quota_sessions),
+      // Пусто — без ограничения (null снимает правило на бэке).
+      freezes_per_year: form.freezes_per_year === '' ? null : Number(form.freezes_per_year),
+      freeze_max_days: form.freeze_max_days === '' ? null : Number(form.freeze_max_days),
     }
     try {
       const response = isEdit
@@ -88,6 +93,17 @@ export default function SubscriptionTypeModal({ type, directions, branches, onCl
             {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={1} value={form.quota_sessions} onChange={e => set('quota_sessions', e.target.value)} required />}
           </Field>
         )}
+        <div>
+          <div className="flex gap-3.5">
+            <Field label={t('Заморозок в год')} error={errors.freezes_per_year} className="flex-1">
+              {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={0} max={100} value={form.freezes_per_year} onChange={e => set('freezes_per_year', e.target.value)} placeholder={t('Без ограничения')} />}
+            </Field>
+            <Field label={t('Дней в одной заморозке')} error={errors.freeze_max_days} className="flex-1">
+              {({ id, invalid }) => <Input id={id} invalid={invalid} type="number" min={1} max={365} value={form.freeze_max_days} onChange={e => set('freeze_max_days', e.target.value)} placeholder={t('Без ограничения')} />}
+            </Field>
+          </div>
+          <p className="mt-1 text-[12px] text-ink-muted">{t('Пусто — без ограничения. 0 заморозок в год — заморозка запрещена.')}</p>
+        </div>
         <Field label={t('Направления')} error={errors.directions}>
           <CheckList
             empty={t('Нет активных направлений')}

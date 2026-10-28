@@ -50,6 +50,67 @@ class SubscriptionTypeApiTests(TestCase):
         created = SubscriptionType.objects.get(name="8 занятий")
         self.assertEqual(created.price, 25000)
 
+    def test_freeze_rules_are_set_from_type_form(self):
+        client = APIClient()
+        client.force_authenticate(self.owner)
+        response = client.post(
+            "/api/v1/subscriptions/subscription-types/",
+            {
+                "name": "8 занятий",
+                "price": 25000,
+                "duration_days": 30,
+                "quota_sessions": 8,
+                "freezes_per_year": 2,
+                "freeze_max_days": 14,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.data["freezes_per_year"], 2)
+        self.assertEqual(response.data["freeze_max_days"], 14)
+        st = SubscriptionType.objects.get(pk=response.data["id"])
+        self.assertEqual(st.versions.latest().rules, {"freezes_per_year": 2, "freeze_max_days": 14})
+
+        # null снимает ограничение, другие правила не трогает.
+        response = client.patch(
+            f"/api/v1/subscriptions/subscription-types/{st.id}/",
+            {"freeze_max_days": None},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIsNone(response.data["freeze_max_days"])
+        self.assertEqual(st.versions.latest().rules, {"freezes_per_year": 2})
+        self.assertEqual(st.versions.count(), 2)
+
+    def test_freeze_rule_change_does_not_touch_sold_subscriptions(self):
+        st = create_type(
+            self.org, name="8 занятий", price=25000, quota_sessions=8, duration_days=30
+        )
+        sold_version = st.versions.latest()
+        client = APIClient()
+        client.force_authenticate(self.owner)
+        client.patch(
+            f"/api/v1/subscriptions/subscription-types/{st.id}/",
+            {"freeze_max_days": 7},
+            format="json",
+        )
+        sold_version.refresh_from_db()
+        self.assertEqual(sold_version.rules, {})
+        self.assertEqual(st.versions.latest().rules, {"freeze_max_days": 7})
+
+    def test_freeze_rules_are_validated(self):
+        client = APIClient()
+        client.force_authenticate(self.owner)
+        st = create_type(
+            self.org, name="8 занятий", price=25000, quota_sessions=8, duration_days=30
+        )
+        invalid = ({"freeze_max_days": 0}, {"freeze_max_days": 1000}, {"freezes_per_year": -1})
+        for payload in invalid:
+            response = client.patch(
+                f"/api/v1/subscriptions/subscription-types/{st.id}/", payload, format="json"
+            )
+            self.assertEqual(response.status_code, 400, payload)
+
     def test_teacher_cannot_create_type(self):
         client = APIClient()
         client.force_authenticate(self.teacher)
