@@ -169,6 +169,25 @@ class TaskServiceTests(TestCase):
         self.assertEqual(task.status, Task.Status.DONE)
         self.assertEqual(task.closing_comment, "Дозвонился")
 
+    def test_closed_task_cannot_switch_to_other_final_status(self):
+        task = create_task(type=Task.Type.OTHER, assignee=self.admin_a, due_date=None, subject="Т")
+        client = APIClient()
+        client.force_authenticate(self.admin_a)
+        url = f"/api/v1/tasks/{task.id}/"
+        self.assertEqual(client.post(url + "complete/", {"comment": "Готово"}).status_code, 200)
+        task.refresh_from_db()
+        closed_at = task.updated_at
+
+        # Повторный клик — без изменений: дата закрытия в истории не сдвигается.
+        self.assertEqual(client.post(url + "complete/", {"comment": "Ещё раз"}).status_code, 200)
+        response = client.post(url + "cancel/")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("выполнена", response.data["detail"])
+        task.refresh_from_db()
+        self.assertEqual(task.status, Task.Status.DONE)
+        self.assertEqual(task.closing_comment, "Готово")
+        self.assertEqual(task.updated_at, closed_at)
+
     def test_teacher_sees_only_own_tasks(self):
         """Преподаватель получает поручения (TRU-181), но чужих задач не видит
         и задачи по карточке ребёнка ему недоступны."""

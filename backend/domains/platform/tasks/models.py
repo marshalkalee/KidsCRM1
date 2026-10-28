@@ -24,6 +24,7 @@ class Task(TenantModel):
         PAYMENT_REMINDER = "payment_reminder", "Напомнить об оплате"
         TRIAL_SIGNUP = "trial_signup", "Записать на пробное"
         RENEWAL_OFFER = "renewal_offer", "Предложить продление"
+        MARK_ATTENDANCE = "mark_attendance", "Отметить посещаемость"
         OTHER = "other", "Другое"
 
     class Status(models.TextChoices):

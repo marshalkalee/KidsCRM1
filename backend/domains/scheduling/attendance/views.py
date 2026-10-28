@@ -25,6 +25,7 @@ from domains.scheduling.schedule.serializers import (
 
 from .history import attendance_history_queryset, attendance_history_summary
 from .models import Attendance, ParentNote
+from .rules import close_task_if_marked
 from .serializers import (
     UPCOMING_LESSON_ERROR,
     AttendanceHistoryQuerySerializer,
@@ -232,6 +233,7 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
                     child=child,
                     attendance=attendance,
                 )
+            close_task_if_marked(lesson)
         return Response(AttendanceSerializer(attendance, context={"request": request}).data)
 
     @action(detail=False, methods=["post"])
@@ -384,6 +386,7 @@ class AttendanceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
                     actor=request.user,
                 )
                 marked.append(attendance)
+            close_task_if_marked(lesson)
 
         return Response(
             {

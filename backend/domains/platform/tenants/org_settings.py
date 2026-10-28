@@ -29,6 +29,7 @@ RULE_RENEWAL_OFFER_ENABLED = "rule_renewal_offer_enabled"
 RULE_DEBT_REMINDER_ENABLED = "rule_debt_reminder_enabled"
 RULE_MISSING_SUBSCRIPTION_ENABLED = "rule_missing_subscription_enabled"
 RULE_TRIAL_NO_SHOW_ENABLED = "rule_trial_no_show_enabled"
+RULE_UNMARKED_ATTENDANCE_ENABLED = "rule_unmarked_attendance_enabled"
 PARENT_CANCEL_NOTICE_HOURS = "parent_cancel_notice_hours"
 PARENT_CANCEL_CHARGE_ON_TIME = "parent_cancel_charge_on_time"
 # Доступ сотрудников внутри роли (TRU-153, ТЗ разд. 2 [V2]): владелец
@@ -98,6 +99,7 @@ DEFAULT_ORG_SETTINGS = {
     RULE_DEBT_REMINDER_ENABLED: True,
     RULE_MISSING_SUBSCRIPTION_ENABLED: True,
     RULE_TRIAL_NO_SHOW_ENABLED: True,
+    RULE_UNMARKED_ATTENDANCE_ENABLED: True,
     # Родитель может предупредить и позже, но только своевременное
     # предупреждение применяет льготное правило центра. Значение хранится
     # здесь, чтобы кабинет, посещаемость и биллинг использовали один контракт.

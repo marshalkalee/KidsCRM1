@@ -556,6 +556,7 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, canManage,
         {canPay && task.type === 'renewal_offer' && task.child && (
           <Button size="sm" variant="secondary" onClick={onSell}>{t('Продать абонемент')}</Button>
         )}
+        {task.link && !closed && <Button size="sm" variant="secondary" to={task.link}>{t('Отметить посещаемость')}</Button>}
         {digestLink && <a href={digestLink} className="inline-flex items-center text-sm font-semibold text-brand-600 hover:underline">{t('Открыть дайджест')}</a>}
         {!closed && (
           <div className="flex w-full items-center gap-1.5 sm:ml-auto sm:w-auto">

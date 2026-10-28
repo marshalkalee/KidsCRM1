@@ -68,6 +68,11 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
   }, [child.id, subscriptionId, toast])
 
   const selected = subscriptions?.find(s => s.id === form.subscription)
+  // Лишний ноль в сумме — частая опечатка: сумма сверх долга (а без долга —
+  // сверх цены абонемента) подсвечивается до отправки.
+  const overpayment = selected && form.amount
+    ? Number(form.amount) - (hasDebt(selected) ? Number(selected.debt) : Number(selected.price))
+    : 0
 
   function pick(subscription) {
     setForm(f => ({ ...f, subscription: subscription.id, amount: hasDebt(subscription) ? String(Math.round(Number(subscription.debt))) : '' }))
@@ -187,6 +192,13 @@ export default function AcceptPaymentModal({ child, subscriptionId, onClose, onP
               />
             )}
           </Field>
+          {overpayment > 0 && (
+            <p role="status" className="-mt-2 text-[13px] text-warning-600">
+              {hasDebt(selected)
+                ? t('Больше долга на {sum}', { sum: money(overpayment) })
+                : t('Больше стоимости абонемента на {sum}', { sum: money(overpayment) })}
+            </p>
+          )}
 
           <MethodPicker value={form.method} onChange={method => setForm({ ...form, method })} />
 

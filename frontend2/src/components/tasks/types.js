@@ -31,5 +31,6 @@ export const TASK_TYPES = [
   { value: 'retention', get label() { return t('Удержание клиента') } },
   { value: 'parent_request', get label() { return t('Запрос родителя') } },
   { value: 'contact', get label() { return t('Связаться') } },
+  { value: 'mark_attendance', get label() { return t('Отметить посещаемость') } },
   ...MANUAL_TYPES.filter(type => type.value === 'other'),
 ]

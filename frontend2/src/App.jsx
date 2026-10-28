@@ -2,7 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/shell/Layout'
 import { t, useLang } from './i18n'
 import { RequireAuth, RequirePermission, SessionProvider, useSession } from './session/SessionContext'
-import { ConfirmProvider, ToastProvider } from './ui'
+import { ConfirmProvider, ErrorBoundary, ToastProvider } from './ui'
 import Dashboard from './pages/Dashboard'
 import Assistant from './pages/Assistant'
 import ContentStudio from './pages/ContentStudio'
@@ -74,10 +74,12 @@ function App() {
     <BrowserRouter>
       <ToastProvider>
         <ConfirmProvider>
-          <Routes>
-            <Route path="/parent/*" element={<ParentApp />} />
-            <Route path="*" element={<StaffApp />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/parent/*" element={<ParentApp />} />
+              <Route path="*" element={<StaffApp />} />
+            </Routes>
+          </ErrorBoundary>
         </ConfirmProvider>
       </ToastProvider>
     </BrowserRouter>

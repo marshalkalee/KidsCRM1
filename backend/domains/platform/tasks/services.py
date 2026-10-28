@@ -154,6 +154,33 @@ def create_winback_task(*, child, actor, left_on, reason=""):
     return task, created
 
 
+def branch_assignee(organization, branch=None):
+    """Кому поставить задачу по филиалу (Д36): администратор, затем
+    управляющий филиала занятия; затем тот, кто работает во всех филиалах;
+    затем владелец. Сотрудник другого филиала — только если больше некому."""
+    staff = (
+        User.objects.filter(
+            organization=organization,
+            is_active=True,
+            role__in=[User.Role.ADMIN, User.Role.MANAGER, User.Role.OWNER],
+        )
+        .prefetch_related("branches")
+        .order_by("role", "full_name")
+    )
+
+    def rank(user):
+        if user.role == User.Role.OWNER:
+            return 2
+        # Как allowed_branch_ids: отключённые филиалы не считаются.
+        branch_ids = {item.id for item in user.branches.all() if item.is_active}
+        if branch is not None and branch.id in branch_ids:
+            return 0
+        return 1 if not branch_ids else 3
+
+    # min() берёт первого с наименьшим рангом — порядок role, full_name сохраняется.
+    return min(staff, key=rank, default=None)
+
+
 def create_task(
     *,
     type,

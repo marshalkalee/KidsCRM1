@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 
@@ -192,21 +192,26 @@ class TaskViewSet(
             after={"status": task.status, "closing_comment": task.closing_comment},
         )
 
-    @action(detail=True, methods=["post"])
-    def complete(self, request, pk=None):
+    def _close(self, close, target_status, audit_action):
         task = self.get_object()
         self._check_can_change(task)
-        complete_task(task, actor=request.user, comment=request.data.get("comment", ""))
-        self._record_close(task, AuditLog.Action.UPDATE)
+        # Повторное нажатие — без изменений: иначе сдвинулась бы дата
+        # закрытия (updated_at), по которой строится история задач.
+        if task.status == target_status:
+            return Response(TaskSerializer(task).data)
+        if task.status != Task.Status.OPEN:
+            raise ValidationError({"detail": f"Задача уже {task.get_status_display().lower()}."})
+        close(task, actor=self.request.user, comment=self.request.data.get("comment", ""))
+        self._record_close(task, audit_action)
         return Response(TaskSerializer(task).data)
 
     @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        return self._close(complete_task, Task.Status.DONE, AuditLog.Action.UPDATE)
+
+    @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
-        task = self.get_object()
-        self._check_can_change(task)
-        cancel_task(task, actor=request.user, comment=request.data.get("comment", ""))
-        self._record_close(task, AuditLog.Action.CANCEL)
-        return Response(TaskSerializer(task).data)
+        return self._close(cancel_task, Task.Status.CANCELLED, AuditLog.Action.CANCEL)
 
     @action(detail=True, methods=["get", "post"])
     def comments(self, request, pk=None):

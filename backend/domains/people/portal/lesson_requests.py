@@ -7,12 +7,12 @@ from django.utils import timezone
 
 from domains.people.clients.models import Child
 from domains.platform.tasks.models import Task
+from domains.platform.tasks.services import branch_assignee
 from domains.platform.tenants.org_settings import (
     PARENT_CANCEL_CHARGE_ON_TIME,
     PARENT_CANCEL_NOTICE_HOURS,
     get_org_setting,
 )
-from domains.platform.users.models import User
 from domains.scheduling.schedule.enrollment_service import (
     available_makeups_for_child,
     makeup_candidate_lessons,
@@ -87,33 +87,6 @@ def makeup_candidates(child, source_attendance):
     ]
 
 
-def _assignee(organization, branch=None):
-    """Кому поставить задачу по запросу (Д36): администратор, затем
-    управляющий филиала занятия; затем тот, кто работает во всех филиалах;
-    затем владелец. Сотрудник другого филиала — только если больше некому."""
-    staff = (
-        User.objects.filter(
-            organization=organization,
-            is_active=True,
-            role__in=[User.Role.ADMIN, User.Role.MANAGER, User.Role.OWNER],
-        )
-        .prefetch_related("branches")
-        .order_by("role", "full_name")
-    )
-
-    def rank(user):
-        if user.role == User.Role.OWNER:
-            return 2
-        # Как allowed_branch_ids: отключённые филиалы не считаются.
-        branch_ids = {item.id for item in user.branches.all() if item.is_active}
-        if branch is not None and branch.id in branch_ids:
-            return 0
-        return 1 if not branch_ids else 3
-
-    # min() берёт первого с наименьшим рангом — порядок role, full_name сохраняется.
-    return min(staff, key=rank, default=None)
-
-
 def task_text(parent_request) -> tuple[str, str]:
     """Заголовок и описание задачи по запросу родителя — человеческим языком:
     группа, филиал, время по часовому поясу центра, причина и комментарий
@@ -159,7 +132,7 @@ def _create_task(parent_request):
         type=Task.Type.PARENT_REQUEST,
         source_key=f"parent-request:{parent_request.id}",
         defaults={
-            "assigned_to": _assignee(parent_request.organization, branch),
+            "assigned_to": branch_assignee(parent_request.organization, branch),
             "child": parent_request.child,
             "branch": branch,
             "source": Task.Source.AUTO,

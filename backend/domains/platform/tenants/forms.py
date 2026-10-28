@@ -28,6 +28,7 @@ from domains.platform.tenants.org_settings import (
     RULE_MISSING_SUBSCRIPTION_ENABLED,
     RULE_RENEWAL_OFFER_ENABLED,
     RULE_TRIAL_NO_SHOW_ENABLED,
+    RULE_UNMARKED_ATTENDANCE_ENABLED,
     SUBSCRIPTION_ENDING_DAYS_THRESHOLD,
     SUBSCRIPTION_ENDING_LESSONS_THRESHOLD,
     get_org_setting,
@@ -153,6 +154,9 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
     rule_trial_no_show_enabled = forms.BooleanField(
         required=False, label="Напоминать перезвонить после пропуска пробного"
     )
+    rule_unmarked_attendance_enabled = forms.BooleanField(
+        required=False, label="Напоминать отметить посещаемость"
+    )
     parent_cancel_notice_hours = forms.IntegerField(
         min_value=0,
         max_value=168,
@@ -242,6 +246,7 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
             RULE_DEBT_REMINDER_ENABLED: self.cleaned_data[RULE_DEBT_REMINDER_ENABLED],
             RULE_MISSING_SUBSCRIPTION_ENABLED: self.cleaned_data[RULE_MISSING_SUBSCRIPTION_ENABLED],
             RULE_TRIAL_NO_SHOW_ENABLED: self.cleaned_data[RULE_TRIAL_NO_SHOW_ENABLED],
+            RULE_UNMARKED_ATTENDANCE_ENABLED: self.cleaned_data[RULE_UNMARKED_ATTENDANCE_ENABLED],
             PARENT_CANCEL_NOTICE_HOURS: (
                 self.cleaned_data.get(PARENT_CANCEL_NOTICE_HOURS)
                 if self.cleaned_data.get(PARENT_CANCEL_NOTICE_HOURS) is not None

@@ -9,6 +9,7 @@ import {
 import { t } from '../../i18n'
 import CallButton from '../telephony/CallButton'
 import { personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../../utils/formValidation'
+import { findParentsByPhones } from '../parents/duplicates'
 
 /**
  * Вкладка «Контакты»: родители и контактные лица ребёнка (ChildContact).
@@ -149,6 +150,8 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
   const isEdit = Boolean(link)
   const [mode, setMode] = useState('new')
   const [parent, setParent] = useState(EMPTY_PARENT)
+  // Родители с тем же номером: показаны — следующее «Добавить» создаёт нового.
+  const [duplicates, setDuplicates] = useState(null)
   const [picked, setPicked] = useState(null)
   const [query, setQuery] = useState('')
   const [found, setFound] = useState([])
@@ -181,6 +184,13 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
       } else {
         let parentId = picked?.id
         if (mode === 'new') {
+          if (!duplicates) {
+            const found = await findParentsByPhones([parent.phone])
+            if (found.length) {
+              setDuplicates(found)
+              return
+            }
+          }
           try {
             const created = await api.post('clients/parents/', {
               full_name: parent.full_name,
@@ -217,7 +227,7 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
         <>
           <Button onClick={onClose}>{t('Отмена')}</Button>
           <Button variant="primary" type="submit" form="contact-form" loading={saving} disabled={!canSubmit}>
-            {isEdit ? t('Сохранить') : t('Добавить')}
+            {isEdit ? t('Сохранить') : duplicates ? t('Добавить всё равно') : t('Добавить')}
           </Button>
         </>
       }
@@ -245,8 +255,29 @@ function ContactModal({ child, link, linkedParentIds, onClose, onSaved }) {
               {({ id, invalid }) => <Input id={id} invalid={invalid} value={parent.full_name} onChange={e => setParent(p => ({ ...p, full_name: personNameInput(e.target.value) }))} required autoFocus {...personNameInputProps} />}
             </Field>
             <Field label={t('Телефон')} required error={errors.phone}>
-              {({ id, invalid }) => <Input id={id} invalid={invalid} placeholder="77000000000" value={parent.phone} onChange={e => setParent(p => ({ ...p, phone: phoneDigits(e.target.value) }))} required {...phoneInputProps} />}
+              {({ id, invalid }) => <Input id={id} invalid={invalid} placeholder="77000000000" value={parent.phone} onChange={e => { setParent(p => ({ ...p, phone: phoneDigits(e.target.value) })); setDuplicates(null) }} required {...phoneInputProps} />}
             </Field>
+          </div>
+        )}
+
+        {!isEdit && mode === 'new' && duplicates && (
+          <div role="alert" className="rounded-md bg-warning-50 px-3 py-2.5 text-[13px] text-warning-600">
+            <p className="font-semibold">{t('Этот номер уже есть у другого родителя')}</p>
+            <ul className="mt-1.5 flex flex-col gap-1">
+              {duplicates.map(p => {
+                const linked = linkedParentIds.includes(p.id)
+                return (
+                  <li key={p.id} className="flex items-center justify-between gap-2">
+                    <span>{p.full_name}</span>
+                    {linked ? <span className="text-xs">{t('уже привязан')}</span> : (
+                      <Button size="sm" onClick={() => { setPicked({ id: p.id, title: p.full_name }); setMode('existing'); setQuery(p.full_name) }}>
+                        {t('Привязать')}
+                      </Button>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
           </div>
         )}
 
