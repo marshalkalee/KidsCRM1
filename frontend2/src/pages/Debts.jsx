@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, Download, MessageCircle, Phone, Receipt, Search, Wallet } from 'lucide-react'
+import { AlertTriangle, Download, MessageCircle, Receipt, Search, Wallet } from 'lucide-react'
 import api from '../api/axios'
+import CallButton from '../components/telephony/CallButton'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
 import { ListToolbar, StatCard, StatRow } from '../components/money/ListParts'
 import WhatsAppBulkModal from '../components/messaging/WhatsAppBulkModal'
@@ -255,9 +256,7 @@ function RowActions({ row, canAccept, onPay }) {
   return (
     <div className="flex items-center justify-end gap-1.5" onClick={stop}>
       {row.phone && (
-        <a href={`tel:${row.phone}`} className="flex size-9 items-center justify-center rounded-md text-ink-muted hover:bg-surface-muted hover:text-ink" title={t('Позвонить')} aria-label={t('Позвонить')}>
-          <Phone className="size-4" />
-        </a>
+        <CallButton phone={row.phone} className="size-9 rounded-md text-ink-muted hover:bg-surface-muted hover:text-ink" iconOnly />
       )}
       {row.whatsapp && (
         <a href={waLink(row.whatsapp, row.reminder_text)} target="_blank" rel="noreferrer" className="flex size-9 items-center justify-center rounded-md text-success-600 hover:bg-success-50" title={t('Напомнить в WhatsApp')} aria-label={t('Напомнить в WhatsApp')}>

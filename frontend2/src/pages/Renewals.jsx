@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, CalendarClock, Check, Download, Inbox, MessageCircle, Phone, PhoneOff, RefreshCw, Search } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Check, Download, Inbox, MessageCircle, PhoneOff, RefreshCw, Search } from 'lucide-react'
 import api from '../api/axios'
+import CallButton from '../components/telephony/CallButton'
 import { ListToolbar, StatCard, StatRow } from '../components/money/ListParts'
 import RenewModal from '../components/money/RenewModal'
 import WhatsAppBulkModal from '../components/messaging/WhatsAppBulkModal'
@@ -196,9 +197,7 @@ export default function Renewals() {
       render: row => (
         <div className="flex flex-wrap items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
           {row.phone && (
-            <a href={`tel:${row.phone}`} className="flex size-9 items-center justify-center rounded-md text-ink-muted hover:bg-surface-muted hover:text-ink" title={t('Позвонить')} aria-label={t('Позвонить')}>
-              <Phone className="size-4" />
-            </a>
+            <CallButton phone={row.phone} className="size-9 rounded-md text-ink-muted hover:bg-surface-muted hover:text-ink" iconOnly />
           )}
           {row.whatsapp && (
             <a href={waLink(row.whatsapp, row.message_text)} target="_blank" rel="noreferrer" className="flex size-9 items-center justify-center rounded-md text-success-600 hover:bg-success-50" title={t('Написать в WhatsApp')} aria-label={t('Написать в WhatsApp')}>

@@ -12,9 +12,9 @@ import RejectModal from '../components/leads/RejectModal'
 import LeadSaleModal from '../components/leads/LeadSaleModal'
 import TrialBookingModal from '../components/leads/TrialBookingModal'
 import TrialCancelModal from '../components/leads/TrialCancelModal'
-import CallButton from '../components/telephony/CallButton'
 import { STAGE_DOT, leadTitle, stageBadge } from '../components/leads/format'
 import { getLeadsViewPreference } from '../components/leads/viewPreference'
+import CallButton from '../components/telephony/CallButton'
 import { useSession } from '../session/SessionContext'
 import {
   Avatar, Badge, Button, Card, Dropdown, EmptyState, ErrorState, PageHeader, Skeleton, Textarea, ageLabel, apiErrorMessage, cn,
@@ -211,7 +211,7 @@ export default function LeadDetail() {
           <Card>
             <p className="text-[15px] font-bold text-ink">{t('Связаться')}</p>
             <p className="mt-1 text-sm text-ink-muted">{lead.parent_name} · <a href={`tel:${lead.phone}`} className="font-medium text-ink hover:text-brand-700">{lead.phone}</a></p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className={cn('mt-3 grid gap-2', user?.can_call && 'grid-cols-2')}>
               <CallButton phone={lead.phone} className="h-10 rounded-md bg-brand-600 text-sm font-semibold text-white shadow-card hover:bg-brand-700" />
               <a href={whatsappUrl(lead, user?.organization_name)} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-success-50 text-sm font-semibold text-success-600 hover:brightness-95">
                 <MessageCircle className="size-4" /> WhatsApp

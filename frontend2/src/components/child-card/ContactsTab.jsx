@@ -8,6 +8,7 @@ import {
 } from '../../ui'
 import { t } from '../../i18n'
 import CallButton from '../telephony/CallButton'
+import { useSession } from '../../session/SessionContext'
 import { personNameInput, personNameInputProps, phoneDigits, phoneInputProps } from '../../utils/formValidation'
 import { findParentsByPhones } from '../parents/duplicates'
 
@@ -99,6 +100,7 @@ export default function ContactsTab({ child, permissions, onCountChange }) {
 }
 
 function ContactCard({ link, canManage, onEdit, onDetach }) {
+  const { user } = useSession()
   const phones = link.parent_contact_phones
   const whatsapp = link.parent_contact_whatsapp || phones?.[0]?.number
   return (
@@ -123,8 +125,9 @@ function ContactCard({ link, canManage, onEdit, onDetach }) {
       </div>
       {phones && (
         <div className="flex flex-wrap gap-2">
-          {phones.map(phone => (
-            <CallButton key={phone.number} phone={phone.number} className="rounded-md bg-surface-muted px-2.5 py-1.5 text-[13px] font-medium text-ink hover:bg-brand-50 hover:text-brand-700">{phone.number}</CallButton>
+          {phones.map(phone => (user?.can_call
+            ? <CallButton key={phone.number} phone={phone.number} className="rounded-md bg-surface-muted px-2.5 py-1.5 text-[13px] font-medium text-ink hover:bg-brand-50 hover:text-brand-700">{phone.number}</CallButton>
+            : <span key={phone.number} className="rounded-md bg-surface-muted px-2.5 py-1.5 text-[13px] font-medium text-ink">{phone.number}</span>
           ))}
           {whatsapp && (
             <a href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md bg-success-50 px-2.5 py-1.5 text-[13px] font-medium text-success-600 hover:brightness-95">

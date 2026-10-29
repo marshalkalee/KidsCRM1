@@ -210,6 +210,29 @@ class TelephonyTests(TestCase):
             CallRecord.Status.RINGING,
         )
 
+    def test_me_can_call_only_with_configured_pbx(self):
+        """Кнопки «Позвонить» в CRM — только когда звонок пойдёт через АТС."""
+        self.assertFalse(self.api.get("/api/v1/users/auth/me/").data["can_call"])
+        connection = TelephonyConnection.objects.create(
+            organization=self.org,
+            provider=TelephonyConnection.Provider.ZADARMA,
+            api_key="key",
+            api_secret="secret",
+        )
+        self.assertFalse(self.api.get("/api/v1/users/auth/me/").data["can_call"])
+        connection.virtual_number = "101"
+        connection.save()
+        self.assertTrue(self.api.get("/api/v1/users/auth/me/").data["can_call"])
+        teacher = User.objects.create_user(
+            phone="77010000009",
+            password="p",
+            full_name="Педагог",
+            organization=self.org,
+            role=User.Role.TEACHER,
+        )
+        self.api.force_authenticate(teacher)
+        self.assertFalse(self.api.get("/api/v1/users/auth/me/").data["can_call"])
+
     def test_zadarma_webhook_echo_and_signature(self):
         connection = TelephonyConnection.objects.create(
             organization=self.org,

@@ -124,6 +124,7 @@ export default function ParentDetail() {
 }
 
 function ContactsCard({ parent }) {
+  const { user } = useSession()
   const phones = parent.phones // нет в ответе — роли без can_view_phone
   const whatsapp = parent.whatsapp || phones?.[0]?.number
   return (
@@ -131,7 +132,7 @@ function ContactsCard({ parent }) {
       <p className="text-[15px] font-bold text-ink">{t('Связаться')}</p>
       {phones ? (
         <>
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className={cn('mt-3 grid gap-2', user?.can_call && phones[0] && 'grid-cols-2')}>
             {phones[0] && (
               <CallButton phone={phones[0].number} className="h-10 rounded-md bg-brand-600 text-sm font-semibold text-white shadow-card hover:bg-brand-700" />
             )}
