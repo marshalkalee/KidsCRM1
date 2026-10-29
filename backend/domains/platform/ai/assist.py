@@ -437,6 +437,10 @@ def daily_plan(request) -> dict:
         "unmarked_lessons": "вчерашние занятия без отметки посещаемости",
         "overdue_debts": "дети с просроченным долгом",
         "no_subscription": "дети ходят без действующего абонемента",
+        "parent_requests": "новые запросы родителей",
+        "overdue_tasks": "просроченные задачи",
+        "task_comments": "новые комментарии к задачам",
+        "ai_digest": "готов отчёт недели",
     }
     summary = [
         {

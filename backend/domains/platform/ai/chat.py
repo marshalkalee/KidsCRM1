@@ -245,6 +245,28 @@ def _child_card(viewer, child_id):
     return {**card, "родители": api_get(viewer, "clients/child-contacts/", {"child": child_id})}
 
 
+# Как пункты «требует внимания» называются в интерфейсе (notifications/kinds.js).
+# Без подписей модель видит только служебный kind и пересказывает его
+# по-своему: ai_digest превращался в «AI-дайджест».
+ATTENTION_TITLES = {
+    "parent_requests": "Запросы родителей",
+    "new_leads": "Новые заявки",
+    "unmarked_lessons": "Посещаемость за вчера",
+    "overdue_debts": "Просроченные долги",
+    "no_subscription": "Без абонемента",
+    "ai_digest": "Отчёт недели",
+    "overdue_tasks": "Просроченные задачи",
+    "task_comments": "Комментарии к задачам",
+}
+
+
+def _attention_today(viewer):
+    data = api_get(viewer, "notifications/")
+    for item in data.get("items", []) if isinstance(data, dict) else []:
+        item["название"] = ATTENTION_TITLES.get(item.get("kind"), item.get("kind"))
+    return data
+
+
 def _flags(args, *names):
     return {n: "1" for n in names if args.get(n)}
 
@@ -252,8 +274,8 @@ def _flags(args, *names):
 TOOLS = [
     _tool(
         "attention_today",
-        "Что требует внимания прямо сейчас: новые заявки без звонка, вчерашние занятия без отметки, просроченные долги, дети без абонемента — с количеством и суммами. Начинай с этого на общие вопросы «что у нас происходит».",
-        run=lambda user, a: api_get(user, "notifications/"),
+        "Что требует внимания прямо сейчас: новые заявки без звонка, вчерашние занятия без отметки, просроченные долги, дети без абонемента, готовый отчёт недели — с количеством и суммами. Называй пункты так, как в поле «название». Начинай с этого на общие вопросы «что у нас происходит».",
+        run=lambda user, a: _attention_today(user),
     ),
     _tool(
         "branches",
