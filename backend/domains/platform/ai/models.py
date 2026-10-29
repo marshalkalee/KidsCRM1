@@ -203,4 +203,4 @@ class AIDigest(TenantModel):
         indexes = [models.Index(fields=["organization", "status", "-created_at"])]
 
     def __str__(self) -> str:
-        return f"Дайджест {self.week_start}: {self.status}"
+        return f"Отчёт недели {self.week_start}: {self.status}"

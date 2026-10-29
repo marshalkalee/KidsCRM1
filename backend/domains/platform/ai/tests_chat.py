@@ -156,6 +156,17 @@ class ChatToolsTests(ChatFixtures):
         owner_out = json.loads(chat.run_tool(self.viewer, "metrics", {"metrics": "revenue"}))
         self.assertIn("revenue", owner_out["metrics"])
 
+    def test_attention_items_have_screen_titles(self):
+        """Модель называет пункты как экран, а не служебным kind («AI-дайджест»)."""
+        from domains.platform.notifications.sources import SOURCES
+
+        kinds = {source.__name__ for source in SOURCES}
+        self.assertEqual(kinds - set(chat.ATTENTION_TITLES), set())
+        out = json.loads(chat.run_tool(self.viewer, "attention_today", {}))
+        for item in out["items"]:
+            self.assertEqual(item["название"], chat.ATTENTION_TITLES[item["kind"]])
+        self.assertNotIn("дайджест", json.dumps(out, ensure_ascii=False).lower())
+
     @tag("tenant_isolation")
     def test_foreign_child_is_not_found(self):
         other = Organization.objects.create(name="Чужой центр", slug="other")
