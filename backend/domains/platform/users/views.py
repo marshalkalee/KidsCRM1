@@ -14,6 +14,7 @@ from domains.platform.core.audit import AuditLog
 from domains.platform.core.images import clean_image, delete_image, save_image
 from domains.platform.core.permissions import IsOwnerOrManager, IsStaffOfOrganization
 from domains.platform.core.role_permissions import OVERRIDABLE, access_items, get_user_permissions
+from domains.platform.notifications.messaging import telephony
 from domains.platform.users.serializers import (
     ChangePasswordSerializer,
     CustomTokenObtainSerializer,
@@ -218,6 +219,12 @@ class MeView(APIView):
             "organization_name": user.organization.name if user.organization_id else None,
             "branches": [str(b.id) for b in user.branches.all()],
             "permissions": get_user_permissions(user),
+            # Кнопки «Позвонить» — только когда звонок пойдёт через АТС.
+            "can_call": bool(
+                user.organization_id
+                and user.role in (User.Role.OWNER, User.Role.MANAGER, User.Role.ADMIN)
+                and telephony.can_call_out(user.organization)
+            ),
         }
 
 

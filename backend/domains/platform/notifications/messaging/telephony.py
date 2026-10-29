@@ -355,6 +355,21 @@ def record_event(organization, payload):
     return call
 
 
+def can_call_out(organization):
+    """Звонок из CRM реально пойдёт через АТС. Иначе кнопку «Позвонить» не
+    показываем: запасной tel: на компьютере ничего не делает."""
+    return (
+        TelephonyConnection.objects.filter(
+            organization=organization,
+            provider=TelephonyConnection.Provider.ZADARMA,
+        )
+        .exclude(api_key="")
+        .exclude(api_secret="")
+        .exclude(virtual_number="")
+        .exists()
+    )
+
+
 def start_outgoing_call(*, organization, employee, phone):
     phone = normalize_phone(phone)
     connection = connection_for(organization)

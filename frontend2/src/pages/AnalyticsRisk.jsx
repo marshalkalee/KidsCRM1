@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CalendarX, CircleDollarSign, ClipboardPlus, MessageCircle, Phone, ShieldAlert, TicketCheck } from 'lucide-react'
+import { AlertTriangle, CalendarX, CircleDollarSign, ClipboardPlus, MessageCircle, ShieldAlert, TicketCheck } from 'lucide-react'
 import api from '../api/axios'
+import CallButton from '../components/telephony/CallButton'
 import { AnalyticsToolbar, ExportButton, useAnalyticsCatalog, useAnalyticsFilters, useAnalyticsGet } from '../components/analytics'
 import { Badge, Button, Card, ErrorState, PageHeader, Skeleton, apiErrorMessage, cn, formatDate, money, useToast } from '../ui'
 import { t } from '../i18n'
@@ -117,7 +118,7 @@ function RiskCard({ item, filters }) {
 
       <div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4">
         <Button icon={ClipboardPlus} size="sm" loading={busy} onClick={createTask}>{t('Создать задачу')}</Button>
-        {phone && <a href={`tel:${phone}`} className="font-btn inline-flex h-8 items-center gap-1.5 rounded-md border-[1.5px] border-line-strong px-3.5 text-xs font-semibold text-ink-muted hover:border-brand-300"><Phone className="size-4" />{t('Позвонить')}</a>}
+        {phone && <CallButton phone={phone} className="font-btn h-8 gap-1.5 rounded-md border-[1.5px] border-line-strong px-3.5 text-xs font-semibold text-ink-muted hover:border-brand-300" />}
         {whatsapp && <a href={`https://wa.me/${whatsapp}`} target="_blank" rel="noreferrer" className="font-btn inline-flex h-8 items-center gap-1.5 rounded-md bg-success-50 px-3.5 text-xs font-semibold text-success-600"><MessageCircle className="size-4" />WhatsApp</a>}
       </div>
     </Card>
