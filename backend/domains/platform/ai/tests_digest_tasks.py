@@ -60,7 +60,7 @@ class DigestTaskTests(AIFixtures):
         self.assertEqual(second.data, {"created": 0, "skipped": 1})
         task = Task.objects.get()
         self.assertEqual(task.assigned_to, self.owner)
-        self.assertIn("Из дайджеста", task.description)
+        self.assertIn("Из отчёта", task.description)
         self.assertIn(f"/digest?id={self.digest.id}", task.description)
 
     def test_equal_reason_and_recommendation_are_not_duplicated(self):

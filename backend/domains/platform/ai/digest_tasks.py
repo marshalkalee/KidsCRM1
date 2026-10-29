@@ -307,18 +307,18 @@ def create_from_digest(digest, item, task_type, actor, due_at, assignee_id=None)
             if task_type == Task.Type.RETENTION and child
             else f"Предложить продление: {child.full_name}"
             if task_type == Task.Type.RENEWAL_OFFER and child
-            else item.get("title", "Задача из дайджеста")
+            else item.get("title", "Задача из отчёта недели")
         )
         reason = (row["reason"] or item.get("rationale", "")).strip()
         action = item.get("action", "").strip()
-        description_lines = [f"Из дайджеста за неделю с {digest.week_start:%d.%m.%Y}."]
+        description_lines = [f"Из отчёта за неделю с {digest.week_start:%d.%m.%Y}."]
         # Некоторые шаблоны возвращают одно и то же предложение как основание
         # и действие. В задаче такой дубль не помогает сотруднику.
         if reason and reason != action:
             description_lines.append(f"Основание: {reason}.")
         if action:
             description_lines.append(f"Рекомендация: {action}.")
-        description_lines.append(f"Открыть дайджест: /digest?id={digest.id}")
+        description_lines.append(f"Открыть отчёт: /digest?id={digest.id}")
         task = create_task(
             type=task_type,
             assignee=assignee,

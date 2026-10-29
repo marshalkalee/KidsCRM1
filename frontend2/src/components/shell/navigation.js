@@ -48,7 +48,7 @@ export const NAV_SECTIONS = [
       { to: '/analytics', get label() { return t('Аналитика') }, icon: ChartColumn, permission: 'can_view_analytics' },
       // ai: true — пункт виден, только если ИИ подключён центру (TRU-160).
       { to: '/assistant', get label() { return t('ИИ-помощник') }, icon: Sparkles, permission: 'can_use_ai_chat', ai: true },
-      { to: '/digest', get label() { return t('Дайджест недели') }, icon: Newspaper, permission: 'can_view_ai_digest', ai: true },
+      { to: '/digest', get label() { return t('Отчёт недели') }, icon: Newspaper, permission: 'can_view_ai_digest', ai: true },
     ],
   },
   {

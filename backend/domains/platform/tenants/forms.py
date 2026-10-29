@@ -168,10 +168,10 @@ class OrganizationSettingsForm(KcFormMixin, forms.Form):
         label="Списывать занятие при своевременном предупреждении",
     )
     digest_weekday = forms.IntegerField(
-        min_value=0, max_value=6, required=False, label="День дайджеста ИИ (0 — понедельник)"
+        min_value=0, max_value=6, required=False, label="День отчёта недели (0 — понедельник)"
     )
     digest_hour = forms.IntegerField(
-        min_value=0, max_value=23, required=False, label="Час дайджеста ИИ"
+        min_value=0, max_value=23, required=False, label="Час отчёта недели"
     )
 
     def clean_timezone(self):
