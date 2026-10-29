@@ -30,7 +30,7 @@ function isOverdue(iso) {
 }
 
 function taskDescription(value) {
-  const withoutLink = value?.replace(/\n?Открыть дайджест: \/digest\?id=[0-9a-f-]+/i, '') || ''
+  const withoutLink = value?.replace(/\n?Открыть (?:отчёт|дайджест): \/digest\?id=[0-9a-f-]+/i, '') || ''
   const lines = withoutLink.split('\n')
   const reason = lines.find(line => line.startsWith('Основание: '))
   const action = lines.find(line => line.startsWith('Рекомендация: '))
@@ -557,7 +557,7 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, canManage,
           <Button size="sm" variant="secondary" onClick={onSell}>{t('Продать абонемент')}</Button>
         )}
         {task.link && !closed && <Button size="sm" variant="secondary" to={task.link}>{t('Отметить посещаемость')}</Button>}
-        {digestLink && <a href={digestLink} className="inline-flex items-center text-sm font-semibold text-brand-600 hover:underline">{t('Открыть дайджест')}</a>}
+        {digestLink && <a href={digestLink} className="inline-flex items-center text-sm font-semibold text-brand-600 hover:underline">{t('Открыть отчёт')}</a>}
         {!closed && (
           <div className="flex w-full items-center gap-1.5 sm:ml-auto sm:w-auto">
             {canManage && <Button size="sm" variant="ghost" icon={UserRoundPlus} onClick={onReassign}>{t('Передать')}</Button>}

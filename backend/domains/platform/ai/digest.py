@@ -364,7 +364,7 @@ def build(digest_id) -> AIDigest:
         return _set(
             digest,
             status=AIDigest.Status.FAILED,
-            error_detail="Новый дайджест не собрался — повторим завтра.",
+            error_detail="Новый отчёт не собрался — повторим завтра.",
         )
 
 
@@ -399,7 +399,7 @@ def _build(digest) -> AIDigest:
             failed.append(generations.DEGRADATION_MESSAGES.get(generation.status, ""))
     if not results:
         reason = failed[0] if failed else ""
-        text = f"{reason} Новый дайджест не собрался — повторим завтра.".strip()
+        text = f"{reason} Новый отчёт не собрался — повторим завтра.".strip()
         return _set(digest, status=AIDigest.Status.FAILED, error_detail=text[:500])
     content = compose(organization, results, snapshot, _previous(digest), digest.language)
     content["failed_blocks"] = len(failed)
@@ -432,7 +432,7 @@ def expire_stuck(organization, now=None) -> int:
         .filter(status__in=PENDING, created_at__lt=border)
         .update(
             status=AIDigest.Status.FAILED,
-            error_detail="Дайджест не собрался — нажмите «Обновить», чтобы собрать заново.",
+            error_detail="Отчёт не собрался — нажмите «Обновить», чтобы собрать заново.",
             updated_at=timezone.now(),
         )
     )
@@ -453,7 +453,7 @@ def request_refresh(organization, user, language="ru") -> tuple[AIDigest, bool]:
     if last_manual and timezone.now() - last_manual.created_at < REFRESH_COOLDOWN:
         minutes = int((timezone.now() - last_manual.created_at).total_seconds() // 60)
         raise DigestCooldown(
-            f"Дайджест обновляли {minutes} мин назад — данные с тех пор почти не изменились."
+            f"Отчёт обновляли {minutes} мин назад — данные с тех пор почти не изменились."
         )
     usage.ensure_within_limit(organization)
     digest = AIDigest.objects.create(

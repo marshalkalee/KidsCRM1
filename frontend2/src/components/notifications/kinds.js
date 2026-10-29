@@ -41,7 +41,7 @@ export const NOTIFICATION_KINDS = {
   ai_digest: {
     icon: Sparkles,
     tone: 'bg-[linear-gradient(135deg,#ede9fe,#fce7f3)] text-[#7c3aed]',
-    get title() { return t('Дайджест недели') },
+    get title() { return t('Отчёт недели') },
     text: () => t('Готов: что сделать на этой неделе'),
   },
   overdue_tasks: {

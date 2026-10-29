@@ -696,7 +696,7 @@ def digests(request, version=None):
 def digest_detail(request, digest_id, version=None):
     item = AIDigest.objects.for_tenant(request.user.organization).filter(pk=digest_id).first()
     if item is None:
-        return Response({"detail": "Дайджест не найден."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"detail": "Отчёт не найден."}, status=status.HTTP_404_NOT_FOUND)
     language = request.query_params.get("language", "ru")
     return Response(_digest_full(item, language if language in digest_i18n.LANGUAGES else "ru"))
 
@@ -704,7 +704,7 @@ def digest_detail(request, digest_id, version=None):
 def _digest_and_item(request, digest_id):
     item = AIDigest.objects.for_tenant(request.user.organization).filter(pk=digest_id).first()
     if item is None:
-        raise digest_tasks.DigestTaskError("Дайджест не найден.")
+        raise digest_tasks.DigestTaskError("Отчёт не найден.")
     return item, digest_tasks.find_item(item, request.data.get("item_id", ""))
 
 

@@ -267,7 +267,7 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
   // Дайджест ИИ (TRU-163): день и час по времени центра. Только у центров
   // с подключённым ИИ и только на экране «Организация».
   const digest = wide && ai.enabled && (
-    <Section id="org-digest" icon={Newspaper} title={t('Дайджест недели')} description={t('Когда собирать советы на неделю и присылать уведомление владельцу и управляющему.')} wide={wide}>
+    <Section id="org-digest" icon={Newspaper} title={t('Отчёт недели')} description={t('Когда собирать советы на неделю и присылать уведомление владельцу и управляющему.')} wide={wide}>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={t('День')}>
           {({ id }) => (
@@ -311,7 +311,7 @@ export default function OrganizationForm({ onSaved, submitLabel = t('Сохра�
     { id: 'org-thresholds', icon: Gauge, label: t('Пороги') },
     { id: 'org-rules', icon: BellRing, label: t('Автоправила') },
     { id: 'org-site', icon: Globe, label: t('Заявки с сайта') },
-    ...(digest ? [{ id: 'org-digest', icon: Newspaper, label: t('Дайджест недели') }] : []),
+    ...(digest ? [{ id: 'org-digest', icon: Newspaper, label: t('Отчёт недели') }] : []),
     ...(aside && asideNav && ai.enabled ? [{ icon: Sparkles, ...asideNav }] : []),
   ]
 

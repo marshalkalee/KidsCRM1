@@ -88,7 +88,7 @@ export default function Digest() {
     setRefreshing(true)
     try {
       const res = await api.post('ai/digests/', { language })
-      if (!res.data.created) toast.success(t('Дайджест уже собирается'))
+      if (!res.data.created) toast.success(t('Отчёт уже собирается'))
       setParams({})
       await load()
     } catch (err) {
@@ -111,7 +111,7 @@ export default function Digest() {
   return (
     <div>
       <PageHeader
-        title={t('Дайджест недели')}
+        title={t('Отчёт недели')}
         description={shown && !(selectedId && !selected) ? (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <AIBadge />
@@ -127,12 +127,12 @@ export default function Digest() {
 
       <div className="space-y-4">
         {building && data.latest && !selected && (
-          <Banner tone="info"><Loader2 className="size-4 shrink-0 animate-spin" /> {t('Собираем новый дайджест — обычно это меньше минуты. Пока показан прошлый.')}</Banner>
+          <Banner tone="info"><Loader2 className="size-4 shrink-0 animate-spin" /> {t('Собираем новый отчёт — обычно это меньше минуты. Пока показан прошлый.')}</Banner>
         )}
-        {data.notice && !selected && <Banner tone="warning">{data.notice.text || t('Новый дайджест не собрался — повторим завтра.')}</Banner>}
+        {data.notice && !selected && <Banner tone="warning">{data.notice.text || t('Новый отчёт не собрался — повторим завтра.')}</Banner>}
         {selected && (
           <button type="button" onClick={() => setParams({})} className="inline-flex items-center gap-1 text-sm font-semibold text-brand-600 hover:underline">
-            ← {t('К последнему дайджесту')}
+            ← {t('К последнему отчёту')}
           </button>
         )}
 
@@ -141,9 +141,9 @@ export default function Digest() {
         ) : !shown ? (
           <Card>
             {building ? (
-              <EmptyState icon={Newspaper} title={t('Собираем первый дайджест')} description={t('Обычно это меньше минуты — страница обновится сама.')} />
+              <EmptyState icon={Newspaper} title={t('Собираем первый отчёт')} description={t('Обычно это меньше минуты — страница обновится сама.')} />
             ) : (
-              <EmptyState icon={CalendarClock} title={t('Дайджестов пока нет')} description={schedule} action={<Button variant="primary" icon={RefreshCw} onClick={refresh} loading={refreshing}>{t('Собрать сейчас')}</Button>} />
+              <EmptyState icon={CalendarClock} title={t('Отчётов пока нет')} description={schedule} action={<Button variant="primary" icon={RefreshCw} onClick={refresh} loading={refreshing}>{t('Собрать сейчас')}</Button>} />
             )}
           </Card>
         ) : shown.status === 'insufficient_data' ? (
