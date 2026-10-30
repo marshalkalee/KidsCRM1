@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { Avatar, ErrorBoundary, Modal, cn, formatDate, formatDateTime } from '../ui'
 import { t, useLang } from '../i18n'
+import logoMark from '../assets/logo-mark.png'
 import { useParent } from './useParent'
 import portal, { usePortalData } from './api'
 import { installPwa } from './pwa'
@@ -158,11 +159,7 @@ export default function ParentLayout() {
 
 function BrandMark({ className }) {
   return (
-    <span className={cn('bg-brand-gradient flex size-9 shrink-0 items-center justify-center rounded-[10px] text-white shadow-brand', className)}>
-      <svg viewBox="0 0 24 24" className="size-[18px]" fill="currentColor" aria-hidden="true">
-        <path d="M12 2 2 7l10 5 10-5-10-5Zm-10 15 10 5 10-5M2 12l10 5 10-5" />
-      </svg>
-    </span>
+    <img src={logoMark} alt="" aria-hidden="true" className={cn('h-7 w-auto shrink-0 select-none', className)} draggable={false} />
   )
 }
 

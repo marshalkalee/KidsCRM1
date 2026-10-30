@@ -4,6 +4,7 @@ import { Eye, EyeOff, LogIn } from 'lucide-react'
 import { Button, Card, Field, Input } from '../ui'
 import { t, useLang } from '../i18n'
 import LanguageSwitcher from '../components/shell/LanguageSwitcher'
+import logoMark from '../assets/logo-mark.png'
 import { phoneDigits, phoneInputProps } from '../utils/formValidation'
 import portal, { portalError } from './api'
 import { useParent } from './useParent'
@@ -57,7 +58,7 @@ export default function ParentLogin() {
         <LanguageSwitcher />
       </div>
       <div className="mb-6 flex flex-col items-center text-center">
-        <img src="/parent/icon-192.png" alt="" className="mb-4 size-16 rounded-[18px] shadow-brand" />
+        <img src={logoMark} alt="" aria-hidden="true" className="mb-5 h-12 w-auto select-none" draggable={false} />
         <h1 className="text-[22px] font-bold text-ink">{t('Кабинет родителя')}</h1>
         <p className="mt-1 max-w-xs text-sm text-ink-muted">{t('Расписание, посещения и абонемент ребёнка — в телефоне.')}</p>
       </div>
