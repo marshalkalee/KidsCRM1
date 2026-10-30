@@ -5,6 +5,7 @@ import { useSession } from '../../session/SessionContext'
 import { ErrorBoundary, cn, initials } from '../../ui'
 import { GlobalSearch } from './GlobalSearch'
 import LanguageSwitcher from './LanguageSwitcher'
+import logoMark from '../../assets/logo-mark.png'
 import { QuickLeadLauncher } from '../leads/QuickLead'
 import { NotificationList, useNotifications } from '../notifications/NotificationList'
 import { visibleSections } from './navigation'
@@ -102,11 +103,7 @@ function Sidebar({ onNavigate, collapsed = false }) {
   return (
     <>
       <div className={cn('flex h-16 shrink-0 items-center gap-2.5 border-b border-line', collapsed ? 'justify-center' : 'px-5')}>
-        <span className="bg-brand-gradient flex size-9 shrink-0 items-center justify-center rounded-[10px] text-white shadow-brand">
-          <svg viewBox="0 0 24 24" className="size-[18px]" fill="currentColor" aria-hidden="true">
-            <path d="M12 2 2 7l10 5 10-5-10-5Zm-10 15 10 5 10-5M2 12l10 5 10-5" />
-          </svg>
-        </span>
+        <img src={logoMark} alt="" aria-hidden="true" className="h-7 w-auto shrink-0 select-none" draggable={false} />
         {!collapsed && <span className="text-[17px] font-bold tracking-tight text-ink">KidsCRM</span>}
       </div>
 

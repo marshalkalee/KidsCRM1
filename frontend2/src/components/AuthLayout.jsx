@@ -1,5 +1,6 @@
 import { t } from '../i18n'
 import LanguageSwitcher from './shell/LanguageSwitcher'
+import logoMark from '../assets/logo-mark.png'
 const FEATURES = [
   'База детей и родителей без дублей',
   'Расписание, группы и посещаемость',
@@ -18,10 +19,8 @@ export default function AuthLayout({ children }) {
           <circle cx="90" cy="780" r="160" fill="none" stroke="#fff" />
         </svg>
         <div className="relative flex items-center gap-2.5">
-          <span className="flex size-10 items-center justify-center rounded-lg bg-white/20 backdrop-blur">
-            <svg viewBox="0 0 24 24" className="size-5" fill="currentColor" aria-hidden="true">
-              <path d="M12 2 2 7l10 5 10-5-10-5Zm-10 15 10 5 10-5M2 12l10 5 10-5" />
-            </svg>
+          <span className="flex size-10 items-center justify-center rounded-lg bg-white shadow-sm">
+            <img src={logoMark} alt="" aria-hidden="true" className="h-5 w-auto select-none" draggable={false} />
           </span>
           <span className="text-lg font-bold">KidsCRM</span>
         </div>
@@ -44,11 +43,7 @@ export default function AuthLayout({ children }) {
         <div className="absolute right-5 top-5"><LanguageSwitcher /></div>
         <div className="w-full max-w-sm">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <span className="flex size-9 items-center justify-center rounded-md bg-gradient-to-br from-brand-400 to-brand-600 text-white">
-              <svg viewBox="0 0 24 24" className="size-[18px]" fill="currentColor" aria-hidden="true">
-                <path d="M12 2 2 7l10 5 10-5-10-5Zm-10 15 10 5 10-5M2 12l10 5 10-5" />
-              </svg>
-            </span>
+            <img src={logoMark} alt="" aria-hidden="true" className="h-7 w-auto shrink-0 select-none" draggable={false} />
             <span className="text-[17px] font-bold">KidsCRM</span>
           </div>
           {children}
