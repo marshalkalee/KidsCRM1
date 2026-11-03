@@ -701,7 +701,7 @@
  "Что-то пошло не так. Попробуйте ещё раз.": "Something went wrong. Try again.",
  "Шаг засчитается, когда появится первая запись.": "The step counts once the first record appears.",
  "Шаги импорта": "Import steps",
- "Экран типов абонементов скоро появится (TRU-74). Пропустите шаг — вернётесь к нему, когда он будет готов.": "The subscription types screen is coming soon (TRU-74). Skip the step — you'll come back when it's ready.",
+ "Добавить тип абонемента": "Add subscription type",
  "Этот номер уже есть": "This number already exists",
  "Этот раздел недоступен для вашей роли.": "This section is not available for your role.",
  "Язык": "Language",
