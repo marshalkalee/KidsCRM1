@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowRight, Check, CircleDashed, FileSpreadsheet, Plus, SkipForward, Sparkles } from 'lucide-react'
+import { ArrowRight, Check, CircleDashed, FileSpreadsheet, Plus, SkipForward } from 'lucide-react'
 import api from '../api/axios'
 import BranchModal from '../components/BranchModal'
 import DirectionModal from '../components/DirectionModal'
 import GroupModal from '../components/GroupModal'
+import SubscriptionTypeModal from '../components/SubscriptionTypeModal'
 import OrganizationForm from '../components/OrganizationForm'
 import { useSession } from '../session/SessionContext'
 import { Badge, Button, Card, CardHeader, ErrorState, PageHeader, Spinner, apiErrorMessage, cn, useToast } from '../ui'
@@ -19,7 +20,7 @@ const STEP_INFO = {
   organization: { get description() { return t('Название, часовой пояс и когда подсвечивать продления и долги. Можно оставить как есть.') } },
   branch: { get description() { return t('Где проходят занятия. У филиала — адрес, часы работы и залы.') }, list: 'branches/', get add() { return t('Добавить филиал') } },
   directions: { get description() { return t('Чему учите: балет, растяжка, хореография. По направлениям строятся группы и абонементы.') }, list: 'directions/', get add() { return t('Добавить направление') } },
-  subscription_types: { get description() { return t('Какие абонементы продаёте: на 8 занятий, безлимит и т.п.') } },
+  subscription_types: { get description() { return t('Какие абонементы продаёте: на 8 занятий, безлимит и т.п.') }, list: 'subscriptions/subscription-types/', get add() { return t('Добавить тип абонемента') } },
   groups: { get description() { return t('Группы с преподавателем и вместимостью — в них записываются дети.') }, list: 'groups/', get add() { return t('Создать группу') } },
   import: { get description() { return t('Загрузите базу детей и родителей из Excel — дубли найдём и спросим, что с ними делать.') } },
 }
@@ -145,12 +146,6 @@ function StepPanel({ step, reload, onNext }) {
         actions={step.status === 'done' ? <Badge tone="success" dot>{t('Готово')}</Badge> : step.status === 'skipped' ? <Badge tone="warning">{t('Пропущено')}</Badge> : null}
       />
       {info.list && <ItemsStep step={step} info={info} reload={reload} />}
-      {step.key === 'subscription_types' && (
-        <div className="flex items-start gap-3 rounded-lg bg-surface-muted p-4 text-sm text-ink-muted">
-          <Sparkles className="mt-0.5 size-4 shrink-0 text-brand-600" />
-          {t('Экран типов абонементов скоро появится (TRU-74). Пропустите шаг — вернётесь к нему, когда он будет готов.')}
-        </div>
-      )}
       {step.key === 'import' && (
         <div className="flex flex-col items-start gap-3 rounded-lg bg-surface-muted p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="flex items-center gap-2 text-sm text-ink-muted"><FileSpreadsheet className="size-4 text-brand-600" /> {t('Импорт откроется на отдельной странице, потом вернитесь сюда.')}</p>
@@ -186,11 +181,13 @@ function ConfirmOrganization({ reload, onNext }) {
 function ItemsStep({ step, info, reload }) {
   const [items, setItems] = useState(null)
   const [branches, setBranches] = useState([])
+  const [directions, setDirections] = useState([])
   const [adding, setAdding] = useState(false)
 
   const load = useCallback(() => {
     api.get(info.list).then(r => setItems(r.data.results || r.data)).catch(() => setItems([]))
-    if (step.key === 'directions') api.get('branches/').then(r => setBranches(r.data.results || r.data)).catch(() => {})
+    if (step.key === 'directions' || step.key === 'subscription_types') api.get('branches/').then(r => setBranches(r.data.results || r.data)).catch(() => {})
+    if (step.key === 'subscription_types') api.get('directions/').then(r => setDirections(r.data.results || r.data)).catch(() => {})
   }, [info.list, step.key])
   useEffect(() => { load() }, [load])
 
@@ -217,6 +214,7 @@ function ItemsStep({ step, info, reload }) {
       {adding && step.key === 'branch' && <BranchModal onClose={() => setAdding(false)} onSaved={saved} />}
       {adding && step.key === 'directions' && <DirectionModal branches={branches} onClose={() => setAdding(false)} onSaved={saved} />}
       {adding && step.key === 'groups' && <GroupModal onClose={() => setAdding(false)} onSaved={saved} />}
+      {adding && step.key === 'subscription_types' && <SubscriptionTypeModal directions={directions} branches={branches} onClose={() => setAdding(false)} onSaved={saved} />}
     </div>
   )
 }
