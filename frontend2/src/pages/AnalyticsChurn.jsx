@@ -4,6 +4,7 @@ import { ClipboardPlus, Info, MessageCircle } from 'lucide-react'
 import api from '../api/axios'
 import CallButton from '../components/telephony/CallButton'
 import { Badge, Button, Card, CardHeader, DataTable, ErrorState, PageHeader, Skeleton, Tabs, apiErrorMessage, cn, formatDate, useToast } from '../ui'
+import WhatsAppButton from '../components/messaging/WhatsAppButton'
 import { locale, t } from '../i18n'
 import {
   AnalyticsToolbar, ExportButton, MultiLineChart, PALETTE, formatValue,
@@ -225,7 +226,7 @@ function ContactActions({ item, children }) {
   return (
     <div className="flex flex-wrap gap-2">
       {phone && <CallButton phone={phone} className="font-btn h-8 gap-1.5 rounded-md border-[1.5px] border-line-strong px-3 text-xs font-semibold text-ink-muted hover:border-brand-300" />}
-      {whatsapp && <a href={`https://wa.me/${whatsapp}`} target="_blank" rel="noreferrer" className="font-btn inline-flex h-8 items-center gap-1.5 rounded-md bg-success-50 px-3 text-xs font-semibold text-success-600"><MessageCircle className="size-4" />WhatsApp</a>}
+      {whatsapp && <WhatsAppButton phone={whatsapp} childId={item.child_id} className="font-btn inline-flex h-8 items-center gap-1.5 rounded-md bg-success-50 px-3 text-xs font-semibold text-success-600"><MessageCircle className="size-4" />WhatsApp</WhatsAppButton>}
       {children}
       {!phone && !whatsapp && !children && <span className="text-xs text-ink-subtle">{t('Нет контакта')}</span>}
     </div>

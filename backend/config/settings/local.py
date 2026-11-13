@@ -3,7 +3,8 @@
 from .base import *  # noqa: F403
 
 DEBUG = True
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+# "backend" — вебхуки Evolution API из соседнего контейнера (docker-compose.yml).
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "backend"]
 AI_FIXTURE_MODE = True
 
 # Без manifest-хранилища в деве — иначе {% static %} требует collectstatic

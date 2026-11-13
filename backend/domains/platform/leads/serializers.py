@@ -554,11 +554,24 @@ class LeadStageSerializer(serializers.ModelSerializer):
 
 class LeadCommentSerializer(serializers.ModelSerializer):
     author_name = serializers.CharField(source="author.full_name", read_only=True, default=None)
+    attachments = serializers.SerializerMethodField()
 
     class Meta:
         model = LeadComment
-        fields = ["id", "text", "author", "author_name", "created_at"]
+        fields = ["id", "text", "author", "author_name", "attachments", "created_at"]
         read_only_fields = ["author", "created_at"]
+
+    def get_attachments(self, obj):
+        # Файл — через API (leads/<id>/comments/<comment>/files/<file>/), не по ссылке.
+        return [
+            {
+                "id": str(item.id),
+                "name": item.name,
+                "size": item.size,
+                "content_type": item.content_type,
+            }
+            for item in obj.attachments.all()
+        ]
 
     def validate_text(self, value):
         value = value.strip()

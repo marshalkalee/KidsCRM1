@@ -55,6 +55,17 @@ urlpatterns = [
         views.ChildParentNoteReadView.as_view(),
         name="child-parent-note-read",
     ),
+    path("children/<uuid:child_id>/chat/", views.ChildChatView.as_view(), name="child-chat"),
+    path(
+        "children/<uuid:child_id>/chat/messages/<str:direction>/<uuid:message_id>/delete/",
+        views.ChildChatDeleteView.as_view(),
+        name="child-chat-delete",
+    ),
+    path(
+        "children/<uuid:child_id>/chat/media/<str:direction>/<uuid:message_id>/",
+        views.ChildChatMediaView.as_view(),
+        name="child-chat-media",
+    ),
     path("announcements/", views.AnnouncementsView.as_view(), name="announcements"),
     path(
         "announcements/<uuid:announcement_id>/read/",

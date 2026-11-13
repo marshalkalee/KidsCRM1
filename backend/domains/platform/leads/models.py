@@ -366,3 +366,26 @@ class LeadComment(TenantModel):
 
     class Meta:
         ordering = ["created_at"]
+
+
+def lead_comment_upload_to(instance, filename):
+    from domains.platform.core.attachments import upload_path
+
+    return upload_path("leads", instance.organization_id, filename)
+
+
+class LeadCommentAttachment(TenantModel):
+    """Файл к заметке заявки. Отдаётся только через API сотрудникам центра."""
+
+    comment = models.ForeignKey(LeadComment, on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField(upload_to=lead_comment_upload_to, max_length=500)
+    name = models.CharField(max_length=255)
+    size = models.PositiveIntegerField(default=0)
+    content_type = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def save(self, *args, **kwargs):
+        self.organization_id = self.comment.organization_id
+        super().save(*args, **kwargs)

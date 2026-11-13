@@ -2,6 +2,7 @@ import uuid
 from decimal import Decimal
 from urllib.parse import quote
 
+from django.db import transaction
 from django.db.models import Q
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -10,6 +11,7 @@ from rest_framework.response import Response
 from domains.money.subscriptions.debt import debt_by_child
 from domains.money.subscriptions.models import Subscription
 from domains.platform.core.active_branch import branch_scope
+from domains.platform.core.attachments import file_response, files_error
 from domains.platform.core.permissions import IsOwnerOrManagerOrAdmin, IsStaffOfOrganization
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.core.role_permissions import (
@@ -24,7 +26,13 @@ from domains.scheduling.groups.models import GroupMembership
 from . import search
 from .child_list import active_group_branch_names, branch_names, list_children
 from .forms import ChildPhotoUploadForm
-from .models import Child, ChildContact, CommunicationLog, ParentContact
+from .models import (
+    Child,
+    ChildContact,
+    CommunicationAttachment,
+    CommunicationLog,
+    ParentContact,
+)
 from .parents import DELETE_BLOCKED_MESSAGE, can_delete_parent, parent_money
 from .photos import MAX_PHOTO_BYTES, save_child_photo
 from .serializers import (
@@ -168,7 +176,14 @@ class ParentContactViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         # Пароль в кабинет родителя (Д40) — тоже только руководитель и администратор.
-        if self.action in ("create", "update", "partial_update", "destroy", "portal_access"):
+        if self.action in (
+            "create",
+            "update",
+            "partial_update",
+            "destroy",
+            "portal_access",
+            "portal_access_send",
+        ):
             return [IsOwnerOrManagerOrAdmin()]
         return [IsStaffOfOrganization()]
 
@@ -230,15 +245,7 @@ class ParentContactViewSet(viewsets.ModelViewSet):
                 entity=parent,
                 after={"portal_password": "issued"},
             )
-            link = request.build_absolute_uri("/parent/login")
-            center = request.user.organization.name
-            text = "\n".join(
-                [
-                    f"Здравствуйте! Кабинет родителя {center}: {link}",
-                    f"Логин — ваш номер {phone}, пароль: {password}",
-                    "Пароль можно сменить в профиле кабинета.",
-                ]
-            )
+            text = _portal_message(request, phone, password)
             digits = "".join(ch for ch in (parent.whatsapp or phone) if ch.isdigit())
             return Response(
                 {
@@ -257,6 +264,35 @@ class ParentContactViewSet(viewsets.ModelViewSet):
                 "last_login_at": account.last_login_at if account else None,
             }
         )
+
+    @action(detail=True, methods=["post"], url_path="portal-access/send")
+    def portal_access_send(self, request, pk=None, version=None):
+        """Отправить только что выданный пароль с номера центра в WhatsApp —
+        обычным сообщением: оно видно в чате родителя и журнале, как любое
+        другое. Пароль сверяется с выданным, чтобы отправить именно его."""
+        from django.contrib.auth.hashers import check_password
+
+        from domains.people.portal.models import ParentAccount
+        from domains.platform.notifications.messaging import service as messaging_service
+
+        parent = self.get_object()
+        phone = next((p.number for p in parent.phones.all()), "") or parent.whatsapp
+        password = str(request.data.get("password") or "")
+        account = ParentAccount.objects.filter(phone=phone).first() if phone else None
+        if not (
+            account and account.password and password and check_password(password, account.password)
+        ):
+            return Response(
+                {"detail": "Пароль не совпадает с выданным — выдайте новый."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            messaging_service.send_manual_whatsapp(
+                request.user, _portal_message(request, phone, password), parent=parent
+            )
+        except messaging_service.MessagingError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "ok"}, status=status.HTTP_202_ACCEPTED)
 
     def destroy(self, request, *args, **kwargs):
         parent = self.get_object()
@@ -359,6 +395,19 @@ class ChildContactViewSet(viewsets.ModelViewSet):
         return qs
 
 
+def _portal_message(request, phone, password):
+    """Сообщение родителю с доступом в кабинет (одно для WhatsApp и копирования)."""
+    link = request.build_absolute_uri("/parent/login")
+    center = request.user.organization.name
+    return "\n".join(
+        [
+            f"Здравствуйте! Кабинет родителя {center}: {link}",
+            f"Логин — ваш номер {phone}, пароль: {password}",
+            "Пароль можно сменить в профиле кабинета.",
+        ]
+    )
+
+
 class CommunicationLogViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
@@ -380,12 +429,32 @@ class CommunicationLogViewSet(
         return [IsStaffOfOrganization()]
 
     def get_queryset(self):
-        qs = CommunicationLog.objects.for_tenant(self.request.user.organization).select_related(
-            "author", "child", "parent_contact"
+        qs = (
+            CommunicationLog.objects.for_tenant(self.request.user.organization)
+            .select_related("author", "child", "parent_contact")
+            .prefetch_related("attachments")
         )
+        # ?exclude_channel=whatsapp — в карточке родителя переписка WhatsApp
+        # идёт чатом рядом, в «Заметках» её не повторяем.
+        excluded = self.request.query_params.get("exclude_channel")
+        if excluded:
+            qs = qs.exclude(channel=excluded)
         child_id = self.request.query_params.get("child")
         if child_id:
-            qs = qs.filter(child_id=child_id)
+            try:
+                child_id = uuid.UUID(child_id)
+            except ValueError:
+                return qs.none()
+            # И заметки о родителях ребёнка без указания ребёнка: что написали
+            # в карточке родителя, видно во всех карточках его детей.
+            qs = qs.filter(
+                Q(child_id=child_id)
+                | Q(
+                    child__isnull=True,
+                    parent_contact__child_links__child_id=child_id,
+                    parent_contact__child_links__deleted_at__isnull=True,
+                )
+            ).distinct()
         parent_contact_id = self.request.query_params.get("parent_contact")
         if parent_contact_id:
             qs = qs.filter(parent_contact_id=parent_contact_id)
@@ -398,14 +467,49 @@ class CommunicationLogViewSet(
                 family_id = uuid.UUID(family_id)
             except ValueError:
                 return qs.none()
+            # И записи о самом родителе без ребёнка — переписка WhatsApp с
+            # родителем, у которого дети не привязаны или их несколько.
             qs = qs.filter(
-                child__contacts__parent_contact_id=family_id,
-                child__contacts__deleted_at__isnull=True,
+                Q(
+                    child__contacts__parent_contact_id=family_id,
+                    child__contacts__deleted_at__isnull=True,
+                )
+                | Q(child__isnull=True, parent_contact_id=family_id)
             ).distinct()
         return qs
 
-    def perform_create(self, serializer):
-        serializer.save(author=self.request.user)
+    def create(self, request, *args, **kwargs):
+        files = request.FILES.getlist("files")
+        error = files_error(files)
+        if error:
+            return Response({"files": [error]}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            log = serializer.save(author=request.user)
+            for uploaded in files:
+                CommunicationAttachment.objects.create(
+                    log=log,
+                    file=uploaded,
+                    name=uploaded.name[:255],
+                    size=uploaded.size,
+                    content_type=(uploaded.content_type or "")[:100],
+                )
+        return Response(self.get_serializer(log).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"], url_path=r"files/(?P<file_id>[0-9a-f-]+)")
+    def file(self, request, pk=None, file_id=None):
+        """Файл заметки — только сотрудникам этого центра."""
+        attachment = (
+            CommunicationAttachment.objects.for_tenant(request.user.organization)
+            .filter(pk=file_id, log_id=pk)
+            .first()
+        )
+        if attachment is None:
+            return Response({"detail": "Файл не найден."}, status=status.HTTP_404_NOT_FOUND)
+        return file_response(
+            attachment.file, name=attachment.name, content_type=attachment.content_type
+        )
 
 
 @api_view(["POST"])

@@ -285,11 +285,14 @@ class CommunicationLogSerializer(serializers.ModelSerializer):
     лог append-only; автор — текущий пользователь, не из запроса."""
 
     channel_label = serializers.CharField(source="get_channel_display", read_only=True)
-    author_name = serializers.CharField(source="author.full_name", read_only=True)
-    child_name = serializers.CharField(source="child.full_name", read_only=True)
+    author_name = serializers.CharField(source="author.full_name", read_only=True, default=None)
+    child_name = serializers.CharField(source="child.full_name", read_only=True, default=None)
+    # Входящее сообщение WhatsApp от родителя (автора-сотрудника нет).
+    incoming = serializers.SerializerMethodField()
     parent_contact_full_name = serializers.CharField(
         source="parent_contact.full_name", read_only=True, default=None
     )
+    attachments = serializers.SerializerMethodField()
 
     class Meta:
         model = CommunicationLog
@@ -303,9 +306,30 @@ class CommunicationLogSerializer(serializers.ModelSerializer):
             "channel_label",
             "note",
             "author_name",
+            "incoming",
+            "attachments",
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+        # Вручную запись заводят о ребёнке или о родителе (карточка родителя
+        # без детей) — проверка «хотя бы одно» в validate.
+        extra_kwargs = {"child": {"required": False, "allow_null": True}}
+
+    def get_incoming(self, obj):
+        return obj.author_id is None
+
+    def get_attachments(self, obj):
+        # Файл отдаётся через API (communications/<id>/files/<file_id>/), не по
+        # ссылке на диск: справки и фото детей — только сотрудникам центра.
+        return [
+            {
+                "id": str(item.id),
+                "name": item.name,
+                "size": item.size,
+                "content_type": item.content_type,
+            }
+            for item in obj.attachments.all()
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -327,11 +351,13 @@ class CommunicationLogSerializer(serializers.ModelSerializer):
         # Как в CommunicationLogForm: контакт — только из привязанных к
         # этому ребёнку, иначе история родителя получит чужого ребёнка.
         parent_contact = attrs.get("parent_contact")
+        child = attrs.get("child")
+        if child is None and parent_contact is None:
+            raise serializers.ValidationError({"child": "Выберите ребёнка или родителя."})
         if (
             parent_contact
-            and not ChildContact.objects.filter(
-                child=attrs["child"], parent_contact=parent_contact
-            ).exists()
+            and child is not None
+            and not ChildContact.objects.filter(child=child, parent_contact=parent_contact).exists()
         ):
             raise serializers.ValidationError(
                 {"parent_contact": "Этот контакт не привязан к ребёнку."}

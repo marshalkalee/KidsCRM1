@@ -40,6 +40,9 @@ services:
       dockerfile: Dockerfile
     env_file:
       - backend/.env
+    # Загруженные файлы (фото детей, файлы к заметкам) переживают пересборку образа.
+    volumes:
+      - kidscrm_media:/app/media
     depends_on:
       db:
         condition: service_healthy
@@ -92,6 +95,24 @@ services:
       - backend
     restart: unless-stopped
 
+  # WhatsApp по QR-коду — Evolution API (docs/whatsapp-evolution.md). Порт
+  # наружу не открыт: CRM ходит к нему по http://evolution:8080 внутри сети
+  # compose. Версия закреплена — обновлять осознанно, после проверки на стенде.
+  # Перед первым запуском: база "evolution" в том же Postgres и
+  # infra/evolution/.env из infra/evolution/.env.example.
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    env_file:
+      - infra/evolution/.env
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
   # Разовая выдача/продление сертификата — см. README "Staging и деплой"
   # для команды первого запуска (нужен реальный домен, указывающий на сервер).
   certbot:
@@ -106,3 +127,5 @@ volumes:
   kidscrm_postgres_data:
   certbot_www:
   certbot_certs:
+  evolution_instances:
+  kidscrm_media:

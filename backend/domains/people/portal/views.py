@@ -537,6 +537,80 @@ class ChildParentNoteReadView(ParentView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class ChildChatView(ParentView):
+    """Чат с центром (та же переписка, что WhatsApp): GET — лента, POST — написать."""
+
+    def get(self, request, child_id, version=None):
+        from . import chat
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(chat.thread(request.user.phone, child))
+
+    def post(self, request, child_id, version=None):
+        from . import chat
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        if child is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            chat.send(
+                request.user.phone, child, request.data.get("text", ""), request.FILES.get("file")
+            )
+        except chat.ChatError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(chat.thread(request.user.phone, child), status=status.HTTP_201_CREATED)
+
+
+class ChildChatDeleteView(ParentView):
+    """Удалить сообщение в чате с центром: у себя или у всех (своё)."""
+
+    def post(self, request, child_id, direction, message_id, version=None):
+        from . import chat
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        try:
+            message = (
+                chat.delete(
+                    request.user.phone,
+                    child,
+                    direction,
+                    message_id,
+                    for_everyone=bool(request.data.get("for_everyone")),
+                )
+                if child
+                else None
+            )
+        except chat.ChatError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if message is None:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(chat.thread(request.user.phone, child))
+
+
+class ChildChatMediaView(ParentView):
+    """Фото, голосовое, документ из чата — только этой семье."""
+
+    def get(self, request, child_id, direction, message_id, version=None):
+        from domains.platform.core.attachments import file_response
+
+        from . import chat
+
+        child = access.child_for_phone(request.user.phone, child_id)
+        message = (
+            chat.media_message(request.user.phone, child, direction, message_id) if child else None
+        )
+        if message is None or not message.media_file:
+            return Response({"detail": "Не найдено."}, status=status.HTTP_404_NOT_FOUND)
+        if direction == "in":
+            name = message.media.get("filename") or message.media_file.name.rsplit("/", 1)[-1]
+            content_type = message.media.get("mime_type") or ""
+        else:
+            name, content_type = message.media_name, message.media_type
+        return file_response(message.media_file, name=name, content_type=content_type)
+
+
 class AnnouncementsView(ParentView):
     """Лента объявлений родителя: активные или ?archive=1, и сколько непрочитанных."""
 

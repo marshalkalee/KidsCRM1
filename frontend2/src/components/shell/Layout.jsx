@@ -8,6 +8,7 @@ import LanguageSwitcher from './LanguageSwitcher'
 import logoMark from '../../assets/logo-mark.png'
 import { QuickLeadLauncher } from '../leads/QuickLead'
 import { NotificationList, useNotifications } from '../notifications/NotificationList'
+import WhatsAppPopup from '../notifications/WhatsAppPopup'
 import { visibleSections } from './navigation'
 import { useAI } from '../ai/ai'
 import { t } from '../../i18n'
@@ -169,6 +170,7 @@ function Notifications() {
   const unread = data?.unread || 0
   return (
     <div className="relative" ref={ref}>
+      <WhatsAppPopup items={data?.items} onOpen={markSeen} />
       <button
         type="button"
         onClick={() => setOpen(o => !o)}

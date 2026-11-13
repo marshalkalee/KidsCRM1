@@ -40,7 +40,7 @@ export default function WhatsAppBulkModal({ open, onClose, source, ids, onSent }
       open={open}
       onClose={onClose}
       title={t('Напомнить в WhatsApp')}
-      description={t('Перед отправкой проверяем согласие, номер и одобрение шаблона Meta.')}
+      description={t('Перед отправкой проверяем согласие родителя, его номер и подключение WhatsApp.')}
       size="lg"
       footer={(
         <>
@@ -67,11 +67,11 @@ export default function WhatsAppBulkModal({ open, onClose, source, ids, onSent }
           </div>
           {!!preview.templates?.length && (
             <div className="rounded-lg border border-line bg-surface-muted p-4">
-              <p className="mb-3 text-sm font-semibold text-ink">{t('Шаблоны отправки')}</p>
+              <p className="mb-3 text-sm font-semibold text-ink">{t('Текст сообщения')}</p>
               <div className="space-y-3">
                 {preview.templates.map(template => (
                   <div key={`${template.event}:${template.language}`}>
-                    <p className="text-xs font-semibold text-ink">{template.name} · {template.language.toUpperCase()}</p>
+                    <p className="text-xs font-semibold text-ink">{t(template.event_label)} · {template.language.toUpperCase()}</p>
                     <p className="mt-1 whitespace-pre-wrap text-xs text-ink-muted">{template.body}</p>
                   </div>
                 ))}
@@ -89,7 +89,7 @@ export default function WhatsAppBulkModal({ open, onClose, source, ids, onSent }
                   <p className="truncate text-xs text-ink-muted">{row.parent || t('Плательщик не указан')}</p>
                   {!row.ready && <p className="mt-1 text-xs text-warning-600">{t(row.reason)}</p>}
                 </div>
-                {row.ready && <Badge tone={row.service_window ? 'success' : 'neutral'}>{t(row.mode)}</Badge>}
+                {row.ready && <Badge tone={row.service_window ? 'success' : 'neutral'}>{row.number ? t(row.number) : t(row.mode)}</Badge>}
               </li>
             ))}
           </ul>

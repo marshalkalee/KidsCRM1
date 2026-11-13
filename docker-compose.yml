@@ -84,5 +84,44 @@ services:
     depends_on:
       - backend
 
+  # WhatsApp по QR-коду для разработки — запускается только по запросу:
+  #   docker compose exec db createdb -U kidscrm evolution   (один раз)
+  #   docker compose --profile whatsapp up -d evolution
+  # и в backend/.env: EVOLUTION_API_URL=http://evolution:8080,
+  # EVOLUTION_API_KEY=dev-evolution-key, EVOLUTION_WEBHOOK_BASE_URL=http://backend:8000
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    profiles: ["whatsapp"]
+    environment:
+      SERVER_URL: http://evolution:8080
+      AUTHENTICATION_API_KEY: dev-evolution-key
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://kidscrm:kidscrm@db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: kidscrm_dev
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_LOCAL_ENABLED: "false"
+      TELEMETRY_ENABLED: "false"
+      CONFIG_SESSION_PHONE_CLIENT: KidsCRM
+      LOG_LEVEL: ERROR,WARN,INFO
+    ports:
+      - "8080:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
 volumes:
   kidscrm_postgres_data:
+  evolution_instances:

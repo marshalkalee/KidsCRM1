@@ -41,7 +41,7 @@ export default function Announcements() {
   async function act(row, action) {
     try {
       await api.post(`announcements/${row.id}/${action}/`)
-      toast.success(action === 'publish' ? t('Опубликовано — родители увидят в кабинете') : t('Снято с публикации'))
+      toast.success(action === 'publish' ? t('Опубликовано — родителям уйдёт уведомление') : t('Снято с публикации'))
       load()
     } catch (err) {
       toast.error(apiErrorMessage(err))
@@ -171,7 +171,7 @@ function AnnouncementForm({ initial, onClose, onSaved }) {
         ? await api.patch(`announcements/${form.id}/`, payload)
         : await api.post('announcements/', payload)
       if (publish && data.status !== 'published') await api.post(`announcements/${data.id}/publish/`)
-      toast.success(publish ? t('Опубликовано — родители увидят в кабинете') : t('Сохранено'))
+      toast.success(publish ? t('Опубликовано — родителям уйдёт уведомление') : t('Сохранено'))
       onSaved()
     } catch (err) {
       const data = err.response?.data

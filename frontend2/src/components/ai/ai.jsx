@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Copy, MessageCircle, RefreshCw, Sparkles, Wand2 } from 'lucide-react'
 import api from '../../api/axios'
 import { Button, Field, Modal, Select, Textarea, apiErrorMessage, cn, useToast } from '../../ui'
+import { WhatsAppQuickSend } from '../messaging/WhatsAppButton'
 import { t } from '../../i18n'
 
 /*
@@ -144,8 +145,6 @@ export function AIMessageModal({ lead, onClose }) {
     }
   }
 
-  const waUrl = `https://wa.me/${lead.phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
-
   return (
     <Modal
       open
@@ -156,9 +155,15 @@ export function AIMessageModal({ lead, onClose }) {
         text ? (
           <>
             <Button icon={Copy} onClick={copy}>{t('Копировать')}</Button>
-            <a href={waUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-md bg-success-600 px-4 text-sm font-semibold text-white hover:brightness-95">
-              <MessageCircle className="size-4" /> {t('Открыть WhatsApp')}
-            </a>
+            <WhatsAppQuickSend
+              phone={lead.phone}
+              text={text}
+              leadId={lead.id}
+              onSent={onClose}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-success-600 px-4 text-sm font-semibold text-white hover:brightness-95 disabled:opacity-60"
+            >
+              {mode => <><MessageCircle className="size-4" /> {mode === 'center' ? t('Отправить в WhatsApp') : t('Открыть WhatsApp')}</>}
+            </WhatsAppQuickSend>
           </>
         ) : (
           <Button variant="primary" icon={Sparkles} loading={busy} onClick={generate}>{t('Составить')}</Button>

@@ -6,6 +6,7 @@ import {
   Badge, Button, CONTACT_ROLES, Card, Checkbox, EmptyState, ErrorState, Field, Input, Modal, Select,
   Skeleton, apiErrorMessage, cn, useConfirm, useToast,
 } from '../../ui'
+import WhatsAppButton from '../messaging/WhatsAppButton'
 import { t } from '../../i18n'
 import CallButton from '../telephony/CallButton'
 import { useSession } from '../../session/SessionContext'
@@ -130,9 +131,9 @@ function ContactCard({ link, canManage, onEdit, onDetach }) {
             : <span key={phone.number} className="rounded-md bg-surface-muted px-2.5 py-1.5 text-[13px] font-medium text-ink">{phone.number}</span>
           ))}
           {whatsapp && (
-            <a href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md bg-success-50 px-2.5 py-1.5 text-[13px] font-medium text-success-600 hover:brightness-95">
+            <WhatsAppButton phone={whatsapp} parentId={link.parent_contact} childId={link.child} className="inline-flex items-center gap-1.5 rounded-md bg-success-50 px-2.5 py-1.5 text-[13px] font-medium text-success-600 hover:brightness-95">
               <MessageCircle className="size-3.5" /> WhatsApp
-            </a>
+            </WhatsAppButton>
           )}
         </div>
       )}

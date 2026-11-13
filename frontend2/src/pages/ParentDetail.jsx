@@ -12,6 +12,8 @@ import {
   Avatar, Badge, Button, CHILD_STATUSES, CONTACT_ROLES, Card, CardHeader, EmptyState, ErrorState, PageHeader,
   Skeleton, ageLabel, apiErrorMessage, cn, formatDateTime, money, plural, useConfirm, useToast,
 } from '../ui'
+import WhatsAppButton from '../components/messaging/WhatsAppButton'
+import WhatsAppThread from '../components/messaging/WhatsAppThread'
 import { t } from '../i18n'
 
 const PHONE_TYPES = { get mobile() { return t('мобильный') }, get work() { return t('рабочий') }, get home() { return t('домашний') } }
@@ -104,9 +106,15 @@ export default function ParentDetail() {
           <ChildrenCard kids={children} />
           <section>
             <h2 className="mb-3 text-[15px] font-bold text-ink">{t('Коммуникации')}</h2>
+            <WhatsAppThread parentId={parent.id} />
+          </section>
+          <section>
+            <h2 className="mb-3 text-[15px] font-bold text-ink">{t('Заметки')}</h2>
             <Communications
               stacked
-              params={{ family: parent.id }}
+              params={{ family: parent.id, exclude_channel: 'whatsapp' }}
+              channels={['call', 'comment']}
+              emptyText={t('Звонки, договорённости и файлы по семье. Видны и в карточках детей.')}
               canCreate={permissions.can_log_communications}
               childOptions={children.map(c => ({ id: c.id, full_name: c.full_name }))}
               fixedContact={parent.id}
@@ -137,9 +145,9 @@ function ContactsCard({ parent }) {
               <CallButton phone={phones[0].number} className="h-10 rounded-md bg-brand-600 text-sm font-semibold text-white shadow-card hover:bg-brand-700" />
             )}
             {whatsapp && (
-              <a href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-success-50 text-sm font-semibold text-success-600 hover:brightness-95">
+              <WhatsAppButton phone={whatsapp} parentId={parent.id} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-success-50 text-sm font-semibold text-success-600 hover:brightness-95">
                 <MessageCircle className="size-4" /> WhatsApp
-              </a>
+              </WhatsAppButton>
             )}
           </div>
           <dl className="mt-4 divide-y divide-line border-t border-line text-sm">

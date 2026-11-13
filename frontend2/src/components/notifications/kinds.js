@@ -1,9 +1,18 @@
-import { ClipboardCheck, Inbox, ListTodo, MessageSquareText, Sparkles, Wallet, WalletCards } from 'lucide-react'
+import { ClipboardCheck, Inbox, ListTodo, MessageCircle, MessageSquareText, Sparkles, Wallet, WalletCards } from 'lucide-react'
 import { money, plural } from '../../ui'
 import { t } from '../../i18n'
 
 // Вид уведомления → иконка, заголовок, строка с числом (TRU-72).
 export const NOTIFICATION_KINDS = {
+  // Написали в WhatsApp центра, а с номера центра ещё не ответили.
+  whatsapp_messages: {
+    icon: MessageCircle,
+    tone: 'bg-success-50 text-success-600',
+    get title() { return t('WhatsApp') },
+    text: item => (item.count > 1
+      ? t('Ждут ответа: {n} · {name}: {preview}', { n: item.count, name: item.name, preview: item.preview })
+      : `${item.name}: ${item.preview}`),
+  },
   parent_requests: {
     icon: MessageSquareText,
     tone: 'bg-warning-50 text-warning-600',

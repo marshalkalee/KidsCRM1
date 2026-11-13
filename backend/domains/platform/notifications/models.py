@@ -14,6 +14,12 @@ from django.db import models
 from domains.platform.core.models import TenantModel, UUIDPrimaryKeyModel
 
 
+def whatsapp_media_upload_to(instance, filename):
+    from domains.platform.core.attachments import upload_path
+
+    return upload_path("whatsapp", instance.organization_id, filename)
+
+
 def default_recording_roles():
     return ["owner", "manager"]
 
@@ -134,8 +140,20 @@ class OutboundMessage(TenantModel):
         OPTED_OUT = "opted_out", "Родитель отписался"
         NO_CHANNEL = "no_channel", "Нет канала (нет email, WhatsApp не подключён)"
 
+    # Пусто — сообщение сотрудника заявке (lead), а не родителю.
     parent = models.ForeignKey(
-        "clients.ParentContact", on_delete=models.CASCADE, related_name="outbound_messages"
+        "clients.ParentContact",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="outbound_messages",
+    )
+    lead = models.ForeignKey(
+        "leads.Lead",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="outbound_messages",
     )
     event = models.CharField(max_length=40)
     category = models.CharField(max_length=16, choices=MessageCategory.choices)
@@ -148,6 +166,15 @@ class OutboundMessage(TenantModel):
     subject = models.CharField(max_length=200, blank=True)
     body = models.TextField(blank=True)
     provider_id = models.CharField(max_length=255, blank=True)
+    # Файл к сообщению сотрудника в WhatsApp (фото, аудио, документ); body — подпись.
+    media_file = models.FileField(upload_to=whatsapp_media_upload_to, max_length=500, blank=True)
+    media_name = models.CharField(max_length=255, blank=True)
+    media_type = models.CharField(max_length=100, blank=True)
+    # Чат WhatsApp: скрыто сотрудником только в CRM / удалено у всех в WhatsApp.
+    hidden_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    # Родитель удалил «у себя» в чате кабинета — в CRM сообщение остаётся.
+    parent_hidden_at = models.DateTimeField(null=True, blank=True)
     # Попытки по каналам: [{"channel": "email", "result": "failed", "error": "…"}].
     attempts = models.JSONField(default=list, blank=True)
     error = models.CharField(max_length=500, blank=True)
@@ -174,31 +201,64 @@ class OutboundMessage(TenantModel):
 
 
 class WhatsAppConnection(TenantModel):
-    """WABA конкретного центра. Токен никогда не возвращается через API."""
+    """Номер WhatsApp центра или филиала. Токены никогда не возвращаются через API.
+
+    Meta Cloud API — одна строка на центр (branch пустой). Evolution API —
+    номер по QR-коду, отдельный у каждого филиала или один на весь центр."""
 
     class Mode(models.TextChoices):
         CONSOLE = "console", "Тестовый режим"
         META = "meta", "Meta Cloud API"
+        EVOLUTION = "evolution", "Номер по QR-коду (Evolution API)"
 
     class Status(models.TextChoices):
         DISCONNECTED = "disconnected", "Не подключён"
+        CONNECTING = "connecting", "Ждёт QR-кода"
         CONNECTED = "connected", "Подключён"
         ERROR = "error", "Ошибка"
 
     mode = models.CharField(max_length=16, choices=Mode.choices, default=Mode.CONSOLE)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DISCONNECTED)
+    # Пусто — номер всего центра; иначе — номер филиала (только Evolution).
+    branch = models.ForeignKey(
+        "tenants.Branch",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="whatsapp_connections",
+    )
     waba_id = models.CharField(max_length=100, blank=True)
     phone_number_id = models.CharField(max_length=100, blank=True)
     business_phone = models.CharField(max_length=20, blank=True)
     access_token = models.TextField(blank=True)
     webhook_verify_token = models.CharField(max_length=100, blank=True)
+    # Evolution API: имя подключения на сервере Evolution и секрет в адресе вебхука.
+    instance_name = models.CharField(max_length=100, blank=True, db_index=True)
+    webhook_secret = models.CharField(max_length=100, blank=True, db_index=True)
+    # Первое подключение: сообщения старше — история телефона, не входящие.
+    connected_at = models.DateTimeField(null=True, blank=True)
+    # Очередь отправки: не чаще одного сообщения в несколько секунд с номера.
+    next_send_at = models.DateTimeField(null=True, blank=True)
     verified_at = models.DateTimeField(null=True, blank=True)
     last_error = models.CharField(max_length=500, blank=True)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["organization"], name="whatsapp_connection_unique_org")
+            models.UniqueConstraint(
+                fields=["organization"],
+                condition=models.Q(branch__isnull=True, deleted_at__isnull=True),
+                name="whatsapp_connection_unique_org",
+            ),
+            models.UniqueConstraint(
+                fields=["organization", "branch"],
+                condition=models.Q(branch__isnull=False, deleted_at__isnull=True),
+                name="whatsapp_connection_unique_branch",
+            ),
         ]
+
+    @property
+    def label(self) -> str:
+        return self.branch.name if self.branch_id else "Весь центр"
 
 
 class WhatsAppContactWindow(TenantModel):
@@ -229,10 +289,26 @@ class InboundWhatsAppMessage(TenantModel):
         FAILED = "failed", "Ошибка"
 
     provider_message_id = models.CharField(max_length=255)
+    # Номер центра, на который написали: ответ уходит с него же.
+    connection = models.ForeignKey(
+        WhatsAppConnection,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inbound_messages",
+    )
     sender_phone = models.CharField(max_length=20, blank=True)
+    sender_name = models.CharField(max_length=255, blank=True)
     message_type = models.CharField(max_length=24, default="text")
     text = models.TextField(blank=True)
     media = models.JSONField(default=dict, blank=True)
+    # Сам файл (фото, голосовое, документ) — если пришёл с номера по QR-коду.
+    media_file = models.FileField(upload_to=whatsapp_media_upload_to, max_length=500, blank=True)
+    # Чат WhatsApp: скрыто сотрудником только в CRM / родитель удалил у всех.
+    hidden_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    # Родитель удалил «у себя» в чате кабинета — в CRM сообщение остаётся.
+    parent_hidden_at = models.DateTimeField(null=True, blank=True)
     raw_payload = models.JSONField(default=dict, blank=True)
     provider_sent_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.RECEIVED)

@@ -106,30 +106,71 @@ def mark_read(account, announcement_id):
     AnnouncementRead.objects.get_or_create(account=account, announcement_id=announcement_id)
 
 
-def reach(announcement):
-    """Сколько детей (а значит семей) увидят объявление — для экрана центра."""
+def audience_children(announcement):
+    """Дети, чьи семьи видят объявление (те же правила, что в кабинете)."""
     organization = announcement.organization
     kids = Child.objects.for_tenant(organization).filter(status__in=ATTENDING)
     if announcement.audience == Announcement.Audience.ORGANIZATION:
-        return kids.count()
+        return kids
     active = Q(group_memberships__left_at__isnull=True)
     if announcement.audience == Announcement.Audience.BRANCH:
-        return (
-            kids.filter(active, group_memberships__group__branch_id=announcement.branch_id)
-            .distinct()
-            .count()
-        )
+        return kids.filter(
+            active, group_memberships__group__branch_id=announcement.branch_id
+        ).distinct()
     if announcement.audience == Announcement.Audience.GROUP:
-        return (
-            kids.filter(active, group_memberships__group_id=announcement.group_id)
-            .distinct()
-            .count()
-        )
-    return (
-        kids.filter(
-            Q(active, group_memberships__group__direction_id=announcement.direction_id)
-            | Q(directions=announcement.direction_id)
+        return kids.filter(active, group_memberships__group_id=announcement.group_id).distinct()
+    return kids.filter(
+        Q(active, group_memberships__group__direction_id=announcement.direction_id)
+        | Q(directions=announcement.direction_id)
+    ).distinct()
+
+
+def reach(announcement):
+    """Сколько детей (а значит семей) увидят объявление — для экрана центра."""
+    return audience_children(announcement).count()
+
+
+# Длинное объявление в WhatsApp не обрезаем молча: полный текст — в кабинете.
+NOTIFY_TEXT_LIMIT = 1500
+
+
+def notify_parents(announcement) -> int:
+    """Опубликовали — сообщить семьям: WhatsApp, push или email по порядку
+    каналов центра (согласие, тихие часы, паузы — как у всех уведомлений).
+    Одной семье — одно сообщение на объявление, даже после повторной публикации."""
+    from django.conf import settings
+
+    from domains.people.clients.models import ParentContact
+    from domains.platform.notifications import messaging
+
+    if announcement.status != Announcement.Status.PUBLISHED or announcement.deleted_at:
+        return 0
+    organization = announcement.organization
+    if announcement.expires_on and announcement.expires_on < today_for_org(organization):
+        return 0
+    text = (announcement.body or "").strip()
+    if len(text) > NOTIFY_TEXT_LIMIT:
+        text = text[:NOTIFY_TEXT_LIMIT].rstrip() + "…"
+    parents = (
+        ParentContact.objects.for_tenant(organization)
+        .filter(
+            child_links__child__in=audience_children(announcement),
+            child_links__deleted_at__isnull=True,
         )
         .distinct()
-        .count()
     )
+    sent = 0
+    for parent in parents:
+        messaging.notify(
+            parent,
+            "announcement",
+            {
+                "title": announcement.title,
+                "text": text,
+                "link": f"{settings.PUBLIC_BASE_URL.rstrip('/')}/parent/announcements",
+            },
+            dedup_key=f"announcement:{announcement.id}:{parent.id}",
+            user=announcement.created_by,
+        )
+        sent += 1
+    return sent

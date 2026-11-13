@@ -33,6 +33,17 @@ urlpatterns = [
     path("whatsapp/test/", views.whatsapp_test, name="whatsapp-test"),
     path("whatsapp/templates/sync/", views.whatsapp_sync_templates, name="whatsapp-sync"),
     path("whatsapp/webhook/", views.whatsapp_webhook, name="whatsapp-webhook"),
+    path("whatsapp/numbers/", views.whatsapp_numbers, name="whatsapp-numbers"),
+    path(
+        "whatsapp/numbers/<uuid:connection_id>/",
+        views.whatsapp_number,
+        name="whatsapp-number",
+    ),
+    path(
+        "whatsapp/evolution/<str:secret>/",
+        views.evolution_webhook,
+        name="whatsapp-evolution-webhook",
+    ),
     path("whatsapp/inbox/", views.whatsapp_inbox, name="whatsapp-inbox"),
     path(
         "whatsapp/inbox/<uuid:message_id>/resolve/",
@@ -41,6 +52,19 @@ urlpatterns = [
     ),
     path("whatsapp/bulk/", views.whatsapp_bulk, name="whatsapp-bulk"),
     path("whatsapp/reply/", views.whatsapp_reply, name="whatsapp-reply"),
+    path("whatsapp/status/", views.whatsapp_status, name="whatsapp-status"),
+    path("whatsapp/send/", views.whatsapp_send, name="whatsapp-send"),
+    path("whatsapp/thread/", views.whatsapp_thread, name="whatsapp-thread"),
+    path(
+        "whatsapp/messages/<str:direction>/<uuid:message_id>/delete/",
+        views.whatsapp_delete_message,
+        name="whatsapp-delete-message",
+    ),
+    path(
+        "whatsapp/media/<str:direction>/<uuid:message_id>/",
+        views.whatsapp_media,
+        name="whatsapp-media",
+    ),
     path("instagram/", views.instagram_connection, name="instagram-connection"),
     path("instagram/test/", views.instagram_test, name="instagram-test"),
     path("instagram/webhook/", views.instagram_webhook, name="instagram-webhook"),

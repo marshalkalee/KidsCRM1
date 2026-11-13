@@ -33,7 +33,7 @@ from domains.platform.tenants.org_settings import (
 )
 
 from ..models import MessageCategory, MessageTemplate, MessagingConsent, OutboundMessage
-from .channels import CHANNELS, ChannelError
+from .channels import CHANNELS, ChannelError, ChannelLater
 from .events import EVENTS, LANGUAGES, UNSUBSCRIBE_FOOTER
 from .recipients import accounts_for_parent
 
@@ -167,7 +167,7 @@ def portal_text(message, language: str) -> tuple[str, str]:
     """Текст для колокольчика кабинета — короткий, как push: без
     приветствия и без подвала письма со ссылкой отписки."""
     values = {
-        "parent": _first_name(message.parent.full_name),
+        "parent": parent_name(message.parent),
         "center": message.organization.name,
         **{key: value for key, value in message.context.items() if not key.startswith("_")},
     }
@@ -181,9 +181,10 @@ def parent_language(parent) -> str:
     return language if language in LANGUAGES else "ru"
 
 
-def _first_name(full_name: str) -> str:
-    parts = (full_name or "").split()
-    return parts[1] if len(parts) > 1 else (parts[0] if parts else "")
+def parent_name(parent) -> str:
+    """Как обращаемся к родителю: ФИО полностью, как записано в карточке.
+    Из ФИО имя не угадываем — его пишут и «Фамилия Имя», и «Имя Фамилия»."""
+    return " ".join((parent.full_name or "").split())
 
 
 # --- Тихие часы --------------------------------------------------------------
@@ -208,9 +209,12 @@ def quiet_until(organization, now=None) -> datetime.datetime | None:
 # --- Отправка ----------------------------------------------------------------
 
 
-def notify(parent, event_key, context=None, *, dedup_key, user=None) -> OutboundMessage:
+def notify(
+    parent, event_key, context=None, *, dedup_key, user=None, countdown=None
+) -> OutboundMessage:
     """Поставить сообщение родителю в очередь. Повтор с тем же dedup_key —
-    та же строка журнала, второго сообщения не будет."""
+    та же строка журнала, второго сообщения не будет. countdown — через
+    сколько секунд отправить (массовая отправка идёт не одним залпом)."""
     event = EVENTS.get(event_key)
     if event is None:
         raise MessagingError(f"Неизвестное событие: {event_key}")
@@ -232,26 +236,45 @@ def notify(parent, event_key, context=None, *, dedup_key, user=None) -> Outbound
     except IntegrityError:
         # Параллельный вызов успел первым — его строка и есть наше сообщение.
         return OutboundMessage.objects.for_tenant(organization).get(dedup_key=dedup_key)
-    _enqueue(message)
+    _enqueue(
+        message, eta=timezone.now() + datetime.timedelta(seconds=countdown) if countdown else None
+    )
     return message
 
 
 def notify_whatsapp_reply(parent, body, *, user=None) -> OutboundMessage:
-    """Queue an operator's free-text reply; the channel rechecks the 24-hour window."""
+    """Ответ сотрудника обычным текстом. Канал перепроверяет, можно ли (окно
+    Meta), и отправляет с номера, на который родитель писал последним."""
+    from .whatsapp import last_inbound_connection_id
+
     text = (body or "").strip()
     if not text:
         raise MessagingError("Введите текст ответа.")
     if len(text) > 4096:
         raise MessagingError("Ответ не должен быть длиннее 4096 символов.")
+    context = {"_channel": "whatsapp", "_free_text": text}
+    connection_id = last_inbound_connection_id(parent)
+    if connection_id:
+        context["_connection"] = str(connection_id)
     message = OutboundMessage.objects.create(
         organization=parent.organization,
         parent=parent,
         event="whatsapp_reply",
         category=MessageCategory.UTILITY,
         dedup_key=f"whatsapp-reply:{uuid.uuid4()}",
-        context={"_channel": "whatsapp", "_free_text": text},
+        context=context,
         created_by=user,
     )
+    if user is not None:
+        from domains.people.clients.models import CommunicationLog
+
+        CommunicationLog.objects.create(
+            organization=parent.organization,
+            parent_contact=parent,
+            channel=CommunicationLog.Channel.WHATSAPP,
+            note=text,
+            author=user,
+        )
     _enqueue(message)
     return message
 
@@ -278,7 +301,7 @@ def deliver(message_id, now=None) -> OutboundMessage:
     """Задача очереди: проверить согласие и тихие часы, перебрать каналы."""
     with transaction.atomic():
         message = (
-            OutboundMessage.objects.select_for_update()
+            OutboundMessage.objects.select_for_update(of=("self",))
             .select_related("organization", "parent")
             .get(pk=message_id)
         )
@@ -308,7 +331,7 @@ def deliver(message_id, now=None) -> OutboundMessage:
 
     language = parent_language(parent)
     values = {
-        "parent": _first_name(parent.full_name),
+        "parent": parent_name(parent),
         "center": organization.name,
         **message.context,
     }
@@ -340,6 +363,11 @@ def deliver(message_id, now=None) -> OutboundMessage:
             )
         try:
             provider_id = channel.send(message, unsubscribe_url=link)
+        except ChannelLater as exc:
+            # Номер WhatsApp занят очередью: ждём своей очереди, а не уходим в email.
+            _finish(message, Status.QUEUED, scheduled_for=exc.retry_at, attempts=attempts)
+            _enqueue(message, eta=exc.retry_at)
+            return message
         except ChannelError as exc:
             attempts.append({"channel": key, "result": "failed", "error": str(exc)})
             continue
@@ -381,13 +409,141 @@ def on_email_event(provider_id, event_type, description="") -> OutboundMessage |
     return message
 
 
+# --- Сообщение сотрудника с номера центра --------------------------------------
+#
+# Кнопка «WhatsApp» в карточках, задачах и списках: сотрудник правит готовый
+# текст и отправляет его с номера центра (по QR-коду), а не со своего
+# телефона. Получатель — родитель, заявка или ребёнок по номеру из CRM.
+# Это обычная переписка, не рассылка: тихие часы и согласие на рассылки не
+# проверяются.
+
+MANUAL_EVENT = "whatsapp_manual"
+
+
+def send_manual_whatsapp(user, text, *, phone="", parent=None, lead=None, child=None, file=None):
+    from domains.people.clients.models import CommunicationLog
+    from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
+
+    from .whatsapp import connection_for, find_contact, last_inbound_connection_id
+
+    organization = user.organization
+    text = (text or "").strip()
+    if not text and file is None:
+        raise MessagingError("Введите текст сообщения или прикрепите файл.")
+    if len(text) > 4096:
+        raise MessagingError("Сообщение не должно быть длиннее 4096 символов.")
+    raw = phone or (
+        (parent.whatsapp or parent.phones.values_list("number", flat=True).first())
+        if parent
+        else lead.phone
+        if lead
+        else ""
+    )
+    try:
+        recipient = normalize_phone_number(raw)
+    except InvalidPhoneNumberError as exc:
+        raise MessagingError("У получателя нет корректного номера WhatsApp.") from exc
+    if parent is None and lead is None:
+        parent, lead = find_contact(organization, recipient)
+    if parent is None and lead is None:
+        # Номер центра — не шлюз для любых номеров: только свои родители и заявки.
+        raise MessagingError("Номер не найден среди родителей и заявок центра.")
+    previous = last_inbound_connection_id(organization=organization, phone=recipient)
+    connection = connection_for(organization, parent, previous, qr_only=True)
+    if connection is None or connection.status != connection.Status.CONNECTED:
+        raise MessagingError("WhatsApp центра не подключён.")
+    message = OutboundMessage.objects.create(
+        organization=organization,
+        parent=parent,
+        lead=lead,
+        event=MANUAL_EVENT,
+        category=MessageCategory.UTILITY,
+        dedup_key=f"{MANUAL_EVENT}:{uuid.uuid4()}",
+        context={"_channel": "whatsapp", "_connection": str(connection.pk)},
+        channel="whatsapp",
+        recipient=recipient,
+        language=parent_language(parent) if parent else "ru",
+        body=text,
+        created_by=user,
+    )
+    if file is not None:
+        # Файл — подпись в body; уходит как фото, видео, документ или голосовое.
+        message.media_name = file.name[:255]
+        message.media_type = (file.content_type or "")[:100]
+        message.media_file = file
+        message.save(update_fields=["media_name", "media_type", "media_file", "updated_at"])
+    # Заявке — только в чат заявки; родителю — ещё и в историю карточки.
+    if parent:
+        # Ребёнок — если писали из его карточки, иначе запись о родителе.
+        CommunicationLog.objects.create(
+            organization=organization,
+            child=child,
+            parent_contact=parent,
+            channel=CommunicationLog.Channel.WHATSAPP,
+            note=f"{text}\nФайл: {file.name}".strip() if file else text,
+            author=user,
+        )
+    from .tasks import send_manual_whatsapp_task
+
+    transaction.on_commit(lambda: send_manual_whatsapp_task.delay(str(message.id)))
+    return message
+
+
+def deliver_manual(message_id) -> OutboundMessage:
+    """Задача очереди: отправить сообщение сотрудника с выбранного номера."""
+    from .whatsapp import WhatsAppError, WhatsAppLater, _send_evolution, connection_for
+
+    with transaction.atomic():
+        message = (
+            OutboundMessage.objects.select_for_update(of=("self",))
+            .select_related("organization", "parent")
+            .get(pk=message_id)
+        )
+        if message.status != Status.QUEUED:
+            return message
+        _finish(message, Status.SENDING)
+    connection = connection_for(
+        message.organization, message.parent, message.context.get("_connection"), qr_only=True
+    )
+    if connection is None or connection.status != connection.Status.CONNECTED:
+        return _finish(message, Status.FAILED, error="WhatsApp центра не подключён")
+    try:
+        provider_id = _send_evolution(connection, message)
+    except WhatsAppLater as exc:
+        from .tasks import send_manual_whatsapp_task
+
+        retry_at = exc.retry_at
+        _finish(message, Status.QUEUED, scheduled_for=retry_at)
+        transaction.on_commit(
+            lambda: send_manual_whatsapp_task.apply_async(args=[str(message.id)], eta=retry_at)
+        )
+        return message
+    except WhatsAppError as exc:
+        return _finish(
+            message,
+            Status.FAILED,
+            error=str(exc)[:500],
+            attempts=[{"channel": "whatsapp", "result": "failed", "error": str(exc)}],
+        )
+    return _finish(
+        message,
+        Status.SENT,
+        provider_id=provider_id,
+        sent_at=timezone.now(),
+        attempts=[{"channel": "whatsapp", "result": "sent"}],
+    )
+
+
 __all__ = [
+    "MANUAL_EVENT",
     "MessageCategory",
     "MessagingError",
     "consent_status",
     "deliver",
+    "deliver_manual",
     "notify",
     "notify_whatsapp_reply",
+    "send_manual_whatsapp",
     "set_consent",
     "unsubscribe",
 ]

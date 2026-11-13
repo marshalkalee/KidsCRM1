@@ -16,7 +16,7 @@ from ..models import MessageCategory
 
 # Подстановки, которые есть у любого события.
 COMMON_VARS = {
-    "parent": "Имя родителя",
+    "parent": "ФИО родителя",
     "center": "Название центра",
 }
 
@@ -199,18 +199,26 @@ EVENTS = {
             key="announcement",
             label="Новое объявление центра",
             category=MessageCategory.UTILITY,
-            variables={"title": "Заголовок объявления"},
+            variables={
+                "title": "Заголовок объявления",
+                "text": "Текст объявления",
+                "link": "Ссылка на объявления в кабинете",
+            },
             email={
                 "ru": (
                     "{center}: {title}",
                     "Здравствуйте, {parent}!\n\n"
-                    "В кабинете родителя новое объявление: «{title}».\n\n"
+                    "{title}\n\n"
+                    "{text}\n\n"
+                    "Объявления центра в кабинете родителя: {link}\n\n"
                     "{center}",
                 ),
                 "kk": (
                     "{center}: {title}",
                     "Сәлеметсіз бе, {parent}!\n\n"
-                    "Ата-ана кабинетінде жаңа хабарландыру: «{title}».\n\n"
+                    "{title}\n\n"
+                    "{text}\n\n"
+                    "Орталық хабарландырулары ата-ана кабинетінде: {link}\n\n"
                     "{center}",
                 ),
             },

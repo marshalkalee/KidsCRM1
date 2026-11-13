@@ -8,7 +8,7 @@
   ChannelError — тогда сервис пробует следующий канал.
 
 Прямые вызовы провайдеров живут только здесь (tests_contract проверяет).
-WhatsApp — TRU-169: пока «не подключён» и просто пропускается.
+WhatsApp — Meta Cloud API или номер по QR-коду (Evolution API), см. whatsapp.py.
 """
 
 import json
@@ -29,6 +29,14 @@ logger = logging.getLogger(__name__)
 
 class ChannelError(Exception):
     """Канал не смог отправить — пробуем следующий."""
+
+
+class ChannelLater(ChannelError):
+    """Канал работает, но занят: то же сообщение тем же каналом — в retry_at."""
+
+    def __init__(self, message, retry_at):
+        super().__init__(message)
+        self.retry_at = retry_at
 
 
 class Channel:
@@ -164,7 +172,7 @@ class WhatsAppChannel(Channel):
         from ..models import WhatsAppConnection
         from .whatsapp import connection_for
 
-        connection = connection_for(parent.organization)
+        connection = connection_for(parent.organization, parent)
         if not connection or connection.status != WhatsAppConnection.Status.CONNECTED:
             return None, "WhatsApp центру не подключён"
         raw = parent.whatsapp or parent.phones.values_list("number", flat=True).first()
@@ -176,12 +184,14 @@ class WhatsAppChannel(Channel):
             return None, "номер WhatsApp имеет неверный формат"
 
     def send(self, message, *, unsubscribe_url):
-        from .whatsapp import WhatsAppError, send_free_text, send_template
+        from .whatsapp import WhatsAppError, WhatsAppLater, send_free_text, send_template
 
         try:
             if message.event == "whatsapp_reply":
                 return send_free_text(message)
             return send_template(message)
+        except WhatsAppLater as exc:
+            raise ChannelLater(str(exc), exc.retry_at) from exc
         except WhatsAppError as exc:
             raise ChannelError(str(exc)) from exc
 

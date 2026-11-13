@@ -298,6 +298,11 @@ CELERY_BEAT_SCHEDULE = {
         ),
         "schedule": crontab(minute="*/15"),
     },
+    # Страховка к вебхуку Evolution: событие об отключении номера могло потеряться.
+    "sync-whatsapp-evolution-states": {
+        "task": ("domains.platform.notifications.messaging.tasks" ".sync_evolution_states"),
+        "schedule": crontab(minute="*/10"),
+    },
 }
 
 # ИИ-помощник (эксперимент): без ключа функции выключены, экраны их не показывают.
@@ -369,6 +374,19 @@ MESSAGING_FROM_EMAIL = env("MESSAGING_FROM_EMAIL", default="noreply@kidscrm.kz")
 WHATSAPP_GRAPH_API_VERSION = env("WHATSAPP_GRAPH_API_VERSION", default="v23.0")
 WHATSAPP_HTTP_TIMEOUT = env.int("WHATSAPP_HTTP_TIMEOUT", default=15)
 WHATSAPP_APP_SECRET = env("WHATSAPP_APP_SECRET", default="")
+# Номера по QR-коду — свой сервер Evolution API (docs/whatsapp-evolution.md).
+# Пусто — кнопка «Подключить номер» в CRM сообщает, что не настроено.
+EVOLUTION_API_URL = env("EVOLUTION_API_URL", default="")
+EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", default="")
+# Куда Evolution шлёт события; по умолчанию — публичный адрес сайта.
+EVOLUTION_WEBHOOK_BASE_URL = env("EVOLUTION_WEBHOOK_BASE_URL", default="")
+EVOLUTION_HTTP_TIMEOUT = env.int("EVOLUTION_HTTP_TIMEOUT", default=20)
+# Пауза между сообщениями с одного номера и сколько задача готова ждать очереди.
+EVOLUTION_SEND_INTERVAL = env.int("EVOLUTION_SEND_INTERVAL", default=4)
+# Фото и голосовые приходят в вебхуке Evolution внутри JSON (base64): лимит
+# Django по умолчанию — 2,5 МБ, и фото покрупнее терялись бы. Как в nginx.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 40 * 1024 * 1024
+EVOLUTION_MAX_WAIT = env.int("EVOLUTION_MAX_WAIT", default=60)
 INSTAGRAM_GRAPH_API_VERSION = env("INSTAGRAM_GRAPH_API_VERSION", default="v23.0")
 INSTAGRAM_HTTP_TIMEOUT = env.int("INSTAGRAM_HTTP_TIMEOUT", default=15)
 INSTAGRAM_APP_SECRET = env("INSTAGRAM_APP_SECRET", default="")

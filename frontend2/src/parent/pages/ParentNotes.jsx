@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react'
-import { BookOpen, CalendarDays, MessageSquareText, UserRound, Users } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { BookOpen, CalendarDays, MessageCircle, MessageSquareText, UserRound, Users } from 'lucide-react'
 import { Badge, Card, CardHeader, EmptyState, ErrorState, Skeleton, formatDate } from '../../ui'
 import { locale, t } from '../../i18n'
 import portal, { usePortalData } from '../api'
 import { useParent } from '../useParent'
+import ChatWithCenter from '../ChatWithCenter'
 
 function noteDate(value) {
   return new Date(value).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' })
@@ -22,6 +23,7 @@ export default function ParentNotes() {
   })
   const reloadNotes = notes.reload
   const marked = useRef(new Set())
+  const [chatOpen, setChatOpen] = useState(false)
 
   useEffect(() => {
     const unread = (notes.data?.results || []).filter(row => !row.read && !marked.current.has(row.id))
@@ -45,11 +47,14 @@ export default function ParentNotes() {
         <CardHeader
           title={t('Заметки и домашние задания')}
           description={t('Рекомендации преподавателя после занятий — общие для группы и лично для ребёнка.')}
+          actions={(
+            <button type="button" onClick={() => setChatOpen(true)} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-success-600 px-3 text-[13px] font-semibold text-white hover:brightness-95">
+              <MessageCircle className="size-4" /> {t('Написать центру')}
+            </button>
+          )}
         />
-        <p className="rounded-lg bg-surface-muted px-3 py-2 text-[13px] text-ink-muted">
-          {t('Ответить здесь нельзя. Если нужно уточнение, напишите администратору центра в WhatsApp.')}
-        </p>
       </Card>
+      <ChatWithCenter child={child} open={chatOpen} onClose={() => setChatOpen(false)} />
 
       {notes.data.results.length === 0 ? (
         <Card><EmptyState icon={MessageSquareText} title={t('Заметок пока нет')} description={t('Когда преподаватель оставит рекомендацию или домашнее задание, оно появится здесь.')} /></Card>

@@ -19,7 +19,11 @@ from rest_framework.response import Response
 
 from domains.people.clients.models import Child, ChildContact, ParentContact
 from domains.platform.core.audit import AuditLog
-from domains.platform.core.permissions import IsOwner, IsOwnerOrManagerOrAdmin
+from domains.platform.core.permissions import (
+    IsOwner,
+    IsOwnerOrManagerOrAdmin,
+    IsStaffOfOrganization,
+)
 from domains.platform.core.phone import InvalidPhoneNumberError, normalize_phone_number
 from domains.platform.leads.models import Lead
 from domains.platform.tenants.org_settings import (
@@ -74,7 +78,10 @@ from .instagram import (
 )
 from .whatsapp import (
     WhatsAppError,
+    connection_for,
     ensure_default_templates,
+    free_text_allowed,
+    is_evolution,
     new_verify_token,
     resolve_inbound_message,
     template_name,
@@ -264,12 +271,32 @@ def _connection_payload(connection):
     }
 
 
+def _meta_connection(organization):
+    """Подключение Meta Cloud API (или тестовый режим) — одно на центр."""
+    return (
+        WhatsAppConnection.objects.for_tenant(organization)
+        .filter(branch__isnull=True)
+        .exclude(mode=WhatsAppConnection.Mode.EVOLUTION)
+        .first()
+    )
+
+
 @api_view(["GET", "PUT"])
 @permission_classes([IsOwner])
 def whatsapp_connection(request, version=None):
     organization = request.user.organization
-    connection = WhatsAppConnection.objects.for_tenant(organization).filter().first()
+    connection = _meta_connection(organization)
     if request.method == "PUT":
+        if (
+            connection is None
+            and WhatsAppConnection.objects.for_tenant(organization)
+            .filter(branch__isnull=True, mode=WhatsAppConnection.Mode.EVOLUTION)
+            .exists()
+        ):
+            return Response(
+                {"detail": "Номер всего центра подключён по QR-коду. Сначала отключите его."},
+                status=400,
+            )
         connection = connection or WhatsAppConnection(organization=organization)
         mode = request.data.get("mode", connection.mode or "console")
         if mode not in WhatsAppConnection.Mode.values:
@@ -291,7 +318,7 @@ def whatsapp_connection(request, version=None):
 @api_view(["POST"])
 @permission_classes([IsOwner])
 def whatsapp_test(request, version=None):
-    connection = WhatsAppConnection.objects.for_tenant(request.user.organization).filter().first()
+    connection = _meta_connection(request.user.organization)
     if not connection:
         return Response({"detail": "Сначала сохраните подключение."}, status=400)
     try:
@@ -312,7 +339,7 @@ def whatsapp_test(request, version=None):
 @api_view(["POST"])
 @permission_classes([IsOwner])
 def whatsapp_sync_templates(request, version=None):
-    connection = WhatsAppConnection.objects.for_tenant(request.user.organization).filter().first()
+    connection = _meta_connection(request.user.organization)
     if not connection or connection.status != WhatsAppConnection.Status.CONNECTED:
         return Response({"detail": "WhatsApp не подключён."}, status=400)
     try:
@@ -337,6 +364,207 @@ def whatsapp_webhook(request, version=None):
     from .tasks import process_whatsapp_webhook
 
     process_whatsapp_webhook.delay(request.data.copy())
+    return JsonResponse({"ok": True})
+
+
+# --- Номера по QR-коду (Evolution API) -----------------------------------------
+
+
+def _number_payload(connection):
+    return {
+        "id": str(connection.id),
+        "branch": (
+            {"id": str(connection.branch_id), "name": connection.branch.name}
+            if connection.branch_id
+            else None
+        ),
+        "label": connection.label,
+        "status": connection.status,
+        "status_label": connection.get_status_display(),
+        "phone": connection.business_phone,
+        "last_error": connection.last_error,
+        "connected_at": connection.connected_at,
+        "verified_at": connection.verified_at,
+    }
+
+
+def _numbers_payload(organization):
+    from domains.platform.tenants.models import Branch
+
+    from .evolution import is_configured
+
+    numbers = list(
+        WhatsAppConnection.objects.for_tenant(organization)
+        .filter(mode=WhatsAppConnection.Mode.EVOLUTION)
+        .select_related("branch")
+        .order_by("branch__name")
+    )
+    taken = {row.branch_id for row in numbers}
+    meta = _meta_connection(organization)
+    return {
+        "available": is_configured(),
+        # Номер всего центра занят Meta — по QR можно подключить только филиалы.
+        "meta_connected": bool(
+            meta
+            and meta.mode == WhatsAppConnection.Mode.META
+            and meta.status == WhatsAppConnection.Status.CONNECTED
+        ),
+        "numbers": [_number_payload(row) for row in numbers],
+        "org_wide_taken": None in taken,
+        "branches": [
+            {"id": str(branch.id), "name": branch.name, "taken": branch.id in taken}
+            for branch in Branch.objects.for_tenant(organization)
+            .filter(is_active=True)
+            .order_by("name")
+        ],
+    }
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsOwner])
+def whatsapp_numbers(request, version=None):
+    """Номера по QR-коду: список и «Подключить» (для филиала или всего центра)."""
+    from domains.platform.tenants.models import Branch
+
+    from .evolution import EvolutionError, create_instance, is_configured
+
+    organization = request.user.organization
+    if request.method == "GET":
+        return Response(_numbers_payload(organization))
+    if not is_configured():
+        return Response({"detail": "Подключение по QR-коду не настроено на сервере."}, status=400)
+    branch = None
+    if request.data.get("branch_id"):
+        branch = (
+            Branch.objects.for_tenant(organization).filter(pk=request.data["branch_id"]).first()
+        )
+        if branch is None:
+            return Response({"detail": "Филиал не найден."}, status=404)
+    rows = WhatsAppConnection.objects.for_tenant(organization)
+    connection = (
+        rows.filter(branch=branch).first() if branch else rows.filter(branch__isnull=True).first()
+    )
+    if connection and connection.status == WhatsAppConnection.Status.CONNECTED:
+        if connection.mode == WhatsAppConnection.Mode.META:
+            return Response({"detail": "Номер центра подключён через Meta Cloud API."}, status=400)
+        if connection.mode == WhatsAppConnection.Mode.EVOLUTION:
+            return Response({"detail": "Этот номер уже подключён."}, status=400)
+    if connection and connection.mode == WhatsAppConnection.Mode.EVOLUTION:
+        # Прошлая попытка не дошла до QR — начинаем заново на сервере Evolution.
+        from .evolution import delete_instance
+
+        delete_instance(connection)
+        connection.instance_name = ""
+    connection = connection or WhatsAppConnection(organization=organization, branch=branch)
+    connection.mode = WhatsAppConnection.Mode.EVOLUTION
+    connection.status = WhatsAppConnection.Status.CONNECTING
+    connection.last_error = ""
+    try:
+        qr = create_instance(connection)
+    except EvolutionError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    connection.save()
+    AuditLog.record(
+        actor=request.user,
+        action=AuditLog.Action.CREATE,
+        entity=connection,
+        after={"whatsapp": "qr", "branch": connection.label},
+    )
+    return Response({"number": _number_payload(connection), "qr": qr}, status=201)
+
+
+@api_view(["GET", "DELETE"])
+@permission_classes([IsOwner])
+def whatsapp_number(request, connection_id, version=None):
+    """GET — статус и свежий QR-код, пока номер не подключён; DELETE — отключить."""
+    from .evolution import (
+        EvolutionError,
+        apply_state,
+        create_instance,
+        delete_instance,
+        fetch_qr,
+        instance_owner,
+    )
+
+    connection = (
+        WhatsAppConnection.objects.for_tenant(request.user.organization)
+        .filter(pk=connection_id, mode=WhatsAppConnection.Mode.EVOLUTION)
+        .select_related("branch")
+        .first()
+    )
+    if connection is None:
+        return Response({"detail": "Номер не найден."}, status=404)
+    if request.method == "DELETE":
+        delete_instance(connection)
+        AuditLog.record(
+            actor=request.user,
+            action=AuditLog.Action.DELETE,
+            entity=connection,
+            before={
+                "whatsapp": "qr",
+                "branch": connection.label,
+                "phone": connection.business_phone,
+            },
+        )
+        connection.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    if connection.status == WhatsAppConnection.Status.CONNECTED:
+        return Response({"number": _number_payload(connection), "qr": None})
+    try:
+        try:
+            qr = fetch_qr(connection)
+        except EvolutionError as exc:
+            if "не найдено" not in str(exc):
+                raise
+            # Сервер Evolution пересоздан — подключение заводим заново.
+            qr = {"state": "connecting", **create_instance(connection)}
+            connection.save(update_fields=["instance_name", "webhook_secret", "updated_at"])
+        if qr["state"] == "open":
+            apply_state(connection, "open", wuid=instance_owner(connection))
+            return Response({"number": _number_payload(connection), "qr": None})
+    except EvolutionError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    if connection.status != WhatsAppConnection.Status.CONNECTING:
+        connection.status = WhatsAppConnection.Status.CONNECTING
+        connection.last_error = ""
+        connection.save(update_fields=["status", "last_error", "updated_at"])
+    return Response({"number": _number_payload(connection), "qr": qr})
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def evolution_webhook(request, secret, version=None):
+    """События номера по QR-коду. Секрет в адресе знает только сервер Evolution."""
+    connection = (
+        WhatsAppConnection.objects.filter(
+            webhook_secret=secret,
+            mode=WhatsAppConnection.Mode.EVOLUTION,
+            deleted_at__isnull=True,
+        )
+        .only("id", "organization_id")
+        .first()
+        if secret
+        else None
+    )
+    if connection is None:
+        # 404 — Evolution не повторяет (номер отключили в CRM).
+        return JsonResponse({"detail": "unknown connection"}, status=404)
+    payload = request.data if isinstance(request.data, dict) else {}
+    data = payload.get("data")
+    event = str(payload.get("event") or "").lower().replace("_", ".")
+    if event == "messages.upsert" and isinstance(data, dict):
+        # Файл сохраняем здесь: в очередь — путь к нему, а не мегабайты base64.
+        from .evolution import save_incoming_media
+
+        path = save_incoming_media(connection.organization_id, data)
+        if path:
+            data["_media_path"] = path
+    from .tasks import process_evolution_webhook
+
+    process_evolution_webhook.delay(
+        str(connection.id), {"event": payload.get("event"), "data": data}
+    )
     return JsonResponse({"ok": True})
 
 
@@ -393,7 +621,19 @@ def _inbound_row(message):
             if message.lead_id
             else None
         ),
-        "reply_window_open": bool(message.parent_id and within_service_window(message.parent)),
+        "sender_name": message.sender_name,
+        # На какой номер центра написали — когда номеров несколько (филиалы).
+        "number": message.connection.label if message.connection_id else "",
+        "reply_window_open": bool(
+            message.parent_id
+            and (
+                (
+                    message.connection_id
+                    and message.connection.mode == WhatsAppConnection.Mode.EVOLUTION
+                )
+                or within_service_window(message.parent)
+            )
+        ),
         "candidates": candidates,
     }
 
@@ -402,7 +642,7 @@ def _inbound_row(message):
 @permission_classes([IsOwnerOrManagerOrAdmin])
 def whatsapp_inbox(request, version=None):
     rows = InboundWhatsAppMessage.objects.for_tenant(request.user.organization).select_related(
-        "parent", "child", "lead"
+        "parent", "child", "lead", "connection__branch"
     )
     selected_status = request.query_params.get("status")
     if selected_status in InboundWhatsAppMessage.Status.values:
@@ -450,7 +690,7 @@ def whatsapp_inbox_resolve(request, message_id, version=None):
 
 
 def _reply_state(parent):
-    connection = WhatsAppConnection.objects.for_tenant(parent.organization).first()
+    connection = connection_for(parent.organization, parent)
     if not connection or connection.status != WhatsAppConnection.Status.CONNECTED:
         return False, "WhatsApp центра не подключён"
     recipient, reason = CHANNELS["whatsapp"].recipient(parent)
@@ -458,7 +698,7 @@ def _reply_state(parent):
         return False, reason
     if service.consent_status(parent, MessageCategory.UTILITY) != MessagingConsent.Status.OPTED_IN:
         return False, "Нет согласия на служебные сообщения"
-    if not within_service_window(parent):
+    if not free_text_allowed(parent, connection):
         return False, "24-часовое окно ответа закрыто — используйте одобренный шаблон Meta"
     return True, ""
 
@@ -483,6 +723,284 @@ def whatsapp_reply(request, version=None):
     except service.MessagingError as exc:
         return Response({"detail": str(exc)}, status=400)
     return Response(_message_row(message), status=202)
+
+
+# Кто может писать с номера центра вместо своего телефона.
+MANUAL_SEND_ROLES = {"owner", "manager", "admin"}
+
+
+# Что показываем в переписке: реально ушедшее в WhatsApp или в пути.
+THREAD_OUT_STATUSES = [
+    OutboundMessage.Status.QUEUED,
+    OutboundMessage.Status.SENDING,
+    OutboundMessage.Status.SENT,
+    OutboundMessage.Status.DELIVERED,
+    OutboundMessage.Status.READ,
+    OutboundMessage.Status.FAILED,
+]
+THREAD_LIMIT = 200
+
+
+def _thread_media(direction, message_id, field_file, name, content_type, message_type=""):
+    """Файл сообщения для чата: ссылка — на API, не на диск. kind: image,
+    audio, video, video_note («кружочек»), document."""
+    if not field_file:
+        return None
+    from .evolution import _media_kind
+
+    filename = name or field_file.name.rsplit("/", 1)[-1]
+    kind = "video_note" if message_type == "video_note" else _media_kind(content_type, filename)
+    return {
+        "url": f"messaging/whatsapp/media/{direction}/{message_id}/",
+        "name": filename,
+        "content_type": content_type,
+        "kind": kind,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsStaffOfOrganization])
+def whatsapp_media(request, direction, message_id, version=None):
+    """Файл из чата WhatsApp — только сотрудникам этого центра."""
+    from domains.platform.core.attachments import file_response
+
+    organization = request.user.organization
+    if direction == "in":
+        message = (
+            InboundWhatsAppMessage.objects.for_tenant(organization).filter(pk=message_id).first()
+        )
+        name = message and (
+            message.media.get("filename") or message.media_file.name.rsplit("/", 1)[-1]
+        )
+        content_type = message and message.media.get("mime_type", "")
+    else:
+        message = OutboundMessage.objects.for_tenant(organization).filter(pk=message_id).first()
+        name = message and message.media_name
+        content_type = message and message.media_type
+    if message is None or not message.media_file:
+        return Response({"detail": "Файл не найден."}, status=404)
+    return file_response(message.media_file, name=name, content_type=content_type or "")
+
+
+# WhatsApp разрешает удалить у всех только недавние сообщения (около двух суток).
+REVOKE_WINDOW = timedelta(hours=48)
+REVOCABLE_STATUSES = {
+    OutboundMessage.Status.SENT,
+    OutboundMessage.Status.DELIVERED,
+    OutboundMessage.Status.READ,
+}
+
+
+def _can_revoke(message):
+    return bool(
+        not message.revoked_at
+        and message.provider_id
+        and message.status in REVOCABLE_STATUSES
+        and (message.sent_at or message.created_at) >= timezone.now() - REVOKE_WINDOW
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def whatsapp_delete_message(request, direction, message_id, version=None):
+    """Удалить сообщение из чата: у себя (только в CRM) или у всех (и в WhatsApp
+    у родителя — только своё и недавнее, как в самом WhatsApp)."""
+    from .evolution import EvolutionError, delete_for_everyone
+
+    organization = request.user.organization
+    model = InboundWhatsAppMessage if direction == "in" else OutboundMessage
+    message = model.objects.for_tenant(organization).filter(pk=message_id).first()
+    if message is None or direction not in ("in", "out"):
+        return Response({"detail": "Сообщение не найдено."}, status=404)
+    if request.data.get("for_everyone"):
+        if direction != "out":
+            return Response({"detail": "У всех можно удалить только своё сообщение."}, status=400)
+        if not _can_revoke(message):
+            return Response(
+                {
+                    "detail": "WhatsApp позволяет удалить у всех только недавние "
+                    "доставленные сообщения."
+                },
+                status=400,
+            )
+        connection = connection_for(
+            organization, message.parent, message.context.get("_connection"), qr_only=True
+        )
+        if connection is None or not is_evolution(connection):
+            return Response({"detail": "WhatsApp центра не подключён."}, status=400)
+        try:
+            delete_for_everyone(connection, message.recipient, message.provider_id)
+        except EvolutionError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        message.revoked_at = timezone.now()
+        message.save(update_fields=["revoked_at", "updated_at"])
+    else:
+        message.hidden_at = timezone.now()
+        message.save(update_fields=["hidden_at", "updated_at"])
+    AuditLog.record(
+        actor=request.user,
+        action=AuditLog.Action.DELETE,
+        entity=message,
+        before={"whatsapp": direction, "for_everyone": bool(request.data.get("for_everyone"))},
+    )
+    return Response(status=204)
+
+
+@api_view(["GET"])
+@permission_classes([IsStaffOfOrganization])
+def whatsapp_thread(request, version=None):
+    """Переписка WhatsApp с родителем (?parent=) или заявкой (?lead=) — как чат:
+    входящие, ответы сотрудников и автоматические напоминания по времени.
+    Совпадение по номеру: сообщение попадает в чат, даже если его привязали
+    к заявке, а не к родителю."""
+    from django.db.models import Q
+
+    organization = request.user.organization
+    params = request.query_params
+    # «Удалить у себя» — сообщение пропадает из чата CRM (в журнале остаётся).
+    inbound = InboundWhatsAppMessage.objects.for_tenant(organization).filter(hidden_at__isnull=True)
+    outbound = OutboundMessage.objects.for_tenant(organization).filter(
+        channel="whatsapp", status__in=THREAD_OUT_STATUSES, hidden_at__isnull=True
+    )
+    if params.get("parent"):
+        parent = ParentContact.objects.for_tenant(organization).filter(pk=params["parent"]).first()
+        if parent is None:
+            return Response({"detail": "Родитель не найден."}, status=404)
+        phones = {
+            phone
+            for phone in [parent.whatsapp, *parent.phones.values_list("number", flat=True)]
+            if phone
+        }
+        inbound = inbound.filter(Q(parent=parent) | Q(sender_phone__in=phones))
+        outbound = outbound.filter(Q(parent=parent) | Q(recipient__in=phones))
+    elif params.get("lead"):
+        lead = Lead.objects.for_tenant(organization).filter(pk=params["lead"]).first()
+        if lead is None:
+            return Response({"detail": "Заявка не найдена."}, status=404)
+        by_lead = Q(lead=lead)
+        inbound = inbound.filter(by_lead | Q(sender_phone=lead.phone) if lead.phone else by_lead)
+        outbound = outbound.filter(by_lead | Q(recipient=lead.phone) if lead.phone else by_lead)
+    else:
+        return Response({"detail": "Укажите родителя или заявку."}, status=400)
+
+    items = [
+        {
+            "id": str(m.id),
+            "direction": "in",
+            "at": m.provider_sent_at or m.created_at,
+            # Подпись к фото — текстом; без подписи у файла текста нет.
+            "text": ""
+            if m.revoked_at
+            else (m.media.get("caption") or "")
+            if m.media_file
+            else (m.text or f"[{m.message_type}]"),
+            "author": m.sender_name,
+            "number": m.connection.label if m.connection_id else "",
+            # Написал в кабинете родителя, а не в WhatsApp.
+            "source": "portal" if m.message_type == "portal" else "whatsapp",
+            "revoked": bool(m.revoked_at),
+            "media": None
+            if m.revoked_at
+            else _thread_media(
+                "in",
+                m.id,
+                m.media_file,
+                m.media.get("filename") or "",
+                m.media.get("mime_type") or "",
+                m.message_type,
+            ),
+        }
+        for m in inbound.select_related("connection__branch").order_by("-created_at")[:THREAD_LIMIT]
+    ] + [
+        {
+            "id": str(m.id),
+            "direction": "out",
+            "at": m.sent_at or m.created_at,
+            "text": "" if m.revoked_at else m.body,
+            "media": None
+            if m.revoked_at
+            else _thread_media("out", m.id, m.media_file, m.media_name, m.media_type),
+            "author": m.created_by.full_name if m.created_by_id else "Автоматически",
+            "status": m.status,
+            "status_label": m.get_status_display(),
+            "error": m.error,
+            "revoked": bool(m.revoked_at),
+            "can_revoke": _can_revoke(m),
+        }
+        for m in outbound.select_related("created_by").order_by("-created_at")[:THREAD_LIMIT]
+    ]
+    items.sort(key=lambda item: item["at"])
+    return Response({"results": items[-THREAD_LIMIT:]})
+
+
+@api_view(["GET"])
+@permission_classes([IsStaffOfOrganization])
+def whatsapp_status(request, version=None):
+    """Для кнопок «WhatsApp»: писать с номера центра или открыть свой WhatsApp."""
+    connected = (
+        WhatsAppConnection.objects.for_tenant(request.user.organization)
+        .filter(
+            mode=WhatsAppConnection.Mode.EVOLUTION,
+            status=WhatsAppConnection.Status.CONNECTED,
+        )
+        .exists()
+    )
+    return Response(
+        {"connected": connected, "can_send": connected and request.user.role in MANUAL_SEND_ROLES}
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsOwnerOrManagerOrAdmin])
+def whatsapp_send(request, version=None):
+    """Сообщение сотрудника с номера центра: родителю, заявке или по номеру из CRM."""
+    organization = request.user.organization
+    data = request.data
+    parent = lead = child = None
+    if data.get("parent_id"):
+        parent = ParentContact.objects.for_tenant(organization).filter(pk=data["parent_id"]).first()
+        if parent is None:
+            return Response({"detail": "Родитель не найден."}, status=404)
+    if data.get("lead_id"):
+        lead = Lead.objects.for_tenant(organization).filter(pk=data["lead_id"]).first()
+        if lead is None:
+            return Response({"detail": "Заявка не найдена."}, status=404)
+    if data.get("child_id"):
+        child = Child.objects.for_tenant(organization).filter(pk=data["child_id"]).first()
+    # Файл в чат: фото, видео, аудио, документ — до 16 МБ (лимит WhatsApp на видео).
+    file = request.FILES.get("file")
+    if file is not None:
+        from domains.platform.core.attachments import NOTE_EXTENSIONS, VIDEO_EXTENSIONS, files_error
+
+        error = files_error(
+            [file],
+            allowed=NOTE_EXTENSIONS | VIDEO_EXTENSIONS,
+            max_files=1,
+            max_bytes=16 * 1024 * 1024,
+        )
+        if error:
+            return Response({"detail": error}, status=400)
+    try:
+        message = service.send_manual_whatsapp(
+            request.user,
+            data.get("text", ""),
+            phone=str(data.get("phone") or ""),
+            parent=parent,
+            lead=lead,
+            child=child,
+            file=file,
+        )
+    except service.MessagingError as exc:
+        return Response({"detail": str(exc)}, status=400)
+    # Без номера получателя: кнопка доступна и тем, кому телефоны скрыты.
+    return Response(
+        {
+            "id": str(message.id),
+            "status": message.status,
+            "status_label": message.get_status_display(),
+        },
+        status=202,
+    )
 
 
 # --- Instagram Direct and comments (TRU-173) -------------------------------
@@ -787,7 +1305,7 @@ def whatsapp_bulk(request, version=None):
         )
         subject, body = service.template_for(request.user.organization, event, "whatsapp", language)
         values = {
-            "parent": service._first_name(parent.full_name) if parent else "",
+            "parent": service.parent_name(parent) if parent else "",
             "center": request.user.organization.name,
             **context,
         }
@@ -817,8 +1335,21 @@ def whatsapp_bulk(request, version=None):
             reason = "Родитель отписался"
         elif not reason and consent != MessagingConsent.Status.OPTED_IN:
             reason = "Нет согласия на служебные сообщения"
-        if not reason and (
-            not template or template.provider_status != MessageTemplate.ProviderStatus.APPROVED
+        parent_connection = connection_for(request.user.organization, parent) if parent else None
+        qr_number = is_evolution(parent_connection) and (
+            parent_connection.status == WhatsAppConnection.Status.CONNECTED
+        )
+        if not reason and not (
+            parent_connection and parent_connection.status == WhatsAppConnection.Status.CONNECTED
+        ):
+            reason = "WhatsApp центра не подключён"
+        # Номеру по QR-коду шаблоны Meta не нужны — уходит обычный текст.
+        if (
+            not reason
+            and not qr_number
+            and (
+                not template or template.provider_status != MessageTemplate.ProviderStatus.APPROVED
+            )
         ):
             reason = "Шаблон Meta ещё не одобрен"
         dedup_key = f"whatsapp:{event}:{subscription.id}:{today}"
@@ -829,7 +1360,7 @@ def whatsapp_bulk(request, version=None):
         )
         if not reason and existing:
             reason = "Такое напоминание уже поставлено сегодня"
-        service_window = within_service_window(parent) if parent else False
+        service_window = qr_number or (within_service_window(parent) if parent else False)
         row = {
             "subscription_id": str(subscription.id),
             "child": subscription.child.full_name,
@@ -838,7 +1369,15 @@ def whatsapp_bulk(request, version=None):
             "reason": reason,
             "service_window": service_window,
             "template": template_preview,
-            "mode": ("Свободный текст доступен" if service_window else "Только одобренный шаблон"),
+            "mode": (
+                "Обычный текст"
+                if qr_number
+                else "Свободный текст доступен"
+                if service_window
+                else "Только одобренный шаблон"
+            ),
+            # С какого номера уйдёт, когда номеров несколько (филиалы).
+            "number": parent_connection.label if qr_number else "",
         }
         rows.append(row)
         if preview or not parent:
@@ -861,7 +1400,7 @@ def whatsapp_bulk(request, version=None):
             skipped_status = OutboundMessage.Status.OPTED_OUT
         elif consent != MessagingConsent.Status.OPTED_IN:
             skipped_status = OutboundMessage.Status.NO_CONSENT
-        elif not recipient:
+        elif not recipient or reason == "WhatsApp центра не подключён":
             skipped_status = OutboundMessage.Status.NO_CHANNEL
         OutboundMessage.objects.create(
             organization=request.user.organization,
@@ -964,13 +1503,20 @@ def _message_row(m):
         "created_at": m.created_at,
         "sent_at": m.sent_at,
         "scheduled_for": m.scheduled_for,
-        "parent": {"id": str(m.parent_id), "name": m.parent.full_name},
+        "parent": {"id": str(m.parent_id), "name": m.parent.full_name} if m.parent_id else None,
+        "lead": (
+            {"id": str(m.lead_id), "name": m.lead.parent_name or m.lead.child_name}
+            if m.lead_id
+            else None
+        ),
         "event": m.event,
         "event_label": (
             EVENTS[m.event].label
             if m.event in EVENTS
             else "Ответ в WhatsApp"
             if m.event == "whatsapp_reply"
+            else "Сообщение в WhatsApp"
+            if m.event == service.MANUAL_EVENT
             else m.event
         ),
         "status": m.status,
@@ -988,7 +1534,9 @@ def _message_row(m):
 @permission_classes([IsOwnerOrManagerOrAdmin])
 def journal(request, version=None):
     """Что и кому отправили: фильтры — родитель, статус, событие, период."""
-    rows = OutboundMessage.objects.for_tenant(request.user.organization).select_related("parent")
+    rows = OutboundMessage.objects.for_tenant(request.user.organization).select_related(
+        "parent", "lead"
+    )
     params = request.query_params
     reply = None
     if params.get("parent"):

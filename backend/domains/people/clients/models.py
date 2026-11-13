@@ -284,7 +284,15 @@ class CommunicationLog(TenantModel):
         WHATSAPP = "whatsapp", "WhatsApp"
         COMMENT = "comment", "Комментарий"
 
-    child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="communication_logs")
+    # Пусто — запись о родителе без ребёнка (переписка WhatsApp с родителем,
+    # у которого дети ещё не привязаны или их несколько).
+    child = models.ForeignKey(
+        Child,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="communication_logs",
+    )
     parent_contact = models.ForeignKey(
         ParentContact,
         on_delete=models.SET_NULL,
@@ -301,19 +309,49 @@ class CommunicationLog(TenantModel):
     # PROTECT — лог не должен потерять автора молча (нужен для аудита);
     # пользователи и так мягко удаляются (User.delete()), так что PROTECT
     # здесь не мешает обычному увольнению сотрудника.
+    # Пусто — входящее сообщение WhatsApp: написал родитель, не сотрудник.
     author = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="communication_logs"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="communication_logs",
     )
 
     class Meta:
         ordering = ["-created_at"]
 
     def save(self, *args, **kwargs):
-        self.organization_id = self.child.organization_id
+        owner = self.child or self.parent_contact
+        self.organization_id = owner.organization_id
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.get_channel_display()} — {self.child_id} ({self.created_at:%Y-%m-%d})"
+
+
+def communication_upload_to(instance, filename):
+    from domains.platform.core.attachments import upload_path
+
+    return upload_path("communications", instance.organization_id, filename)
+
+
+class CommunicationAttachment(TenantModel):
+    """Файл к заметке «Коммуникаций» (справка, чек, фото). Отдаётся только
+    через API сотрудникам центра — публичной ссылки нет."""
+
+    log = models.ForeignKey(CommunicationLog, on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField(upload_to=communication_upload_to, max_length=500)
+    name = models.CharField(max_length=255)
+    size = models.PositiveIntegerField(default=0)
+    content_type = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def save(self, *args, **kwargs):
+        self.organization_id = self.log.organization_id
+        super().save(*args, **kwargs)
 
 
 class ImportColumnMapping(TenantModel):
