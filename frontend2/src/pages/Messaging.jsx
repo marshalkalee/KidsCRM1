@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  ArrowDown, ArrowUp, Camera, CheckCircle2, ChevronDown, Mail, MessageCircle, Moon, Phone,
-  PhoneIncoming, Play, RefreshCw, Send, Undo2, X,
+  ArrowDown, ArrowUp, CheckCircle2, ChevronDown, Mail, MessageCircle, Moon, QrCode, RefreshCw,
+  Send, Undo2, Unplug, X,
 } from 'lucide-react'
 import api from '../api/axios'
 import { STATUS_TONE } from '../components/messaging/status'
+import { resetWhatsAppStatus } from '../components/messaging/whatsappStatus'
 import {
-  Badge, Button, Card, CardHeader, Checkbox, Dropdown, EmptyState, ErrorState, Field, Input, PageHeader,
-  Select, Skeleton, Textarea, apiErrorMessage, cn, formatDateTime, useToast,
+  Badge, Button, Card, CardHeader, Checkbox, Dropdown, EmptyState, ErrorState, Field, Input, Modal, PageHeader,
+  Select, Skeleton, Textarea, apiErrorMessage, cn, formatDateTime, useConfirm, useToast,
 } from '../ui'
 import { t } from '../i18n'
 
@@ -29,133 +30,6 @@ const LANGS = [
   { key: 'ru', label: 'Русский' },
   { key: 'kk', label: 'Қазақша' },
 ]
-
-export function TelephonyCalls() {
-  const toast = useToast()
-  const [calls, setCalls] = useState(null)
-  const [connection, setConnection] = useState(null)
-  const [connectionForm, setConnectionForm] = useState(null)
-  const [savingConnection, setSavingConnection] = useState(false)
-  const [error, setError] = useState(false)
-  const load = useCallback(() => Promise.all([
-    api.get('messaging/telephony/calls/'),
-    api.get('messaging/telephony/').catch(() => ({ data: null })),
-  ]).then(([callsResponse, connectionResponse]) => {
-    setCalls(callsResponse.data)
-    setConnection(connectionResponse.data)
-    if (connectionResponse.data) {
-      setConnectionForm(current => current || {
-        provider: connectionResponse.data.provider,
-        virtual_number: connectionResponse.data.virtual_number || '',
-        api_key: '',
-        api_secret: '',
-        recording_enabled: connectionResponse.data.recording_enabled,
-        recording_notice_confirmed: connectionResponse.data.recording_notice_confirmed,
-      })
-    }
-    setError(false)
-  }).catch(() => setError(true)), [])
-  useEffect(() => { load() }, [load])
-
-  async function promote(call) {
-    try {
-      const { data } = await api.post(`messaging/telephony/calls/${call.id}/promote/`)
-      toast.success(t('Заявка создана'))
-      window.location.assign(`/leads/${data.lead_id}`)
-    } catch (requestError) { toast.error(apiErrorMessage(requestError)) }
-  }
-
-  async function play(call) {
-    try {
-      const { data } = await api.get(`messaging/telephony/calls/${call.id}/recording/`)
-      window.open(data.url, '_blank', 'noopener,noreferrer')
-    } catch (requestError) { toast.error(apiErrorMessage(requestError)) }
-  }
-
-  async function saveConnection() {
-    setSavingConnection(true)
-    try {
-      const { data } = await api.put('messaging/telephony/', connectionForm)
-      setConnection(data)
-      setConnectionForm({ ...connectionForm, api_key: '', api_secret: '' })
-      toast.success(t('Настройки телефонии сохранены'))
-    } catch (requestError) { toast.error(apiErrorMessage(requestError)) }
-    finally { setSavingConnection(false) }
-  }
-
-  if (error) return <Card><ErrorState onRetry={load} /></Card>
-  if (!calls) return <Skeleton className="h-80" />
-  return (
-    <div>
-      <PageHeader description={t('Входящие, исходящие и пропущенные звонки. Если АТС недоступна, CRM откроет номер в телефоне.')} />
-      {connection && (
-        <Card className="mb-4">
-          <CardHeader
-            title={t('Телефония')}
-            description={connection.provider === 'console'
-              ? t('Тестовый режим: звонок открывается через телефон устройства.')
-              : t('Подключение Zadarma для виртуального номера Казахстана.')}
-            actions={<Badge tone={connection.status === 'connected' ? 'success' : 'neutral'} dot>{t(connection.status === 'connected' ? 'Подключена' : 'Не подключена')}</Badge>}
-          />
-        </Card>
-      )}
-      {connectionForm && (
-        <Card className="mb-4">
-          <CardHeader title={t('Настройки АТС')} description={t('Ключи доступны только владельцу и никогда не возвращаются из API.')} />
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label={t('Провайдер')}>
-              {({ id }) => (
-                <Select id={id} value={connectionForm.provider} onChange={event => setConnectionForm({ ...connectionForm, provider: event.target.value })}>
-                  <option value="console">{t('Тестовый режим')}</option>
-                  <option value="zadarma">Zadarma</option>
-                </Select>
-              )}
-            </Field>
-            <Field label={t('Виртуальный номер')}>
-              {({ id }) => <Input id={id} value={connectionForm.virtual_number} onChange={event => setConnectionForm({ ...connectionForm, virtual_number: event.target.value })} placeholder="+7 700 000 00 00" />}
-            </Field>
-            <Field label={t('API-ключ')}>
-              {({ id }) => <Input id={id} value={connectionForm.api_key} onChange={event => setConnectionForm({ ...connectionForm, api_key: event.target.value })} placeholder={connection.has_api_key ? t('Ключ уже сохранён') : ''} />}
-            </Field>
-            <Field label={t('API-секрет')}>
-              {({ id }) => <Input id={id} type="password" value={connectionForm.api_secret} onChange={event => setConnectionForm({ ...connectionForm, api_secret: event.target.value })} placeholder={connection.has_api_key ? t('Секрет уже сохранён') : ''} />}
-            </Field>
-          </div>
-          <div className="mt-4 grid gap-3">
-            <Checkbox checked={connectionForm.recording_enabled} onChange={event => setConnectionForm({ ...connectionForm, recording_enabled: event.target.checked })} label={t('Хранить ссылки на записи разговоров')} />
-            {connectionForm.recording_enabled && <Checkbox checked={connectionForm.recording_notice_confirmed} onChange={event => setConnectionForm({ ...connectionForm, recording_notice_confirmed: event.target.checked })} label={t('Подтверждаю, что звонящий предупреждается о записи разговора')} />}
-          </div>
-          <Button className="mt-5" variant="primary" loading={savingConnection} onClick={saveConnection}>{t('Сохранить настройки')}</Button>
-        </Card>
-      )}
-      <Card>
-        <CardHeader title={t('Журнал звонков')} description={t('Карточка клиента открывается по известному номеру. Пропущенные звонки создают задачу перезвонить.')} />
-        {!calls.length ? <EmptyState icon={Phone} title={t('Звонков пока нет')} description={t('После подключения АТС входящие и исходящие появятся здесь.')} /> : (
-          <div className="divide-y divide-line">
-            {calls.map(call => {
-              const targetUrl = call.target?.type === 'child' ? `/children/${call.target.id}` : call.target?.type === 'parent' ? `/parents/${call.target.id}` : call.target?.type === 'lead' ? `/leads/${call.target.id}` : ''
-              return (
-                <div key={call.id} className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600"><PhoneIncoming className="size-5" /></span>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-ink">{call.target?.name || t('Неизвестный номер')}</p>
-                    <p className="text-sm text-ink-muted">{call.phone} · {t(call.direction === 'inbound' ? 'Входящий' : 'Исходящий')} · {t(call.status === 'missed' ? 'Пропущен' : call.status === 'completed' ? 'Завершён' : call.status === 'external' ? 'Передан на устройство' : call.status === 'failed' ? 'Ошибка' : 'Звонит')}</p>
-                    <p className="text-xs text-ink-subtle">{formatDateTime(call.started_at)} · {call.duration_seconds} {t('сек.')}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {targetUrl && <Button to={targetUrl}>{t('Открыть карточку')}</Button>}
-                    {!call.target && <Button onClick={() => promote(call)}>{t('Создать заявку')}</Button>}
-                    {call.has_recording && <Button icon={Play} onClick={() => play(call)}>{t('Слушать запись')}</Button>}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Card>
-    </div>
-  )
-}
 
 export function MessagingJournal() {
   const toast = useToast()
@@ -200,7 +74,7 @@ export function MessagingJournal() {
   if (error) return <Card><ErrorState onRetry={load} /></Card>
   if (!data) return <Skeleton className="h-96" />
 
-  const parentName = filters.parent && data.results[0]?.parent.name
+  const parentName = filters.parent && data.results[0]?.parent?.name
 
   return (
     <div>
@@ -208,12 +82,12 @@ export function MessagingJournal() {
       {filters.parent && data.whatsapp_reply && (
         <Card className="mt-4">
           <CardHeader
-            title={t('Свободный ответ в WhatsApp')}
+            title={t('Ответ в WhatsApp')}
             description={data.whatsapp_reply.available
-              ? t('Родитель написал менее 24 часов назад — можно ответить обычным текстом.')
+              ? t('Уйдёт родителю обычным текстом с номера центра.')
               : t(data.whatsapp_reply.reason)}
           />
-          {data.whatsapp_reply.available ? (
+          {data.whatsapp_reply.available && (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <Field className="min-w-0 flex-1" label={t('Текст ответа')}>
                 {({ id }) => (
@@ -224,8 +98,6 @@ export function MessagingJournal() {
                 {t('Отправить')}
               </Button>
             </div>
-          ) : (
-            <p className="text-sm text-ink-muted">{t('Свободный ответ сейчас недоступен. Для нового диалога используйте одобренный шаблон Meta.')}</p>
           )}
         </Card>
       )}
@@ -274,7 +146,7 @@ export function MessagingJournal() {
               <li key={m.id}>
                 <button type="button" onClick={() => setOpen(open === m.id ? null : m.id)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-left">
                   <span className="min-w-[10rem] flex-1">
-                    <span className="block text-sm font-semibold text-ink">{m.parent.name}</span>
+                    <span className="block text-sm font-semibold text-ink">{m.parent?.name || (m.lead && t('Заявка: {name}', { name: m.lead.name })) || m.recipient}</span>
                     <span className="text-[13px] text-ink-muted">{t(m.event_label)} · {formatDateTime(m.sent_at || m.created_at)}{m.channel && ` · ${m.channel}`}</span>
                   </span>
                   <Badge tone={STATUS_TONE[m.status]}>{t(m.status_label)}</Badge>
@@ -288,7 +160,8 @@ export function MessagingJournal() {
                     {!m.error && STATUS_HINT[m.status] && <p className="text-ink-muted">{STATUS_HINT[m.status]()}</p>}
                     {m.subject && <p className="font-semibold text-ink">{m.subject}</p>}
                     {m.body && <pre className="whitespace-pre-wrap font-sans text-ink">{m.body}</pre>}
-                    <Link to={`/parents/${m.parent.id}`} className="inline-block font-semibold text-brand-600 hover:underline">{t('Карточка родителя')}</Link>
+                    {m.parent && <Link to={`/parents/${m.parent.id}`} className="inline-block font-semibold text-brand-600 hover:underline">{t('Карточка родителя')}</Link>}
+                    {!m.parent && m.lead && <Link to={`/leads/${m.lead.id}`} className="inline-block font-semibold text-brand-600 hover:underline">{t('Карточка заявки')}</Link>}
                   </div>
                 )}
               </li>
@@ -299,249 +172,6 @@ export function MessagingJournal() {
       {data.total > data.results.length && (
         <p className="mt-2 text-[13px] text-ink-muted">{t('Показаны последние {n} из {total} — сузьте фильтром.', { n: data.results.length, total: data.total })}</p>
       )}
-    </div>
-  )
-}
-
-export function MessagingInbox() {
-  const toast = useToast()
-  const [data, setData] = useState(null)
-  const [error, setError] = useState(false)
-  const [status, setStatus] = useState('')
-  const [resolving, setResolving] = useState('')
-
-  const load = useCallback((quiet = false) => {
-    api.get('messaging/whatsapp/inbox/', { params: status ? { status } : {} })
-      .then(response => { setData(response.data); setError(false) })
-      .catch(() => { if (!quiet) setError(true) })
-  }, [status])
-
-  useEffect(() => {
-    load()
-    const timer = window.setInterval(() => load(true), 15000)
-    return () => window.clearInterval(timer)
-  }, [load])
-
-  async function bind(message, candidate) {
-    setResolving(message.id)
-    try {
-      await api.post(`messaging/whatsapp/inbox/${message.id}/resolve/`, {
-        [`${candidate.type}_id`]: candidate.id,
-      })
-      toast.success(t('Сообщение привязано'))
-      load()
-    } catch (err) {
-      toast.error(apiErrorMessage(err))
-    } finally {
-      setResolving('')
-    }
-  }
-
-  if (error) return <Card><ErrorState onRetry={load} /></Card>
-  if (!data) return <Skeleton className="h-96" />
-
-  return (
-    <div>
-      <PageHeader description={t('Входящие сообщения автоматически попадают в историю ребёнка или заявки. Неоднозначные совпадения остаются здесь для ручной привязки.')} />
-      <Card padded={false} className="mt-4">
-        <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-4">
-          <div className="mr-auto">
-            <p className="font-bold text-ink">{t('Входящие WhatsApp')}</p>
-            <p className="text-[13px] text-ink-muted">{t('Нужно разобрать: {n}', { n: data.unresolved })}</p>
-          </div>
-          <div className="w-52">
-            <Dropdown
-              size="sm"
-              ariaLabel={t('Статус')}
-              value={status}
-              onChange={setStatus}
-              options={[
-                { value: '', label: t('Все статусы') },
-                ...data.statuses.map(item => ({ value: item.key, label: t(item.label) })),
-              ]}
-            />
-          </div>
-          <Button variant="secondary" icon={RefreshCw} onClick={() => load()}>{t('Обновить')}</Button>
-        </div>
-        {data.results.length === 0 ? (
-          <EmptyState
-            icon={MessageCircle}
-            title={t('Входящих сообщений пока нет')}
-            description={t('После подключения Meta Cloud API сообщения родителей появятся здесь автоматически.')}
-          />
-        ) : (
-          <ul className="divide-y divide-line">
-            {data.results.map(message => (
-              <li key={message.id} className="space-y-3 px-5 py-4">
-                <div className="flex flex-wrap items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-ink">{message.phone}</p>
-                      <Badge tone={message.status === 'unresolved' ? 'warning' : message.status === 'failed' ? 'danger' : 'success'}>
-                        {t(message.status_label)}
-                      </Badge>
-                      {message.reply_window_open && <Badge tone="info">{t('Можно ответить в течение 24 часов')}</Badge>}
-                    </div>
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{message.text || `[${message.type}]`}</p>
-                    <p className="mt-1 text-xs text-ink-muted">{formatDateTime(message.provider_sent_at || message.created_at)}</p>
-                  </div>
-                  {message.child && <Link className="text-sm font-semibold text-brand-600 hover:underline" to={`/children/${message.child.id}`}>{message.child.name}</Link>}
-                  {message.lead && <Link className="text-sm font-semibold text-brand-600 hover:underline" to={`/leads/${message.lead.id}`}>{message.lead.name}</Link>}
-                </div>
-                {Object.keys(message.media || {}).length > 0 && (
-                  <div className="rounded-lg bg-surface-muted px-3 py-2 text-xs text-ink-muted">
-                    {t('Вложение')}: {message.media.filename || message.media.mime_type || message.type}
-                  </div>
-                )}
-                {message.resolution_note && <p className="text-[13px] text-ink-muted">{message.resolution_note}</p>}
-                {message.status === 'unresolved' && (
-                  <div className="rounded-xl border border-warning-200 bg-warning-50 p-3">
-                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-warning-800">{t('Выберите карточку вручную')}</p>
-                    {message.candidates.length ? (
-                      <div className="flex flex-wrap gap-2">
-                        {message.candidates.map(candidate => (
-                          <Button
-                            key={`${candidate.type}-${candidate.id}`}
-                            variant="secondary"
-                            loading={resolving === message.id}
-                            onClick={() => bind(message, candidate)}
-                          >
-                            {candidate.type === 'child' ? t('Ребёнок') : t('Заявка')}: {candidate.name}
-                          </Button>
-                        ))}
-                      </div>
-                    ) : <p className="text-sm text-warning-800">{t('Подходящих карточек не найдено')}</p>}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-    </div>
-  )
-}
-
-export function InstagramInbox() {
-  const toast = useToast()
-  const [data, setData] = useState(null)
-  const [error, setError] = useState(false)
-  const [status, setStatus] = useState('')
-  const [reply, setReply] = useState({})
-  const [busy, setBusy] = useState('')
-  const load = useCallback((quiet = false) => {
-    api.get('messaging/instagram/inbox/', { params: status ? { status } : {} })
-      .then(response => { setData(response.data); setError(false) })
-      .catch(() => { if (!quiet) setError(true) })
-  }, [status])
-
-  useEffect(() => {
-    load()
-    const timer = window.setInterval(() => load(true), 15000)
-    return () => window.clearInterval(timer)
-  }, [load])
-
-  async function action(message, name, request) {
-    setBusy(`${name}-${message.id}`)
-    try {
-      await request()
-      toast.success(name === 'reply' ? t('Ответ отправлен') : t('Заявка создана'))
-      setReply(current => ({ ...current, [message.id]: '' }))
-      load()
-    } catch (err) {
-      toast.error(apiErrorMessage(err))
-    } finally {
-      setBusy('')
-    }
-  }
-
-  if (error) return <Card><ErrorState onRetry={load} /></Card>
-  if (!data) return <Skeleton className="h-96" />
-  return (
-    <div>
-      <PageHeader description={t('Direct и вопросы из комментариев попадают в воронку. Реакции и отметки друзей остаются вне заявок.')} />
-      <Card padded={false} className="mt-4">
-        <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-4">
-          <div className="mr-auto">
-            <p className="font-bold text-ink">{t('Входящие Instagram')}</p>
-            <p className="text-[13px] text-ink-muted">{t('Нужно разобрать: {n}', { n: data.unresolved })}</p>
-          </div>
-          <div className="w-52">
-            <Dropdown
-              size="sm"
-              ariaLabel={t('Статус')}
-              value={status}
-              onChange={setStatus}
-              options={[{ value: '', label: t('Все статусы') }, ...data.statuses.map(item => ({ value: item.key, label: t(item.label) }))]}
-            />
-          </div>
-          <Button variant="secondary" icon={RefreshCw} onClick={() => load()}>{t('Обновить')}</Button>
-        </div>
-        {data.results.length === 0 ? (
-          <EmptyState icon={Camera} title={t('Входящих Instagram пока нет')} description={t('После подключения Instagram Business сообщения и комментарии появятся здесь автоматически.')} />
-        ) : (
-          <ul className="divide-y divide-line">
-            {data.results.map(message => (
-              <li key={message.id} className="space-y-3 px-5 py-4">
-                <div className="flex flex-wrap items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-ink">{message.sender_name ? `@${message.sender_name}` : message.sender_id}</p>
-                      <Badge tone={message.kind === 'comment' ? 'warning' : 'info'}>{t(message.kind_label)}</Badge>
-                      <Badge tone={message.status === 'ignored' ? 'neutral' : message.status === 'failed' ? 'danger' : 'success'}>{t(message.status_label)}</Badge>
-                      {message.ad_name && <Badge tone="brand">{message.ad_name}</Badge>}
-                    </div>
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{message.text}</p>
-                    <p className="mt-1 text-xs text-ink-muted">{formatDateTime(message.provider_sent_at || message.created_at)}</p>
-                    {message.post_url && <a className="mt-1 inline-block text-xs font-semibold text-brand-600 hover:underline" href={message.post_url} target="_blank" rel="noreferrer">{t('Открыть публикацию')}</a>}
-                  </div>
-                  {message.child && <Link className="text-sm font-semibold text-brand-600 hover:underline" to={`/children/${message.child.id}`}>{message.child.name}</Link>}
-                  {message.lead && <Link className="text-sm font-semibold text-brand-600 hover:underline" to={`/leads/${message.lead.id}`}>{message.lead.name}</Link>}
-                </div>
-                {message.resolution_note && <p className="text-[13px] text-ink-muted">{message.resolution_note}</p>}
-                {message.status === 'ignored' && (
-                  <Button
-                    variant="secondary"
-                    loading={busy === `promote-${message.id}`}
-                    onClick={() => action(message, 'promote', () => api.post(`messaging/instagram/inbox/${message.id}/promote/`))}
-                  >
-                    {t('Создать заявку вручную')}
-                  </Button>
-                )}
-                {message.candidates?.length > 0 && (
-                  <div className="flex flex-wrap gap-2 rounded-xl border border-warning-200 bg-warning-50 p-3">
-                    {message.candidates.map(candidate => (
-                      <Button
-                        key={`${candidate.type}-${candidate.id}`}
-                        variant="secondary"
-                        loading={busy === `bind-${message.id}`}
-                        onClick={() => action(message, 'bind', () => api.post(`messaging/instagram/inbox/${message.id}/resolve/`, { [`${candidate.type}_id`]: candidate.id }))}
-                      >
-                        {t('Ребёнок')}: {candidate.name}
-                      </Button>
-                    ))}
-                  </div>
-                )}
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                  <Field className="min-w-0 flex-1" label={message.kind === 'comment' ? t('Публичный ответ') : t('Ответ в Direct')}>
-                    {({ id }) => <Input id={id} maxLength={1000} value={reply[message.id] || ''} onChange={event => setReply(current => ({ ...current, [message.id]: event.target.value }))} placeholder={message.kind === 'comment' ? t('Без телефонов, имён детей и данных об оплате') : t('Напишите ответ')} />}
-                  </Field>
-                  <Button
-                    variant="primary"
-                    icon={Send}
-                    disabled={!(reply[message.id] || '').trim()}
-                    loading={busy === `reply-${message.id}`}
-                    onClick={() => action(message, 'reply', () => api.post(`messaging/instagram/inbox/${message.id}/reply/`, { body: reply[message.id] }))}
-                  >
-                    {t('Ответить')}
-                  </Button>
-                </div>
-                {message.reply_text && <p className="rounded-lg bg-success-50 px-3 py-2 text-sm text-success-800">{t('Ответ отправлен')}: {message.reply_text}</p>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
     </div>
   )
 }
@@ -863,9 +493,188 @@ export function MessagingSettings() {
 }
 
 function WhatsAppSettings() {
+  return (
+    <>
+      <WhatsAppNumbers />
+      <MetaWhatsAppSettings />
+    </>
+  )
+}
+
+const NUMBER_TONE = { connected: 'success', connecting: 'warning', error: 'danger', disconnected: 'neutral' }
+
+/* Номера по QR-коду (Evolution API): у каждого филиала свой или один на центр. */
+function WhatsAppNumbers() {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(false)
+  const [target, setTarget] = useState('')
+  const [busy, setBusy] = useState('')
+  const [qr, setQr] = useState(null)
+
+  const load = useCallback(() => api.get('messaging/whatsapp/numbers/')
+    .then(response => { setData(response.data); setError(false) })
+    .catch(() => setError(true)), [])
+  useEffect(() => { load() }, [load])
+  const closeQr = useCallback(() => { setQr(null); load() }, [load])
+  const qrConnected = useCallback(() => {
+    setQr(null)
+    resetWhatsAppStatus()
+    toast.success(t('WhatsApp подключён'))
+    load()
+  }, [load, toast])
+
+  if (error) return <Card className="mt-4"><ErrorState onRetry={load} /></Card>
+  if (!data) return <Skeleton className="mt-4 h-48" />
+
+  const options = [
+    ...(!data.org_wide_taken && !data.meta_connected ? [{ value: 'org', label: t('Весь центр') }] : []),
+    ...data.branches.filter(branch => !branch.taken).map(branch => ({ value: branch.id, label: branch.name })),
+  ]
+  const selected = options.some(option => option.value === target) ? target : options[0]?.value || ''
+
+  async function connect() {
+    setBusy('connect')
+    try {
+      const response = await api.post('messaging/whatsapp/numbers/', { branch_id: selected === 'org' ? null : selected })
+      setQr(response.data)
+      load()
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function showQr(number) {
+    setBusy(number.id)
+    try {
+      const response = await api.get(`messaging/whatsapp/numbers/${number.id}/`)
+      if (response.data.qr) setQr(response.data)
+      else load()
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function disconnect(number) {
+    const ok = await confirm({
+      title: t('Отключить номер?'),
+      message: t('{label}: WhatsApp на телефоне выйдет из CRM. Сообщения родителям пойдут другими каналами.', { label: t(number.label) }),
+      confirmText: t('Отключить'),
+      danger: true,
+    })
+    if (!ok) return
+    setBusy(number.id)
+    try {
+      await api.delete(`messaging/whatsapp/numbers/${number.id}/`)
+      resetWhatsAppStatus()
+      toast.success(t('Номер отключён'))
+      load()
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <Card className="mt-4">
+      <CardHeader
+        title={t('WhatsApp')}
+        description={t('Номер центра или свой номер у каждого филиала. Подключается по QR-коду, как WhatsApp Web.')}
+      />
+      {!data.available ? (
+        <p className="rounded-lg bg-surface-muted px-3 py-3 text-sm text-ink-muted">{t('Подключение по QR-коду не настроено на сервере.')}</p>
+      ) : (
+        <div className="space-y-4">
+          {data.numbers.length > 0 && (
+            <ul className="divide-y divide-line rounded-lg border border-line">
+              {data.numbers.map(number => (
+                <li key={number.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                  <MessageCircle className="size-5 shrink-0 text-success-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-ink">{t(number.label)}{number.phone && <span className="ml-2 font-normal text-ink-muted">{number.phone}</span>}</p>
+                    {number.last_error && number.status !== 'connected' && <p className="mt-0.5 text-xs text-danger-600">{t(number.last_error)}</p>}
+                  </div>
+                  <Badge tone={NUMBER_TONE[number.status]} dot>{t(number.status_label)}</Badge>
+                  <span className="flex gap-2">
+                    {number.status !== 'connected' && (
+                      <Button size="sm" icon={QrCode} loading={busy === number.id} onClick={() => showQr(number)}>{t('QR-код')}</Button>
+                    )}
+                    <Button size="sm" variant="ghost" icon={Unplug} disabled={busy === number.id} onClick={() => disconnect(number)}>{t('Отключить')}</Button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {options.length > 0 && (
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label={t('Номер для')} className="w-full sm:w-64">
+                {({ id }) => (
+                  <Select id={id} value={selected} onChange={event => setTarget(event.target.value)}>
+                    {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </Select>
+                )}
+              </Field>
+              <Button variant="primary" icon={QrCode} loading={busy === 'connect'} onClick={connect}>{t('Подключить номер')}</Button>
+            </div>
+          )}
+          <p className="text-xs text-ink-subtle">{t('Используется Evolution API (evolution-foundation/evolution-api).')}</p>
+        </div>
+      )}
+      <WhatsAppQrModal key={qr?.number.id || 'closed'} value={qr} onClose={closeQr} onConnected={qrConnected} />
+    </Card>
+  )
+}
+
+function WhatsAppQrModal({ value, onClose, onConnected }) {
+  const [state, setState] = useState(value)
+  const numberId = value?.number.id
+
+  // Код живёт меньше минуты: пока окно открыто, берём свежий и ждём подключения.
+  useEffect(() => {
+    if (!numberId) return undefined
+    const timer = window.setInterval(() => {
+      api.get(`messaging/whatsapp/numbers/${numberId}/`)
+        .then(response => {
+          if (response.data.number.status === 'connected') onConnected()
+          else if (response.data.qr) setState(response.data)
+        })
+        .catch(() => {})
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [numberId, onConnected])
+
+  return (
+    <Modal open={Boolean(value)} onClose={onClose} size="sm" title={t('Подключить WhatsApp: {label}', { label: t(value?.number.label || '') })}>
+      <div className="space-y-4">
+        <ol className="list-decimal space-y-1 pl-5 text-sm text-ink-muted">
+          <li>{t('Откройте WhatsApp на телефоне с номером центра.')}</li>
+          <li>{t('Настройки → Связанные устройства → Привязать устройство.')}</li>
+          <li>{t('Наведите камеру на код.')}</li>
+        </ol>
+        <div className="flex justify-center rounded-lg border border-line bg-white p-3">
+          {state?.qr?.base64
+            ? <img src={state.qr.base64} alt={t('QR-код WhatsApp')} className="size-64" />
+            : <Skeleton className="size-64" />}
+        </div>
+        {state?.qr?.pairing_code && (
+          <p className="text-center text-sm text-ink-muted">{t('Или код для входа по номеру')}: <b className="tracking-widest text-ink">{state.qr.pairing_code}</b></p>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+function MetaWhatsAppSettings() {
   const toast = useToast()
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState('')
+  const [expanded, setExpanded] = useState(false)
   const load = useCallback(() => api.get('messaging/whatsapp/').then(response => setData(response.data)), [])
   useEffect(() => { load().catch(() => {}) }, [load])
 
@@ -882,8 +691,16 @@ function WhatsAppSettings() {
     }
   }
 
-  if (!data) return <Skeleton className="mt-4 h-72" />
+  if (!data) return null
   const connected = data.status === 'connected'
+  // Официальный API Meta нужен редко — свёрнут, пока не используется.
+  if (!expanded && data.mode !== 'meta' && !connected) {
+    return (
+      <div className="mt-2 flex justify-end">
+        <Button size="sm" variant="ghost" onClick={() => setExpanded(true)}>{t('Официальный API Meta')}</Button>
+      </div>
+    )
+  }
   return (
     <Card className="mt-4">
       <CardHeader

@@ -107,7 +107,7 @@ class NotifyContractTests(MessagingFixtures):
         sent = mail.outbox[0]
         self.assertEqual(sent.to, ["aigerim@example.kz"])
         self.assertEqual(sent.subject, "True Ballet: напоминание об оплате")
-        self.assertIn("Здравствуйте, Айгерим!", sent.body)
+        self.assertIn("Здравствуйте, Сапарова Айгерим!", sent.body)
         self.assertIn("Алия: к оплате 25 000 ₸", sent.body)
         self.assertEqual(sent.from_email, "True Ballet <noreply@kidscrm.kz>")
         self.assertIn("https://app.kidscrm.kz/api/v1/messaging/unsubscribe/", sent.body)

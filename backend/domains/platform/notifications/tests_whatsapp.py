@@ -233,14 +233,16 @@ class WhatsAppMessagingTests(TestCase):
         self.assertEqual(inbound.child, child)
         self.assertEqual(CommunicationLog.objects.filter(child=child).count(), 1)
 
-    def test_unknown_phone_creates_new_whatsapp_lead_and_comment(self):
+    def test_unknown_phone_creates_new_whatsapp_lead_with_message_in_chat(self):
         handle_webhook(self.incoming("77007778899", "Хочу на балет", "wamid.new"))
         lead = Lead.objects.get(phone="+77007778899")
         self.assertEqual(lead.status, Lead.Status.NEW)
         self.assertEqual(lead.source.name, "WhatsApp")
-        self.assertIn("Хочу на балет", LeadComment.objects.get(lead=lead).text)
+        self.assertEqual(InboundWhatsAppMessage.objects.get(lead=lead).text, "Хочу на балет")
+        # Сообщение — в чате заявки, в заметки не дублируется.
+        self.assertFalse(LeadComment.objects.filter(lead=lead).exists())
 
-    def test_multiple_children_wait_for_manual_choice(self):
+    def test_multiple_children_message_goes_to_parent_history(self):
         children = []
         for index in range(2):
             child = Child.objects.create(
@@ -257,16 +259,11 @@ class WhatsAppMessagingTests(TestCase):
             children.append(child)
         handle_webhook(self.incoming(message_id="wamid.ambiguous"))
         message = InboundWhatsAppMessage.objects.get(provider_message_id="wamid.ambiguous")
-        self.assertEqual(message.status, InboundWhatsAppMessage.Status.UNRESOLVED)
-        response = self.api.post(
-            f"/api/v1/messaging/whatsapp/inbox/{message.id}/resolve/",
-            {"child_id": str(children[1].id)},
-            format="json",
-        )
-        self.assertEqual(response.status_code, 200)
-        message.refresh_from_db()
-        self.assertEqual(message.child, children[1])
         self.assertEqual(message.status, InboundWhatsAppMessage.Status.LINKED)
+        self.assertEqual(message.parent, self.parent)
+        self.assertIsNone(message.child)
+        self.assertIsNone(message.communication_log.child)
+        self.assertEqual(message.communication_log.parent_contact, self.parent)
 
     def test_webhook_api_queues_processing(self):
         with mock.patch(

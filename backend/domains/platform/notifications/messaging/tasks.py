@@ -33,6 +33,59 @@ def process_whatsapp_webhook(payload: dict):
 
 
 @shared_task
+def send_manual_whatsapp_task(message_id: str):
+    from .service import deliver_manual
+
+    message = deliver_manual(message_id)
+    return {"id": str(message.id), "status": message.status}
+
+
+@shared_task
+def process_evolution_webhook(connection_id: str, payload: dict):
+    """Evolution ждёт ответа на вебхук недолго; разбор — в воркере."""
+    from .whatsapp import handle_evolution_webhook
+
+    return {"changed": handle_evolution_webhook(connection_id, payload)}
+
+
+@shared_task
+def sync_evolution_states():
+    """Сверить статусы номеров с сервером Evolution: вебхук об отключении мог
+    не дойти, а отправка на отвалившийся номер — потерянное сообщение."""
+    from ..models import WhatsAppConnection
+    from .evolution import EvolutionError, connection_state, ensure_webhook, is_configured
+    from .whatsapp import handle_evolution_webhook
+
+    if not is_configured():
+        return {"checked": 0}
+    rows = WhatsAppConnection.objects.filter(
+        deleted_at__isnull=True,
+        mode=WhatsAppConnection.Mode.EVOLUTION,
+        status__in=[WhatsAppConnection.Status.CONNECTED, WhatsAppConnection.Status.CONNECTING],
+    ).exclude(instance_name="")
+    checked = 0
+    for connection in rows:
+        try:
+            state = connection_state(connection)
+        except EvolutionError:
+            continue  # сервер недоступен — не делаем выводов о номере
+        expected = (
+            "open" if connection.status == WhatsAppConnection.Status.CONNECTED else "connecting"
+        )
+        if state != expected:
+            handle_evolution_webhook(
+                connection.pk, {"event": "connection.update", "data": {"state": state}}
+            )
+        # Настройки вебхука на сервере Evolution — как в CRM (адрес, события, файлы).
+        try:
+            ensure_webhook(connection)
+        except EvolutionError:
+            pass
+        checked += 1
+    return {"checked": checked}
+
+
+@shared_task
 def process_instagram_webhook(payload: dict):
     """Acknowledge Meta quickly and route Direct/comments in the worker."""
     from .instagram import handle_webhook
@@ -44,6 +97,8 @@ def process_instagram_webhook(payload: dict):
 def create_unanswered_whatsapp_tasks():
     """Create one callback task for every inbound message left unanswered."""
     from datetime import timedelta
+
+    from django.db.models import Q
 
     from domains.platform.tasks.models import Task
     from domains.platform.tenants.org_settings import (
@@ -63,13 +118,18 @@ def create_unanswered_whatsapp_tasks():
         hours = max(1, int(get_org_setting(message.organization, WHATSAPP_UNANSWERED_HOURS)))
         if message.created_at > now - timedelta(hours=hours):
             continue
+        # Ответили — родителю, заявке или на этот номер (кнопка «WhatsApp»).
+        answered = Q(lead_id=message.lead_id) if message.lead_id else Q(pk__in=[])
+        if message.parent_id:
+            answered |= Q(parent_id=message.parent_id)
+        if message.sender_phone:
+            answered |= Q(recipient=message.sender_phone, channel="whatsapp")
         if (
-            message.parent_id
-            and OutboundMessage.objects.filter(
-                organization=message.organization,
-                parent=message.parent,
-                created_at__gt=message.created_at,
-            ).exists()
+            OutboundMessage.objects.filter(
+                organization=message.organization, created_at__gt=message.created_at
+            )
+            .filter(answered)
+            .exists()
         ):
             continue
         owner = (

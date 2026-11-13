@@ -6,6 +6,7 @@ import CallButton from '../components/telephony/CallButton'
 import AcceptPaymentModal from '../components/money/AcceptPaymentModal'
 import { ListToolbar, StatCard, StatRow } from '../components/money/ListParts'
 import WhatsAppBulkModal from '../components/messaging/WhatsAppBulkModal'
+import WhatsAppButton from '../components/messaging/WhatsAppButton'
 import { useSession } from '../session/SessionContext'
 import {
   Button, DataTable, EmptyState, FilterCheck, FilterPanel, FilterSelect,
@@ -18,9 +19,6 @@ const PANEL_KEYS = ['branch', 'direction', 'overdue']
 const FILTER_KEYS = ['q', ...PANEL_KEYS]
 const PAGE_SIZE = 25
 
-function waLink(phone, text) {
-  return `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
-}
 /** «Задолженности» (TRU-68): деньги, которые центр заработал, но не получил. */
 export default function Debts() {
   const navigate = useNavigate()
@@ -259,9 +257,9 @@ function RowActions({ row, canAccept, onPay }) {
         <CallButton phone={row.phone} className="size-9 rounded-md text-ink-muted hover:bg-surface-muted hover:text-ink" iconOnly />
       )}
       {row.whatsapp && (
-        <a href={waLink(row.whatsapp, row.reminder_text)} target="_blank" rel="noreferrer" className="flex size-9 items-center justify-center rounded-md text-success-600 hover:bg-success-50" title={t('Напомнить в WhatsApp')} aria-label={t('Напомнить в WhatsApp')}>
+        <WhatsAppButton phone={row.whatsapp} text={row.reminder_text} childId={row.child_id} className="flex size-9 items-center justify-center rounded-md text-success-600 hover:bg-success-50" title={t('Напомнить в WhatsApp')}>
           <MessageCircle className="size-4" />
-        </a>
+        </WhatsAppButton>
       )}
       {canAccept && <Button size="sm" variant="secondary" onClick={onPay}>{t('Принять')}</Button>}
     </div>

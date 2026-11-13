@@ -257,6 +257,7 @@ ATTENTION_TITLES = {
     "ai_digest": "Отчёт недели",
     "overdue_tasks": "Просроченные задачи",
     "task_comments": "Комментарии к задачам",
+    "whatsapp_messages": "Сообщения WhatsApp без ответа",
 }
 
 

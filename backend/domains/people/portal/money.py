@@ -121,15 +121,20 @@ def contacts(child):
         branches = set(
             child.organization.branch_set.filter(deleted_at__isnull=True, is_active=True)
         )
+    from . import whatsapp_links
+
+    numbers = whatsapp_links.connected_numbers(child.organization)
+    # Готовый текст: администратор сразу видит, о ком вопрос.
+    text = f"Здравствуйте! Вопрос по оплате абонемента: {child.full_name}"
     rows = []
     for branch in sorted(branches, key=lambda b: b.name):
-        if branch.phone:
-            digits = "".join(ch for ch in branch.phone if ch.isdigit())
+        whatsapp = whatsapp_links.number_for(numbers, branch.id, branch.phone)
+        if branch.phone or whatsapp:
             rows.append(
                 {
                     "branch": branch.name,
-                    "phone": branch.phone,
-                    "whatsapp_url": f"https://wa.me/{digits}",
+                    "phone": branch.phone or whatsapp,
+                    "whatsapp_url": whatsapp_links.url(whatsapp, text),
                 }
             )
     return rows

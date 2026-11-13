@@ -1,6 +1,7 @@
 import uuid
 from datetime import timedelta
 
+from django.db import transaction
 from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.utils import timezone
@@ -12,6 +13,7 @@ from rest_framework.response import Response
 
 from domains.people.clients.models import Child
 from domains.platform.core.active_branch import get_active_branch
+from domains.platform.core.attachments import file_response, files_error
 from domains.platform.core.audit import AuditLog
 from domains.platform.core.permissions import IsStaffOfOrganization
 from domains.platform.core.role_permissions import can_manage_lead_dictionaries, can_manage_leads
@@ -23,6 +25,7 @@ from .models import (
     Lead,
     LeadCampaign,
     LeadComment,
+    LeadCommentAttachment,
     LeadKind,
     LeadRejectionReason,
     LeadSource,
@@ -527,18 +530,54 @@ class LeadViewSet(TenantModelViewSet):
 
     @action(detail=True, methods=["get", "post"])
     def comments(self, request, pk=None, version=None):
+        """Заметки заявки: текст и файлы (фото, PDF, документы, аудио)."""
         lead = self.get_object()
         if request.method == "POST":
+            files = request.FILES.getlist("files")
+            error = files_error(files)
+            if error:
+                return Response({"files": [error]}, status=status.HTTP_400_BAD_REQUEST)
             serializer = LeadCommentSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            serializer.save(organization=lead.organization, lead=lead, author=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            with transaction.atomic():
+                comment = serializer.save(
+                    organization=lead.organization, lead=lead, author=request.user
+                )
+                for uploaded in files:
+                    LeadCommentAttachment.objects.create(
+                        comment=comment,
+                        file=uploaded,
+                        name=uploaded.name[:255],
+                        size=uploaded.size,
+                        content_type=(uploaded.content_type or "")[:100],
+                    )
+            return Response(LeadCommentSerializer(comment).data, status=status.HTTP_201_CREATED)
         comments = (
             LeadComment.objects.for_tenant(lead.organization)
             .filter(lead=lead)
             .select_related("author")
+            .prefetch_related("attachments")
         )
         return Response(LeadCommentSerializer(comments, many=True).data)
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"comments/(?P<comment_id>[0-9a-f-]+)/files/(?P<file_id>[0-9a-f-]+)",
+    )
+    def comment_file(self, request, pk=None, comment_id=None, file_id=None, version=None):
+        """Файл заметки — только сотрудникам этого центра, кто видит заявку."""
+        lead = self.get_object()
+        attachment = (
+            LeadCommentAttachment.objects.for_tenant(lead.organization)
+            .filter(pk=file_id, comment_id=comment_id, comment__lead=lead)
+            .first()
+        )
+        if attachment is None:
+            return Response({"detail": "Файл не найден."}, status=status.HTTP_404_NOT_FOUND)
+        return file_response(
+            attachment.file, name=attachment.name, content_type=attachment.content_type
+        )
 
 
 class LeadDictionaryViewSet(TenantModelViewSet):

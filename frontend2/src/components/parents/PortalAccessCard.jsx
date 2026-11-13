@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Copy, KeyRound, MessageCircle } from 'lucide-react'
+import { Check, Copy, KeyRound, MessageCircle } from 'lucide-react'
 import api from '../../api/axios'
 import { Badge, Button, Card, CardHeader, Modal, Skeleton, apiErrorMessage, formatDateTime, formatPhone, useConfirm, useToast } from '../../ui'
 import { t } from '../../i18n'
+import { useCenterWhatsApp } from '../messaging/whatsappStatus'
 
 /**
  * Доступ родителя в кабинет (Д40): вход по телефону и паролю. Пароль
  * выдаёт администратор — система генерирует его и показывает один раз;
- * передать можно в WhatsApp готовым сообщением. Новый пароль закрывает
+ * передать можно в WhatsApp готовым сообщением — с номера центра (видно в
+ * чате родителя) или из своего WhatsApp. Новый пароль закрывает
  * прежние входы родителя.
  */
 export default function PortalAccessCard({ parentId }) {
@@ -65,13 +67,31 @@ export default function PortalAccessCard({ parentId }) {
           </Button>
         </>
       )}
-      {issued && <IssuedModal issued={issued} onClose={() => setIssued(null)} />}
+      {issued && <IssuedModal parentId={parentId} issued={issued} onClose={() => setIssued(null)} />}
     </Card>
   )
 }
 
-function IssuedModal({ issued, onClose }) {
+function IssuedModal({ parentId, issued, onClose }) {
   const toast = useToast()
+  const whatsapp = useCenterWhatsApp()
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  // С номера центра: обычным сообщением, видно в чате родителя.
+  async function sendFromCenter() {
+    setSending(true)
+    try {
+      await api.post(`clients/parents/${parentId}/portal-access/send/`, { password: issued.password })
+      setSent(true)
+      toast.success(t('Пароль отправлен в WhatsApp с номера центра'))
+    } catch (err) {
+      toast.error(apiErrorMessage(err))
+    } finally {
+      setSending(false)
+    }
+  }
+
   async function copy(text, done) {
     try {
       await navigator.clipboard.writeText(text)
@@ -97,8 +117,13 @@ function IssuedModal({ issued, onClose }) {
           <p className="font-mono text-lg font-bold tracking-wider text-ink">{issued.password}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {whatsapp?.can_send && (
+            <Button size="sm" variant="primary" icon={sent ? Check : MessageCircle} loading={sending} disabled={sent} onClick={sendFromCenter}>
+              {sent ? t('Отправлено') : t('Отправить с номера центра')}
+            </Button>
+          )}
           <a href={issued.whatsapp_url} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-md bg-success-50 px-3 text-[13px] font-semibold text-success-600">
-            <MessageCircle className="size-4" />{t('Отправить в WhatsApp')}
+            <MessageCircle className="size-4" />{whatsapp?.can_send ? t('Из своего WhatsApp') : t('Отправить в WhatsApp')}
           </a>
           <Button size="sm" icon={Copy} onClick={() => copy(issued.message, t('Сообщение скопировано'))}>{t('Скопировать сообщение')}</Button>
         </div>

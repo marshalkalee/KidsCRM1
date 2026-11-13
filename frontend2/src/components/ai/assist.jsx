@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, CalendarCheck, Copy, ListChecks, MessageCircle, PhoneCall, RefreshCw, Sparkles, Wand2 } from 'lucide-react'
 import api from '../../api/axios'
 import { Button, Card, Field, Modal, Select, Textarea, apiErrorMessage, cn, useToast } from '../../ui'
+import { WhatsAppQuickSend } from '../messaging/WhatsAppButton'
 import { t } from '../../i18n'
 import { AIBadge, useAI } from './ai'
 
@@ -38,10 +39,6 @@ function useAICall() {
     }
   }
   return [busy, call]
-}
-
-function waLink(phone, text) {
-  return `https://wa.me/${(phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
 }
 
 /* --- Напоминания пачкой ------------------------------------------------ */
@@ -121,15 +118,15 @@ function RemindersModal({ childIds, kind, onClose }) {
               <div className="mt-2 flex justify-end gap-2">
                 <Button size="sm" icon={Copy} onClick={() => copy(item.text)}>{t('Копировать')}</Button>
                 {item.phone ? (
-                  <a
-                    href={waLink(item.phone, item.text)}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={() => setSent(s => ({ ...s, [item.child]: true }))}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-md bg-success-600 px-3 text-[13px] font-semibold text-white hover:brightness-95"
+                  <WhatsAppQuickSend
+                    phone={item.phone}
+                    text={item.text}
+                    childId={item.child}
+                    onSent={() => setSent(s => ({ ...s, [item.child]: true }))}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md bg-success-600 px-3 text-[13px] font-semibold text-white hover:brightness-95 disabled:opacity-60"
                   >
-                    <MessageCircle className="size-3.5" /> WhatsApp
-                  </a>
+                    {mode => <><MessageCircle className="size-3.5" /> {mode === 'center' ? t('Отправить') : 'WhatsApp'}</>}
+                  </WhatsAppQuickSend>
                 ) : (
                   <span className="self-center text-xs text-ink-subtle">{t('Нет телефона')}</span>
                 )}

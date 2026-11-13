@@ -14,6 +14,8 @@ from urllib.parse import quote
 from domains.platform.public_api.models import CenterProfile
 from domains.scheduling.groups.models import GroupMembership
 
+from . import whatsapp_links
+
 
 def _digits(phone: str) -> str:
     return "".join(ch for ch in phone or "" if ch.isdigit())
@@ -27,16 +29,18 @@ def _map_url(branch) -> str:
     return f"https://2gis.kz/search/{quote(query)}" if query else ""
 
 
-def _profile(organization):
+def _profile(organization, numbers, mine):
     profile = CenterProfile.objects.filter(organization=organization, is_published=True).first()
     if profile is None:
         return None
+    # Кнопка центра — номер WhatsApp филиала ребёнка или всего центра.
+    whatsapp = whatsapp_links.number_for(numbers, next(iter(mine), None), profile.phone)
     return {
         "description": profile.description,
         "logo_url": profile.logo_url,
         "photo_urls": list(profile.photo_urls or []),
         "phone": profile.phone,
-        "whatsapp_url": f"https://wa.me/{_digits(profile.phone)}" if profile.phone else "",
+        "whatsapp_url": whatsapp_links.url(whatsapp),
         "instagram": profile.instagram,
         "instagram_url": f"https://instagram.com/{profile.instagram}" if profile.instagram else "",
     }
@@ -54,9 +58,10 @@ def center(child) -> dict:
         organization.branch_set.filter(deleted_at__isnull=True, is_active=True),
         key=lambda b: (b.id not in mine, b.name),
     )
+    numbers = whatsapp_links.connected_numbers(organization)
     return {
         "name": organization.name,
-        "profile": _profile(organization),
+        "profile": _profile(organization, numbers, mine),
         "branches": [
             {
                 "id": str(branch.id),
@@ -65,7 +70,9 @@ def center(child) -> dict:
                 "district": branch.district,
                 "address": branch.address,
                 "phone": branch.phone,
-                "whatsapp_url": f"https://wa.me/{_digits(branch.phone)}" if branch.phone else "",
+                "whatsapp_url": whatsapp_links.url(
+                    whatsapp_links.number_for(numbers, branch.id, branch.phone)
+                ),
                 "working_hours": branch.working_hours or {},
                 "map_url": _map_url(branch),
                 "is_childs": branch.id in mine,

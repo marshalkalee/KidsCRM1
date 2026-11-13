@@ -209,7 +209,82 @@ def task_comments(user, branch_ids):
     return Item("task_comments", len(task_ids), latest, link)
 
 
+WHATSAPP_WINDOW = datetime.timedelta(days=7)
+
+
+def whatsapp_messages(user, branch_ids):
+    """Новые сообщения WhatsApp, на которые ещё не ответили с номера центра.
+    Счёт — по перепискам (родитель, заявка), не по сообщениям; ссылка — в
+    карточку самой свежей. Нет подключённого WhatsApp — пункта нет."""
+    from .models import InboundWhatsAppMessage, OutboundMessage, WhatsAppConnection
+
+    if user.role not in (User.Role.OWNER, User.Role.MANAGER, User.Role.ADMIN):
+        return None
+    organization = user.organization
+    if not WhatsAppConnection.objects.for_tenant(organization).exists():
+        return None
+    since = timezone.now() - WHATSAPP_WINDOW
+    rows = (
+        InboundWhatsAppMessage.objects.for_tenant(organization)
+        .filter(created_at__gte=since)
+        .exclude(status=InboundWhatsAppMessage.Status.IGNORED)
+        .filter(hidden_at__isnull=True, revoked_at__isnull=True)
+        .select_related("parent", "lead")
+        .order_by("-created_at")
+    )
+    if branch_ids is not None:
+        rows = rows.filter(
+            Q(connection__branch_id__in=branch_ids)
+            | Q(connection__branch__isnull=True)
+            | Q(connection__isnull=True)
+        )
+    latest = {}
+    for message in rows[:300]:
+        if message.parent_id:
+            key = ("parent", message.parent_id)
+        elif message.lead_id:
+            key = ("lead", message.lead_id)
+        else:
+            key = ("phone", message.sender_phone)
+        latest.setdefault(key, message)
+    replies = list(
+        OutboundMessage.objects.for_tenant(organization)
+        .filter(channel="whatsapp", created_by__isnull=False, created_at__gte=since)
+        .values_list("parent_id", "lead_id", "recipient", "created_at")
+    )
+
+    def answered(message):
+        return any(
+            at > message.created_at
+            and (
+                (parent_id and parent_id == message.parent_id)
+                or (lead_id and lead_id == message.lead_id)
+                or (recipient and recipient == message.sender_phone)
+            )
+            for parent_id, lead_id, recipient, at in replies
+        )
+
+    waiting = [message for message in latest.values() if not answered(message)]
+    if not waiting:
+        return Item("whatsapp_messages", 0, None, "")
+    last = waiting[0]
+    if last.parent_id:
+        link, name = f"/parents/{last.parent_id}", last.parent.full_name
+    elif last.lead_id:
+        link, name = f"/leads/{last.lead_id}", last.lead.parent_name
+    else:
+        link, name = "/leads", last.sender_name or last.sender_phone
+    return Item(
+        "whatsapp_messages",
+        len(waiting),
+        last.created_at,
+        link,
+        extra={"name": name, "preview": (last.text or f"[{last.message_type}]")[:80]},
+    )
+
+
 SOURCES = [
+    whatsapp_messages,
     new_leads,
     parent_requests,
     unmarked_lessons,

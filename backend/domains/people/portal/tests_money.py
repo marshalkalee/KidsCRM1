@@ -123,17 +123,14 @@ class ParentMoneyTests(PortalAuthBase):
         self.assertEqual(data["to_pay"], str(self.subscription.price))
 
     def test_how_to_pay_contacts(self):
+        from urllib.parse import unquote
+
         how = self.money().data["how_to_pay"]
-        self.assertEqual(
-            how["contacts"],
-            [
-                {
-                    "branch": "Абая",
-                    "phone": "+77272001122",
-                    "whatsapp_url": "https://wa.me/77272001122",
-                }
-            ],
-        )
+        [contact] = how["contacts"]
+        self.assertEqual((contact["branch"], contact["phone"]), ("Абая", "+77272001122"))
+        # WhatsApp не подключён — телефон филиала; с готовым вопросом об оплате.
+        self.assertTrue(contact["whatsapp_url"].startswith("https://wa.me/77272001122?text="))
+        self.assertIn("Вопрос по оплате абонемента", unquote(contact["whatsapp_url"]))
 
     def test_foreign_child_money_is_404(self):
         _, (stranger,) = family(self.org, "Чужая мама", "+77019990000", "Чужой Ребёнок")

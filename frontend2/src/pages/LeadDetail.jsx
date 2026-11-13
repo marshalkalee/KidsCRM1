@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowRight, CalendarPlus, CreditCard, ListTodo, MessageCircle, Pencil, RefreshCw, SearchX, Send, Sparkles, Trash2, UserRound, XCircle,
+  ArrowRight, CalendarPlus, CreditCard, ListTodo, MessageCircle, Paperclip, Pencil, RefreshCw, SearchX, Send, Sparkles, Trash2, UserRound, X, XCircle,
 } from 'lucide-react'
 import api from '../api/axios'
 import LeadConversionModal from '../components/leads/LeadConversionModal'
@@ -20,15 +20,18 @@ import {
   Avatar, Badge, Button, Card, Dropdown, EmptyState, ErrorState, PageHeader, Skeleton, Textarea, ageLabel, apiErrorMessage, cn,
   formatDate, formatDateTime, money, useConfirm, useToast,
 } from '../ui'
+import WhatsAppButton from '../components/messaging/WhatsAppButton'
+import WhatsAppThread from '../components/messaging/WhatsAppThread'
+import { MediaPreview } from '../components/files/ProtectedFile'
+import { ACCEPT_FILES, attachmentMedia } from '../components/files/fileHelpers'
 import { t } from '../i18n'
 
 /** Готовый текст первого сообщения в WhatsApp (ТЗ п. 4.5). */
-function whatsappUrl(lead, organizationName) {
+function whatsappText(lead, organizationName) {
   const about = lead.direction_name ? t(' на {direction}', { direction: lead.direction_name }) : ''
-  const text = t('Здравствуйте, {name}! Это {org}. Вы оставляли заявку{about} — удобно обсудить занятия?', {
+  return t('Здравствуйте, {name}! Это {org}. Вы оставляли заявку{about} — удобно обсудить занятия?', {
     name: lead.parent_name, org: organizationName || 'KidsCRM', about,
   })
-  return `https://wa.me/${lead.phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
 }
 
 /**
@@ -213,9 +216,9 @@ export default function LeadDetail() {
             <p className="mt-1 text-sm text-ink-muted">{lead.parent_name} · <a href={`tel:${lead.phone}`} className="font-medium text-ink hover:text-brand-700">{lead.phone}</a></p>
             <div className={cn('mt-3 grid gap-2', user?.can_call && 'grid-cols-2')}>
               <CallButton phone={lead.phone} className="h-10 rounded-md bg-brand-600 text-sm font-semibold text-white shadow-card hover:bg-brand-700" />
-              <a href={whatsappUrl(lead, user?.organization_name)} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-success-50 text-sm font-semibold text-success-600 hover:brightness-95">
+              <WhatsAppButton phone={lead.phone} leadId={lead.id} text={whatsappText(lead, user?.organization_name)} onSent={load} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-success-50 text-sm font-semibold text-success-600 hover:brightness-95">
                 <MessageCircle className="size-4" /> WhatsApp
-              </a>
+              </WhatsAppButton>
             </div>
             {ai.enabled && (
               <button
@@ -308,6 +311,7 @@ export default function LeadDetail() {
             onCreateTask={createContactTask}
             creatingTask={creatingTask}
           />
+          <WhatsAppThread leadId={lead.id} />
           <CommentsCard leadId={lead.id} comments={comments} onAdded={comment => setComments(list => [...list, comment])} />
           <HistoryCard history={history} />
         </div>
@@ -502,9 +506,11 @@ function StatusCard({ lead, stages, onChange, onBookTrial, onStartSale, onCreate
   )
 }
 
+/** Заметки заявки: о чём договорились, плюс файлы. Переписка WhatsApp — в чате выше. */
 function CommentsCard({ leadId, comments, onAdded }) {
   const toast = useToast()
   const [text, setText] = useState('')
+  const [files, setFiles] = useState([])
   const [saving, setSaving] = useState(false)
 
   async function submit(e) {
@@ -512,11 +518,15 @@ function CommentsCard({ leadId, comments, onAdded }) {
     if (!text.trim()) return
     setSaving(true)
     try {
-      const res = await api.post(`leads/${leadId}/comments/`, { text })
+      const body = new FormData()
+      body.append('text', text)
+      files.forEach(file => body.append('files', file))
+      const res = await api.post(`leads/${leadId}/comments/`, body)
       onAdded(res.data)
       setText('')
+      setFiles([])
     } catch (err) {
-      toast.error(apiErrorMessage(err))
+      toast.error(err.response?.data?.files?.[0] || apiErrorMessage(err))
     } finally {
       setSaving(false)
     }
@@ -524,7 +534,7 @@ function CommentsCard({ leadId, comments, onAdded }) {
 
   return (
     <Card>
-      <p className="text-[15px] font-bold text-ink">{t('Комментарии')}</p>
+      <p className="text-[15px] font-bold text-ink">{t('Заметки')}</p>
       {comments.length === 0 ? (
         <p className="mt-2 text-sm text-ink-muted">{t('Пока пусто. Запишите, о чём договорились после звонка.')}</p>
       ) : (
@@ -535,14 +545,52 @@ function CommentsCard({ leadId, comments, onAdded }) {
               <div className="min-w-0 flex-1 rounded-lg bg-surface-muted px-3 py-2">
                 <p className="text-xs text-ink-subtle"><span className="font-semibold text-ink-muted">{comment.author_name}</span> · {formatDateTime(comment.created_at)}</p>
                 <p className="mt-0.5 whitespace-pre-line text-sm text-ink">{comment.text}</p>
+                {comment.attachments?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {comment.attachments.map(file => (
+                      <MediaPreview key={file.id} media={attachmentMedia(`leads/${leadId}/comments/${comment.id}/files/${file.id}/`, file)} />
+                    ))}
+                  </div>
+                )}
               </div>
             </li>
           ))}
         </ul>
       )}
-      <form onSubmit={submit} className="mt-3 flex items-end gap-2">
-        <Textarea rows={2} value={text} onChange={e => setText(e.target.value)} placeholder={t('Новый комментарий')} aria-label={t('Новый комментарий')} className="flex-1" maxLength={2000} />
-        <Button type="submit" variant="primary" size="icon" loading={saving} disabled={!text.trim()} aria-label={t('Добавить комментарий')}><Send className="size-4" /></Button>
+      <form onSubmit={submit} className="mt-3 space-y-2">
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {files.map((file, index) => (
+              <span key={`${file.name}-${index}`} className="inline-flex max-w-full items-center gap-1 rounded-md bg-surface-muted px-2 py-1 text-xs text-ink">
+                <Paperclip className="size-3.5 shrink-0" />
+                <span className="truncate">{file.name}</span>
+                <button type="button" aria-label={t('Убрать файл')} onClick={() => setFiles(list => list.filter((_, i) => i !== index))} className="text-ink-subtle hover:text-ink">
+                  <X className="size-3.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-end gap-2">
+          {files.length < 5 && (
+            <label className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-muted hover:bg-surface-muted hover:text-ink" title={t('Прикрепить файл')} aria-label={t('Прикрепить файл')}>
+              <Paperclip className="size-[18px]" />
+              <input
+                type="file"
+                multiple
+                accept={ACCEPT_FILES}
+                className="sr-only"
+                onChange={event => {
+                  const picked = Array.from(event.target.files || [])
+                  setFiles(list => [...list, ...picked].slice(0, 5))
+                  event.target.value = ''
+                }}
+              />
+            </label>
+          )}
+          <Textarea rows={2} value={text} onChange={e => setText(e.target.value)} placeholder={t('Новая заметка')} aria-label={t('Новая заметка')} className="flex-1" maxLength={2000} />
+          <Button type="submit" variant="primary" size="icon" loading={saving} disabled={!text.trim()} aria-label={t('Добавить заметку')}><Send className="size-4" /></Button>
+        </div>
       </form>
     </Card>
   )

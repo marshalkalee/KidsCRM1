@@ -9,13 +9,11 @@ import TaskPanel from '../components/tasks/TaskPanel'
 import CallButton from '../components/telephony/CallButton'
 import { ROLE_LABELS, TASK_MANAGER_ROLES, TASK_TYPES } from '../components/tasks/types'
 import { SellModal } from '../components/money/SubscriptionsTab'
+import WhatsAppButton from '../components/messaging/WhatsAppButton'
 import { useSession } from '../session/SessionContext'
 import { Badge, Button, Card, Dropdown, EmptyState, ErrorState, Field, Modal, PageHeader, SearchInput, Select, Skeleton, apiErrorMessage, cn, money, useToast } from '../ui'
 import { locale, t } from '../i18n'
 
-function waLink(phone, text) {
-  return `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
-}
 
 function isToday(iso) {
   if (!iso) return false
@@ -541,14 +539,17 @@ function TaskCard({ task, overdue: late, closed, closing, center, me, canManage,
           </CallButton>
         )}
         {(task.contact_whatsapp || task.contact_phone) && template && (
-          <a
-            href={waLink(task.contact_whatsapp || task.contact_phone, template(task, center))}
-            target="_blank" rel="noreferrer"
+          <WhatsAppButton
+            phone={task.contact_whatsapp || task.contact_phone}
+            text={template(task, center)}
+            leadId={task.child ? undefined : task.lead}
+            childId={task.child}
             className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-semibold text-success-600 hover:bg-success-50"
+            title={t('WhatsApp')}
           >
             <MessageCircle className="size-4" />
             <span className="hidden sm:inline">{t('WhatsApp')}</span>
-          </a>
+          </WhatsAppButton>
         )}
         {canPay && task.type === 'payment_reminder' && task.child && (
           <Button size="sm" variant="secondary" onClick={onPay}>{t('Принять оплату')}</Button>

@@ -6,6 +6,7 @@ import CallButton from '../components/telephony/CallButton'
 import { ListToolbar, StatCard, StatRow } from '../components/money/ListParts'
 import RenewModal from '../components/money/RenewModal'
 import WhatsAppBulkModal from '../components/messaging/WhatsAppBulkModal'
+import WhatsAppButton from '../components/messaging/WhatsAppButton'
 import { useSession } from '../session/SessionContext'
 import {
   Badge, Button, DataTable, EmptyState, FilterCheck, FilterPanel, FilterSelect,
@@ -17,9 +18,6 @@ const PANEL_KEYS = ['branch', 'direction', 'group', 'not_contacted']
 const FILTER_KEYS = ['q', ...PANEL_KEYS]
 const PAGE_SIZE = 25
 
-function waLink(phone, text) {
-  return `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
-}
 
 function whenLabel(row) {
   if (row.days_left < 0) return t('закончился')
@@ -200,9 +198,9 @@ export default function Renewals() {
             <CallButton phone={row.phone} className="size-9 rounded-md text-ink-muted hover:bg-surface-muted hover:text-ink" iconOnly />
           )}
           {row.whatsapp && (
-            <a href={waLink(row.whatsapp, row.message_text)} target="_blank" rel="noreferrer" className="flex size-9 items-center justify-center rounded-md text-success-600 hover:bg-success-50" title={t('Написать в WhatsApp')} aria-label={t('Написать в WhatsApp')}>
+            <WhatsAppButton phone={row.whatsapp} text={row.message_text} childId={row.child_id} className="flex size-9 items-center justify-center rounded-md text-success-600 hover:bg-success-50" title={t('Написать в WhatsApp')}>
               <MessageCircle className="size-4" />
-            </a>
+            </WhatsAppButton>
           )}
           {canChange && (
             <Button size="sm" variant="ghost" icon={Check} loading={busy === `contact:${row.subscription_id}`} onClick={() => markContacted(row)} title={t('Отметить, что связались')}>

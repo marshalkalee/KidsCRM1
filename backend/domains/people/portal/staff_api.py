@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from django.core.files.storage import default_storage
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
@@ -124,6 +125,10 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
             announcement.published_at = timezone.now()
             announcement.save(update_fields=["status", "published_at", "updated_at"])
             self._audit(AuditLog.Action.UPDATE, announcement, status="published")
+            # Семьям — уведомление (WhatsApp, push или email); повторно не уйдёт.
+            from .tasks import notify_announcement
+
+            transaction.on_commit(lambda: notify_announcement.delay(str(announcement.id)))
         return Response(self.get_serializer(announcement).data)
 
     @action(detail=True, methods=["post"])

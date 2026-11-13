@@ -15,6 +15,7 @@ backend/static/site/js/i18n-bundle.js
 
 # Staging — реальные дампы БД, не для репозитория
 backend/.env.staging
+infra/evolution/.env
 infra/backups/
 
 # Editors / OS
