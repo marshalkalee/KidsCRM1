@@ -137,7 +137,7 @@ export default function Leads() {
     if (lead.stage === to) return
     const target = stageOf(to)
     if (!target || !board.stage_transitions[lead.stage]?.includes(to)) {
-      toast.error(t('Из статуса «{from}» нельзя перейти в «{to}».', { from: lead.stage_name, to: target?.label ?? '' }))
+      toast.error(t('Из статуса «{from}» нельзя перейти в «{to}».', { from: t(lead.stage_name), to: t(target?.label ?? '') }))
       return
     }
     if (target.status === 'rejected') setRejecting({ lead, stage: to })
@@ -352,7 +352,7 @@ function Board({ board, onMove, onLoadMore, returnTo }) {
           return (
             <section
               key={column.stage}
-              aria-label={column.label}
+              aria-label={t(column.label)}
               onDragOver={e => { if (canDrop) { e.preventDefault(); setOver(column.stage) } }}
               onDragLeave={() => setOver(o => (o === column.stage ? null : o))}
               onDrop={e => {
@@ -431,7 +431,7 @@ function OutcomeBar({ columns, allowed, over, setOver, onDrop }) {
               )}
             >
               <span className={cn('size-2 rounded-full', STAGE_DOT[column.color])} />
-              {column.label}
+              {t(column.label)}
             </div>
           )
         })}
@@ -443,7 +443,7 @@ function OutcomeBar({ columns, allowed, over, setOver, onDrop }) {
 /** Телефон: одна колонка и переключатель этапа — без горизонтального скролла. */
 function MobileColumn({ board, stage, onStageChange, onMove, onLoadMore, returnTo }) {
   const column = board.columns.find(c => c.stage === stage)
-  const options = board.columns.map(c => ({ value: c.stage, label: `${c.label} · ${c.count}` }))
+  const options = board.columns.map(c => ({ value: c.stage, label: `${t(c.label)} · ${c.count}` }))
   if (!column) return null
   return (
     <div className="md:hidden">
@@ -463,7 +463,7 @@ function ColumnHeader({ column }) {
       <span className={cn('block h-1', STAGE_DOT[column.color])} />
       <div className="flex items-center gap-2 px-3 py-2.5">
         <span className={cn('size-2 shrink-0 rounded-full', STAGE_DOT[column.color])} />
-        <h2 className="truncate text-[13px] font-bold text-ink">{column.label}</h2>
+        <h2 className="truncate text-[13px] font-bold text-ink">{t(column.label)}</h2>
         <span className="ml-auto rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-ink-muted">{column.count}</span>
       </div>
     </header>
@@ -515,7 +515,7 @@ function LeadCard({ lead, draggable = false, dragging = false, onDragStart, onDr
 
 /** Сменить этап без перетаскивания: телефон, клавиатура. */
 function MoveMenu({ lead, columns, targets, onMove }) {
-  const options = columns.filter(c => targets.includes(c.stage)).map(c => ({ value: c.stage, label: c.label }))
+  const options = columns.filter(c => targets.includes(c.stage)).map(c => ({ value: c.stage, label: t(c.label) }))
   return (
     <span className="shrink-0 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
       <Dropdown

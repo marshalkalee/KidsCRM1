@@ -115,7 +115,7 @@ export default function LeadDetail() {
       setLead(res.data)
       if (res.data.status === 'trial_attended' && !res.data.converted_child) setConverting(true)
       loadExtras()
-      toast.success(t('Статус: {status}', { status: res.data.stage_name }))
+      toast.success(t('Статус: {status}', { status: t(res.data.stage_name) }))
     } catch (err) {
       toast.error(apiErrorMessage(err))
     }
@@ -472,7 +472,7 @@ function StatusCard({ lead, stages, onChange, onBookTrial, onStartSale, onCreate
           {targets.map(s => (
             <Button key={s.id} size="sm" variant={s.role === 'rejected' ? 'danger-ghost' : 'secondary'} onClick={() => onChange(s)}>
               <span className={cn('size-2 rounded-full', STAGE_DOT[s.color])} />
-              {s.name}
+              {t(s.name)}
             </Button>
           ))}
         </div>
@@ -563,7 +563,7 @@ function HistoryCard({ history }) {
                   {change.event_type === 'trial_rescheduled' ? (
                     <span className="font-semibold">{t('Пробное занятие перенесено')}</span>
                   ) : change.from_status ? (
-                    <><span className="text-ink-muted">{change.from_status_label}</span> → <span className="font-semibold">{change.to_status_label}</span></>
+                    <><span className="text-ink-muted">{t(change.from_status_label)}</span> → <span className="font-semibold">{t(change.to_status_label)}</span></>
                   ) : (
                     <span className="font-semibold">{t('Заявка создана')}</span>
                   )}

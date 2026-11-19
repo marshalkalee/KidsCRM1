@@ -31,11 +31,11 @@ export const CHILD_CARD_TABS = [
   { key: 'contacts', get label() { return t('Контакты') }, order: 10, component: ContactsTab },
   { key: 'communications', get label() { return t('Коммуникации') }, order: 20, component: CommunicationsTab },
   // Деньги (Bekzat, TRU-70) — заглушки до подключения.
-  { key: 'subscriptions', label: 'Абонементы', order: 30, component: SubscriptionsTab, permission: 'can_view_client_money' },
-  { key: 'payments', label: 'Оплаты', order: 40, component: PaymentsTab, permission: 'can_view_client_money' },
+  { key: 'subscriptions', get label() { return t('Абонементы') }, order: 30, component: SubscriptionsTab, permission: 'can_view_client_money' },
+  { key: 'payments', get label() { return t('Оплаты') }, order: 40, component: PaymentsTab, permission: 'can_view_client_money' },
   // TRU-54: пока только доступные отработки. Полная история посещений —
   // TRU-55, расширит этот же компонент (AttendanceTab), не новую вкладку.
-  { key: 'attendance', label: 'Посещения', order: 50, component: AttendanceTab },
+  { key: 'attendance', get label() { return t('Посещения') }, order: 50, component: AttendanceTab },
   // Задачи (TRU-112): по ребёнку и по его заявкам. Видят те, кто работает с
   // карточкой (владелец, управляющий, администратор) — преподавателю задач нет.
   { key: 'tasks', get label() { return t('Задачи') }, order: 60, component: TasksTab, permission: 'can_manage_children' },

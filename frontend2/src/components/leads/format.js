@@ -42,7 +42,7 @@ export const STAGE_COLORS = [
 
 /** Бейдж этапа заявки — название и цвет центра. */
 export function stageBadge(lead) {
-  return { tone: STAGE_TONE[lead.stage_color] || 'neutral', label: lead.stage_name || lead.status_label }
+  return { tone: STAGE_TONE[lead.stage_color] || 'neutral', label: t(lead.stage_name || lead.status_label) }
 }
 
 /** Кого показывать заголовком карточки: ребёнка, если известен, иначе родителя. */

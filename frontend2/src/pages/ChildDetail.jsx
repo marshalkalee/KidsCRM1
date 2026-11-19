@@ -146,7 +146,7 @@ export default function ChildDetail() {
         <TabComponent key={activeKey} child={child} card={card} permissions={permissions} onCountChange={countSetters[activeKey]} />
       ) : (
         <Card>
-          <EmptyState icon={Sparkles} title={t('Раздел «{name}» скоро появится', { name: t(activeTab.label) })} description={t('Мы уже работаем над ним — данные подтянутся сюда автоматически.')} />
+          <EmptyState icon={Sparkles} title={t('Раздел «{name}» скоро появится', { name: activeTab.label })} description={t('Мы уже работаем над ним — данные подтянутся сюда автоматически.')} />
         </Card>
       )}
 

@@ -62,7 +62,7 @@ export default function FunnelStages({ creating = false, onCreatingChange, onLoa
         title: t('Скрыть этап?'),
         message: t('{n} на этапе «{name}» перейдут на «{main}».', {
           n: `${stage.lead_count} ${plural(stage.lead_count, ['заявка', 'заявки', 'заявок'])}`,
-          name: stage.name,
+          name: t(stage.name),
           main: roleName(stage.role),
         }),
         confirmText: t('Скрыть'),
@@ -86,7 +86,7 @@ export default function FunnelStages({ creating = false, onCreatingChange, onLoa
         <span className={cn('inline-flex min-w-0 items-center gap-2.5', stage.is_hidden && 'opacity-60')}>
           <span className={cn('size-2.5 shrink-0 rounded-full', STAGE_DOT[stage.color])} />
           <span className="min-w-0">
-            <span className="block truncate font-semibold text-ink">{stage.name}</span>
+            <span className="block truncate font-semibold text-ink">{t(stage.name)}</span>
             {!stage.is_system && <span className="block text-xs font-normal text-ink-muted">{t('Внутри «{main}»', { main: roleName(stage.role) })}</span>}
           </span>
         </span>
